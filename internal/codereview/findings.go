@@ -1,0 +1,526 @@
+package codereview
+
+import (
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type Finding struct {
+	ID             string
+	Scopes         []string
+	Title          string
+	Summary        string
+	Benefit        string
+	Evidence       []Evidence
+	Recommendation string
+	Strength       string
+	SourceIDs      []string
+}
+
+type Evidence struct {
+	Label string
+	Value string
+}
+
+type Rule interface {
+	ID() string
+	Scopes() []string
+	Evaluate(ReviewContext) []Finding
+}
+
+type ruleFunc struct {
+	id       string
+	scopes   []string
+	evaluate func(ReviewContext) []Finding
+}
+
+func (r ruleFunc) ID() string { return r.id }
+
+func (r ruleFunc) Scopes() []string { return r.scopes }
+
+func (r ruleFunc) Evaluate(ctx ReviewContext) []Finding {
+	if r.evaluate == nil {
+		return nil
+	}
+	return r.evaluate(ctx)
+}
+
+func defaultRules() []Rule {
+	return []Rule{
+		ruleFunc{id: "tools.static-failure", scopes: []string{"testing", "maintainability", "dependencies", "security"}, evaluate: staticToolFailureFindings},
+		ruleFunc{id: "quality.ignored-results", scopes: []string{"maintainability", "testing", "architecture"}, evaluate: ignoredResultFindings},
+		ruleFunc{id: "architecture.missing-context", scopes: []string{"architecture", "onboarding"}, evaluate: oneFinding(missingContextFinding)},
+		ruleFunc{id: "architecture.implementation-heavy-module", scopes: []string{"architecture", "maintainability", "testing"}, evaluate: implementationHeavyModuleFindings},
+		ruleFunc{id: "architecture.generic-package-name", scopes: []string{"architecture", "maintainability"}, evaluate: genericPackageNameFindings},
+		ruleFunc{id: "architecture.package-without-tests", scopes: []string{"architecture", "testing", "maintainability"}, evaluate: packageWithoutTestsFindings},
+		ruleFunc{id: "architecture.docs-without-adrs", scopes: []string{"architecture", "docs", "maintainability"}, evaluate: oneFinding(docsWithoutADRFinding)},
+		ruleFunc{id: "onboarding.missing-agents", scopes: []string{"onboarding", "maintainability"}, evaluate: oneFinding(missingAgentsFinding)},
+		ruleFunc{id: "docs.missing-readme", scopes: []string{"docs", "onboarding", "maintainability"}, evaluate: oneFinding(missingReadmeFinding)},
+		ruleFunc{id: "testing.no-tests", scopes: []string{"testing", "maintainability"}, evaluate: oneFinding(noTestsFinding)},
+		ruleFunc{id: "dependencies.no-manifest", scopes: []string{"dependencies", "maintainability"}, evaluate: oneFinding(noDependencyManifestFinding)},
+		ruleFunc{id: "dependencies.javascript-unlocked", scopes: []string{"dependencies", "security", "maintainability"}, evaluate: oneFinding(jsDependencyLockFinding)},
+	}
+}
+
+func ignoredResultFindings(ctx ReviewContext) []Finding {
+	var ignored []CodeQualityHint
+	for _, hint := range ctx.Brief.Static.CodeQuality {
+		if hint.Kind == "ignored_result" {
+			ignored = append(ignored, hint)
+		}
+	}
+	if len(ignored) == 0 {
+		return nil
+	}
+	limit := 5
+	if len(ignored) < limit {
+		limit = len(ignored)
+	}
+	var evidence []Evidence
+	for _, hint := range ignored[:limit] {
+		evidence = append(evidence, Evidence{
+			Label: fmt.Sprintf("%s:%d", hint.File, hint.Line),
+			Value: hint.Text,
+		})
+	}
+	first := ignored[0]
+	return []Finding{{
+		ID:      "quality.ignored-results",
+		Scopes:  []string{"maintainability", "testing", "architecture"},
+		Title:   "Review ignored errors in production code",
+		Summary: fmt.Sprintf("`%s:%d` discards a result in production code; these are often intentional, but they can also hide failed recovery, parsing, or state transitions.", first.File, first.Line),
+		Benefit: "Improves error handling and observability by turning silent authoring failures into explicit handled states or documented best-effort paths.",
+		Evidence: append(evidence, Evidence{
+			Label: "Why this matters",
+			Value: "A discarded result should either be proven harmless, handled, or wrapped behind a Module Interface that makes the failure mode explicit.",
+		}),
+		Recommendation: fmt.Sprintf("Start with `%s:%d`, then the next four ignored results listed in evidence. For each one, either return the error, log the best-effort failure with context, or add a small test proving the ignored result is harmless.", first.File, first.Line),
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"google-eng-practices"},
+	}}
+}
+
+func staticToolFailureFindings(ctx ReviewContext) []Finding {
+	var failed []StaticToolResult
+	for _, result := range ctx.Brief.Static.ToolResults {
+		if result.Skipped || result.ExitCode == 0 {
+			continue
+		}
+		failed = append(failed, result)
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	var evidence []Evidence
+	for _, result := range failed {
+		value := strings.TrimSpace(result.Output)
+		if value == "" {
+			value = fmt.Sprintf("%s exited with code %d", result.Command, result.ExitCode)
+		}
+		evidence = append(evidence, Evidence{Label: result.Name, Value: value})
+	}
+	first := failed[0]
+	return []Finding{{
+		ID:             "tools.static-failure",
+		Scopes:         []string{"testing", "maintainability", "dependencies", "security"},
+		Title:          "Fix static tool failures before architecture advice",
+		Summary:        fmt.Sprintf("`%s` failed, so the review found concrete correctness or best-practice diagnostics before speculative structure work.", first.Command),
+		Benefit:        "Restores a clean correctness baseline so later architecture recommendations are judged against working code instead of compile, vet, or test failures.",
+		Evidence:       evidence,
+		Recommendation: "Start by fixing the failing tool output, then rerun `gx review` so the reviewer can judge structure on a clean baseline.",
+		Strength:       "Blocking",
+		SourceIDs:      []string{"google-eng-practices"},
+	}}
+}
+
+func oneFinding(fn func(RepoFacts) Finding) func(ReviewContext) []Finding {
+	return func(ctx ReviewContext) []Finding {
+		finding := fn(ctx.Facts)
+		if finding.ID == "" {
+			return nil
+		}
+		return []Finding{finding}
+	}
+}
+
+func evaluateFindings(ctx ReviewContext, rules []Rule) []Finding {
+	active := activeScopes(ctx.ActiveScopes)
+	knownSources := sourceIDSet(ctx.Sources)
+	var out []Finding
+	for _, rule := range rules {
+		if rule == nil || !matchesScope(rule.Scopes(), active) {
+			continue
+		}
+		for _, finding := range rule.Evaluate(ctx) {
+			if finding.ID == "" || !matchesScope(finding.Scopes, active) {
+				continue
+			}
+			finding.SourceIDs = filterSourceIDs(finding.SourceIDs, knownSources)
+			out = append(out, finding)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if strengthRank(out[i].Strength) != strengthRank(out[j].Strength) {
+			return strengthRank(out[i].Strength) < strengthRank(out[j].Strength)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func activeScopes(scopes []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, baseline := range scopes {
+		out[baseline] = struct{}{}
+	}
+	return out
+}
+
+func matchesScope(scopes []string, active map[string]struct{}) bool {
+	for _, scope := range scopes {
+		if _, ok := active[scope]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceIDSet(sources []Source) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, source := range sources {
+		out[source.ID] = struct{}{}
+	}
+	return out
+}
+
+func filterSourceIDs(ids []string, known map[string]struct{}) []string {
+	var out []string
+	for _, id := range ids {
+		if _, ok := known[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func strengthRank(strength string) int {
+	switch strength {
+	case "Blocking":
+		return 0
+	case "Strong":
+		return 1
+	case "Worth exploring":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func missingContextFinding(facts RepoFacts) Finding {
+	if present(facts.Docs, "CONTEXT.md") {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "architecture.missing-context",
+		Scopes:  []string{"architecture", "onboarding"},
+		Title:   "Name the domain language reviews should use",
+		Summary: "The repo has no `CONTEXT.md`, so architecture review can see files but cannot reliably name the domain Modules and Interfaces they represent.",
+		Benefit: "Improves review quality and onboarding by giving agents stable project nouns, invariants, and naming conventions to reuse.",
+		Evidence: []Evidence{
+			{Label: "File", Value: "`CONTEXT.md` is missing"},
+		},
+		Recommendation: "After the first useful review pass, add a short `CONTEXT.md` with the repo-specific nouns, invariants, and naming conventions GX should reuse.",
+		Strength:       "Speculative",
+		SourceIDs:      []string{"diataxis", "google-doc-style"},
+	}
+}
+
+func missingAgentsFinding(facts RepoFacts) Finding {
+	if present(facts.Docs, "AGENTS.md") {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "onboarding.missing-agents",
+		Scopes:  []string{"onboarding", "maintainability"},
+		Title:   "Missing agent instructions",
+		Summary: "Agents do not have a repo-local instruction file for command, review, and version-control conventions.",
+		Benefit: "Reduces failed agent runs and accidental workflow drift by making build, test, and GX/JJ conventions explicit.",
+		Evidence: []Evidence{
+			{Label: "File", Value: "`AGENTS.md` is missing"},
+		},
+		Recommendation: "Add `AGENTS.md` with the expected build/test commands, version-control workflow, and repo-specific constraints.",
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"google-eng-practices"},
+	}
+}
+
+func genericPackageNameFindings(ctx ReviewContext) []Finding {
+	genericNames := map[string]struct{}{
+		"common": {}, "shared": {}, "utils": {}, "util": {}, "helpers": {}, "helper": {}, "types": {}, "models": {}, "lib": {},
+	}
+	var evidence []Evidence
+	for _, pkg := range ctx.Facts.GoPackages {
+		name := filepath.Base(pkg.Path)
+		if _, ok := genericNames[name]; ok {
+			evidence = append(evidence, Evidence{Label: "Package", Value: fmt.Sprintf("`%s`", pkg.Path)})
+		}
+	}
+	if len(evidence) == 0 {
+		return nil
+	}
+	return []Finding{{
+		ID:      "architecture.generic-package-name",
+		Scopes:  []string{"architecture", "maintainability"},
+		Title:   "Generic package names reduce Interface clarity",
+		Summary: "Generic package names make it harder to infer what Module Interface callers should rely on.",
+		Benefit: "Improves readability and navigation by making package names describe domain concepts instead of storage buckets for shared code.",
+		Evidence: append(evidence, Evidence{
+			Label: "Why this matters",
+			Value: "A package name should describe the concept behind its Interface, not just that code is shared.",
+		}),
+		Recommendation: "Review these packages and rename or split them around the domain concept they actually expose.",
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"go-package-names", "go-code-review-comments"},
+	}}
+}
+
+func implementationHeavyModuleFindings(ctx ReviewContext) []Finding {
+	var candidates []PackageFact
+	for _, pkg := range ctx.Facts.GoPackages {
+		if pkg.GoFiles < 6 || ignorablePackage(pkg.Path) {
+			continue
+		}
+		candidates = append(candidates, pkg)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].GoFiles != candidates[j].GoFiles {
+			return candidates[i].GoFiles > candidates[j].GoFiles
+		}
+		return candidates[i].Path < candidates[j].Path
+	})
+	limit := 5
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	var evidence []Evidence
+	for _, pkg := range candidates[:limit] {
+		evidence = append(evidence, Evidence{
+			Label: "Module",
+			Value: fmt.Sprintf("`%s` has %d implementation file(s) and %d test file(s)", pkg.Path, pkg.GoFiles, pkg.TestFiles),
+		})
+	}
+	moduleNames := packagePaths(candidates[:limit])
+	firstModule := moduleNames[0]
+	return []Finding{{
+		ID:      "architecture.implementation-heavy-module",
+		Scopes:  []string{"architecture", "maintainability", "testing"},
+		Title:   "Look for deeper Interfaces in the largest Modules",
+		Summary: fmt.Sprintf("%s are the largest Go Modules in this repo; inspect whether their Interfaces hide workflow complexity or force callers to know too much ordering, configuration, or error behavior.", formatModuleList(moduleNames, 3)),
+		Benefit: "Improves readability and testability by moving workflow ordering into one Module Interface, which should reduce caller knowledge and make future fixes more local.",
+		Evidence: append(evidence, Evidence{
+			Label: "Deletion test",
+			Value: "If deleting one of these Modules would scatter the same complexity across callers, deepen its Interface; if deletion removes mostly pass-through code, collapse it.",
+		}),
+		Recommendation: fmt.Sprintf("Start with `%s`: list the exported functions and the top two callers, then identify one workflow detail callers currently need to know. Move that detail behind a named package function or type, and add a package-level test that exercises the new Interface through the caller-facing path.", firstModule),
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"fowler-architecture", "google-eng-practices"},
+	}}
+}
+
+func packageWithoutTestsFindings(ctx ReviewContext) []Finding {
+	var missing []PackageFact
+	for _, pkg := range ctx.Facts.GoPackages {
+		if pkg.GoFiles == 0 || pkg.TestFiles > 0 {
+			continue
+		}
+		if pkg.GoFiles < 2 || ignorablePackage(pkg.Path) {
+			continue
+		}
+		missing = append(missing, pkg)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].GoFiles != missing[j].GoFiles {
+			return missing[i].GoFiles > missing[j].GoFiles
+		}
+		return missing[i].Path < missing[j].Path
+	})
+	limit := 8
+	if len(missing) < limit {
+		limit = len(missing)
+	}
+	var evidence []Evidence
+	for _, pkg := range missing[:limit] {
+		evidence = append(evidence, Evidence{
+			Label: "Package",
+			Value: fmt.Sprintf("`%s` has %d implementation file(s) and no test files", pkg.Path, pkg.GoFiles),
+		})
+	}
+	moduleNames := packagePaths(missing[:limit])
+	return []Finding{{
+		ID:             "architecture.package-without-tests",
+		Scopes:         []string{"architecture", "testing", "maintainability"},
+		Title:          "Test meaningful Modules through their package seam",
+		Summary:        fmt.Sprintf("%s have non-trivial Implementation but no colocated tests, so review cannot tell whether their Interfaces are easy to exercise through the package seam.", formatModuleList(moduleNames, 3)),
+		Benefit:        "Improves refactor safety and exposes shallow Interfaces early: awkward tests point directly at seams that should be simplified.",
+		Evidence:       evidence,
+		Recommendation: fmt.Sprintf("Add tests for `%s` through its public package Interface first. If that feels awkward, use the friction to reshape the Module before extracting more helpers.", moduleNames[0]),
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"fowler-test-pyramid", "google-eng-practices"},
+	}}
+}
+
+func docsWithoutADRFinding(facts RepoFacts) Finding {
+	if !present(facts.Docs, "docs/") || hasADR(facts.Files) {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "architecture.docs-without-adrs",
+		Scopes:  []string{"architecture", "docs", "maintainability"},
+		Title:   "Record the Module decisions GX should not relitigate",
+		Summary: "The repo has documentation, but no ADR-style files were detected, so future architecture review cannot distinguish open design questions from settled decisions.",
+		Benefit: "Reduces repeated review noise and makes future architecture advice more useful by preserving the reason behind accepted seams.",
+		Evidence: []Evidence{
+			{Label: "Docs", Value: "`docs/` is present"},
+			{Label: "ADR files", Value: "none detected under tracked files"},
+		},
+		Recommendation: "When you accept or reject a major Module seam, record the reason in a lightweight ADR under `docs/adr/` so GX can avoid repeating stale advice.",
+		Strength:       "Speculative",
+		SourceIDs:      []string{"diataxis", "google-eng-practices"},
+	}
+}
+
+func missingReadmeFinding(facts RepoFacts) Finding {
+	if present(facts.Docs, "README.md") {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "docs.missing-readme",
+		Scopes:  []string{"docs", "onboarding", "maintainability"},
+		Title:   "Missing README",
+		Summary: "The repo lacks the standard entrypoint document new maintainers expect first.",
+		Benefit: "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
+		Evidence: []Evidence{
+			{Label: "File", Value: "`README.md` is missing"},
+		},
+		Recommendation: "Add a concise `README.md` covering purpose, setup, common commands, and where deeper documentation lives.",
+		Strength:       "Strong",
+		SourceIDs:      []string{"diataxis", "write-the-docs-guide"},
+	}
+}
+
+func noTestsFinding(facts RepoFacts) Finding {
+	if facts.TestFileCount > 0 {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "testing.no-tests",
+		Scopes:  []string{"testing", "maintainability"},
+		Title:   "No test files detected",
+		Summary: "The local scan did not find test files, so there is no obvious test surface for review or future changes.",
+		Benefit: "Improves regression safety and makes later code review more specific because failures can be tied to executable behavior.",
+		Evidence: []Evidence{
+			{Label: "Test files", Value: "0"},
+		},
+		Recommendation: "Add tests around the highest-leverage public Interfaces before expanding review automation.",
+		Strength:       "Strong",
+		SourceIDs:      []string{"fowler-test-pyramid", "google-eng-practices"},
+	}
+}
+
+func noDependencyManifestFinding(facts RepoFacts) Finding {
+	if len(facts.DependencyFiles) > 0 {
+		return Finding{}
+	}
+	return Finding{
+		ID:      "dependencies.no-manifest",
+		Scopes:  []string{"dependencies", "maintainability"},
+		Title:   "No dependency manifest detected",
+		Summary: "The local scan did not find a standard dependency manifest, which limits dependency and supply-chain review.",
+		Benefit: "Improves dependency review and reproducibility by making the build inputs visible to GX, CI, and teammates.",
+		Evidence: []Evidence{
+			{Label: "Dependency manifests", Value: "none detected"},
+		},
+		Recommendation: "Make sure the repo commits the dependency manifest and lockfile used by its build tooling.",
+		Strength:       "Worth exploring",
+		SourceIDs:      []string{"openssf-scorecard", "openssf-best-practices"},
+	}
+}
+
+func jsDependencyLockFinding(facts RepoFacts) Finding {
+	packageDirs := map[string]struct{}{}
+	lockDirs := map[string]struct{}{}
+	for _, file := range facts.DependencyFiles {
+		dir := filepath.ToSlash(filepath.Dir(file))
+		if dir == "." {
+			dir = ""
+		}
+		switch filepath.Base(file) {
+		case "package.json":
+			packageDirs[dir] = struct{}{}
+		case "package-lock.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock":
+			lockDirs[dir] = struct{}{}
+		}
+	}
+	var missing []string
+	for dir := range packageDirs {
+		if _, ok := lockDirs[dir]; !ok {
+			if dir == "" {
+				missing = append(missing, "package.json")
+			} else {
+				missing = append(missing, fmt.Sprintf("%s/package.json", dir))
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return Finding{}
+	}
+	sort.Strings(missing)
+	return Finding{
+		ID:      "dependencies.javascript-unlocked",
+		Scopes:  []string{"dependencies", "security", "maintainability"},
+		Title:   "JavaScript dependencies are not locked",
+		Summary: "A `package.json` was detected without a lockfile in the same directory, so installs may resolve differently across machines and CI.",
+		Benefit: "Improves reproducibility and supply-chain review by keeping dependency resolution stable across local machines and CI.",
+		Evidence: []Evidence{
+			{Label: "Package manifests without colocated lockfile", Value: strings.Join(missing, ", ")},
+		},
+		Recommendation: "Commit the lockfile produced by the package manager for each JavaScript package directory.",
+		Strength:       "Strong",
+		SourceIDs:      []string{"openssf-scorecard", "openssf-best-practices", "slsa"},
+	}
+}
+
+func hasADR(files []string) bool {
+	for _, file := range files {
+		lower := strings.ToLower(file)
+		base := filepath.Base(lower)
+		if strings.Contains(lower, "/adr/") || strings.HasPrefix(base, "adr-") || strings.HasPrefix(base, "adr_") {
+			return true
+		}
+	}
+	return false
+}
+
+func ignorablePackage(path string) bool {
+	if path == "." {
+		return true
+	}
+	base := filepath.Base(path)
+	if strings.HasPrefix(path, "cmd/") || strings.HasPrefix(path, "test/") {
+		return true
+	}
+	switch base {
+	case "buildconfig", "version":
+		return true
+	default:
+		return false
+	}
+}

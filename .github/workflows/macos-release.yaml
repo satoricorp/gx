@@ -1,0 +1,91 @@
+name: Build macOS App
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build GX for macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.4"
+
+      - name: Install just
+        run: brew install just
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${GITHUB_SHA:0:12}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_CLIENT_ID: ${{ vars.GITHUB_CLIENT_ID }}
+          CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
+          GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
+        run: just menubar
+
+      - name: Verify artifacts
+        run: |
+          test -f apps/menubar/dist/GX-macOS.zip
+          test -f apps/menubar/dist/GX-macOS.dmg
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GX-macOS
+          path: |
+            apps/menubar/dist/GX-macOS.zip
+            apps/menubar/dist/GX-macOS.dmg
+          if-no-files-found: error
+
+      - name: Publish GitHub release assets
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          assets=(
+            apps/menubar/dist/GX-macOS.zip
+            apps/menubar/dist/GX-macOS.dmg
+          )
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          fi

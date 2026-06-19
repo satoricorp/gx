@@ -1,0 +1,24 @@
+{
+  "name": "@gx/mcp",
+  "version": "0.1.0",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "xmcp dev",
+    "build": "xmcp build && bun run build:binary",
+    "build:xmcp": "xmcp build",
+    "build:binary": "bun build src/stdio.ts --compile --outfile dist/gx-mcp",
+    "start": "./dist/gx-mcp",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "xmcp": "0.6.10",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

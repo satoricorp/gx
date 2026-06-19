@@ -1,0 +1,16 @@
+.git
+.gx
+.gstack
+.jj
+.env
+.env.*
+.gocache
+node_modules
+apps/*/node_modules
+apps/*/dist
+apps/*/.build
+infra/cdk.out
+infra/node_modules
+mcp/node_modules
+server/node_modules
+tmp

@@ -1,0 +1,3 @@
+interface:
+  display_name: "GX"
+  short_description: "Default commit, push, PR, agent capture, and JJ-backed workflow actions to gx instead of raw Git/JJ."

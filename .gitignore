@@ -1,0 +1,15 @@
+.env
+.env.local
+.gx/
+/gx
+node_modules/
+apps/menubar/.build/
+apps/menubar/bin/
+apps/menubar/dist/
+apps/menubar/node_modules/
+mcp/.xmcp/
+mcp/.*.bun-build
+mcp/dist/
+mcp/node_modules/
+mcp/xmcp-env.d.ts
+.gstack/
