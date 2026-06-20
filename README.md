@@ -6,9 +6,9 @@ This repo also ships an installable skill at `skills/gx` that teaches the intend
 
 ## License
 
-GX is source-available under the PolyForm Noncommercial License 1.0.0. You can
-use, modify, and distribute it for noncommercial purposes, but commercial use or
-monetization requires a separate license from Satori Corp.
+GX is open source under the GNU Affero General Public License v3.0. Modified
+versions offered over a network must provide their corresponding source under
+the AGPL.
 
 ## Install `just`
 
