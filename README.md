@@ -92,10 +92,37 @@ On launch, the app installs the bundled CLI to `~/.local/bin/gx`, shows
 `gx doctor` stats and activity, links to the GX console, and provides MCP
 setup instructions.
 
-The `Build macOS App` GitHub Action builds ZIP/DMG artifacts from this repo.
-Pushing a `v*` tag also uploads those assets to the matching GitHub Release.
-Configure repository variables `GITHUB_CLIENT_ID`, `CONVEX_SITE_URL`, and
-`GX_CLOUD_URL` to bake production endpoints into release builds.
+The `Build macOS App` GitHub Action builds ZIP/DMG artifacts from this repo,
+uploads the latest ZIP/DMG to S3, keeps commit-addressed copies under
+`releases/<commit-sha>/`, and invalidates CloudFront. Pushing a `v*` tag also
+uploads those assets to the matching GitHub Release. Configure repository
+variables `GX_GITHUB_CLIENT_ID`, `CONVEX_SITE_URL`, and `GX_CLOUD_URL` to bake
+production endpoints into release builds.
+
+The S3 upload uses the private Console CDK download stack outputs. Configure
+these repository variables:
+
+```text
+AWS_REGION=us-east-1
+GX_GITHUB_CLIENT_ID=<github-oauth-app-client-id>
+CONVEX_SITE_URL=https://<prod-deployment>.convex.site
+GX_CLOUD_URL=https://api.gx.run
+GX_DOWNLOAD_BUCKET_NAME=<DownloadBucketName from gx-downloads>
+GX_DOWNLOAD_DISTRIBUTION_ID=<DownloadDistributionId from gx-downloads>
+```
+
+Then configure either the OIDC role secret:
+
+```text
+AWS_ROLE_TO_ASSUME=arn:aws:iam::<account-id>:role/<github-actions-role>
+```
+
+or access-key secrets:
+
+```text
+AWS_ACCESS_KEY_ID=<aws-access-key-id>
+AWS_SECRET_ACCESS_KEY=<aws-secret-access-key>
+```
 
 ### Capture
 
