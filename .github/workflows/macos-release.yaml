@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: macos-release-${{ github.ref }}
@@ -19,6 +20,13 @@ jobs:
   build:
     name: Build GX for macOS
     runs-on: macos-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      DEPLOY_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      DEPLOY_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      GX_DOWNLOAD_BUCKET_NAME: ${{ vars.GX_DOWNLOAD_BUCKET_NAME }}
+      GX_DOWNLOAD_DISTRIBUTION_ID: ${{ vars.GX_DOWNLOAD_DISTRIBUTION_ID }}
 
     steps:
       - name: Checkout
@@ -34,8 +42,10 @@ jobs:
         with:
           bun-version: "1.3.4"
 
-      - name: Install just
-        run: brew install just
+      - name: Install tools
+        run: |
+          brew install just
+          command -v aws >/dev/null || brew install awscli
 
       - name: Resolve version
         id: version
@@ -52,10 +62,12 @@ jobs:
       - name: Build macOS app
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_CLIENT_ID: ${{ vars.GITHUB_CLIENT_ID }}
+          GX_GITHUB_CLIENT_ID: ${{ vars.GX_GITHUB_CLIENT_ID }}
           CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
           GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
-        run: just menubar
+        run: |
+          export GITHUB_CLIENT_ID="$GX_GITHUB_CLIENT_ID"
+          just menubar
 
       - name: Verify artifacts
         run: |
@@ -70,6 +82,57 @@ jobs:
             apps/menubar/dist/GX-macOS.zip
             apps/menubar/dist/GX-macOS.dmg
           if-no-files-found: error
+
+      - name: Configure AWS credentials with OIDC
+        if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials with access keys
+        if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.DEPLOY_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.DEPLOY_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish downloads to S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GX_DOWNLOAD_BUCKET_NAME" || {
+            echo "GX_DOWNLOAD_BUCKET_NAME repository variable is required" >&2
+            exit 1
+          }
+          test -n "$GX_DOWNLOAD_DISTRIBUTION_ID" || {
+            echo "GX_DOWNLOAD_DISTRIBUTION_ID repository variable is required" >&2
+            exit 1
+          }
+
+          aws s3 cp apps/menubar/dist/GX-macOS.zip "s3://$GX_DOWNLOAD_BUCKET_NAME/GX-macOS.zip" \
+            --content-type application/zip \
+            --cache-control "public, max-age=300"
+          aws s3 cp apps/menubar/dist/GX-macOS.dmg "s3://$GX_DOWNLOAD_BUCKET_NAME/GX-macOS.dmg" \
+            --content-type application/x-apple-diskimage \
+            --cache-control "public, max-age=300"
+
+          aws s3 cp apps/menubar/dist/GX-macOS.zip "s3://$GX_DOWNLOAD_BUCKET_NAME/releases/$GITHUB_SHA/GX-macOS.zip" \
+            --content-type application/zip \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 cp apps/menubar/dist/GX-macOS.dmg "s3://$GX_DOWNLOAD_BUCKET_NAME/releases/$GITHUB_SHA/GX-macOS.dmg" \
+            --content-type application/x-apple-diskimage \
+            --cache-control "public, max-age=31536000, immutable"
+
+          printf 'GX download not found\n' > 404.txt
+          aws s3 cp 404.txt "s3://$GX_DOWNLOAD_BUCKET_NAME/404.txt" \
+            --content-type text/plain \
+            --cache-control "public, max-age=300"
+
+          aws cloudfront create-invalidation \
+            --distribution-id "$GX_DOWNLOAD_DISTRIBUTION_ID" \
+            --paths /GX-macOS.zip /GX-macOS.dmg /404.txt >/dev/null
 
       - name: Publish GitHub release assets
         if: ${{ github.ref_type == 'tag' }}
