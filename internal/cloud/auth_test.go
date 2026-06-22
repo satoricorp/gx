@@ -29,11 +29,9 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 			t.Fatalf("decode complete body: %v", err)
 		}
 		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
-			Token:     "gx_test_token",
 			UserID:    "user_1",
 			Login:     "joe",
 			AvatarURL: "https://avatars.githubusercontent.com/u/1?v=4",
-			SessionID: "sess_1",
 		})
 	}))
 	defer convex.Close()
@@ -76,7 +74,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if creds.Login != "joe" || creds.Token != "gx_test_token" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
+	if creds.Login != "joe" || creds.GitHubAccessToken != "gho_test" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
 	if gotComplete.GitHubAccessToken != "gho_test" {
@@ -96,7 +94,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCloudCredentials() error = %v", err)
 	}
-	if loaded == nil || loaded.Token != "gx_test_token" || loaded.GitHubAccessToken != "gho_test" {
+	if loaded == nil || loaded.GitHubAccessToken != "gho_test" {
 		t.Fatalf("saved credentials = %+v", loaded)
 	}
 }
@@ -129,7 +127,7 @@ func TestLoginPollsUntilAuthorized(t *testing.T) {
 
 	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
-			Token: "gx_late", Login: "jane", UserID: "u2", SessionID: "s2",
+			Login: "jane", UserID: "u2",
 		})
 	}))
 	defer convex.Close()
@@ -180,7 +178,7 @@ func TestLoginUsesBakedDefaults(t *testing.T) {
 
 	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
-			Token: "gx_baked", Login: "baker", UserID: "u", SessionID: "s",
+			Login: "baker", UserID: "u",
 		})
 	}))
 	defer convex.Close()
@@ -226,28 +224,20 @@ func TestLogoutRevokesAndClears(t *testing.T) {
 	t.Setenv("CONVEX_SITE_URL", "")
 
 	if err := SaveCloudCredentials(CloudCredentials{
-		Token:      "gx_test_token",
-		Login:      "joe",
-		ObtainedAt: time.Now().UTC(),
+		GitHubAccessToken: "gho_test",
+		Login:             "joe",
+		ObtainedAt:        time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 
-	var gotAuth string
 	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/cx/auth/revoke" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
+		t.Fatalf("logout should not call server, got %s %s", r.Method, r.URL.Path)
 	}))
 	defer convex.Close()
 
 	if err := Logout(context.Background(), AuthEndpoints{ConvexSiteURL: convex.URL}, convex.Client()); err != nil {
 		t.Fatalf("Logout() error = %v", err)
-	}
-	if gotAuth != "Bearer gx_test_token" {
-		t.Fatalf("authorization = %q", gotAuth)
 	}
 	if creds, _ := LoadCloudCredentials(); creds != nil {
 		t.Fatalf("expected cleared credentials, got %+v", creds)

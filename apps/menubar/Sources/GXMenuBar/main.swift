@@ -233,11 +233,6 @@ private struct AuthStatus: Decodable {
     let cloudURL: String?
 }
 
-private struct AuthTokenStatus: Decodable {
-    let token: String?
-    let authKind: String?
-}
-
 private struct DoctorLoad {
     let envelope: DoctorEnvelope?
     let rawJSON: String
@@ -451,19 +446,14 @@ private enum MCPInstructions {
     }
 
     static func cursorCommand() -> String {
-        let apiKey = resolvedAPIKey()
-        let apiPart = apiKey.map { " GX_API_KEY=\(shellQuote($0))" } ?? ""
-        return "cursor mcp add gx -- env\(apiPart) GX_BINARY=\(shellQuote(CLIInstaller.gxExecutable())) \(shellQuote(mcpExecutablePath()))"
+        "cursor mcp add gx -- env GX_BINARY=\(shellQuote(CLIInstaller.gxExecutable())) \(shellQuote(mcpExecutablePath()))"
     }
 
     static func claudeJSON() -> String {
-        var args = [
+        let args = [
             "GX_BINARY=\(CLIInstaller.gxExecutable())",
             mcpExecutablePath()
         ]
-        if let apiKey = resolvedAPIKey() {
-            args.insert("GX_API_KEY=\(apiKey)", at: 0)
-        }
         let value: [String: Any] = [
             "mcpServers": [
                 "gx": [
@@ -490,25 +480,8 @@ private enum MCPInstructions {
         The app installs the CLI at:
         \(CLIInstaller.installPath.path)
 
-        MCP runs over stdio from a standalone gx-mcp binary. Local menu-bar runs use the repo-local mcp/dist/gx-mcp build when present; installed app runs use bundled resources. If `gx auth login --api-key ...` was used, this snippet injects the saved API key. Otherwise cloud context uses gx auth credentials from disk.
+        MCP runs over stdio from a standalone gx-mcp binary. Local menu-bar runs use the repo-local mcp/dist/gx-mcp build when present; installed app runs use bundled resources. Cloud context uses gx auth credentials from disk.
         """
-    }
-
-    private static func resolvedAPIKey() -> String? {
-        let envKey = ProcessInfo.processInfo.environment["GX_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !envKey.isEmpty {
-            return envKey
-        }
-        let result = CommandRunner.run(CLIInstaller.gxExecutable(), ["auth", "token"], timeout: 10)
-        guard result.ok,
-              let data = result.stdout.data(using: .utf8),
-              let token = try? JSONDecoder().decode(AuthTokenStatus.self, from: data),
-              token.authKind == "api_key",
-              let value = token.token?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty else {
-            return nil
-        }
-        return value
     }
 
     private static func bundledMCPPath() -> String? {

@@ -10,7 +10,7 @@ import (
 
 func TestRegisterPublishUsesV1Endpoint(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
-	if err := SaveCloudCredentials(CloudCredentials{Token: "gx_publishabcdefghijklmnopqrstuvwxyz"}); err != nil {
+	if err := SaveCloudCredentials(CloudCredentials{GitHubAccessToken: "gho_publish"}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 
@@ -21,7 +21,7 @@ func TestRegisterPublishUsesV1Endpoint(t *testing.T) {
 		if r.URL.Path != "/v1/publish" {
 			t.Fatalf("path = %s, want /v1/publish", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer gx_publishabcdefghijklmnopqrstuvwxyz" {
+		if got := r.Header.Get("Authorization"); got != "Bearer gho_publish" {
 			t.Fatalf("authorization = %q", got)
 		}
 		var body PublishRegistration

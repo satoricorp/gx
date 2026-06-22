@@ -153,9 +153,7 @@ storage, VCS, review bundle, provider parsing, Cursor ingest, and e2e packages.
 - `TestNewClientNilWhenUnset`: no client is created when cloud is unset.
 - `TestDefaultMachineIDCreatesOnce`: persists a stable local machine id.
 - `TestSaveLoadClearCloudCredentials`: round-trips stored cloud credentials.
-- `TestBearerTokenResolution`: resolves bearer token from credentials/config.
-- `TestBearerTokenPrefersBakedKeyOverInvalidCredentials`: avoids invalid saved
-  credentials when a baked key is available.
+- `TestCloudAPITokenRequiresGitHubToken`: requires GitHub auth for cloud API calls.
 
 ### `internal/daemon`
 

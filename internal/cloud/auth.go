@@ -63,11 +63,9 @@ type accessTokenResponse struct {
 
 // CompleteAuthResponse is returned by POST /cx/auth/complete.
 type CompleteAuthResponse struct {
-	Token               string `json:"token"`
 	UserID              string `json:"user_id"`
 	Login               string `json:"login"`
 	AvatarURL           string `json:"avatar_url,omitempty"`
-	SessionID           string `json:"session_id"`
 	GitHubAppInstallURL string `json:"github_app_install_url,omitempty"`
 }
 
@@ -86,8 +84,8 @@ type LoginOptions struct {
 	Out         io.Writer
 }
 
-// Login runs GitHub device flow, exchanges the GitHub token with Convex via
-// POST /cx/auth/complete, and stores the returned gx_ CLI token (not the GitHub token).
+// Login runs GitHub device flow, stores the GitHub token with Convex via
+// POST /cx/auth/complete, and saves the token locally for gx cloud API calls.
 func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	clientID := GitHubClientID()
 	if clientID == "" {
@@ -146,12 +144,10 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 
 	now := time.Now().UTC()
 	creds := CloudCredentials{
-		Token:             complete.Token,
 		GitHubAccessToken: githubToken,
 		UserID:            complete.UserID,
 		Login:             complete.Login,
 		AvatarURL:         complete.AvatarURL,
-		SessionID:         complete.SessionID,
 		MachineID:         machineID,
 		MachineName:       machineName,
 		ObtainedAt:        now,
@@ -165,29 +161,11 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	return creds, nil
 }
 
-// Logout revokes the cloud session and clears local credentials.
+// Logout clears local credentials.
 func Logout(ctx context.Context, endpoints AuthEndpoints, httpClient *http.Client) error {
-	creds, err := LoadCloudCredentials()
-	if err != nil {
-		return err
-	}
-	if creds == nil || strings.TrimSpace(creds.Token) == "" {
-		return ClearCloudCredentials()
-	}
-	token := creds.Token
-
-	convexURL := endpoints.convexSiteURL()
-	if convexURL == "" {
-		convexURL = ConvexSiteURL()
-	}
-	if convexURL != "" {
-		if httpClient == nil {
-			httpClient = &http.Client{Timeout: 30 * time.Second}
-		}
-		if err := revokeConvexSession(ctx, httpClient, convexURL, token); err != nil {
-			return err
-		}
-	}
+	_ = ctx
+	_ = endpoints
+	_ = httpClient
 	return ClearCloudCredentials()
 }
 
@@ -312,29 +290,5 @@ func completeConvexAuth(ctx context.Context, client *http.Client, convexURL stri
 	if err := json.NewDecoder(resp.Body).Decode(&complete); err != nil {
 		return CompleteAuthResponse{}, fmt.Errorf("decode auth complete response: %w", err)
 	}
-	if complete.Token == "" {
-		return CompleteAuthResponse{}, fmt.Errorf("auth complete response missing token")
-	}
 	return complete, nil
-}
-
-func revokeConvexSession(ctx context.Context, client *http.Client, convexURL, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convexURL+"/cx/auth/revoke", nil)
-	if err != nil {
-		return fmt.Errorf("create auth revoke request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "gx/"+version.Current())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("auth revoke request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("auth revoke: status %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-	}
-	return nil
 }

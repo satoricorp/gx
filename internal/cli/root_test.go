@@ -1359,7 +1359,7 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 func TestRootHelpShowsSignedInUser(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GX_HOME", t.TempDir())
-	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", Token: "gx_saved", ObtainedAt: time.Now()}); err != nil {
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 	root := NewRoot(context.Background())
@@ -1377,11 +1377,36 @@ func TestRootHelpShowsSignedInUser(t *testing.T) {
 	}
 }
 
+func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GX_HOME", t.TempDir())
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "api-key", ObtainedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	root := NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--help"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute() error = %v", err)
+	}
+
+	text := out.String()
+	if strings.Contains(text, "Signed in as api-key") {
+		t.Fatalf("root help showed stale legacy login:\n%s", text)
+	}
+	if !strings.Contains(text, "Not signed in  gx auth login") {
+		t.Fatalf("root help missing signed-out auth line:\n%s", text)
+	}
+}
+
 func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GX_CLOUD_URL", "http://localhost:3200/gx/pr")
-	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", Token: "gx_saved", ObtainedAt: time.Now()}); err != nil {
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 	root := NewRoot(context.Background())
@@ -1397,31 +1422,6 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "Signed in as joelachance") {
 		t.Fatalf("root help missing stored login auth line:\n%s", text)
-	}
-}
-
-func TestAuthLoginAcceptsAPIKey(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
-	root := NewRoot(context.Background())
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"auth", "login", "--api-key", "gx_api_secret", "--name", "mcp-test"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("root.Execute() error = %v", err)
-	}
-
-	creds, err := cloud.LoadCloudCredentials()
-	if err != nil {
-		t.Fatalf("LoadCloudCredentials() error = %v", err)
-	}
-	if creds == nil || creds.APIKey != "gx_api_secret" || creds.Login != "api-key" || creds.MachineName != "mcp-test" {
-		t.Fatalf("saved credentials = %+v", creds)
-	}
-	if text := out.String(); !strings.Contains(text, "Auth") || !strings.Contains(text, "api key") {
-		t.Fatalf("auth login output missing api key confirmation:\n%s", text)
 	}
 }
 

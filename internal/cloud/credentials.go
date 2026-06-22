@@ -22,15 +22,12 @@ type credentialsFile struct {
 	Cloud *CloudCredentials `json:"cloud,omitempty"`
 }
 
-// CloudCredentials holds gx cloud CLI session state.
+// CloudCredentials holds gx cloud auth state.
 type CloudCredentials struct {
-	Token             string    `json:"token"`
-	APIKey            string    `json:"api_key,omitempty"`
 	GitHubAccessToken string    `json:"github_access_token,omitempty"`
 	UserID            string    `json:"user_id"`
 	Login             string    `json:"login"`
 	AvatarURL         string    `json:"avatar_url,omitempty"`
-	SessionID         string    `json:"session_id"`
 	MachineID         string    `json:"machine_id"`
 	MachineName       string    `json:"machine_name"`
 	ObtainedAt        time.Time `json:"obtained_at"`
@@ -112,37 +109,6 @@ func SaveCloudCredentials(creds CloudCredentials) error {
 	return writeJSONFile(path, file, 0o600)
 }
 
-// SaveAPIKeyCredentials persists a gx-cloud API key for non-interactive clients
-// such as MCP stdio servers launched by desktop apps.
-func SaveAPIKeyCredentials(apiKey, machineName string) (CloudCredentials, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return CloudCredentials{}, fmt.Errorf("api key is required")
-	}
-	machineID, err := DefaultMachineID()
-	if err != nil {
-		return CloudCredentials{}, err
-	}
-	machineName = strings.TrimSpace(machineName)
-	if machineName == "" {
-		machineName, _ = os.Hostname()
-	}
-	now := time.Now().UTC()
-	creds := CloudCredentials{
-		APIKey:      apiKey,
-		UserID:      "api-key",
-		Login:       "api-key",
-		SessionID:   "api-key",
-		MachineID:   machineID,
-		MachineName: machineName,
-		ObtainedAt:  now,
-	}
-	if err := SaveCloudCredentials(creds); err != nil {
-		return CloudCredentials{}, err
-	}
-	return creds, nil
-}
-
 // ClearCloudCredentials removes the cloud section from credentials.json.
 func ClearCloudCredentials() error {
 	path, err := credentialsPath()
@@ -170,30 +136,12 @@ func ClearCloudCredentials() error {
 	return nil
 }
 
-// BearerToken returns the bearer token for gx-cloud upload and revoke.
-// The stored GitHub token is used only for GitHub API calls, not gx-cloud upload.
-func BearerToken() (string, error) {
-	creds, err := LoadCloudCredentials()
-	if err != nil {
-		return "", err
-	}
-	if creds == nil || strings.TrimSpace(creds.Token) == "" {
-		return "", bearerTokenError()
-	}
-	token := strings.TrimSpace(creds.Token)
-	if !validCliToken(token) {
-		return "", fmt.Errorf("stored gx cloud token is invalid (run `gx auth logout` then `gx auth login` to refresh)")
-	}
-	return token, nil
-}
-
 func GitHubAccessToken() (string, error) {
 	return authstore.GitHubAccessToken()
 }
 
 // CloudAPIToken returns the bearer token used by consolidated gx-cloud HTTP APIs.
-// These Hono endpoints validate GitHub OAuth tokens directly. Fall back to the
-// legacy Convex-issued token for older local scripts during the transition.
+// These Hono endpoints validate GitHub OAuth tokens directly.
 func CloudAPIToken() (string, error) {
 	token, _, err := CloudAPITokenWithKind()
 	return token, err
@@ -202,58 +150,11 @@ func CloudAPIToken() (string, error) {
 // CloudAPITokenWithKind returns the token plus its source for callers that need
 // to decide whether it is safe/useful to inject into another process.
 func CloudAPITokenWithKind() (string, string, error) {
-	if token := cloudAPIKeyFromEnv(); token != "" {
-		return token, "api_key", nil
-	}
-	if token, err := storedAPIKey(); err == nil && token != "" {
-		return token, "api_key", nil
-	}
 	if token, err := GitHubAccessToken(); err == nil {
 		return token, "github", nil
-	}
-	token, err := BearerToken()
-	if err != nil {
+	} else {
 		return "", "", err
 	}
-	return token, "cloud", nil
-}
-
-func storedAPIKey() (string, error) {
-	creds, err := LoadCloudCredentials()
-	if err != nil {
-		return "", err
-	}
-	if creds == nil {
-		return "", nil
-	}
-	return strings.TrimSpace(creds.APIKey), nil
-}
-
-func cloudAPIKeyFromEnv() string {
-	if token := strings.TrimSpace(os.Getenv("GX_API_KEY")); token != "" {
-		return token
-	}
-	return ""
-}
-
-func bearerTokenError() error {
-	return fmt.Errorf("not logged in to gx cloud: run `gx auth login`")
-}
-
-func validCliToken(token string) bool {
-	token = strings.TrimSpace(token)
-	if !strings.HasPrefix(token, "gx_") {
-		return false
-	}
-	rest := strings.TrimPrefix(token, "gx_")
-	if len(rest) < 20 {
-		return false
-	}
-	switch token {
-	case "gx_baked", "gx_test_token", "gx_saved":
-		return false
-	}
-	return true
 }
 
 func writeJSONFile(path string, v any, mode os.FileMode) error {

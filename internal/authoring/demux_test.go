@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/structural"
 	"github.com/satoricorp/gx/internal/vcs"
-	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
 )
 
 func TestGroupFilesPairsSourceAndTests(t *testing.T) {
@@ -795,11 +795,9 @@ func TestDemuxReviewerFromEnvUsesGXCloudAsFallbackAfterUserKey(t *testing.T) {
 	t.Setenv("GX_OPENAI_API_KEY", "")
 	t.Setenv("GX_OPENAI_BASE_URL", "")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
-		Token:             "gx_demuxabcdefghijklmnopqrstuvwxyz",
 		GitHubAccessToken: "gho_demux",
 		UserID:            "demux-user",
 		Login:             "demux",
-		SessionID:         "demux-session",
 		MachineID:         "demux-machine",
 		ObtainedAt:        time.Now(),
 	}); err != nil {
@@ -850,11 +848,9 @@ func TestDemuxReviewerFromEnvUsesGXCloudOpenAIProxy(t *testing.T) {
 	t.Setenv("GX_OPENAI_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
-		Token:             "gx_demuxabcdefghijklmnopqrstuvwxyz",
 		GitHubAccessToken: "gho_demux",
 		UserID:            "demux-user",
 		Login:             "demux",
-		SessionID:         "demux-session",
 		MachineID:         "demux-machine",
 		ObtainedAt:        time.Now(),
 	}); err != nil {

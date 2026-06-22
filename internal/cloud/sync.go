@@ -68,8 +68,7 @@ func (c *Client) UploadReviewArtifact(ctx context.Context, artifact reviewbundle
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "gx/"+version.Current())
 
-	// gx-cloud expects Authorization: Bearer <gx_cli_token> (Convex-issued), not the GitHub device-flow token.
-	token, err := BearerToken()
+	token, err := CloudAPIToken()
 	if err != nil {
 		return reviewbundle.Artifact{}, err
 	}

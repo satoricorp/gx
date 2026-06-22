@@ -130,7 +130,6 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
     "GX_OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "GX_UPLOAD_TOKEN",
-    "GX_API_KEY",
     "AWS_SECRET_ACCESS_KEY",
   ];
   for (const name of names) {

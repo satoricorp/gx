@@ -69,22 +69,20 @@ Cursor command or Claude Desktop JSON. The snippets point MCP at:
 
 MCP is stdio-only. Cursor or Claude launches the server when it needs a tool
 call; the menu-bar app does not run a local HTTP MCP daemon. Cloud review context
-uses `gx auth login` credentials. For API-key auth:
+uses `gx auth login` credentials:
 
 ```bash
-gx auth login --api-key <gx-api-key>
+gx auth login
 ```
 
-When API-key auth is saved, the MCP Setup snippets include `GX_API_KEY=...`.
-Otherwise the snippets omit `GX_API_KEY` and the local `gx` CLI resolves its
-saved credentials directly.
+The MCP Setup snippets do not embed a token. The local `gx` CLI resolves saved
+GitHub auth from disk when MCP tools call cloud endpoints.
 
 For local menu-bar testing from the repo:
 
 ```bash
 cd mcp && bun install && bun run build && cd ..
 go build -o apps/menubar/bin/gx ./cmd/gx
-export GX_API_KEY=...
 export GX_BINARY="$PWD/apps/menubar/bin/gx"
 swift run --package-path apps/menubar
 ```
