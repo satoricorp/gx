@@ -69,7 +69,15 @@ Cursor command or Claude Desktop JSON. The snippets point MCP at:
 
 MCP is stdio-only. Cursor or Claude launches the server when it needs a tool
 call; the menu-bar app does not run a local HTTP MCP daemon. Cloud review context
-uses `gx auth login` credentials or `GX_API_KEY`.
+uses `gx auth login` credentials. For API-key auth:
+
+```bash
+gx auth login --api-key <gx-api-key>
+```
+
+When API-key auth is saved, the MCP Setup snippets include `GX_API_KEY=...`.
+Otherwise the snippets omit `GX_API_KEY` and the local `gx` CLI resolves its
+saved credentials directly.
 
 For local menu-bar testing from the repo:
 

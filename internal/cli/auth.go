@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -40,7 +41,7 @@ func buildAuthStatusJSON() (authStatusJSON, error) {
 			Login:         creds.Login,
 			AvatarURL:     creds.AvatarURL,
 			MachineName:   creds.MachineName,
-			AuthKind:      "cloud",
+			AuthKind:      authKindForCredentials(creds),
 			ConvexSiteURL: convexSiteURL,
 			CloudURL:      cloudURL,
 		}, nil
@@ -64,10 +65,20 @@ func newAuthCommand(ctx context.Context) *cobra.Command {
 
 func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 	var machineName string
+	var apiKey string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in to gx cloud with GitHub",
+		Short: "Log in to gx cloud with GitHub or an API key",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(apiKey) != "" {
+				creds, err := cloud.SaveAPIKeyCredentials(apiKey, machineName)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Logged in", creds.Login))
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", "api key"))
+				return nil
+			}
 			creds, err := cloud.Login(ctx, cloud.LoginOptions{
 				MachineName: machineName,
 				Out:         cmd.OutOrStdout(),
@@ -80,6 +91,7 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the gx console")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "Store a gx cloud API key instead of running GitHub device login")
 	return cmd
 }
 
@@ -119,7 +131,10 @@ func newAuthStatusCommand() *cobra.Command {
 			}
 			if creds != nil {
 				fmt.Fprintln(cmd.OutOrStdout(), section("Cloud auth"))
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", authKindForCredentials(creds)))
+				if strings.TrimSpace(creds.Login) != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
+				}
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine", creds.MachineName))
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine ID", creds.MachineID))
 				printEffectiveCloudURLs(cmd)
@@ -143,7 +158,7 @@ func newAuthTokenCommand() *cobra.Command {
 		Short:  "Print the resolved gx cloud bearer token",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := cloud.BearerToken()
+			token, kind, err := cloud.CloudAPITokenWithKind()
 			if err != nil {
 				return err
 			}
@@ -151,12 +166,28 @@ func newAuthTokenCommand() *cobra.Command {
 			enc.SetIndent("", "  ")
 			return enc.Encode(authTokenJSON{
 				Token:    token,
-				AuthKind: "cloud",
+				AuthKind: kind,
 				CloudURL: cloud.CloudURL(),
 			})
 		},
 	}
 	return cmd
+}
+
+func authKindForCredentials(creds *cloud.CloudCredentials) string {
+	if creds == nil {
+		return "none"
+	}
+	if strings.TrimSpace(creds.APIKey) != "" {
+		return "api_key"
+	}
+	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
+		return "github"
+	}
+	if strings.TrimSpace(creds.Token) != "" {
+		return "cloud"
+	}
+	return "none"
 }
 
 func printEffectiveCloudURLs(cmd *cobra.Command) {

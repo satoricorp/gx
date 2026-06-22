@@ -58,7 +58,7 @@ function resolveCwd(raw?: string) {
   return cwd;
 }
 
-function commandEnv() {
+export function commandEnvironment() {
   const env = { ...process.env };
   env.GX_REVIEW_AI = "1";
   const pathEntries = [
@@ -76,7 +76,7 @@ function commandEnv() {
 
 export function runGx(args: string[], options: GxRunOptions = {}): Promise<GxRunResult> {
   const cwd = resolveCwd(options.cwd);
-  const env = commandEnv();
+  const env = commandEnvironment();
   const binary = resolveGxBinary();
   const sessionIds = [...(options.sessionIds || [])];
   if (options.sessionId) {

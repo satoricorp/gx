@@ -9,6 +9,10 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 3. `gx_publish` to publish accepted stacks.
 4. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, and current code changes.
 
+If a repository is not initialized for GX, MCP runs `gx init` non-interactively
+before repository tools continue. It uses Git identity when available and falls
+back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
+
 ## Tools
 
 | Tool | CLI | Purpose |
@@ -56,7 +60,13 @@ bun run build
 Register stdio MCP (example):
 
 ```bash
-cursor mcp add gx -- env GX_API_KEY=$GX_API_KEY GX_BINARY=$HOME/.local/bin/gx /Applications/GX.app/Contents/Resources/bin/gx-mcp
+cursor mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx /Applications/GX.app/Contents/Resources/bin/gx-mcp
+```
+
+For API-key auth, save it once and use the menu-bar MCP Setup snippets:
+
+```bash
+gx auth login --api-key <gx-api-key>
 ```
 
 Development stdio:
@@ -88,6 +98,7 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | `GX_MCP_WORKSPACE_ROOT` | Override the root directory for MCP session workspaces |
 | `GX_CLOUD_URL` | GX cloud API base URL for review and compose AI fallback |
 | `GX_API_KEY` | Optional API key for GX cloud HTTP calls made by the local `gx` CLI |
+| `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |
 | `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 
 Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Without `GX_API_KEY`, cloud calls use credentials from `gx auth login` when available.

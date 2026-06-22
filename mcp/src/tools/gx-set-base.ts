@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
 import { formatError, formatJsonResult, runGxJson } from "../gx";
+import { ensureGxInitialized } from "../session-workspace";
 
 type BaseResult = {
   DefaultBranch?: unknown;
@@ -25,6 +26,7 @@ export const metadata: ToolMetadata = {
 
 export default async function gxSetBase(params: InferSchema<typeof schema>) {
   try {
+    await ensureGxInitialized(params.cwd);
     const current = await runGxJson(["base", "--json"], { cwd: params.cwd });
     const branch = defaultBranchFromBase(current.json);
     if (!branch) {
