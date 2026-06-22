@@ -1400,31 +1400,6 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	}
 }
 
-func TestAuthLoginAcceptsAPIKey(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
-	root := NewRoot(context.Background())
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"auth", "login", "--api-key", "gx_api_secret", "--name", "mcp-test"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("root.Execute() error = %v", err)
-	}
-
-	creds, err := cloud.LoadCloudCredentials()
-	if err != nil {
-		t.Fatalf("LoadCloudCredentials() error = %v", err)
-	}
-	if creds == nil || creds.APIKey != "gx_api_secret" || creds.Login != "api-key" || creds.MachineName != "mcp-test" {
-		t.Fatalf("saved credentials = %+v", creds)
-	}
-	if text := out.String(); !strings.Contains(text, "Auth") || !strings.Contains(text, "api key") {
-		t.Fatalf("auth login output missing api key confirmation:\n%s", text)
-	}
-}
-
 func TestOpsCommandPrintsCompactMenu(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	root := NewRoot(context.Background())

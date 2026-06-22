@@ -25,7 +25,6 @@ type credentialsFile struct {
 // CloudCredentials holds gx cloud CLI session state.
 type CloudCredentials struct {
 	Token             string    `json:"token"`
-	APIKey            string    `json:"api_key,omitempty"`
 	GitHubAccessToken string    `json:"github_access_token,omitempty"`
 	UserID            string    `json:"user_id"`
 	Login             string    `json:"login"`
@@ -112,37 +111,6 @@ func SaveCloudCredentials(creds CloudCredentials) error {
 	return writeJSONFile(path, file, 0o600)
 }
 
-// SaveAPIKeyCredentials persists a gx-cloud API key for non-interactive clients
-// such as MCP stdio servers launched by desktop apps.
-func SaveAPIKeyCredentials(apiKey, machineName string) (CloudCredentials, error) {
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return CloudCredentials{}, fmt.Errorf("api key is required")
-	}
-	machineID, err := DefaultMachineID()
-	if err != nil {
-		return CloudCredentials{}, err
-	}
-	machineName = strings.TrimSpace(machineName)
-	if machineName == "" {
-		machineName, _ = os.Hostname()
-	}
-	now := time.Now().UTC()
-	creds := CloudCredentials{
-		APIKey:      apiKey,
-		UserID:      "api-key",
-		Login:       "api-key",
-		SessionID:   "api-key",
-		MachineID:   machineID,
-		MachineName: machineName,
-		ObtainedAt:  now,
-	}
-	if err := SaveCloudCredentials(creds); err != nil {
-		return CloudCredentials{}, err
-	}
-	return creds, nil
-}
-
 // ClearCloudCredentials removes the cloud section from credentials.json.
 func ClearCloudCredentials() error {
 	path, err := credentialsPath()
@@ -202,12 +170,6 @@ func CloudAPIToken() (string, error) {
 // CloudAPITokenWithKind returns the token plus its source for callers that need
 // to decide whether it is safe/useful to inject into another process.
 func CloudAPITokenWithKind() (string, string, error) {
-	if token := cloudAPIKeyFromEnv(); token != "" {
-		return token, "api_key", nil
-	}
-	if token, err := storedAPIKey(); err == nil && token != "" {
-		return token, "api_key", nil
-	}
 	if token, err := GitHubAccessToken(); err == nil {
 		return token, "github", nil
 	}
@@ -216,24 +178,6 @@ func CloudAPITokenWithKind() (string, string, error) {
 		return "", "", err
 	}
 	return token, "cloud", nil
-}
-
-func storedAPIKey() (string, error) {
-	creds, err := LoadCloudCredentials()
-	if err != nil {
-		return "", err
-	}
-	if creds == nil {
-		return "", nil
-	}
-	return strings.TrimSpace(creds.APIKey), nil
-}
-
-func cloudAPIKeyFromEnv() string {
-	if token := strings.TrimSpace(os.Getenv("GX_API_KEY")); token != "" {
-		return token
-	}
-	return ""
 }
 
 func bearerTokenError() error {

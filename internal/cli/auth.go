@@ -35,13 +35,13 @@ func buildAuthStatusJSON() (authStatusJSON, error) {
 	if err != nil {
 		return authStatusJSON{}, err
 	}
-	if creds != nil {
+	if kind := authKindForCredentials(creds); kind != "none" {
 		return authStatusJSON{
 			LoggedIn:      true,
 			Login:         creds.Login,
 			AvatarURL:     creds.AvatarURL,
 			MachineName:   creds.MachineName,
-			AuthKind:      authKindForCredentials(creds),
+			AuthKind:      kind,
 			ConvexSiteURL: convexSiteURL,
 			CloudURL:      cloudURL,
 		}, nil
@@ -65,20 +65,10 @@ func newAuthCommand(ctx context.Context) *cobra.Command {
 
 func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 	var machineName string
-	var apiKey string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in to gx cloud with GitHub or an API key",
+		Short: "Log in to gx cloud with GitHub",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(apiKey) != "" {
-				creds, err := cloud.SaveAPIKeyCredentials(apiKey, machineName)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Logged in", creds.Login))
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", "api key"))
-				return nil
-			}
 			creds, err := cloud.Login(ctx, cloud.LoginOptions{
 				MachineName: machineName,
 				Out:         cmd.OutOrStdout(),
@@ -91,7 +81,6 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the gx console")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "Store a gx cloud API key instead of running GitHub device login")
 	return cmd
 }
 
@@ -129,9 +118,10 @@ func newAuthStatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if creds != nil {
+			kind := authKindForCredentials(creds)
+			if kind != "none" {
 				fmt.Fprintln(cmd.OutOrStdout(), section("Cloud auth"))
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", authKindForCredentials(creds)))
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", kind))
 				if strings.TrimSpace(creds.Login) != "" {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
 				}
@@ -177,9 +167,6 @@ func newAuthTokenCommand() *cobra.Command {
 func authKindForCredentials(creds *cloud.CloudCredentials) string {
 	if creds == nil {
 		return "none"
-	}
-	if strings.TrimSpace(creds.APIKey) != "" {
-		return "api_key"
 	}
 	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
 		return "github"
