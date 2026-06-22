@@ -1,0 +1,311 @@
+{
+  "version": 1,
+  "description": "Seed URLs and review notes for the GX review knowledge corpus. Prefer primary or official sources over summaries.",
+  "documents": [
+    {
+      "id": "google-review-standard",
+      "title": "Google Engineering Practices: The Standard of Code Review",
+      "url": "https://google.github.io/eng-practices/review/reviewer/standard.html",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["approval-standard", "code-health", "reviewer-role"],
+      "seed_notes": "Use when deciding whether a finding should block merge or whether the change improves overall code health enough to approve."
+    },
+    {
+      "id": "google-review-looking-for",
+      "title": "Google Engineering Practices: What to Look for in a Code Review",
+      "url": "https://google.github.io/eng-practices/review/reviewer/looking-for.html",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["design", "functionality", "complexity", "tests", "naming", "comments", "documentation"],
+      "seed_notes": "Use as the primary universal checklist for design, behavior, complexity, tests, naming, comments, style, consistency, and documentation."
+    },
+    {
+      "id": "google-small-cls",
+      "title": "Google Engineering Practices: Small CLs",
+      "url": "https://google.github.io/eng-practices/review/developer/small-cls.html",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["change-size", "reviewability", "scope"],
+      "seed_notes": "Use when PR size or unrelated edits make a review less reliable."
+    },
+    {
+      "id": "microsoft-code-reviews",
+      "title": "Microsoft Engineering Fundamentals Playbook: Code Reviews",
+      "url": "https://microsoft.github.io/code-with-engineering-playbook/code-reviews/",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["human-review", "automation", "team-process"],
+      "seed_notes": "Use for the split between automated checks and human review of architecture, correctness, maintainability, tests, business logic, and team-specific rules."
+    },
+    {
+      "id": "microsoft-reviewer-guidance",
+      "title": "Microsoft Engineering Fundamentals Playbook: Reviewer Guidance",
+      "url": "https://microsoft.github.io/code-with-engineering-playbook/code-reviews/process-guidance/reviewer-guidance/",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["reviewer-role", "checklist", "feedback-quality"],
+      "seed_notes": "Use for concrete reviewer behavior and checklist-oriented review prompts."
+    },
+    {
+      "id": "gitlab-code-review",
+      "title": "GitLab Code Review Guidelines",
+      "url": "https://docs.gitlab.com/development/code_review/",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["maintainability", "security", "domain-review", "merge-request"],
+      "seed_notes": "Use for domain ownership, category-specific reviewers, security/database/frontend specialists, self-review, and technical-impact review."
+    },
+    {
+      "id": "mozilla-reviewer-checklist",
+      "title": "Mozilla Firefox Reviewer Checklist",
+      "url": "https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html",
+      "category": "core-process",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "review_tags": ["correctness", "security", "privacy", "performance", "threading", "resources", "accessibility"],
+      "seed_notes": "Use as a practical checklist for correctness, tests, style, security, privacy, resource leaks, performance, threading, compatibility, docs, and accessibility."
+    },
+    {
+      "id": "nist-ssdf",
+      "title": "NIST SP 800-218 Secure Software Development Framework",
+      "url": "https://csrc.nist.gov/pubs/sp/800/218/final",
+      "category": "security",
+      "authority": "standard",
+      "evidence_level": "E1",
+      "risk_tags": ["secure-development", "code-review", "triage"],
+      "review_tags": ["security-review", "secure-coding-standards"],
+      "seed_notes": "Use for secure-development process framing, especially PW.7 code review or code analysis based on secure coding standards with discovered issues recorded and triaged."
+    },
+    {
+      "id": "owasp-asvs",
+      "title": "OWASP Application Security Verification Standard",
+      "url": "https://owasp.org/www-project-application-security-verification-standard/",
+      "category": "security",
+      "authority": "standard",
+      "evidence_level": "E1",
+      "risk_tags": ["web-security", "api-security", "verification"],
+      "review_tags": ["authn", "authz", "validation", "session", "crypto", "logging"],
+      "seed_notes": "Use for web and API security requirement mapping and stable identifiers for security review findings."
+    },
+    {
+      "id": "owasp-cheat-sheets",
+      "title": "OWASP Cheat Sheet Series",
+      "url": "https://cheatsheetseries.owasp.org/index.html",
+      "category": "security",
+      "authority": "standard",
+      "evidence_level": "E1",
+      "risk_tags": ["application-security", "secure-coding"],
+      "review_tags": ["validation", "authz", "logging", "crypto", "secrets"],
+      "seed_notes": "Use for implementation-level secure coding questions when reviewing specific security-sensitive code paths."
+    },
+    {
+      "id": "openssf-scorecard",
+      "title": "OpenSSF Scorecard",
+      "url": "https://scorecard.dev/",
+      "category": "supply-chain",
+      "authority": "standard",
+      "evidence_level": "E1",
+      "risk_tags": ["supply-chain", "repository-health", "dependencies", "ci"],
+      "review_tags": ["branch-protection", "dependency-update", "token-permissions", "signed-releases"],
+      "seed_notes": "Use for repository-level supply-chain controls: branch protection, CI checks, dependency update hygiene, token permissions, signed releases, fuzzing, and security policy."
+    },
+    {
+      "id": "slsa",
+      "title": "SLSA Supply-chain Levels for Software Artifacts",
+      "url": "https://slsa.dev/",
+      "category": "supply-chain",
+      "authority": "standard",
+      "evidence_level": "E1",
+      "risk_tags": ["build-provenance", "release-integrity", "tampering"],
+      "review_tags": ["build", "release", "provenance", "package-publishing"],
+      "seed_notes": "Use for build and release provenance review, especially package publishing and CI/CD integrity changes."
+    },
+    {
+      "id": "google-typescript-style",
+      "title": "Google TypeScript Style Guide",
+      "url": "https://google.github.io/styleguide/tsguide.html",
+      "category": "language",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "languages": ["typescript"],
+      "review_tags": ["type-safety", "modules", "imports", "naming", "api-shape"],
+      "seed_notes": "Use for TypeScript style, module boundaries, import/export guidance, language-feature choices, naming, and API shape."
+    },
+    {
+      "id": "typescript-tsconfig",
+      "title": "TypeScript TSConfig Reference",
+      "url": "https://www.typescriptlang.org/tsconfig/",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["typescript"],
+      "review_tags": ["strict", "strict-null-checks", "compiler-options", "type-safety"],
+      "seed_notes": "Use for compiler strictness, nullability, module semantics, and unsafe type-system configuration changes."
+    },
+    {
+      "id": "typescript-eslint-typed-linting",
+      "title": "typescript-eslint Typed Linting",
+      "url": "https://typescript-eslint.io/getting-started/typed-linting/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["typescript"],
+      "review_tags": ["typed-linting", "eslint", "type-aware-rules"],
+      "seed_notes": "Use for deciding when type-aware linting should backstop human review and when its performance cost matters."
+    },
+    {
+      "id": "pep8",
+      "title": "PEP 8 Style Guide for Python Code",
+      "url": "https://peps.python.org/pep-0008/",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["python"],
+      "review_tags": ["style", "readability", "naming"],
+      "seed_notes": "Use as baseline Python readability and style guidance, while leaving mechanical formatting to tools."
+    },
+    {
+      "id": "google-python-style",
+      "title": "Google Python Style Guide",
+      "url": "https://google.github.io/styleguide/pyguide.html",
+      "category": "language",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "languages": ["python"],
+      "review_tags": ["typing", "imports", "exceptions", "docstrings", "tests"],
+      "seed_notes": "Use for larger-project Python conventions around linting, imports, exceptions, typing, docstrings, and tests."
+    },
+    {
+      "id": "mypy",
+      "title": "mypy Documentation",
+      "url": "https://mypy.readthedocs.io/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["python"],
+      "review_tags": ["typing", "static-analysis", "public-api"],
+      "seed_notes": "Use for Python static typing review, especially public function boundaries and complex data structures."
+    },
+    {
+      "id": "ruff",
+      "title": "Ruff Documentation",
+      "url": "https://docs.astral.sh/ruff/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["python"],
+      "review_tags": ["lint", "format", "automation"],
+      "seed_notes": "Use for automated Python linting/formatting guidance so humans focus on behavior and design."
+    },
+    {
+      "id": "effective-go",
+      "title": "Effective Go",
+      "url": "https://go.dev/doc/effective_go",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["go"],
+      "review_tags": ["idioms", "naming", "formatting", "errors", "concurrency"],
+      "seed_notes": "Use for idiomatic Go, naming, formatting, error handling, initialization, methods, interfaces, and concurrency basics."
+    },
+    {
+      "id": "go-code-review-comments",
+      "title": "Go Code Review Comments",
+      "url": "https://go.dev/wiki/CodeReviewComments",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["go"],
+      "review_tags": ["errors", "context", "goroutines", "interfaces", "comments", "initialisms"],
+      "seed_notes": "Use as the directly reusable Go review checklist, especially common comments that are easy to miss in human review."
+    },
+    {
+      "id": "google-go-style",
+      "title": "Google Go Style Guide",
+      "url": "https://google.github.io/styleguide/go/",
+      "category": "language",
+      "authority": "large-scale-practice",
+      "evidence_level": "E2",
+      "languages": ["go"],
+      "review_tags": ["readability", "style", "maintainability"],
+      "seed_notes": "Use for organization-scale Go readability and maintainability conventions."
+    },
+    {
+      "id": "govulncheck",
+      "title": "govulncheck",
+      "url": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["go"],
+      "risk_tags": ["dependency-vulnerability"],
+      "review_tags": ["dependencies", "vulnerable-functions", "go-modules"],
+      "seed_notes": "Use for Go dependency vulnerability review, especially when vulnerable code is transitively reachable."
+    },
+    {
+      "id": "rust-api-guidelines",
+      "title": "Rust API Guidelines",
+      "url": "https://rust-lang.github.io/api-guidelines/about.html",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["rust"],
+      "review_tags": ["api-design", "naming", "traits", "errors", "documentation"],
+      "seed_notes": "Use for Rust public API review: naming, interoperability, documentation, predictability, type safety, dependability, debugability, and future proofing."
+    },
+    {
+      "id": "rustonomicon",
+      "title": "The Rustonomicon",
+      "url": "https://doc.rust-lang.org/nomicon/",
+      "category": "language",
+      "authority": "language-doc",
+      "evidence_level": "E1",
+      "languages": ["rust"],
+      "risk_tags": ["unsafe", "memory-safety", "ffi"],
+      "review_tags": ["unsafe", "invariants", "aliasing", "lifetimes", "ffi"],
+      "seed_notes": "Use for unsafe Rust review, especially invariants the compiler cannot verify."
+    },
+    {
+      "id": "clippy",
+      "title": "Clippy Documentation",
+      "url": "https://doc.rust-lang.org/clippy/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["rust"],
+      "review_tags": ["lint", "correctness", "style", "complexity", "performance"],
+      "seed_notes": "Use for Rust lint-backed review and deciding which issues should be automated."
+    },
+    {
+      "id": "miri",
+      "title": "Miri",
+      "url": "https://github.com/rust-lang/miri/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["rust"],
+      "risk_tags": ["undefined-behavior", "unsafe", "data-races"],
+      "review_tags": ["miri", "unsafe-tests", "ffi", "memory-safety"],
+      "seed_notes": "Use for unsafe-heavy Rust where tests can be run under Miri to detect undefined behavior risks."
+    },
+    {
+      "id": "rustsec",
+      "title": "RustSec Advisory Database",
+      "url": "https://rustsec.org/",
+      "category": "tooling",
+      "authority": "tool-backed-convention",
+      "evidence_level": "E4",
+      "languages": ["rust"],
+      "risk_tags": ["dependency-vulnerability"],
+      "review_tags": ["cargo-audit", "cargo-deny", "advisories"],
+      "seed_notes": "Use for Rust dependency vulnerability review and Cargo.lock audit expectations."
+    }
+  ]
+}
