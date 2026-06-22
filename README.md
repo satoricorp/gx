@@ -290,6 +290,39 @@ After `gx publish`, gx uploads the pushed change, changed files, linked sessions
 responses, token usage, and the GitHub PR URL when available. When the cloud API returns
 a review URL, `gx publish` prints it.
 
+### Review steering
+
+Add a root `REVIEW.md` to steer code review. The file is plain Markdown so it
+stays compatible with tools that paste it verbatim into review agents.
+
+GX additionally extracts URLs and reviewer model hints from the Markdown. URL
+contents are fetched and summarized into bounded review context. Normal
+`gx review` uses the policy text and references with the configured default
+reviewer; `gx review --deep` may also fan out to supported model reviewers named
+in `REVIEW.md`. GitHub PR review comments use `REVIEW.md` from the PR head when
+available, falling back to the default branch.
+
+Example:
+
+```markdown
+# REVIEW.md
+
+## Severity
+
+Important means behavior bugs, data leaks, authz mistakes, unsafe migrations,
+or rollback risks. Style and naming are Nit at most.
+
+## Review references
+
+Use https://google.github.io/eng-practices/review/reviewer/looking-for.html
+as review guidance.
+
+## Reviewer models
+
+Use gpt-5.4 for correctness review.
+Use claude-sonnet-4-6 as a dissent reviewer.
+```
+
 ### Semantic transcript indexing
 
 Semantic indexing is opt-in because it sends linked session transcript chunks to
