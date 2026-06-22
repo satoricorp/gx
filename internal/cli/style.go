@@ -113,7 +113,7 @@ func printRootIntro(out io.Writer) {
 
 func rootAuthStatusLine() string {
 	creds, err := cloud.LoadCloudCredentials()
-	if err == nil && creds != nil && strings.TrimSpace(creds.Login) != "" {
+	if err == nil && authKindForCredentials(creds) != "none" && strings.TrimSpace(creds.Login) != "" {
 		return success("●") + " " + value("Signed in as "+strings.TrimSpace(creds.Login))
 	}
 	return danger("●") + " " + muted("Not signed in") + "  " + logoText("gx auth login")

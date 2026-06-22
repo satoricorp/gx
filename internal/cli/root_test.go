@@ -1377,6 +1377,31 @@ func TestRootHelpShowsSignedInUser(t *testing.T) {
 	}
 }
 
+func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GX_HOME", t.TempDir())
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "api-key", ObtainedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	root := NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--help"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute() error = %v", err)
+	}
+
+	text := out.String()
+	if strings.Contains(text, "Signed in as api-key") {
+		t.Fatalf("root help showed stale legacy login:\n%s", text)
+	}
+	if !strings.Contains(text, "Not signed in  gx auth login") {
+		t.Fatalf("root help missing signed-out auth line:\n%s", text)
+	}
+}
+
 func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GX_HOME", t.TempDir())
