@@ -365,8 +365,8 @@ VERSION="1.2.3"
 ```
 
 `GX_CLOUD_URL` is the deployed GX API origin. The CLI appends API paths such as
-`/v1/publish`; auth uses `CONVEX_SITE_URL` separately (`/cx/auth/complete`,
-`/cx/auth/revoke`). `GX_CLOUD_URL` should not point at the Convex `.site` host.
+`/v1/publish`; auth uses `CONVEX_SITE_URL` separately (`/cx/auth/complete`).
+`GX_CLOUD_URL` should not point at the Convex `.site` host.
 
 Only the GitHub OAuth client ID is embedded in the binary — never the client secret.
 

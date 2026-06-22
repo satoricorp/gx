@@ -1359,7 +1359,7 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 func TestRootHelpShowsSignedInUser(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GX_HOME", t.TempDir())
-	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", Token: "gx_saved", ObtainedAt: time.Now()}); err != nil {
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 	root := NewRoot(context.Background())
@@ -1381,7 +1381,7 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GX_CLOUD_URL", "http://localhost:3200/gx/pr")
-	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", Token: "gx_saved", ObtainedAt: time.Now()}); err != nil {
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 	root := NewRoot(context.Background())

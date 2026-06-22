@@ -47,7 +47,7 @@ func (c *Client) RegisterPublish(ctx context.Context, registration PublishRegist
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	token, err := BearerToken()
+	token, err := CloudAPIToken()
 	if err != nil {
 		return PublishRegistrationResult{}, err
 	}

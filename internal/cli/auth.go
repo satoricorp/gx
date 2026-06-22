@@ -171,9 +171,6 @@ func authKindForCredentials(creds *cloud.CloudCredentials) string {
 	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
 		return "github"
 	}
-	if strings.TrimSpace(creds.Token) != "" {
-		return "cloud"
-	}
 	return "none"
 }
 

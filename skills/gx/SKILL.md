@@ -158,7 +158,7 @@ git rev-parse --abbrev-ref HEAD
 - `gx status` shows the current revision, message state, changed files, and next commands. It should point normal work toward `gx compose`.
 - `gx stacks` shows accepted GX stacks/revisions and what `gx publish` will publish. It is interactive for humans and exposes `--agent`, `--json`, and subcommands for programmatic workflows.
 - `gx publish` records pushes locally, exports stacked refs to GitHub, and registers publish/CI status in gx cloud (release builds include production endpoints; use `GX_CLOUD_URL` to override locally).
-- `gx auth login` authenticates with GitHub device flow and stores a Convex-issued CLI token for cloud upload.
+- `gx auth login` authenticates with GitHub device flow, stores the GitHub OAuth token locally, and syncs it to the console auth endpoint.
 - `gx sync` fetches and prunes the remote line of work.
 - Prefer GX checkout refs (`gx/<base>`/`gx/edit`) over creating ad hoc Git branches after JJ edit operations only in codegen/MCP or explicit repair flows.
 
