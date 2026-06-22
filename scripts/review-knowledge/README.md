@@ -20,14 +20,33 @@ model can cite or use as supporting context.
 Prefer primary or official sources:
 
 - standards: NIST SSDF, OWASP ASVS/Cheat Sheets, OpenSSF Scorecard, SLSA
+- secure-coding bodies: SEI CERT, MISRA, ISO/IEC secure-coding references
 - large-scale practice: Google, Microsoft, GitLab, Mozilla
-- language docs: TypeScript, Python, Go, Rust
+- language docs: TypeScript, JavaScript, Python, Go, Rust, Java, C, C++,
+  SQL, C#, shell, PHP, Kotlin, Swift
+- framework and vendor docs: Spring, .NET, PostgreSQL, MySQL, SQL Server,
+  dbt, Android, Apple platforms
 - tool docs: typescript-eslint, Ruff, mypy, Bandit, govulncheck, Clippy, Miri,
-  RustSec, cargo-deny
+  RustSec, cargo-deny, Error Prone, SpotBugs, Checkstyle, PMD, clang-tidy,
+  Cppcheck, SQLFluff, Roslyn analyzers, ShellCheck, PHPStan, detekt, SwiftLint
 
 Do not add blog posts or generated summaries as high-authority sources unless
 there is no primary source. If a seed note is opinionated, keep it in
 `seed_notes` and keep the `authority`/`evidence_level` honest.
+
+## Current Coverage
+
+The initial manifest covers core review process, web/security standards,
+supply-chain standards, TypeScript/JavaScript, Python, Go, and Rust. It now
+also includes broad public and enterprise review coverage for Java, C, C++,
+SQL, C#, shell, PHP, Kotlin, and Swift.
+
+Treat SQL and shell as cross-cutting review profiles as much as languages. A
+TypeScript, Python, Java, Go, Rust, or C# change can still need SQL review when
+it changes queries, migrations, indexes, data retention, permissions, or dbt
+models. Any language can need shell review when it changes CI, package scripts,
+deployment scripts, release automation, destructive commands, or operational
+runbooks.
 
 ## Environment
 
