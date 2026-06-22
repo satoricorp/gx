@@ -12,7 +12,7 @@ model can cite or use as supporting context.
 
 - `urls.json`: source URLs plus GX-specific seed notes from the initial review
   rules discussion.
-- `index_review_knowledge.py`: fetches, extracts, chunks, embeds, and upserts
+- `index_review_resources.py`: fetches, extracts, chunks, embeds, and upserts
   seed notes plus fetched source text into TurboPuffer.
 
 ## Source Policy
@@ -59,25 +59,25 @@ repository code chunks.
 Validate the manifest without network or API calls:
 
 ```bash
-python3 scripts/review-knowledge/index_review_knowledge.py --dry-run
+python3 scripts/review-knowledge/index_review_resources.py --dry-run
 ```
 
 Index only the curated seed notes from `urls.json`:
 
 ```bash
-python3 scripts/review-knowledge/index_review_knowledge.py --seed-only
+python3 scripts/review-knowledge/index_review_resources.py --seed-only
 ```
 
 Fetch source pages and index both seed notes and fetched source chunks:
 
 ```bash
-python3 scripts/review-knowledge/index_review_knowledge.py
+python3 scripts/review-knowledge/index_review_resources.py
 ```
 
 Smoke test a small subset:
 
 ```bash
-python3 scripts/review-knowledge/index_review_knowledge.py --limit 3 --seed-only
+python3 scripts/review-knowledge/index_review_resources.py --limit 3 --seed-only
 ```
 
 ## Retrieval Shape
