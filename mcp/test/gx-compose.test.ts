@@ -66,6 +66,8 @@ describe("gx_compose CLI invocation", () => {
     "QUAD_CODE_SESSION_ID",
     "MOCK_REPO_ROOT",
     "MOCK_GIT_COMMON_DIR",
+    "MOCK_JJ_ROOT_FAIL_ONCE",
+    "MOCK_JJ_ROOT_COUNT",
     "GX_MOCK_LOG",
   ];
 
@@ -82,6 +84,10 @@ describe("gx_compose CLI invocation", () => {
       mockScript,
       `#!/bin/sh
 printf 'gx|%s|%s|%s\\n' "$PWD" "$GX_SESSION_ID$GX_SESSION_IDS" "$*" >> "$GX_MOCK_LOG"
+if [ "$1" = init ]; then
+  echo "initialized"
+  exit 0
+fi
 if [ "$1" = compose ] && [ "$2" = --json ]; then
   echo '${JSON.stringify(composeFixture)}'
   exit 0
@@ -111,6 +117,13 @@ exit 1
       `#!/bin/sh
 printf 'jj|%s|%s\\n' "$PWD" "$*" >> "$GX_MOCK_LOG"
 if [ "$1" = root ]; then
+  if [ "$MOCK_JJ_ROOT_FAIL_ONCE" = "1" ]; then
+    if [ ! -f "$MOCK_JJ_ROOT_COUNT" ]; then
+      echo 1 > "$MOCK_JJ_ROOT_COUNT"
+      echo "No jj repo found" >&2
+      exit 1
+    fi
+  fi
   echo "$MOCK_REPO_ROOT"
   exit 0
 fi
@@ -138,6 +151,14 @@ if [ "$1" = rev-parse ] && [ "$2" = --git-common-dir ]; then
   echo "$MOCK_GIT_COMMON_DIR"
   exit 0
 fi
+if [ "$1" = config ] && [ "$2" = user.name ]; then
+  echo "Test User"
+  exit 0
+fi
+if [ "$1" = config ] && [ "$2" = user.email ]; then
+  echo "test@example.com"
+  exit 0
+fi
 echo "unexpected git args: $@" >&2
 exit 1
 `,
@@ -151,7 +172,9 @@ exit 1
     process.env.GX_MCP_WORKSPACE_ROOT = workspaceRoot;
     process.env.MOCK_REPO_ROOT = repoRoot;
     process.env.MOCK_GIT_COMMON_DIR = join(repoRoot, ".git");
+    process.env.MOCK_JJ_ROOT_COUNT = join(mockDir, "jj-root-count");
     process.env.GX_MOCK_LOG = callLog;
+    delete process.env.MOCK_JJ_ROOT_FAIL_ONCE;
     delete process.env.GX_SESSION_ID;
     delete process.env.GX_SESSION_IDS;
     delete process.env.CODEX_SESSION_ID;
@@ -218,6 +241,21 @@ exit 1
     expect(parsed.result.state).toBe("ready");
     const calls = await readFile(callLog, "utf8");
     expect(calls).not.toContain("compose apply demux-1");
+  });
+
+  test("auto-initializes a git repo before creating the session workspace", async () => {
+    process.env.MOCK_JJ_ROOT_FAIL_ONCE = "1";
+    const output = await gxCompose({ cwd: repoRoot, intent: "ship it", session_id: "codex-session-1" });
+    const parsed = JSON.parse(output);
+
+    expect(parsed.exit_code).toBe(0);
+    expect(parsed.session_workspace.autoInitialized).toBe(true);
+    expect(parsed.session_workspace.initOutput).toBe("initialized");
+
+    const calls = await readFile(callLog, "utf8");
+    const realRepoRoot = await realpath(repoRoot);
+    expect(calls).toContain(`gx|${realRepoRoot}||init --name Test User --email test@example.com`);
+    expect(calls).toContain("compose apply demux-1 --json");
   });
 
   test("propose refuses without a session id", async () => {

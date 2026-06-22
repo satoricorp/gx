@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
 import { formatError, formatResult, runGx } from "../gx";
+import { ensureGxInitialized } from "../session-workspace";
 
 const reviewScope = z.enum([
   "architecture",
@@ -48,6 +49,7 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
     args.push("--verbose");
   }
   try {
+    await ensureGxInitialized(params.cwd);
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: "review",
       nextActions: ["Use findings as context before composing or publishing changes."],

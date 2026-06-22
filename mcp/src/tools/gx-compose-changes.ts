@@ -51,7 +51,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_compose",
   description:
-    "Propose, review, or apply ordered GX revisions from a session-isolated JJ workspace via gx compose. action=propose layers working-copy changes into the pending compose proposal and auto-accepts apply-ready proposals by default; action=review-plan validates an LLM-authored plan; action=apply accepts a reviewed plan into stacks, appends to existing target bookmarks by default, and returns the checkout to the repo default branch. Requires a GX session id so concurrent MCP sessions do not share a dirty checkout. Run gx_sync before compose when remote merges may have landed. Use gx_review for local review.",
+    "Propose, review, or apply ordered GX revisions from a session-isolated JJ workspace via gx compose. If needed, MCP runs gx init before creating the workspace. action=propose layers working-copy changes into the pending compose proposal and auto-accepts apply-ready proposals by default; action=review-plan validates an LLM-authored plan; action=apply accepts a reviewed plan into stacks, appends to existing target bookmarks by default, and returns the checkout to the repo default branch. Requires a GX session id so concurrent MCP sessions do not share a dirty checkout. Run gx_sync before compose when remote merges may have landed. Use gx_review for local review.",
   annotations: {
     title: "GX Compose",
     readOnlyHint: false,

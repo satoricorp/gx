@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
 import { formatError, formatResult, runGx } from "../gx";
+import { ensureGxInitialized } from "../session-workspace";
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
@@ -25,6 +26,7 @@ export default async function gxPublish(params: InferSchema<typeof schema>) {
     args.push(params.stack);
   }
   try {
+    await ensureGxInitialized(params.cwd);
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: "publish",
       nextActions: ["Run gx_sync after GitHub merges land."],

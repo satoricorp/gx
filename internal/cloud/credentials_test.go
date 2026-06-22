@@ -48,6 +48,7 @@ func TestSaveLoadClearCloudCredentials(t *testing.T) {
 	obtained := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
 	want := CloudCredentials{
 		Token:             "gx_test_token",
+		APIKey:            "gx_api_key",
 		GitHubAccessToken: "gho_test_token",
 		UserID:            "user_1",
 		Login:             "joe",
@@ -76,7 +77,7 @@ func TestSaveLoadClearCloudCredentials(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected credentials")
 	}
-	if got.Token != want.Token || got.GitHubAccessToken != want.GitHubAccessToken || got.Login != want.Login || got.AvatarURL != want.AvatarURL || got.MachineID != want.MachineID {
+	if got.Token != want.Token || got.APIKey != want.APIKey || got.GitHubAccessToken != want.GitHubAccessToken || got.Login != want.Login || got.AvatarURL != want.AvatarURL || got.MachineID != want.MachineID {
 		t.Fatalf("LoadCloudCredentials() = %+v, want %+v", got, want)
 	}
 
@@ -176,6 +177,30 @@ func TestCloudAPITokenPrefersGitHubToken(t *testing.T) {
 	}
 }
 
+func TestSaveAPIKeyCredentialsAndCloudAPIToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_API_KEY", "")
+
+	creds, err := SaveAPIKeyCredentials(" gx_api_secret ", "test-machine")
+	if err != nil {
+		t.Fatalf("SaveAPIKeyCredentials() error = %v", err)
+	}
+	if creds.APIKey != "gx_api_secret" || creds.Login != "api-key" || creds.MachineName != "test-machine" {
+		t.Fatalf("saved api key credentials = %+v", creds)
+	}
+
+	token, kind, err := CloudAPITokenWithKind()
+	if err != nil {
+		t.Fatalf("CloudAPITokenWithKind() error = %v", err)
+	}
+	if token != "gx_api_secret" || kind != "api_key" {
+		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want api key", token, kind)
+	}
+}
+
 func TestCloudAPITokenPrefersGXAPIKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
@@ -192,6 +217,28 @@ func TestCloudAPITokenPrefersGXAPIKey(t *testing.T) {
 	}
 	if token != "api-key" {
 		t.Fatalf("CloudAPIToken() = %q, want GX API key", token)
+	}
+}
+
+func TestCloudAPITokenPrefersStoredAPIKeyOverGitHubToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "github-token")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_API_KEY", "")
+
+	if err := SaveCloudCredentials(CloudCredentials{
+		APIKey:            "stored-api-key",
+		GitHubAccessToken: "stored-github-token",
+	}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	token, kind, err := CloudAPITokenWithKind()
+	if err != nil {
+		t.Fatalf("CloudAPITokenWithKind() error = %v", err)
+	}
+	if token != "stored-api-key" || kind != "api_key" {
+		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want stored api key", token, kind)
 	}
 }
 

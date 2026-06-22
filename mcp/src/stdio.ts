@@ -22,6 +22,7 @@ type ToolModule = {
 
 const instructions = [
   "GX MCP exposes gx_sync, gx_compose, gx_accept, gx_publish, gx_review, gx_fix, and gx_set_base.",
+  "If a repo is not initialized for GX, MCP runs gx init non-interactively before repository tools continue.",
   "Run gx_sync before gx_compose when remote GitHub merges may have landed.",
   "Use gx_compose with action propose to run gx compose --json in a session-isolated workspace; ready proposals are accepted automatically by default.",
   "When compose returns warnings, repair hints, or proposal issues, revise the proposal with your LLM context and call gx_compose with action review-plan until ready.",

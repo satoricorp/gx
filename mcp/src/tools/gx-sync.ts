@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
 import { formatError, formatResult, runGx } from "../gx";
+import { ensureGxInitialized } from "../session-workspace";
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
@@ -29,6 +30,9 @@ export default async function gxSync(params: InferSchema<typeof schema>) {
     args.push(params.remote);
   }
   try {
+    if (!params.capture) {
+      await ensureGxInitialized(params.cwd);
+    }
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: params.capture ? "sync.capture" : "sync",
       nextActions: params.capture ? undefined : ["After sync succeeds, run gx_compose for changes or gx_publish for accepted stacks."],
