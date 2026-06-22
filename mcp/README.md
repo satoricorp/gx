@@ -101,4 +101,8 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |
 | `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 
+`gx_review` also reads a root `REVIEW.md` when present. The file is plain
+Markdown review steering; GX fetches URL references named in it, and `--deep`
+review can use supported model hints from the file.
+
 Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Without `GX_API_KEY`, cloud calls use credentials from `gx auth login` when available.
