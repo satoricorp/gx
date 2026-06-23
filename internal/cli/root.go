@@ -68,6 +68,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newAuthCommand(ctx),
 		newInitCommand(ctx, engine),
 		newCaptureCommand(ctx),
+		newPublishUploadCommand(ctx),
 		newBaseCommand(ctx, engine),
 		newDemoCommand(),
 		newComposeCommand(ctx, engine),
@@ -1524,16 +1525,17 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 }
 
 type currentStatus struct {
-	Repo          authoring.RepoInfo   `json:"repo"`
-	Stack         *authoring.StackInfo `json:"stack,omitempty"`
-	Refs          currentStatusRefs    `json:"refs"`
-	Current       authoring.ChangeInfo `json:"current"`
-	Parent        authoring.ChangeInfo `json:"parent"`
-	NeedsMessage  bool                 `json:"needs_message"`
-	Recorded      bool                 `json:"recorded"`
-	Files         []string             `json:"files"`
-	Next          []string             `json:"next"`
-	GitStatusNote string               `json:"git_status_note"`
+	Repo           authoring.RepoInfo      `json:"repo"`
+	Stack          *authoring.StackInfo    `json:"stack,omitempty"`
+	Refs           currentStatusRefs       `json:"refs"`
+	Current        authoring.ChangeInfo    `json:"current"`
+	Parent         authoring.ChangeInfo    `json:"parent"`
+	PublishUploads publication.QueueStatus `json:"publish_uploads"`
+	NeedsMessage   bool                    `json:"needs_message"`
+	Recorded       bool                    `json:"recorded"`
+	Files          []string                `json:"files"`
+	Next           []string                `json:"next"`
+	GitStatusNote  string                  `json:"git_status_note"`
 }
 
 type currentStatusRefs struct {
@@ -1590,17 +1592,19 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 		refs.GXStackRef = stack.Stack.BookmarkName
 		refs.GitPublishedRef = pointerString(stack.Stack.RemoteRef)
 	}
+	publishUploads, _ := publication.QueuedUploadStatus()
 	return currentStatus{
-		Repo:          stack.Repo,
-		Stack:         stack.Stack,
-		Refs:          refs,
-		Current:       current,
-		Parent:        parent,
-		NeedsMessage:  needsMessage,
-		Recorded:      recorded,
-		Files:         current.Files,
-		Next:          next,
-		GitStatusNote: "gx stores new changes in revisions, so `git status` may be clean.",
+		Repo:           stack.Repo,
+		Stack:          stack.Stack,
+		Refs:           refs,
+		Current:        current,
+		Parent:         parent,
+		PublishUploads: publishUploads,
+		NeedsMessage:   needsMessage,
+		Recorded:       recorded,
+		Files:          current.Files,
+		Next:           next,
+		GitStatusNote:  "gx stores new changes in revisions, so `git status` may be clean.",
 	}, nil
 }
 
@@ -1698,6 +1702,7 @@ func printCurrentStatusHuman(out io.Writer, status currentStatus) {
 	if refs.GitPublishedRef != "" {
 		fmt.Fprintf(out, "   %s %s\n", muted("Git published ref:"), valueText(refs.GitPublishedRef))
 	}
+	printPublishUploadStatus(out, status.PublishUploads)
 	if len(status.Files) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, section(fmt.Sprintf("Files (%d)", len(status.Files))))
@@ -1712,6 +1717,33 @@ func printCurrentStatusHuman(out io.Writer, status currentStatus) {
 	for _, next := range status.Next {
 		fmt.Fprintf(out, "  %s\n", command(next))
 	}
+}
+
+func printPublishUploadStatus(out io.Writer, status publication.QueueStatus) {
+	total := status.Pending + status.Uploading + status.Failed
+	if total == 0 {
+		return
+	}
+	parts := []string{}
+	if status.Pending > 0 {
+		parts = append(parts, fmt.Sprintf("%d pending", status.Pending))
+	}
+	if status.Uploading > 0 {
+		parts = append(parts, fmt.Sprintf("%d uploading", status.Uploading))
+	}
+	if status.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", status.Failed))
+	}
+	label := strings.Join(parts, ", ")
+	if status.UploadRunning {
+		label += " (worker running)"
+	}
+	if status.Failed > 0 && strings.TrimSpace(status.LastError) != "" {
+		fmt.Fprintf(out, "   %s %s\n", muted("GX context uploads:"), danger(label))
+		fmt.Fprintf(out, "   %s %s\n", muted("Upload error:"), status.LastError)
+		return
+	}
+	fmt.Fprintf(out, "   %s %s\n", muted("GX context uploads:"), valueText(label))
 }
 
 func currentStatusBaseStack(status currentStatus) string {
@@ -1745,6 +1777,14 @@ func printCurrentStatusAgent(out io.Writer, status currentStatus) {
 		status.Recorded,
 		len(status.Files),
 	)
+	if status.PublishUploads.Pending > 0 || status.PublishUploads.Failed > 0 || status.PublishUploads.Uploading > 0 {
+		fmt.Fprintf(out, "publish_uploads pending=%d uploading=%d failed=%d running=%t\n",
+			status.PublishUploads.Pending,
+			status.PublishUploads.Uploading,
+			status.PublishUploads.Failed,
+			status.PublishUploads.UploadRunning,
+		)
+	}
 	for _, file := range status.Files {
 		fmt.Fprintf(out, "file %s\n", quoteAgent(file))
 	}
@@ -2666,40 +2706,54 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 				return err
 			}
 
-			reviewPublication := publication.NewReviewPublication(publication.NewPublisher(client))
-
 			if publishAllRequested {
 				if len(args) > 0 {
 					return fmt.Errorf("gx publish --all does not accept a stack name")
 				}
-				results, err := reviewPublication.PublishAllStacks(ctx, engine, nil, authoring.PushOptions{Mode: mode})
+				prepared, err := engine.PrepareAllPublishes(ctx, nil, authoring.PushOptions{Mode: mode})
 				if err != nil {
 					return err
 				}
-				for _, result := range results.Stacks {
-					printPublishPush(out, result.Push)
-					printPublishReview(out, result.Review)
+				published := 0
+				for _, push := range prepared {
+					review, err := publication.EnqueuePush(ctx, push)
+					if err != nil {
+						return err
+					}
+					if err := engine.RecordPublish(ctx, push); err != nil {
+						return err
+					}
+					printPublishPush(out, push)
+					printPublishReview(out, review)
+					published++
 				}
-				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results.Stacks))))
+				if published > 0 {
+					startPublishUploadWorker(out)
+				}
+				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", published)))
 				return nil
 			}
 
-			var result publication.StackResult
+			var push authoring.PushResult
 			var err error
 			if len(args) > 0 {
-				push, pushErr := engine.PrepareNamedPublish(ctx, args[0], nil, authoring.PushOptions{Mode: mode})
-				if pushErr != nil {
-					return pushErr
-				}
-				result, err = reviewPublication.PublishPrepared(ctx, push, engine.RecordPublish)
+				push, err = engine.PrepareNamedPublish(ctx, args[0], nil, authoring.PushOptions{Mode: mode})
 			} else {
-				result, err = reviewPublication.PublishStack(ctx, engine, nil, authoring.PushOptions{Mode: mode})
+				push, err = engine.PreparePublish(ctx, nil, authoring.PushOptions{Mode: mode})
 			}
 			if err != nil {
 				return err
 			}
-			printPublishPush(out, result.Push)
-			printPublishReview(out, result.Review)
+			review, err := publication.EnqueuePush(ctx, push)
+			if err != nil {
+				return err
+			}
+			if err := engine.RecordPublish(ctx, push); err != nil {
+				return err
+			}
+			printPublishPush(out, push)
+			printPublishReview(out, review)
+			startPublishUploadWorker(out)
 			return nil
 		},
 	}
@@ -2792,6 +2846,16 @@ func highlightPublishRevisions(output string) string {
 }
 
 func printPublishReview(out io.Writer, result publication.Result) {
+	if result.Queued {
+		fmt.Fprintln(out, labelValue("GX context", "queued for background upload"))
+		if result.QueueID != "" {
+			fmt.Fprintln(out, labelValue("Upload ID", result.QueueID))
+		}
+		if result.ArtifactPath != "" {
+			fmt.Fprintln(out, labelValue("Local artifact", result.ArtifactPath))
+		}
+		return
+	}
 	if !result.Uploaded {
 		return
 	}
@@ -2872,11 +2936,83 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(out, labelValue("Cloud catch-up", fmt.Sprintf("%d bookmark(s) fetched from remote", summary.CaughtUp)))
 				}
 			}
+			if status, err := publication.QueuedUploadStatus(); err == nil && (status.Pending > 0 || status.Failed > 0) {
+				if err := drainPublishUploadOutbox(ctx, out, false, 20); err != nil {
+					fmt.Fprintln(out, labelWarningValue("GX context uploads", err.Error()))
+				}
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&captureOnly, "capture", false, "drain pending capture staging uploads")
 	return cmd
+}
+
+func newPublishUploadCommand(ctx context.Context) *cobra.Command {
+	var quiet bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:    "__gx-upload-outbox",
+		Short:  "Upload queued GX publish context",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return drainPublishUploadOutbox(ctx, cmd.OutOrStdout(), quiet, limit)
+		},
+	}
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress upload summary")
+	cmd.Flags().IntVar(&limit, "limit", 20, "maximum queued artifacts to upload")
+	return cmd
+}
+
+func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, limit int) error {
+	client := cloud.NewClient()
+	if client == nil {
+		return fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
+	}
+	result, err := publication.DrainQueuedUploads(ctx, client, limit)
+	if err != nil {
+		return err
+	}
+	if !quiet {
+		fmt.Fprintln(out, labelValue("GX context uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
+	}
+	return nil
+}
+
+func startPublishUploadWorker(out io.Writer) {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(out, labelWarningValue("GX context upload", "queued; could not find gx executable, run `gx sync` to upload"))
+		return
+	}
+	cmd := exec.Command(exe, "__gx-upload-outbox", "--quiet")
+	if logFile, err := publishUploadLogFile(); err == nil {
+		defer logFile.Close()
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	cmd.Env = os.Environ()
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(out, labelWarningValue("GX context upload", "queued; run `gx sync` to upload"))
+		return
+	}
+	if cmd.Process != nil {
+		_ = cmd.Process.Release()
+	}
+	fmt.Fprintln(out, labelValue("GX context upload", "background upload started"))
+}
+
+func publishUploadLogFile() (*os.File, error) {
+	dir, err := storage.DefaultDir()
+	if err != nil {
+		return nil, err
+	}
+	logDir := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(logDir, "publish-upload.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
 func newOpsCommand(ctx context.Context) *cobra.Command {

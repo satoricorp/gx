@@ -26,6 +26,9 @@ type SemanticIndexer interface {
 
 type Result struct {
 	Uploaded              bool
+	Queued                bool
+	QueueID               string
+	QueuePath             string
 	ReviewID              string
 	ReviewURL             string
 	IndexStatus           string

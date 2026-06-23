@@ -79,6 +79,49 @@ func TestPublishBundleSemanticErrorDoesNotBlockUpload(t *testing.T) {
 	}
 }
 
+func TestEnqueueArtifactQueuesAndDrainUploads(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+
+	result, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		GXVersion:     "test",
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
+		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
+	}))
+	if err != nil {
+		t.Fatalf("EnqueueArtifact() error = %v", err)
+	}
+	if !result.Queued || result.QueueID == "" || result.ArtifactPath == "" {
+		t.Fatalf("enqueue result = %#v, want queued artifact", result)
+	}
+
+	status, err := QueuedUploadStatus()
+	if err != nil {
+		t.Fatalf("QueuedUploadStatus() error = %v", err)
+	}
+	if status.Pending != 1 || status.Failed != 0 {
+		t.Fatalf("status = %#v, want one pending upload", status)
+	}
+
+	uploader := &fakeUploader{}
+	drain, err := DrainQueuedUploads(context.Background(), uploader, 10)
+	if err != nil {
+		t.Fatalf("DrainQueuedUploads() error = %v", err)
+	}
+	if drain.Uploaded != 1 || drain.Failed != 0 || !uploader.called {
+		t.Fatalf("drain = %#v uploader.called=%t, want one uploaded", drain, uploader.called)
+	}
+
+	status, err = QueuedUploadStatus()
+	if err != nil {
+		t.Fatalf("QueuedUploadStatus() after drain error = %v", err)
+	}
+	if status.Pending != 0 || status.Failed != 0 || status.Uploading != 0 {
+		t.Fatalf("status after drain = %#v, want empty outbox", status)
+	}
+}
+
 func TestPublishStackPreparesUploadsAndRecords(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	uploader := &fakeUploader{reviewURL: "http://gx.test/review/stack"}
