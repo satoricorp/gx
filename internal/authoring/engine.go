@@ -152,6 +152,10 @@ func (e *Engine) PreparePublish(ctx context.Context, args []string, opts PushOpt
 	return e.vcs.PreparePublish(ctx, args, opts)
 }
 
+func (e *Engine) PrepareNamedPublish(ctx context.Context, name string, args []string, opts PushOptions) (PushResult, error) {
+	return e.vcs.PrepareNamedPublish(ctx, name, args, opts)
+}
+
 func (e *Engine) PrepareAllPublishes(ctx context.Context, args []string, opts PushOptions) ([]PushResult, error) {
 	return e.vcs.PrepareAllPublishes(ctx, args, opts)
 }
