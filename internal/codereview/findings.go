@@ -52,12 +52,10 @@ func defaultRules() []Rule {
 	return []Rule{
 		ruleFunc{id: "tools.static-failure", scopes: []string{"testing", "maintainability", "dependencies", "security"}, evaluate: staticToolFailureFindings},
 		ruleFunc{id: "quality.ignored-results", scopes: []string{"maintainability", "testing", "architecture"}, evaluate: ignoredResultFindings},
-		ruleFunc{id: "architecture.missing-context", scopes: []string{"architecture", "onboarding"}, evaluate: oneFinding(missingContextFinding)},
 		ruleFunc{id: "architecture.domain-language-drift", scopes: []string{"architecture", "maintainability", "docs"}, evaluate: domainLanguageDriftFindings},
 		ruleFunc{id: "architecture.implementation-heavy-module", scopes: []string{"architecture", "maintainability", "testing"}, evaluate: implementationHeavyModuleFindings},
 		ruleFunc{id: "architecture.generic-package-name", scopes: []string{"architecture", "maintainability"}, evaluate: genericPackageNameFindings},
 		ruleFunc{id: "architecture.package-without-tests", scopes: []string{"architecture", "testing", "maintainability"}, evaluate: packageWithoutTestsFindings},
-		ruleFunc{id: "architecture.docs-without-adrs", scopes: []string{"architecture", "docs", "maintainability"}, evaluate: oneFinding(docsWithoutADRFinding)},
 		ruleFunc{id: "onboarding.missing-agents", scopes: []string{"onboarding", "maintainability"}, evaluate: oneFinding(missingAgentsFinding)},
 		ruleFunc{id: "docs.missing-readme", scopes: []string{"docs", "onboarding", "maintainability"}, evaluate: oneFinding(missingReadmeFinding)},
 		ruleFunc{id: "testing.no-tests", scopes: []string{"testing", "maintainability"}, evaluate: oneFinding(noTestsFinding)},
@@ -376,25 +374,6 @@ func strengthRank(strength string) int {
 	}
 }
 
-func missingContextFinding(facts RepoFacts) Finding {
-	if present(facts.Docs, "CONTEXT.md") {
-		return Finding{}
-	}
-	return Finding{
-		ID:      "architecture.missing-context",
-		Scopes:  []string{"architecture", "onboarding"},
-		Title:   "Name the domain language reviews should use",
-		Summary: "The repo has no `CONTEXT.md`, so architecture review can see files but cannot reliably name the domain Modules and Interfaces they represent.",
-		Benefit: "Improves review quality and onboarding by giving agents stable project nouns, invariants, and naming conventions to reuse.",
-		Evidence: []Evidence{
-			{Label: "File", Value: "`CONTEXT.md` is missing"},
-		},
-		Recommendation: "After the first useful review pass, add a short `CONTEXT.md` with the repo-specific nouns, invariants, and naming conventions GX should reuse.",
-		Strength:       "Speculative",
-		SourceIDs:      []string{"diataxis", "google-doc-style"},
-	}
-}
-
 func missingAgentsFinding(facts RepoFacts) Finding {
 	if present(facts.Docs, "AGENTS.md") {
 		return Finding{}
@@ -535,26 +514,6 @@ func packageWithoutTestsFindings(ctx ReviewContext) []Finding {
 	}}
 }
 
-func docsWithoutADRFinding(facts RepoFacts) Finding {
-	if !present(facts.Docs, "docs/") || hasADR(facts.Files) {
-		return Finding{}
-	}
-	return Finding{
-		ID:      "architecture.docs-without-adrs",
-		Scopes:  []string{"architecture", "docs", "maintainability"},
-		Title:   "Record the Module decisions GX should not relitigate",
-		Summary: "The repo has documentation, but no ADR-style files were detected, so future architecture review cannot distinguish open design questions from settled decisions.",
-		Benefit: "Reduces repeated review noise and makes future architecture advice more useful by preserving the reason behind accepted seams.",
-		Evidence: []Evidence{
-			{Label: "Docs", Value: "`docs/` is present"},
-			{Label: "ADR files", Value: "none detected under tracked files"},
-		},
-		Recommendation: "When you accept or reject a major Module seam, record the reason in a lightweight ADR under `docs/adr/` so GX can avoid repeating stale advice.",
-		Strength:       "Speculative",
-		SourceIDs:      []string{"diataxis", "google-eng-practices"},
-	}
-}
-
 func missingReadmeFinding(facts RepoFacts) Finding {
 	if present(facts.Docs, "README.md") {
 		return Finding{}
@@ -654,17 +613,6 @@ func jsDependencyLockFinding(facts RepoFacts) Finding {
 		Strength:       "Strong",
 		SourceIDs:      []string{"openssf-scorecard", "openssf-best-practices", "slsa"},
 	}
-}
-
-func hasADR(files []string) bool {
-	for _, file := range files {
-		lower := strings.ToLower(file)
-		base := filepath.Base(lower)
-		if strings.Contains(lower, "/adr/") || strings.HasPrefix(base, "adr-") || strings.HasPrefix(base, "adr_") {
-			return true
-		}
-	}
-	return false
 }
 
 func ignorablePackage(path string) bool {

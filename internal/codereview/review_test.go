@@ -38,8 +38,8 @@ func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
 	if got := strings.Join(report.BaselineScopes, ","); got != "dependencies,testing,maintainability" {
 		t.Fatalf("BaselineScopes = %q", got)
 	}
-	if !hasFinding(report.Findings, "architecture.missing-context") {
-		t.Fatalf("Findings = %#v, want missing context finding", report.Findings)
+	if hasFinding(report.Findings, "architecture.missing-context") {
+		t.Fatalf("Findings = %#v, did not expect missing context finding", report.Findings)
 	}
 }
 
@@ -425,7 +425,7 @@ func TestEvaluateFindingsUsesScopeAndBaselines(t *testing.T) {
 		}
 	}
 	if hasFinding(report.Findings, "architecture.missing-context") {
-		t.Fatalf("Findings = %#v, did not expect architecture finding for security scope", report.Findings)
+		t.Fatalf("Findings = %#v, did not expect missing context finding", report.Findings)
 	}
 }
 
@@ -519,7 +519,7 @@ func TestArchitecturePackageFindings(t *testing.T) {
 	}
 }
 
-func TestDocsWithoutADRFinding(t *testing.T) {
+func TestDocsWithoutADRsDoesNotCreateFinding(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "docs/overview.md", "# overview\n")
 
@@ -527,8 +527,8 @@ func TestDocsWithoutADRFinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if !hasFinding(report.Findings, "architecture.docs-without-adrs") {
-		t.Fatalf("Findings = %#v, want ADR finding", report.Findings)
+	if hasFinding(report.Findings, "architecture.docs-without-adrs") {
+		t.Fatalf("Findings = %#v, did not expect ADR finding", report.Findings)
 	}
 }
 

@@ -1555,9 +1555,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"## Recommendations",
-		"### 1.",
-		"**Why:**",
-		"**Do next:**",
+		"- No recommendations yet.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("gx review output missing %q in:\n%s", want, text)

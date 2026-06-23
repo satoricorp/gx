@@ -329,6 +329,18 @@ export GX_REVIEW_RESOURCES_TOP_K=8
 
 Set `GX_REVIEW_RESOURCES=0` to disable this retrieval for a review run.
 
+### Optional review context docs
+
+`gx review` reads local guidance files when they are present, but none are
+required and missing files do not create review findings:
+
+- `CONTEXT.md` can define the repo's product vocabulary, internal-only terms,
+  invariants, and naming conventions.
+- `REVIEW.md` can define repo-specific review policy, recurring risks, and
+  guidance that should shape review recommendations.
+- `docs/adr/` can record accepted architecture decisions that future reviews
+  should respect instead of relitigating.
+
 ### Local development overrides
 
 Copy `.env.example` to `.env` and fill in values. The justfile loads `.env`

@@ -144,13 +144,6 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 			Why:     "generic names can hide the concept callers should rely on at the Interface.",
 		})
 	}
-	if !present(facts.Docs, "CONTEXT.md") {
-		hints = append(hints, ReviewHint{
-			Kind:  "domain_vocabulary",
-			Title: "missing domain vocabulary",
-			Why:   "only mention this if missing vocabulary blocks a concrete Module or Interface recommendation.",
-		})
-	}
 	return hints
 }
 
