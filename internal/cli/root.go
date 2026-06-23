@@ -2636,97 +2636,70 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 			}
 			mode := authoring.PublishModeReviewAndGit
 
-			publishHook := func(result authoring.PushResult) error {
-				if strings.TrimSpace(result.Output) != "" {
-					fmt.Fprintln(out, highlightPublishRevisions(strings.TrimSpace(result.Output)))
-				}
-				if strings.TrimSpace(result.GXStackRef) != "" || result.Repo.BranchName != nil {
+			client := cloud.NewClient()
+			if client == nil {
+				publishHook := func(result authoring.PushResult) error {
+					printPublishPush(out, result)
 					branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
-					fmt.Fprintln(out, labelValue("Branch", branch))
-					if status := publishGitPushStatusText(result.GitPushStatus); status != "" {
-						fmt.Fprintln(out, labelStatus("GitHub", status))
-					}
-					if prStatus := publishGitHubPRStatusText(result.GitHubPRStatus); prStatus != "" {
-						if strings.HasPrefix(strings.ToLower(strings.TrimSpace(prStatus)), "warn:") {
-							fmt.Fprintln(out, labelWarningValue("GitHub PR", strings.TrimSpace(prStatus)))
-						} else {
-							fmt.Fprintln(out, labelStatus("GitHub PR", prStatus))
-						}
-					}
-					if result.GitHubPullRequestURL != nil && strings.TrimSpace(*result.GitHubPullRequestURL) != "" {
-						fmt.Fprintln(out, labelValue("GitHub PR", strings.TrimSpace(*result.GitHubPullRequestURL)))
-					}
-					if result.Repo.RemoteURL != nil {
-						if repoFull := githubRepoFullNameFromRemote(*result.Repo.RemoteURL); repoFull != "" {
-							fmt.Fprintln(out, labelValue("Actions", fmt.Sprintf("https://github.com/%s/actions", repoFull)))
-						}
-					}
-				}
-				branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
-				client := cloud.NewClient()
-				if client == nil {
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not sync GX publish status for branch %s: gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints. Local publish metadata was still recorded.", branch)))
+					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not upload GX review context for branch %s: gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints. Local publish metadata was still recorded.", branch)))
 					return nil
 				}
-				if result.Repo.RemoteURL == nil || strings.TrimSpace(*result.Repo.RemoteURL) == "" {
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not sync GX publish status for branch %s: missing GitHub remote URL. Local publish metadata was still recorded.", branch)))
-					return nil
-				}
-				if branch == "" {
-					fmt.Fprintln(out, labelWarningValue("Warning", "Could not sync GX publish status: missing branch name. Local publish metadata was still recorded."))
-					return nil
-				}
-				repoFull := cloud.RepoFullNameFromRemoteURL(*result.Repo.RemoteURL)
-				if repoFull == "" {
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not sync GX publish status for branch %s: non-GitHub remote %q. Local publish metadata was still recorded.", branch, *result.Repo.RemoteURL)))
-					return nil
-				}
-				title := publishRegistrationTitle(result)
-				remoteHead := result.HeadCommitID
-				registered, err := client.RegisterPublish(ctx, cloud.PublishRegistration{
-					RepoFullName:  repoFull,
-					BranchName:    branch,
-					Title:         title,
-					HeadCommitID:  result.HeadCommitID,
-					RemoteHeadSha: &remoteHead,
-					GitHubPRURL:   result.GitHubPullRequestURL,
-				})
-				if err != nil {
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not sync GX publish status for branch %s: %v. Local publish metadata was still recorded; retry `gx publish` after GX cloud is reachable.", branch, err)))
-					return nil
-				}
-				if registered.ID != "" {
-					fmt.Fprintln(out, labelMintValue("GX publish", "ok: changes synced"))
-				}
-				for _, warning := range result.Warnings {
-					if strings.TrimSpace(warning) != "" {
-						fmt.Fprintln(out, labelWarningValue("Warning", strings.TrimSpace(warning)))
+
+				if publishAllRequested {
+					if len(args) > 0 {
+						return fmt.Errorf("gx publish --all does not accept a stack name")
 					}
+					results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results))))
+					return nil
 				}
-				return nil
+
+				var err error
+				if len(args) > 0 {
+					_, err = engine.PublishNamed(ctx, args[0], nil, authoring.PushOptions{Mode: mode}, publishHook)
+				} else {
+					_, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+				}
+				return err
 			}
+
+			reviewPublication := publication.NewReviewPublication(publication.NewPublisher(client))
 
 			if publishAllRequested {
 				if len(args) > 0 {
 					return fmt.Errorf("gx publish --all does not accept a stack name")
 				}
-				results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+				results, err := reviewPublication.PublishAllStacks(ctx, engine, nil, authoring.PushOptions{Mode: mode})
 				if err != nil {
 					return err
 				}
-				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results))))
+				for _, result := range results.Stacks {
+					printPublishPush(out, result.Push)
+					printPublishReview(out, result.Review)
+				}
+				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results.Stacks))))
 				return nil
 			}
 
+			var result publication.StackResult
 			var err error
 			if len(args) > 0 {
-				_, err = engine.PublishNamed(ctx, args[0], nil, authoring.PushOptions{Mode: mode}, publishHook)
+				push, pushErr := engine.PrepareNamedPublish(ctx, args[0], nil, authoring.PushOptions{Mode: mode})
+				if pushErr != nil {
+					return pushErr
+				}
+				result, err = reviewPublication.PublishPrepared(ctx, push, engine.RecordPublish)
 			} else {
-				_, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+				result, err = reviewPublication.PublishStack(ctx, engine, nil, authoring.PushOptions{Mode: mode})
 			}
 			if err != nil {
 				return err
 			}
+			printPublishPush(out, result.Push)
+			printPublishReview(out, result.Review)
 			return nil
 		},
 	}
@@ -2743,22 +2716,37 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 	return cmd
 }
 
-func publishRegistrationTitle(result authoring.PushResult) *string {
-	if result.Stack != nil {
-		if title := strings.TrimSpace(result.Stack.Name); title != "" {
-			return &title
+func printPublishPush(out io.Writer, result authoring.PushResult) {
+	if strings.TrimSpace(result.Output) != "" {
+		fmt.Fprintln(out, highlightPublishRevisions(strings.TrimSpace(result.Output)))
+	}
+	if strings.TrimSpace(result.GXStackRef) != "" || result.Repo.BranchName != nil {
+		branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
+		fmt.Fprintln(out, labelValue("Branch", branch))
+		if status := publishGitPushStatusText(result.GitPushStatus); status != "" {
+			fmt.Fprintln(out, labelStatus("GitHub", status))
 		}
-		if title := strings.TrimSpace(result.Stack.BookmarkName); title != "" {
-			return &title
+		if prStatus := publishGitHubPRStatusText(result.GitHubPRStatus); prStatus != "" {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(prStatus)), "warn:") {
+				fmt.Fprintln(out, labelWarningValue("GitHub PR", strings.TrimSpace(prStatus)))
+			} else {
+				fmt.Fprintln(out, labelStatus("GitHub PR", prStatus))
+			}
+		}
+		if result.GitHubPullRequestURL != nil && strings.TrimSpace(*result.GitHubPullRequestURL) != "" {
+			fmt.Fprintln(out, labelValue("GitHub PR", strings.TrimSpace(*result.GitHubPullRequestURL)))
+		}
+		if result.Repo.RemoteURL != nil {
+			if repoFull := githubRepoFullNameFromRemote(*result.Repo.RemoteURL); repoFull != "" {
+				fmt.Fprintln(out, labelValue("Actions", fmt.Sprintf("https://github.com/%s/actions", repoFull)))
+			}
 		}
 	}
-	if result.CurrentChange != nil {
-		if title := strings.TrimSpace(result.CurrentChange.Description); title != "" {
-			firstLine := strings.Split(title, "\n")[0]
-			return &firstLine
+	for _, warning := range result.Warnings {
+		if strings.TrimSpace(warning) != "" {
+			fmt.Fprintln(out, labelWarningValue("Warning", strings.TrimSpace(warning)))
 		}
 	}
-	return nil
 }
 
 func publishGitPushStatusText(status string) string {
