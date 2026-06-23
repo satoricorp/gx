@@ -16,7 +16,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/clitui"
@@ -29,6 +28,7 @@ import (
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/uploadauth"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
@@ -2842,9 +2842,9 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			if captureOnly {
 				fmt.Fprintln(out, commandLine("gx sync --capture", true))
 				fmt.Fprintln(out)
-				creds, ok := auth.Load()
+				creds, ok := uploadauth.Load()
 				if !ok {
-					return fmt.Errorf("not logged in for capture upload — run `gx login --token <token>`")
+					return fmt.Errorf("not logged in for capture upload — run `gx auth login`")
 				}
 				stager, err := storage.OpenCaptureStager(ctx)
 				if err != nil {
