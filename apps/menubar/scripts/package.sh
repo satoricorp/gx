@@ -8,12 +8,18 @@ dist_dir="$menubar_dir/dist"
 app_path="$dist_dir/GX.app"
 
 cd "$repo_root"
+env_github_client_id="${GITHUB_CLIENT_ID-}"
+env_convex_site_url="${CONVEX_SITE_URL-}"
+env_gx_cloud_url="${GX_CLOUD_URL-}"
 set -a
 if [[ -f .env ]]; then
   # shellcheck disable=SC1091
   source .env
 fi
 set +a
+[[ -n "$env_github_client_id" ]] && export GITHUB_CLIENT_ID="$env_github_client_id"
+[[ -n "$env_convex_site_url" ]] && export CONVEX_SITE_URL="$env_convex_site_url"
+[[ -n "$env_gx_cloud_url" ]] && export GX_CLOUD_URL="$env_gx_cloud_url"
 export GX_LDFLAGS_PROFILE="${GX_LDFLAGS_PROFILE:-release}"
 eval "$(zsh scripts/ldflags.sh)"
 
