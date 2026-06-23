@@ -50,6 +50,12 @@ func TestOrchestrator_StagesExtract(t *testing.T) {
 
 func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 	repo := initTestGitRepo(t)
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_CLOUD_URL", "")
+
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
 		RepoRoot:  repo,

@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/satoricorp/gx/internal/auth"
-	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
 	"github.com/satoricorp/gx/internal/hooks"
+	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
 	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
 const captureBacklogWarnThreshold = 10
@@ -35,7 +35,7 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 		}
 	}
 	status.HookInstalled = hooks.IsInstalled(repoRoot)
-	if creds, ok := auth.Load(); ok {
+	if creds, ok := uploadauth.Load(); ok {
 		status.UploadAuthed = true
 		status.UploadAPI = creds.APIURL
 	}
@@ -71,7 +71,7 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload credentials", success("ok")+": "+status.UploadAPI))
 	} else {
-		fmt.Fprintln(out, labelValue("Upload credentials", danger("warn")+": run `gx login --token <token>`"))
+		fmt.Fprintln(out, labelValue("Upload credentials", danger("warn")+": run `gx auth login`"))
 	}
 	backlog := status.PendingExtracts + status.PendingSessions
 	if backlog == 0 {

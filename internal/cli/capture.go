@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
 func newCaptureCommand(ctx context.Context) *cobra.Command {
@@ -31,9 +31,9 @@ func newCaptureSyncCommand(ctx context.Context) *cobra.Command {
 		Use:   "sync",
 		Short: "Upload pending capture staging rows to the GX server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			creds, ok := auth.Load()
+			creds, ok := uploadauth.Load()
 			if !ok {
-				return fmt.Errorf("not logged in for capture upload — run `gx login --token <token>`")
+				return fmt.Errorf("not logged in for capture upload — run `gx auth login`")
 			}
 			stager, err := storage.OpenCaptureStager(ctx)
 			if err != nil {

@@ -12,19 +12,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/satoricorp/gx/internal/capture"
-	capturegit "github.com/satoricorp/gx/internal/capture/git"
 	"github.com/satoricorp/gx/internal/capture/exclude"
+	captureextract "github.com/satoricorp/gx/internal/capture/extract"
+	capturegit "github.com/satoricorp/gx/internal/capture/git"
 	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/capture/parsers"
 	"github.com/satoricorp/gx/internal/capture/parsers/claude"
 	"github.com/satoricorp/gx/internal/capture/parsers/codex"
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
-	"github.com/satoricorp/gx/internal/auth"
-	captureextract "github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/capture/report"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/uploadauth"
 	"github.com/satoricorp/gx/internal/version"
 )
 
@@ -252,7 +252,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	}
 
 	if !opts.StageOnly {
-		if creds, ok := auth.Load(); ok {
+		if creds, ok := uploadauth.Load(); ok {
 			headSHA, err := capturegit.RevParseCommit(repoRoot, head)
 			if err != nil {
 				return result, fmt.Errorf("resolve head commit: %w", err)

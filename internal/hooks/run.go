@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
 // PushOptions configures a hook-triggered capture run.
@@ -58,7 +58,7 @@ func RunPush(ctx context.Context, opts PushOptions) (orchestrator.Result, error)
 		Head:      head,
 		HomeDir:   opts.HomeDir,
 		Tools:     tools,
-		StageOnly: !auth.HasUploadCredentials(),
+		StageOnly: !uploadauth.HasCredentials(),
 	})
 }
 
