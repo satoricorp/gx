@@ -20,6 +20,8 @@ type authStatusJSON struct {
 	AuthKind      string `json:"authKind"`
 	AuthValid     *bool  `json:"authValid,omitempty"`
 	AuthError     string `json:"authError,omitempty"`
+	APIValid      *bool  `json:"apiValid,omitempty"`
+	APIError      string `json:"apiError,omitempty"`
 	ConvexSiteURL string `json:"convexSiteURL,omitempty"`
 	CloudURL      string `json:"cloudURL,omitempty"`
 }
@@ -130,12 +132,19 @@ func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 				if strings.TrimSpace(creds.Login) != "" {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
 				}
+				if status.APIValid != nil && !*status.APIValid {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", danger("warn")+": "+status.APIError))
+				} else if status.APIValid != nil && *status.APIValid {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", success("ok")))
+				} else if status.APIError != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", danger("warn")+": "+status.APIError))
+				}
 				if status.AuthValid != nil && !*status.AuthValid {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", danger("warn")+": "+status.AuthError))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GitHub token", danger("warn")+": "+status.AuthError))
 				} else if status.AuthValid != nil && *status.AuthValid {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", success("ok")))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GitHub token", success("ok")))
 				} else if status.AuthError != "" {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", danger("warn")+": "+status.AuthError))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GitHub token", danger("warn")+": "+status.AuthError))
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine", creds.MachineName))
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine ID", creds.MachineID))
@@ -155,28 +164,56 @@ func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 }
 
 func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.CloudCredentials) authStatusJSON {
-	if creds == nil || strings.TrimSpace(creds.GitHubAccessToken) == "" {
+	if creds == nil {
 		return status
 	}
 	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, creds.GitHubAccessToken)
-	if err != nil {
-		status.AuthError = "could not verify GitHub token: " + err.Error()
-		return status
-	}
-	status.AuthValid = &validation.Valid
-	if validation.Valid {
-		if strings.TrimSpace(validation.Login) != "" {
-			status.Login = validation.Login
+
+	if strings.TrimSpace(creds.CLISessionToken) != "" {
+		token, _, err := cloud.CloudAPITokenWithKind()
+		if err != nil {
+			status.APIError = err.Error()
+		} else {
+			validation, err := cloud.ValidateCloudAPISession(verifyCtx, nil, token)
+			if err != nil {
+				status.APIError = "could not verify GX API session: " + err.Error()
+			} else {
+				status.APIValid = &validation.Valid
+				if validation.Valid {
+					if strings.TrimSpace(validation.Login) != "" {
+						status.Login = validation.Login
+					}
+				} else {
+					status.APIError = strings.TrimSpace(validation.Error)
+					if status.APIError == "" {
+						status.APIError = "GX API rejected stored session"
+					}
+					status.APIError += "; run `gx auth logout` then `gx auth login`"
+				}
+			}
 		}
-		return status
 	}
-	status.AuthError = strings.TrimSpace(validation.Error)
-	if status.AuthError == "" {
-		status.AuthError = "GitHub rejected stored token"
+
+	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
+		validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, creds.GitHubAccessToken)
+		if err != nil {
+			status.AuthError = "could not verify GitHub token: " + err.Error()
+			return status
+		}
+		status.AuthValid = &validation.Valid
+		if validation.Valid {
+			if strings.TrimSpace(validation.Login) != "" {
+				status.Login = validation.Login
+			}
+			return status
+		}
+		status.AuthError = strings.TrimSpace(validation.Error)
+		if status.AuthError == "" {
+			status.AuthError = "GitHub rejected stored token"
+		}
+		status.AuthError += "; run `gx auth logout` then `gx auth login`"
 	}
-	status.AuthError += "; run `gx auth logout` then `gx auth login`"
 	return status
 }
 
@@ -205,6 +242,9 @@ func newAuthTokenCommand() *cobra.Command {
 func authKindForCredentials(creds *cloud.CloudCredentials) string {
 	if creds == nil {
 		return "none"
+	}
+	if strings.TrimSpace(creds.CLISessionToken) != "" {
+		return "gx-cli"
 	}
 	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
 		return "github"

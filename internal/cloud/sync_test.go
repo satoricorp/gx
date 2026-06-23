@@ -19,7 +19,10 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 	t.Setenv("GX_HOME", home)
 	disableSemanticIndex(t)
 
-	if err := SaveCloudCredentials(CloudCredentials{GitHubAccessToken: "gho_sync"}); err != nil {
+	if err := SaveCloudCredentials(CloudCredentials{
+		GitHubAccessToken: "gho_sync",
+		CLISessionToken:   "gxcs_sync",
+	}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 
@@ -55,7 +58,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadReviewBundle() error = %v", err)
 	}
-	if gotAuth != "Bearer gho_sync" {
+	if gotAuth != "Bearer gxcs_sync" {
 		t.Fatalf("authorization = %q", gotAuth)
 	}
 	if gotPayload.SchemaVersion != reviewbundle.SchemaVersion || gotPayload.Event != "gx.pr" || gotPayload.Push.HeadCommitID != "abc123" {
@@ -75,7 +78,10 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 	t.Setenv("GX_HOME", home)
 	disableSemanticIndex(t)
 
-	if err := SaveCloudCredentials(CloudCredentials{GitHubAccessToken: "gho_sync"}); err != nil {
+	if err := SaveCloudCredentials(CloudCredentials{
+		GitHubAccessToken: "gho_sync",
+		CLISessionToken:   "gxcs_sync",
+	}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
 

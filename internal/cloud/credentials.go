@@ -24,13 +24,15 @@ type credentialsFile struct {
 
 // CloudCredentials holds gx cloud auth state.
 type CloudCredentials struct {
-	GitHubAccessToken string    `json:"github_access_token,omitempty"`
-	UserID            string    `json:"user_id"`
-	Login             string    `json:"login"`
-	AvatarURL         string    `json:"avatar_url,omitempty"`
-	MachineID         string    `json:"machine_id"`
-	MachineName       string    `json:"machine_name"`
-	ObtainedAt        time.Time `json:"obtained_at"`
+	GitHubAccessToken   string    `json:"github_access_token,omitempty"`
+	CLISessionToken     string    `json:"cli_session_token,omitempty"`
+	CLISessionExpiresAt time.Time `json:"cli_session_expires_at,omitempty"`
+	UserID              string    `json:"user_id"`
+	Login               string    `json:"login"`
+	AvatarURL           string    `json:"avatar_url,omitempty"`
+	MachineID           string    `json:"machine_id"`
+	MachineName         string    `json:"machine_name"`
+	ObtainedAt          time.Time `json:"obtained_at"`
 }
 
 func machineIDPath() (string, error) {
@@ -141,7 +143,6 @@ func GitHubAccessToken() (string, error) {
 }
 
 // CloudAPIToken returns the bearer token used by consolidated gx-cloud HTTP APIs.
-// These Hono endpoints validate GitHub OAuth tokens directly.
 func CloudAPIToken() (string, error) {
 	token, _, err := CloudAPITokenWithKind()
 	return token, err
@@ -150,6 +151,16 @@ func CloudAPIToken() (string, error) {
 // CloudAPITokenWithKind returns the token plus its source for callers that need
 // to decide whether it is safe/useful to inject into another process.
 func CloudAPITokenWithKind() (string, string, error) {
+	creds, err := LoadCloudCredentials()
+	if err != nil {
+		return "", "", err
+	}
+	if creds != nil && strings.TrimSpace(creds.CLISessionToken) != "" {
+		if !creds.CLISessionExpiresAt.IsZero() && time.Now().UTC().After(creds.CLISessionExpiresAt.UTC()) {
+			return "", "gx-cli", fmt.Errorf("gx cloud session expired: run `gx auth logout` then `gx auth login`")
+		}
+		return strings.TrimSpace(creds.CLISessionToken), "gx-cli", nil
+	}
 	if token, err := GitHubAccessToken(); err == nil {
 		return token, "github", nil
 	} else {

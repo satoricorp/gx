@@ -70,12 +70,23 @@ type GitHubTokenValidation struct {
 	Error      string
 }
 
+// CloudAPISessionValidation reports whether gx-cloud accepts a bearer token.
+type CloudAPISessionValidation struct {
+	Valid      bool
+	UserID     string
+	Login      string
+	StatusCode int
+	Error      string
+}
+
 // CompleteAuthResponse is returned by POST /cx/auth/complete.
 type CompleteAuthResponse struct {
 	UserID              string `json:"user_id"`
 	Login               string `json:"login"`
 	AvatarURL           string `json:"avatar_url,omitempty"`
 	GitHubAppInstallURL string `json:"github_app_install_url,omitempty"`
+	CLISessionToken     string `json:"cli_session_token,omitempty"`
+	CLISessionExpiresAt int64  `json:"cli_session_expires_at,omitempty"`
 }
 
 type completeAuthRequest struct {
@@ -154,12 +165,16 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	now := time.Now().UTC()
 	creds := CloudCredentials{
 		GitHubAccessToken: githubToken,
+		CLISessionToken:   complete.CLISessionToken,
 		UserID:            complete.UserID,
 		Login:             complete.Login,
 		AvatarURL:         complete.AvatarURL,
 		MachineID:         machineID,
 		MachineName:       machineName,
 		ObtainedAt:        now,
+	}
+	if complete.CLISessionExpiresAt > 0 {
+		creds.CLISessionExpiresAt = time.UnixMilli(complete.CLISessionExpiresAt).UTC()
 	}
 	if err := SaveCloudCredentials(creds); err != nil {
 		return CloudCredentials{}, err
@@ -327,6 +342,69 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 		Valid:      true,
 		Login:      body.Login,
 		UserID:     body.ID,
+		StatusCode: resp.StatusCode,
+	}, nil
+}
+
+// ValidateCloudAPISession checks the token against gx-cloud's auth endpoint.
+func ValidateCloudAPISession(ctx context.Context, client *http.Client, token string) (CloudAPISessionValidation, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return CloudAPISessionValidation{Valid: false, Error: "missing token"}, nil
+	}
+	meURL := CloudURLWithPath("/v1/auth/me")
+	if meURL == "" {
+		return CloudAPISessionValidation{Valid: false, Error: "gx cloud URL is not configured"}, nil
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, meURL, nil)
+	if err != nil {
+		return CloudAPISessionValidation{}, fmt.Errorf("create gx api auth validation request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", "gx/"+version.Current())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return CloudAPISessionValidation{}, fmt.Errorf("validate gx api token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		UserID          string `json:"user_id"`
+		GitHubUserLogin string `json:"github_user_login"`
+		Error           string `json:"error"`
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	_ = json.Unmarshal(raw, &body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		message := strings.TrimSpace(body.Error)
+		if message == "" {
+			message = strings.TrimSpace(string(raw))
+		}
+		if message == "" {
+			message = resp.Status
+		}
+		return CloudAPISessionValidation{
+			Valid:      false,
+			StatusCode: resp.StatusCode,
+			Error:      message,
+		}, nil
+	}
+	if strings.TrimSpace(body.UserID) == "" {
+		return CloudAPISessionValidation{
+			Valid:      false,
+			StatusCode: resp.StatusCode,
+			Error:      "GX API response missing user id",
+		}, nil
+	}
+	return CloudAPISessionValidation{
+		Valid:      true,
+		UserID:     body.UserID,
+		Login:      body.GitHubUserLogin,
 		StatusCode: resp.StatusCode,
 	}, nil
 }

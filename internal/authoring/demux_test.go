@@ -796,6 +796,7 @@ func TestDemuxReviewerFromEnvUsesGXCloudAsFallbackAfterUserKey(t *testing.T) {
 	t.Setenv("GX_OPENAI_BASE_URL", "")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
 		GitHubAccessToken: "gho_demux",
+		CLISessionToken:   "gxcs_demux",
 		UserID:            "demux-user",
 		Login:             "demux",
 		MachineID:         "demux-machine",
@@ -849,6 +850,7 @@ func TestDemuxReviewerFromEnvUsesGXCloudOpenAIProxy(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
 		GitHubAccessToken: "gho_demux",
+		CLISessionToken:   "gxcs_demux",
 		UserID:            "demux-user",
 		Login:             "demux",
 		MachineID:         "demux-machine",
@@ -873,7 +875,7 @@ func TestDemuxReviewerFromEnvUsesGXCloudOpenAIProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReviewDemuxProposal() error = %v", err)
 	}
-	if gotAuth != "Bearer gho_demux" {
+	if gotAuth != "Bearer gxcs_demux" {
 		t.Fatalf("Authorization = %q", gotAuth)
 	}
 	if gotPayload.Model != "test-model" || len(gotPayload.Messages) != 2 {

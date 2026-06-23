@@ -47,13 +47,15 @@ func TestSaveLoadClearCloudCredentials(t *testing.T) {
 
 	obtained := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
 	want := CloudCredentials{
-		GitHubAccessToken: "gho_test_token",
-		UserID:            "user_1",
-		Login:             "joe",
-		AvatarURL:         "https://avatars.githubusercontent.com/u/1?v=4",
-		MachineID:         "machine-1",
-		MachineName:       "test-host",
-		ObtainedAt:        obtained,
+		GitHubAccessToken:   "gho_test_token",
+		CLISessionToken:     "gxcs_test_token",
+		CLISessionExpiresAt: obtained.Add(90 * 24 * time.Hour),
+		UserID:              "user_1",
+		Login:               "joe",
+		AvatarURL:           "https://avatars.githubusercontent.com/u/1?v=4",
+		MachineID:           "machine-1",
+		MachineName:         "test-host",
+		ObtainedAt:          obtained,
 	}
 	if err := SaveCloudCredentials(want); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
@@ -74,7 +76,7 @@ func TestSaveLoadClearCloudCredentials(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected credentials")
 	}
-	if got.GitHubAccessToken != want.GitHubAccessToken || got.Login != want.Login || got.AvatarURL != want.AvatarURL || got.MachineID != want.MachineID {
+	if got.GitHubAccessToken != want.GitHubAccessToken || got.CLISessionToken != want.CLISessionToken || !got.CLISessionExpiresAt.Equal(want.CLISessionExpiresAt) || got.Login != want.Login || got.AvatarURL != want.AvatarURL || got.MachineID != want.MachineID {
 		t.Fatalf("LoadCloudCredentials() = %+v, want %+v", got, want)
 	}
 
@@ -133,7 +135,7 @@ func TestGitHubAccessTokenResolution(t *testing.T) {
 	}
 }
 
-func TestCloudAPITokenPrefersGitHubToken(t *testing.T) {
+func TestCloudAPITokenPrefersCLISessionToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")
@@ -141,6 +143,7 @@ func TestCloudAPITokenPrefersGitHubToken(t *testing.T) {
 
 	if err := SaveCloudCredentials(CloudCredentials{
 		GitHubAccessToken: "gho_test_token",
+		CLISessionToken:   "gxcs_test_token",
 	}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -148,12 +151,33 @@ func TestCloudAPITokenPrefersGitHubToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CloudAPIToken() error = %v", err)
 	}
-	if token != "gho_test_token" {
-		t.Fatalf("CloudAPIToken() = %q, want GitHub token", token)
+	if token != "gxcs_test_token" {
+		t.Fatalf("CloudAPIToken() = %q, want CLI session token", token)
 	}
 }
 
-func TestCloudAPITokenWithKindReportsGitHub(t *testing.T) {
+func TestCloudAPITokenWithKindReportsCLISession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	if err := SaveCloudCredentials(CloudCredentials{
+		GitHubAccessToken: "stored-github-token",
+		CLISessionToken:   "stored-cli-token",
+	}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	token, kind, err := CloudAPITokenWithKind()
+	if err != nil {
+		t.Fatalf("CloudAPITokenWithKind() error = %v", err)
+	}
+	if token != "stored-cli-token" || kind != "gx-cli" {
+		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want CLI session token", token, kind)
+	}
+}
+
+func TestCloudAPITokenFallsBackToGitHubTokenForOldCredentials(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")
@@ -169,11 +193,29 @@ func TestCloudAPITokenWithKindReportsGitHub(t *testing.T) {
 		t.Fatalf("CloudAPITokenWithKind() error = %v", err)
 	}
 	if token != "stored-github-token" || kind != "github" {
-		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want GitHub token", token, kind)
+		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want legacy GitHub token", token, kind)
 	}
 }
 
-func TestCloudAPITokenRequiresGitHubToken(t *testing.T) {
+func TestCloudAPITokenRejectsExpiredCLISession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	if err := SaveCloudCredentials(CloudCredentials{
+		GitHubAccessToken:   "stored-github-token",
+		CLISessionToken:     "stored-cli-token",
+		CLISessionExpiresAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	if _, _, err := CloudAPITokenWithKind(); err == nil {
+		t.Fatal("expected expired CLI session error")
+	}
+}
+
+func TestCloudAPITokenRequiresStoredToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")

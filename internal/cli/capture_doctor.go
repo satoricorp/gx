@@ -42,7 +42,10 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 	if creds, kind, ok := uploadauth.LoadWithKind(); ok {
 		status.UploadAuthed = true
 		status.UploadAPI = creds.APIURL
-		if kind == "github" {
+		switch kind {
+		case "gx-cli":
+			status.UploadAuthed, status.UploadAuthError = validateCaptureCloudSession(ctx, creds.Token)
+		case "github":
 			status.UploadAuthed, status.UploadAuthError = validateCaptureUploadToken(ctx, creds.Token)
 		}
 	}
@@ -123,6 +126,23 @@ func validateCaptureUploadToken(ctx context.Context, token string) (bool, string
 	message := strings.TrimSpace(validation.Error)
 	if message == "" {
 		message = "GitHub rejected stored token"
+	}
+	return false, message + "; run `gx auth logout` then `gx auth login`"
+}
+
+func validateCaptureCloudSession(ctx context.Context, token string) (bool, string) {
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	validation, err := cloud.ValidateCloudAPISession(verifyCtx, nil, token)
+	if err != nil {
+		return false, "could not verify GX API session: " + err.Error()
+	}
+	if validation.Valid {
+		return true, ""
+	}
+	message := strings.TrimSpace(validation.Error)
+	if message == "" {
+		message = "GX API rejected stored session"
 	}
 	return false, message + "; run `gx auth logout` then `gx auth login`"
 }

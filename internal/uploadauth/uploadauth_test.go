@@ -24,6 +24,7 @@ func TestLoadPrefersCloudCredentials(t *testing.T) {
 	}
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
 		GitHubAccessToken: "gho_cloud_token",
+		CLISessionToken:   "gxcs_cloud_token",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,7 @@ func TestLoadPrefersCloudCredentials(t *testing.T) {
 	if !ok {
 		t.Fatal("Load returned false")
 	}
-	if got.APIURL != "https://api.gx.test" || got.Token != "gho_cloud_token" {
+	if got.APIURL != "https://api.gx.test" || got.Token != "gxcs_cloud_token" {
 		t.Fatalf("Load = %+v, want cloud credentials", got)
 	}
 }

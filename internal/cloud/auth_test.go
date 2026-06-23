@@ -29,9 +29,11 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 			t.Fatalf("decode complete body: %v", err)
 		}
 		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
-			UserID:    "user_1",
-			Login:     "joe",
-			AvatarURL: "https://avatars.githubusercontent.com/u/1?v=4",
+			UserID:              "user_1",
+			Login:               "joe",
+			AvatarURL:           "https://avatars.githubusercontent.com/u/1?v=4",
+			CLISessionToken:     "gxcs_login",
+			CLISessionExpiresAt: time.Now().Add(90 * 24 * time.Hour).UnixMilli(),
 		})
 	}))
 	defer convex.Close()
@@ -74,7 +76,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if creds.Login != "joe" || creds.GitHubAccessToken != "gho_test" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
+	if creds.Login != "joe" || creds.GitHubAccessToken != "gho_test" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
 	if gotComplete.GitHubAccessToken != "gho_test" {
@@ -94,7 +96,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCloudCredentials() error = %v", err)
 	}
-	if loaded == nil || loaded.GitHubAccessToken != "gho_test" {
+	if loaded == nil || loaded.GitHubAccessToken != "gho_test" || loaded.CLISessionToken != "gxcs_login" {
 		t.Fatalf("saved credentials = %+v", loaded)
 	}
 }
