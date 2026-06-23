@@ -68,4 +68,5 @@ run *args:
   {{repo_root}}/gx {{args}}
 
 menubar:
+  rm -f ~/.local/bin/gx
   apps/menubar/scripts/package.sh
