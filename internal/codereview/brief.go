@@ -28,6 +28,7 @@ type StaticSnapshot struct {
 	TestFileCount   int                `json:"test_file_count"`
 	DependencyFiles []string           `json:"dependency_files"`
 	Docs            []FilePresence     `json:"docs"`
+	ADRFiles        []string           `json:"adr_files,omitempty"`
 	Modules         []ModuleSummary    `json:"modules"`
 	ChangedFiles    []string           `json:"changed_files"`
 	ToolResults     []StaticToolResult `json:"static_tool_results,omitempty"`
@@ -97,6 +98,7 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 			TestFileCount:   facts.TestFileCount,
 			DependencyFiles: facts.DependencyFiles,
 			Docs:            facts.Docs,
+			ADRFiles:        facts.ADRFiles,
 			Modules:         moduleSummaries(facts),
 			ChangedFiles:    changedFiles(ctx, repoRoot),
 			ToolResults:     collectStaticToolResults(ctx, repoRoot, facts, opts),
@@ -154,8 +156,21 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 
 func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
 	var snippets []ContextSnippet
-	for _, doc := range []string{"REVIEW.md", "CONTEXT.md", "AGENTS.md", "README.md"} {
-		if snippet, ok := readSnippet(repoRoot, doc, "repo_doc"); ok {
+	for _, doc := range []struct {
+		path string
+		kind string
+	}{
+		{path: "CONTEXT.md", kind: "domain_doc"},
+		{path: "REVIEW.md", kind: "repo_doc"},
+		{path: "AGENTS.md", kind: "repo_doc"},
+		{path: "README.md", kind: "repo_doc"},
+	} {
+		if snippet, ok := readSnippet(repoRoot, doc.path, doc.kind); ok {
+			snippets = append(snippets, snippet)
+		}
+	}
+	for _, rel := range facts.ADRFiles {
+		if snippet, ok := readSnippet(repoRoot, rel, "adr"); ok {
 			snippets = append(snippets, snippet)
 		}
 	}

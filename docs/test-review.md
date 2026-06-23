@@ -1,8 +1,8 @@
 # GX Test Review
 
-This is a design- and architecture-oriented review of the current Go test suite.
-The suite has 182 `Test*` functions across CLI, authoring, daemon, cloud,
-storage, VCS, review bundle, provider parsing, Cursor ingest, and e2e packages.
+This is a design- and architecture-oriented review of the current test suite.
+The suite spans CLI, authoring, daemon, cloud, storage, VCS, review bundle,
+provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## Findings
 
@@ -16,9 +16,9 @@ storage, VCS, review bundle, provider parsing, Cursor ingest, and e2e packages.
 - **The CLI UX is lightly tested.** There are focused tests for summary output,
   demux warnings, help safety, and destructive confirmation, but not a broad
   snapshot suite for the public command output designs.
-- **The MCP layer has no test suite yet.** TypeScript typecheck/build catches
-  schema-level issues, but there are no tool-level tests for command args,
-  `allow_warnings`, repair-loop output, or error formatting.
+- **The MCP layer now has focused tool tests, but coverage is still thin.**
+  Current tests cover compose, review, and publish command envelopes. Broader
+  coverage is still needed for repair-loop output and error formatting.
 - **The daemon is covered at primitive level, not product-flow level.** Session
   registry, resolver reuse, redaction, and WebSocket summary extraction are
   tested, but there is no end-to-end "captured session becomes revision

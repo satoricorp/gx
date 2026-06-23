@@ -56,7 +56,7 @@ func runDemuxWithLoader(in io.Reader, out io.Writer, run demuxLoaderRunFunc) (au
 			spinner.WithSpinner(spinner.Line),
 			spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1"))),
 		),
-		phase:  "Starting demux...",
+		phase:  "Starting compose...",
 		phases: phases,
 		run: func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
 			return run(progress)

@@ -302,15 +302,18 @@ func TestStaticToolFailureBeatsSpeculativeFindings(t *testing.T) {
 func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# repo\n")
+	writeFile(t, root, "CONTEXT.md", "# Context\n\n## Core Terms\n\n### Revision\n\nOne reviewable change.\n")
+	writeFile(t, root, "docs/adr/0001-revisions.md", "# ADR 0001\n\nUse Revision as product identity.\n")
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	facts := RepoFacts{
-		Docs:             []FilePresence{{Path: "README.md", Present: true}, {Path: "CONTEXT.md", Present: false}},
+		Docs:             []FilePresence{{Path: "README.md", Present: true}, {Path: "CONTEXT.md", Present: true}},
+		ADRFiles:         []string{"docs/adr/0001-revisions.md"},
 		DependencyFiles:  []string{"go.mod"},
-		Files:            []string{"README.md", "go.mod", "internal/app/app.go"},
+		Files:            []string{"README.md", "CONTEXT.md", "docs/adr/0001-revisions.md", "go.mod", "internal/app/app.go"},
 		GoPackages:       []PackageFact{{Path: "internal/app", GoFiles: 6, TestFiles: 0}},
 		TestFileCount:    0,
-		TrackedFileCount: 3,
+		TrackedFileCount: 5,
 	}
 
 	brief, err := BuildReviewBrief(context.Background(), root, Options{}, facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
@@ -325,6 +328,12 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	}
 	if len(brief.Context) == 0 {
 		t.Fatalf("Context = %#v, want local snippets", brief.Context)
+	}
+	if !hasContextSnippet(brief.Context, "domain_doc", "CONTEXT.md") {
+		t.Fatalf("Context = %#v, want CONTEXT.md domain snippet", brief.Context)
+	}
+	if !hasContextSnippet(brief.Context, "adr", "docs/adr/0001-revisions.md") {
+		t.Fatalf("Context = %#v, want ADR snippet", brief.Context)
 	}
 	if len(brief.SourceCatalog) != 1 || brief.SourceCatalog[0].ID != "go-package-names" {
 		t.Fatalf("SourceCatalog = %#v", brief.SourceCatalog)
@@ -375,6 +384,29 @@ func TestIgnoredResultFindingUsesQualityHints(t *testing.T) {
 	}, defaultRules())
 	if !hasFinding(findings, "quality.ignored-results") {
 		t.Fatalf("Findings = %#v, want ignored result finding", findings)
+	}
+}
+
+func TestDomainLanguageDriftFindingUsesContextInternalTerms(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "CONTEXT.md", strings.Join([]string{
+		"# Context",
+		"",
+		"## Internal Implementation Terms",
+		"",
+		"### Demux",
+		"",
+		"Internal splitting algorithm.",
+		"",
+	}, "\n"))
+	writeFile(t, root, "README.md", "Use demux to split work.\n")
+
+	report, err := Review(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if !hasFinding(report.Findings, "architecture.domain-language-drift") {
+		t.Fatalf("Findings = %#v, want domain language drift finding", report.Findings)
 	}
 }
 
@@ -555,6 +587,15 @@ func runGit(t *testing.T, root string, args ...string) {
 func hasFinding(findings []Finding, id string) bool {
 	for _, finding := range findings {
 		if finding.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasContextSnippet(snippets []ContextSnippet, kind, ref string) bool {
+	for _, snippet := range snippets {
+		if snippet.Kind == kind && snippet.Ref == ref {
 			return true
 		}
 	}

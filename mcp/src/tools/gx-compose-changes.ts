@@ -527,19 +527,19 @@ function summarizeMcpToolChange(files: string[], allText: string, symbols: strin
 
 function summarizeAuthoringChange(files: string[], allText: string, symbols: string[]): string {
   if (files.some((file) => file.endsWith("demux_ai.go")) || /openai|cloud demux|reviewdemuxproposal/.test(allText)) {
-    return "Route demux AI review through the GX Cloud OpenAI endpoint";
+    return "Route compose AI review through the GX Cloud OpenAI endpoint";
   }
 
   if (files.some((file) => file.endsWith("demux_review_shape.go")) || /shape demux|coalescetiny|coalescesemantic|targetminloc/.test(allText)) {
-    return "Coalesce tiny demux revisions into semantic review-sized changes";
+    return "Coalesce tiny compose revisions into semantic review-sized changes";
   }
 
   if (files.some((file) => file.endsWith("demux_routing.go")) || /feature\/|bug\/|docs\/|chore\/|conventional/.test(allText)) {
-    return "Use conventional stack names for demux routing";
+    return "Use conventional stack names for compose routing";
   }
 
   if (symbols.length > 0) {
-    return `Update demux authoring around ${formatList(symbols.map(humanizeIdentifier), 3)}`;
+    return `Update compose authoring around ${formatList(symbols.map(humanizeIdentifier), 3)}`;
   }
 
   return "";

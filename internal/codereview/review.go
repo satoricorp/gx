@@ -202,6 +202,7 @@ func depthLabel(deep bool) string {
 
 type RepoFacts struct {
 	Docs             []FilePresence
+	ADRFiles         []string
 	DependencyFiles  []string
 	Files            []string
 	GoPackages       []PackageFact
@@ -241,6 +242,7 @@ func scanRepo(repoRoot, focus string) (RepoFacts, error) {
 			facts.addFile(rel)
 		}
 		sort.Strings(facts.DependencyFiles)
+		facts.ADRFiles = adrFiles(facts.Files)
 		facts.finalize()
 		return facts, nil
 	}
@@ -272,6 +274,7 @@ func scanRepo(repoRoot, focus string) (RepoFacts, error) {
 		return nil
 	})
 	sort.Strings(facts.DependencyFiles)
+	facts.ADRFiles = adrFiles(facts.Files)
 	facts.finalize()
 	return facts, err
 }
@@ -373,6 +376,19 @@ func present(docs []FilePresence, path string) bool {
 		}
 	}
 	return false
+}
+
+func adrFiles(files []string) []string {
+	var out []string
+	for _, file := range files {
+		lower := strings.ToLower(file)
+		base := filepath.Base(lower)
+		if strings.Contains(lower, "/adr/") || strings.HasPrefix(base, "adr-") || strings.HasPrefix(base, "adr_") {
+			out = append(out, file)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func exists(root, rel string) bool {

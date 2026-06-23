@@ -520,21 +520,25 @@ func prioritizeContextSnippets(snippets []ContextSnippet) []ContextSnippet {
 
 func contextSnippetPriority(snippet ContextSnippet) int {
 	switch snippet.Kind {
-	case "repo_doc":
+	case "domain_doc":
 		return 0
-	case "review_resource":
+	case "adr":
 		return 1
-	case "dependency_manifest":
+	case "repo_doc":
 		return 2
-	case "code_quality_file":
+	case "review_resource":
 		return 3
-	case "module_file":
+	case "dependency_manifest":
 		return 4
+	case "code_quality_file":
+		return 5
+	case "module_file":
+		return 6
 	default:
 		if snippet.Source == "indexed" {
-			return 2
+			return 4
 		}
-		return 5
+		return 7
 	}
 }
 

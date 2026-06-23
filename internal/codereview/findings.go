@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -52,6 +53,7 @@ func defaultRules() []Rule {
 		ruleFunc{id: "tools.static-failure", scopes: []string{"testing", "maintainability", "dependencies", "security"}, evaluate: staticToolFailureFindings},
 		ruleFunc{id: "quality.ignored-results", scopes: []string{"maintainability", "testing", "architecture"}, evaluate: ignoredResultFindings},
 		ruleFunc{id: "architecture.missing-context", scopes: []string{"architecture", "onboarding"}, evaluate: oneFinding(missingContextFinding)},
+		ruleFunc{id: "architecture.domain-language-drift", scopes: []string{"architecture", "maintainability", "docs"}, evaluate: domainLanguageDriftFindings},
 		ruleFunc{id: "architecture.implementation-heavy-module", scopes: []string{"architecture", "maintainability", "testing"}, evaluate: implementationHeavyModuleFindings},
 		ruleFunc{id: "architecture.generic-package-name", scopes: []string{"architecture", "maintainability"}, evaluate: genericPackageNameFindings},
 		ruleFunc{id: "architecture.package-without-tests", scopes: []string{"architecture", "testing", "maintainability"}, evaluate: packageWithoutTestsFindings},
@@ -62,6 +64,162 @@ func defaultRules() []Rule {
 		ruleFunc{id: "dependencies.no-manifest", scopes: []string{"dependencies", "maintainability"}, evaluate: oneFinding(noDependencyManifestFinding)},
 		ruleFunc{id: "dependencies.javascript-unlocked", scopes: []string{"dependencies", "security", "maintainability"}, evaluate: oneFinding(jsDependencyLockFinding)},
 	}
+}
+
+func domainLanguageDriftFindings(ctx ReviewContext) []Finding {
+	terms := internalTermsFromContext(ctx.Brief.Context)
+	if len(terms) == 0 || strings.TrimSpace(ctx.Brief.RepoRoot) == "" {
+		return nil
+	}
+	var evidence []Evidence
+	for _, file := range ctx.Facts.Files {
+		if !publicSurfaceFile(file) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(ctx.Brief.RepoRoot, filepath.FromSlash(file)))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for index, line := range lines {
+			searchText := publicSearchText(file, line)
+			if searchText == "" {
+				continue
+			}
+			lower := strings.ToLower(searchText)
+			for _, term := range terms {
+				if !strings.Contains(lower, strings.ToLower(term)) {
+					continue
+				}
+				evidence = append(evidence, Evidence{
+					Label: fmt.Sprintf("%s:%d", file, index+1),
+					Value: strings.TrimSpace(line),
+				})
+				if len(evidence) >= 8 {
+					return []Finding{domainLanguageDriftFinding(terms, evidence)}
+				}
+				break
+			}
+		}
+	}
+	if len(evidence) == 0 {
+		return nil
+	}
+	return []Finding{domainLanguageDriftFinding(terms, evidence)}
+}
+
+func domainLanguageDriftFinding(terms []string, evidence []Evidence) Finding {
+	return Finding{
+		ID:      "architecture.domain-language-drift",
+		Scopes:  []string{"architecture", "maintainability", "docs"},
+		Title:   "Keep internal terms out of public seams",
+		Summary: fmt.Sprintf("`CONTEXT.md` marks %s as internal implementation language, but public-facing files still expose that vocabulary.", formatTermList(terms, 3)),
+		Benefit: "Improves review and agent reliability by keeping public Interfaces aligned with the product nouns users and agents should learn.",
+		Evidence: append(evidence, Evidence{
+			Label: "Decision rule",
+			Value: "Use product terms at public seams; keep internal terms in implementation code, ADRs, and migration notes.",
+		}),
+		Recommendation: "Rename public docs, CLI help, and MCP descriptions to use the canonical product terms from `CONTEXT.md`. Leave internal helper names alone until the public seam is clean.",
+		Strength:       "Strong",
+		SourceIDs:      []string{"go-package-names", "google-eng-practices"},
+	}
+}
+
+func internalTermsFromContext(snippets []ContextSnippet) []string {
+	seen := map[string]struct{}{}
+	var terms []string
+	for _, snippet := range snippets {
+		if snippet.Ref != "CONTEXT.md" || snippet.Kind != "domain_doc" {
+			continue
+		}
+		inInternalSection := false
+		for _, raw := range strings.Split(snippet.Text, "\n") {
+			line := strings.TrimSpace(raw)
+			if strings.HasPrefix(line, "## ") {
+				inInternalSection = strings.Contains(strings.ToLower(line), "internal") &&
+					strings.Contains(strings.ToLower(line), "term")
+				continue
+			}
+			if !inInternalSection || !strings.HasPrefix(line, "### ") {
+				continue
+			}
+			term := strings.TrimSpace(strings.TrimPrefix(line, "### "))
+			term = strings.Trim(term, "`*_ ")
+			if term == "" {
+				continue
+			}
+			key := strings.ToLower(term)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func publicSurfaceFile(file string) bool {
+	if isTestFile(file) {
+		return false
+	}
+	switch file {
+	case "README.md", "AGENTS.md", "mcp/README.md":
+		return true
+	}
+	if strings.HasPrefix(file, "skills/") && strings.HasSuffix(file, ".md") {
+		return true
+	}
+	if strings.HasPrefix(file, "mcp/src/tools/") && strings.HasSuffix(file, ".ts") {
+		return true
+	}
+	return false
+}
+
+func publicSearchText(file string, line string) string {
+	if strings.HasPrefix(file, "mcp/src/tools/") {
+		if !strings.Contains(line, ".describe(") &&
+			!strings.Contains(line, "description:") &&
+			!strings.Contains(line, "nextActions") &&
+			!strings.Contains(line, "return ") {
+			return ""
+		}
+	}
+	if strings.HasSuffix(file, ".go") || strings.HasSuffix(file, ".ts") {
+		return quotedLineText(line)
+	}
+	return line
+}
+
+func quotedLineText(line string) string {
+	var out strings.Builder
+	for i := 0; i < len(line); i++ {
+		quote := line[i]
+		if quote != '"' && quote != '`' {
+			continue
+		}
+		for j := i + 1; j < len(line); j++ {
+			if line[j] == quote {
+				if out.Len() > 0 {
+					out.WriteByte(' ')
+				}
+				out.WriteString(line[i+1 : j])
+				i = j
+				break
+			}
+		}
+	}
+	return out.String()
+}
+
+func formatTermList(terms []string, limit int) string {
+	if len(terms) == 0 {
+		return "internal terms"
+	}
+	if limit <= 0 || len(terms) <= limit {
+		return "`" + strings.Join(terms, "`, `") + "`"
+	}
+	return fmt.Sprintf("`%s` and %d more", strings.Join(terms[:limit], "`, `"), len(terms)-limit)
 }
 
 func ignoredResultFindings(ctx ReviewContext) []Finding {
