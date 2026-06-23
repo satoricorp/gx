@@ -319,6 +319,16 @@ export GX_SEMANTIC_MAX_CHUNK_BYTES=12000
 If semantic indexing is misconfigured or unavailable, `gx publish` still uploads the
 review bundle and reports the semantic indexing error separately.
 
+`gx review` can also use the same OpenAI and TurboPuffer credentials to retrieve
+general review guidance from the `gx-review-knowledge` namespace:
+
+```bash
+export GX_REVIEW_KNOWLEDGE_NAMESPACE="gx-review-knowledge"
+export GX_REVIEW_RESOURCES_TOP_K=8
+```
+
+Set `GX_REVIEW_RESOURCES=0` to disable this retrieval for a review run.
+
 ### Local development overrides
 
 Copy `.env.example` to `.env` and fill in values. The justfile loads `.env`

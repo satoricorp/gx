@@ -310,6 +310,10 @@ def make_chunk(doc: Document, chunk_kind: str, index: int, text: str, fetched_at
         "frameworks": join_values(doc.frameworks),
         "risk_tags": join_values(doc.risk_tags),
         "review_tags": join_values(doc.review_tags),
+        "language_tags": doc.languages,
+        "framework_tags": doc.frameworks,
+        "risk_tag_values": doc.risk_tags,
+        "review_tag_values": doc.review_tags,
         "chunk_kind": chunk_kind,
         "chunk_index": index,
         "content_hash": content_hash,
@@ -426,18 +430,42 @@ class TurboPufferStore:
 def request_json(url: str, payload: dict[str, Any], *, headers: dict[str, str]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request_headers = {"Content-Type": "application/json", **headers}
-    request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise RuntimeError(f"{url} failed with status {exc.code}: {detail}") from exc
+    retry_statuses = {408, 409, 425, 429, 500, 502, 503, 504}
+    last_error: Exception | None = None
+    for attempt in range(1, 5):
+        request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            error = RuntimeError(f"{url} failed with status {exc.code}: {detail}")
+            if exc.code not in retry_statuses:
+                raise error from exc
+            last_error = error
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            last_error = RuntimeError(f"{url} request failed: {exc}")
+        if attempt < 4:
+            delay = min(30, attempt * 5)
+            print(f"warn: request attempt {attempt} failed; retrying in {delay}s: {last_error}", file=sys.stderr)
+            time.sleep(delay)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"{url} request failed")
 
 
 def review_knowledge_schema(dimensions: int) -> dict[str, Any]:
     string_filter = {"type": "string", "filterable": True}
     string_search = {"type": "string", "full_text_search": True}
+    tag_filter_search = {
+        "type": "[]string",
+        "filterable": True,
+        "full_text_search": {
+            "stemming": False,
+            "remove_stopwords": False,
+            "case_sensitive": False,
+        },
+    }
     return {
         "vector": {"type": f"[{dimensions}]f32", "ann": True},
         "text": string_search,
@@ -452,6 +480,10 @@ def review_knowledge_schema(dimensions: int) -> dict[str, Any]:
         "frameworks": string_search,
         "risk_tags": string_search,
         "review_tags": string_search,
+        "language_tags": tag_filter_search,
+        "framework_tags": tag_filter_search,
+        "risk_tag_values": tag_filter_search,
+        "review_tag_values": tag_filter_search,
         "chunk_kind": string_filter,
         "chunk_index": {"type": "uint", "filterable": True},
         "content_hash": string_filter,
