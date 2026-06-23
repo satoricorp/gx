@@ -119,9 +119,6 @@ func (c *Client) UploadReviewArtifact(ctx context.Context, artifact reviewbundle
 			result.IndexStatus = firstNonEmpty(legacy.IndexStatus, result.IndexStatus, "pending")
 		}
 	}
-	if result.ReviewURL == "" {
-		return reviewbundle.Artifact{}, fmt.Errorf("gx cloud response missing url")
-	}
 	return result, nil
 }
 
