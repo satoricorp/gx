@@ -122,6 +122,43 @@ func TestEnqueueArtifactQueuesAndDrainUploads(t *testing.T) {
 	}
 }
 
+func TestQueuedUploadStatusTreatsDeadUploaderAsPending(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		GXVersion:     "test",
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
+		Push:          reviewbundle.PushPayload{HeadCommitID: "deadbeef"},
+	})
+	item, err := newQueueItem(artifact)
+	if err != nil {
+		t.Fatalf("newQueueItem() error = %v", err)
+	}
+	item.Status = outboxStatusRunning
+	item.Attempts = 1
+	item.LastAttemptAt = 1782258693368
+	if _, err := writeQueueItem(item); err != nil {
+		t.Fatalf("writeQueueItem() error = %v", err)
+	}
+	lockPath, err := uploadLockPath()
+	if err != nil {
+		t.Fatalf("uploadLockPath() error = %v", err)
+	}
+	if err := os.WriteFile(lockPath, []byte(`{"started_at":1782258693368,"pid":999999999}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write stale lock: %v", err)
+	}
+
+	status, err := QueuedUploadStatus()
+	if err != nil {
+		t.Fatalf("QueuedUploadStatus() error = %v", err)
+	}
+	if status.UploadRunning || status.Uploading != 0 || status.Pending != 1 {
+		t.Fatalf("status = %#v, want dead uploader item reported pending", status)
+	}
+}
+
 func TestPublishStackPreparesUploadsAndRecords(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	uploader := &fakeUploader{reviewURL: "http://gx.test/review/stack"}

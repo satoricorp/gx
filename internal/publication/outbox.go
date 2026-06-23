@@ -35,6 +35,11 @@ type QueueItem struct {
 	LastError     string                `json:"last_error,omitempty"`
 }
 
+type uploadLock struct {
+	StartedAt int64 `json:"started_at"`
+	PID       int   `json:"pid"`
+}
+
 type QueueStatus struct {
 	Pending       int    `json:"pending"`
 	Failed        int    `json:"failed"`
@@ -110,10 +115,6 @@ func DrainQueuedUploads(ctx context.Context, uploader Uploader, limit int) (Drai
 			result.Pending++
 			continue
 		}
-		if item.Status == outboxStatusRunning && !staleUpload(item.LastAttemptAt) {
-			result.Pending++
-			continue
-		}
 		item.Status = outboxStatusRunning
 		item.Attempts++
 		item.LastAttemptAt = time.Now().UnixMilli()
@@ -152,9 +153,10 @@ func QueuedUploadStatus() (QueueStatus, error) {
 	if err != nil {
 		return QueueStatus{}, err
 	}
+	lockActive := uploadLockActive()
 	status := QueueStatus{
 		OutboxPath:    dir,
-		UploadRunning: uploadLockActive(),
+		UploadRunning: lockActive,
 	}
 	for _, item := range items {
 		switch item.Status {
@@ -165,7 +167,7 @@ func QueuedUploadStatus() (QueueStatus, error) {
 				status.LastErrorAt = item.LastAttemptAt
 			}
 		case outboxStatusRunning:
-			if staleUpload(item.LastAttemptAt) {
+			if !lockActive || staleUpload(item.LastAttemptAt) {
 				status.Pending++
 			} else {
 				status.Uploading++
@@ -290,8 +292,10 @@ func writeUploadLock() error {
 		return err
 	}
 	defer file.Close()
-	_, err = fmt.Fprintf(file, "%d\n", time.Now().UnixMilli())
-	return err
+	return json.NewEncoder(file).Encode(uploadLock{
+		StartedAt: time.Now().UnixMilli(),
+		PID:       os.Getpid(),
+	})
 }
 
 func removeUploadLock() {
@@ -309,11 +313,31 @@ func uploadLockActive() bool {
 	if err != nil {
 		return false
 	}
-	var ts int64
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &ts); err != nil {
+	lock, err := parseUploadLock(data)
+	if err != nil {
 		return false
 	}
-	return !staleUpload(ts)
+	if staleUpload(lock.StartedAt) {
+		return false
+	}
+	if lock.PID <= 0 {
+		return false
+	}
+	return processAlive(lock.PID)
+}
+
+func parseUploadLock(data []byte) (uploadLock, error) {
+	var lock uploadLock
+	if err := json.Unmarshal(data, &lock); err == nil && lock.StartedAt > 0 {
+		return lock, nil
+	}
+	var ts int64
+	var pid int
+	fields, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d %d", &ts, &pid)
+	if err != nil && fields == 0 {
+		return uploadLock{}, err
+	}
+	return uploadLock{StartedAt: ts, PID: pid}, nil
 }
 
 func uploadLockPath() (string, error) {
