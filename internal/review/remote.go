@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/uploadauth"
 	"github.com/satoricorp/gx/internal/version"
 )
 
@@ -51,8 +51,8 @@ type serverReviewContext struct {
 		Detail    string `json:"detail"`
 	} `json:"collisions"`
 	IndexSnippets []struct {
-		ID   string  `json:"id"`
-		Text string  `json:"text"`
+		ID    string   `json:"id"`
+		Text  string   `json:"text"`
 		Score *float64 `json:"score"`
 	} `json:"indexSnippets"`
 }
@@ -64,7 +64,7 @@ type remoteClient struct {
 }
 
 func newRemoteClient() (*remoteClient, bool) {
-	creds, ok := auth.Load()
+	creds, ok := uploadauth.Load()
 	if !ok || strings.TrimSpace(creds.Token) == "" {
 		return nil, false
 	}
