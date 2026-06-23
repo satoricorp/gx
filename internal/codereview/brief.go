@@ -154,7 +154,7 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 
 func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
 	var snippets []ContextSnippet
-	for _, doc := range []string{"CONTEXT.md", "AGENTS.md", "README.md"} {
+	for _, doc := range []string{"REVIEW.md", "CONTEXT.md", "AGENTS.md", "README.md"} {
 		if snippet, ok := readSnippet(repoRoot, doc, "repo_doc"); ok {
 			snippets = append(snippets, snippet)
 		}

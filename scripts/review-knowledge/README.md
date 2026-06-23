@@ -65,6 +65,8 @@ export GX_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 export GX_EMBEDDING_DIMENSIONS=512
 export GX_TPUF_BASE_URL=https://gcp-us-central1.turbopuffer.com
 export GX_REVIEW_KNOWLEDGE_NAMESPACE=gx-review-knowledge
+export GX_REVIEW_RESOURCES=1
+export GX_REVIEW_RESOURCES_TOP_K=8
 export GX_REVIEW_KNOWLEDGE_CHUNK_CHARS=2400
 export GX_REVIEW_KNOWLEDGE_OVERLAP_CHARS=350
 ```
@@ -72,6 +74,19 @@ export GX_REVIEW_KNOWLEDGE_OVERLAP_CHARS=350
 The default namespace is intentionally separate from `GX_TPUF_NAMESPACE`
 (`gx-sessions`) so review knowledge does not mix with session transcripts and
 repository code chunks.
+
+`gx review` queries this namespace when both `OPENAI_API_KEY` and
+`TURBOPUFFER_API_KEY` are available. Set `GX_REVIEW_RESOURCES=0` to disable
+review-resource retrieval for a run. `GX_REVIEW_RESOURCES_TOP_K` controls the
+shallow retrieval limit; the default is 8 so repo-local policy files can remain
+in the model context alongside review resources. `gx review --deep` raises the
+minimum resource limit to 24.
+
+The manifest keeps display fields such as `languages`, `frameworks`,
+`risk_tags`, and `review_tags` as readable strings. The index also writes
+array-backed filter fields named `language_tags`, `framework_tags`,
+`risk_tag_values`, and `review_tag_values` so review can query exact tags with
+TurboPuffer `ContainsAny` filters.
 
 ## Usage
 

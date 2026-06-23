@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -498,6 +499,7 @@ func compactStaticToolResults(results []StaticToolResult) []StaticToolResult {
 
 func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnippet {
 	if limit > 0 && len(snippets) > limit {
+		snippets = prioritizeContextSnippets(snippets)
 		snippets = snippets[:limit]
 	}
 	out := make([]ContextSnippet, 0, len(snippets))
@@ -506,6 +508,34 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 		out = append(out, snippet)
 	}
 	return out
+}
+
+func prioritizeContextSnippets(snippets []ContextSnippet) []ContextSnippet {
+	out := append([]ContextSnippet(nil), snippets...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return contextSnippetPriority(out[i]) < contextSnippetPriority(out[j])
+	})
+	return out
+}
+
+func contextSnippetPriority(snippet ContextSnippet) int {
+	switch snippet.Kind {
+	case "repo_doc":
+		return 0
+	case "review_resource":
+		return 1
+	case "dependency_manifest":
+		return 2
+	case "code_quality_file":
+		return 3
+	case "module_file":
+		return 4
+	default:
+		if snippet.Source == "indexed" {
+			return 2
+		}
+		return 5
+	}
 }
 
 func limitCodeQualityHints(hints []CodeQualityHint, limit int) []CodeQualityHint {
