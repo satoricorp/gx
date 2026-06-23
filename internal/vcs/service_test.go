@@ -2002,6 +2002,25 @@ func TestEnsureRepoAtPathUsesExistingJJRepo(t *testing.T) {
 	if result.Repo.RootPath != "/repo" {
 		t.Fatalf("EnsureRepoAtPath() root = %q, want /repo", result.Repo.RootPath)
 	}
+	store, err := openStore(context.Background())
+	if err != nil {
+		t.Fatalf("openStore() error = %v", err)
+	}
+	defer store.Close()
+	repo, err := store.FindRepoByRoot(context.Background(), "/repo")
+	if err != nil {
+		t.Fatalf("FindRepoByRoot() error = %v", err)
+	}
+	if repo == nil {
+		t.Fatal("expected gx init to register repo in GX storage")
+	}
+	initializedRepos, err := store.ListInitializedRepos(context.Background())
+	if err != nil {
+		t.Fatalf("ListInitializedRepos() error = %v", err)
+	}
+	if len(initializedRepos) != 1 || initializedRepos[0].RootPath != "/repo" {
+		t.Fatalf("initialized repos = %#v, want /repo", initializedRepos)
+	}
 	for _, call := range runner.calls {
 		if strings.Contains(call, "jj|git init .") {
 			t.Fatalf("EnsureRepoAtPath() unexpectedly initialized repo: %v", runner.calls)

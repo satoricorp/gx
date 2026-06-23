@@ -200,6 +200,13 @@ private struct DoctorStatus: Decodable {
 
 private struct CaptureStatus: Decodable {
     let hookInstalled: Bool?
+    let hookApplicable: Bool?
+    let repoRoot: String?
+    let repoHooks: [RepoHookStatus]?
+    let repoHooksTotal: Int?
+    let repoHooksMissing: Int?
+    let repoHooksUnreachable: Int?
+    let repoHooksOK: Bool?
     let uploadAuthed: Bool?
     let uploadAPI: String?
     let uploadAuthError: String?
@@ -210,6 +217,13 @@ private struct CaptureStatus: Decodable {
     let diskFreeGB: Int?
     let diskWarn: Bool?
     let ok: Bool?
+}
+
+private struct RepoHookStatus: Decodable {
+    let repoRoot: String?
+    let hookInstalled: Bool?
+    let gitReachable: Bool?
+    let error: String?
 }
 
 private struct LedgerRow: Decodable {
@@ -275,7 +289,10 @@ private enum DoctorClient {
             if doctor.ok == false { return .red }
             return .unknown
         }
-        let hardFail = capture.hookInstalled == false ||
+        let hookMissing = capture.hookApplicable != false && capture.hookInstalled == false
+        let registeredHookIssue = (capture.repoHooksMissing ?? 0) > 0 || (capture.repoHooksUnreachable ?? 0) > 0
+        let hardFail = hookMissing ||
+            registeredHookIssue ||
             capture.uploadAuthed == false ||
             capture.cursorReachable == false ||
             capture.diskWarn == true
@@ -609,7 +626,24 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             menu.addItem(disabled("Run gx init and gx login to finish setup"))
             return menu
         }
-        menu.addItem(disabled(capture.hookInstalled == true ? "Pre-push hook: ok" : "Pre-push hook: missing"))
+        if capture.hookApplicable == false {
+            menu.addItem(disabled("Pre-push hook: not checked outside repo"))
+        } else {
+            menu.addItem(disabled(capture.hookInstalled == true ? "Pre-push hook: ok" : "Pre-push hook: missing"))
+        }
+        let repoHookTotal = capture.repoHooksTotal ?? capture.repoHooks?.count ?? 0
+        if repoHookTotal == 0 {
+            menu.addItem(disabled("Registered repo hooks: none"))
+        } else if capture.repoHooksOK == true {
+            menu.addItem(disabled("Registered repo hooks: \(repoHookTotal) ok"))
+        } else {
+            menu.addItem(disabled("Registered repo hooks: \(capture.repoHooksMissing ?? 0) missing, \(capture.repoHooksUnreachable ?? 0) unreachable"))
+            if let repoHooks = capture.repoHooks {
+                for repoHook in repoHooks.filter({ $0.hookInstalled != true || $0.gitReachable == false }).prefix(4) {
+                    menu.addItem(disabled("- \(repoHook.repoRoot ?? "repo")"))
+                }
+            }
+        }
         if capture.uploadAuthed == true {
             menu.addItem(disabled("Upload auth: ok"))
         } else if let error = capture.uploadAuthError, !error.isEmpty {

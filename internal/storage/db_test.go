@@ -138,6 +138,78 @@ func TestDemuxProposalRoundTrip(t *testing.T) {
 	}
 }
 
+func TestListReposOrdersByMostRecentlyUpdated(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	store, err := NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer store.Close()
+
+	for _, repo := range []Repo{
+		{RootPath: "/old", Backend: "jj", CreatedAt: 1, UpdatedAt: 10},
+		{RootPath: "/new", Backend: "jj", CreatedAt: 2, UpdatedAt: 20},
+	} {
+		if _, err := store.UpsertRepo(ctx, repo); err != nil {
+			t.Fatalf("UpsertRepo(%s) error = %v", repo.RootPath, err)
+		}
+	}
+
+	got, err := store.ListRepos(ctx)
+	if err != nil {
+		t.Fatalf("ListRepos() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListRepos() returned %d repos, want 2", len(got))
+	}
+	if got[0].RootPath != "/new" || got[1].RootPath != "/old" {
+		t.Fatalf("ListRepos() order = %#v, want /new then /old", got)
+	}
+}
+
+func TestInitializedReposRoundTrip(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	store, err := NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.RecordInitializedRepo(ctx, "/old", 10); err != nil {
+		t.Fatalf("RecordInitializedRepo(/old) error = %v", err)
+	}
+	if err := store.RecordInitializedRepo(ctx, "/new", 20); err != nil {
+		t.Fatalf("RecordInitializedRepo(/new) error = %v", err)
+	}
+	if err := store.RecordInitializedRepo(ctx, "/old", 30); err != nil {
+		t.Fatalf("RecordInitializedRepo(/old update) error = %v", err)
+	}
+
+	got, err := store.ListInitializedRepos(ctx)
+	if err != nil {
+		t.Fatalf("ListInitializedRepos() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListInitializedRepos() returned %d repos, want 2", len(got))
+	}
+	if got[0].RootPath != "/old" || got[0].CreatedAt != 10 || got[0].UpdatedAt != 30 {
+		t.Fatalf("first initialized repo = %#v, want /old created 10 updated 30", got[0])
+	}
+	if got[1].RootPath != "/new" {
+		t.Fatalf("second initialized repo = %#v, want /new", got[1])
+	}
+}
+
 func TestStackTracksChangeAndCommitRefs(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()

@@ -374,6 +374,17 @@ func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOpt
 	if err != nil {
 		return InitResult{}, err
 	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return InitResult{}, err
+	}
+	defer store.Close()
+	if _, err := upsertRepo(ctx, store, repo); err != nil {
+		return InitResult{}, err
+	}
+	if err := store.RecordInitializedRepo(ctx, repo.RootPath, time.Now().UnixMilli()); err != nil {
+		return InitResult{}, err
+	}
 	return InitResult{
 		Repo:            repo,
 		Initialized:     initialized,

@@ -60,6 +60,12 @@ type Repo struct {
 	UpdatedAt     int64
 }
 
+type InitializedRepo struct {
+	RootPath  string
+	CreatedAt int64
+	UpdatedAt int64
+}
+
 type Change struct {
 	ID              int64
 	RepoID          int64

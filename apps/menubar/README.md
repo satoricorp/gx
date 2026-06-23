@@ -98,11 +98,11 @@ Applications, and use the same MCP Setup menu.
 gx doctor --json
 ```
 
-The menubar reads `doctor.capture` for hook, upload auth, Cursor vscdb, disk space, and staging backlog. Tray states:
+The menubar reads `doctor.capture` for registered repo hooks, upload auth, Cursor vscdb, disk space, and staging backlog. Tray states:
 
 - **Green** — capture checks pass
 - **Yellow** — backlog > 10 or non-fatal warnings
-- **Red** — missing hook, auth, Cursor, or low disk
+- **Red** — missing registered repo hook, auth, Cursor, or low disk
 
 ## Package
 

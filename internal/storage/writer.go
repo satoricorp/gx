@@ -224,6 +224,44 @@ func (s *Store) SetRepoAuthoringBase(ctx context.Context, repoID int64, baseRef 
 	return nil
 }
 
+func (s *Store) RecordInitializedRepo(ctx context.Context, rootPath string, now int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO initialized_repos (root_path, created_at, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(root_path) DO UPDATE SET
+			updated_at = excluded.updated_at
+	`, rootPath, now, now)
+	if err != nil {
+		return fmt.Errorf("record initialized repo: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListInitializedRepos(ctx context.Context) ([]InitializedRepo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT root_path, created_at, updated_at
+		FROM initialized_repos
+		ORDER BY updated_at DESC, root_path ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list initialized repos: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []InitializedRepo
+	for rows.Next() {
+		var repo InitializedRepo
+		if err := rows.Scan(&repo.RootPath, &repo.CreatedAt, &repo.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan initialized repo: %w", err)
+		}
+		repos = append(repos, repo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list initialized repos rows: %w", err)
+	}
+	return repos, nil
+}
+
 func (s *Store) UpsertChange(ctx context.Context, change Change) (int64, error) {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO changes (
@@ -1187,6 +1225,57 @@ func (s *Store) FindRepoByRoot(ctx context.Context, rootPath string) (*Repo, err
 		repo.RemoteURL = &remoteURL.String
 	}
 	return &repo, nil
+}
+
+func (s *Store) ListRepos(ctx context.Context) ([]Repo, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, root_path, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
+		FROM repos
+		ORDER BY updated_at DESC, id DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list repos: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []Repo
+	for rows.Next() {
+		var repo Repo
+		var defaultRemote sql.NullString
+		var defaultBranch sql.NullString
+		var authoringBase sql.NullString
+		var remoteURL sql.NullString
+		if err := rows.Scan(
+			&repo.ID,
+			&repo.RootPath,
+			&repo.Backend,
+			&defaultRemote,
+			&defaultBranch,
+			&authoringBase,
+			&remoteURL,
+			&repo.CreatedAt,
+			&repo.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan repo: %w", err)
+		}
+		if defaultRemote.Valid {
+			repo.DefaultRemote = &defaultRemote.String
+		}
+		if defaultBranch.Valid {
+			repo.DefaultBranch = &defaultBranch.String
+		}
+		if authoringBase.Valid {
+			repo.AuthoringBase = &authoringBase.String
+		}
+		if remoteURL.Valid {
+			repo.RemoteURL = &remoteURL.String
+		}
+		repos = append(repos, repo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list repos rows: %w", err)
+	}
+	return repos, nil
 }
 
 func (s *Store) ListChangesByRepoID(ctx context.Context, repoID int64) ([]Change, error) {

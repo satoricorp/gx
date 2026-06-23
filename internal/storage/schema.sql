@@ -63,6 +63,12 @@ CREATE TABLE IF NOT EXISTS repos (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS initialized_repos (
+    root_path TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS changes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     repo_id INTEGER NOT NULL REFERENCES repos(id),
