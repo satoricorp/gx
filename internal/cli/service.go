@@ -207,27 +207,6 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
 			fmt.Fprintln(cmd.OutOrStdout())
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Proxy", gxservice.AnthropicBaseURL()))
-			if path, err := gxservice.LaunchAgentPath(); err == nil {
-				if _, statErr := os.Stat(path); statErr == nil {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("LaunchAgent", success("ok")+": "+path))
-				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("LaunchAgent", danger("warn")+": not installed"))
-				}
-			}
-			if values, err := gxservice.NewManager().EnvStatus(ctx); err == nil {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue(gxservice.EnvAnthropic, compareEnv(values[gxservice.EnvAnthropic], gxservice.AnthropicBaseURL())))
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue(gxservice.EnvOpenAI, compareEnv(values[gxservice.EnvOpenAI], gxservice.OpenAIBaseURL())))
-			}
-			status := gxservice.CheckCodexConfig()
-			switch {
-			case status.Correct:
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Codex config", success("ok")))
-			case status.Found:
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Codex config", danger("warn")+": openai_base_url is "+quoteOrEmpty(status.Value)))
-			default:
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Codex config", danger("warn")+": not found"))
-			}
 			cursor := cursorStatus(ctx)
 			switch {
 			case !cursor.Found:
@@ -250,7 +229,6 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 					}
 				}
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), muted("Run `gx repair codex` to set Codex openai_base_url to GX."))
 			return nil
 		},
 	}
@@ -333,25 +311,11 @@ func compareEnv(got, want string) string {
 	return danger("warn") + ": " + got + ", want " + want
 }
 
-type commandStatus struct {
-	OK     bool   `json:"ok"`
-	Output string `json:"output,omitempty"`
-	Error  string `json:"error,omitempty"`
-}
-
 type envVarStatus struct {
 	Name     string `json:"name"`
 	Current  string `json:"current"`
 	Expected string `json:"expected"`
 	OK       bool   `json:"ok"`
-}
-
-type codexStatusJSON struct {
-	ConfigPath string `json:"configPath"`
-	Found      bool   `json:"found"`
-	OK         bool   `json:"ok"`
-	Value      string `json:"value"`
-	Expected   string `json:"expected"`
 }
 
 type launchAgentStatusJSON struct {
@@ -361,17 +325,12 @@ type launchAgentStatusJSON struct {
 }
 
 type doctorJSON struct {
-	Proxy       string                `json:"proxy"`
-	LaunchAgent launchAgentStatusJSON `json:"launchAgent"`
-	Environment []envVarStatus        `json:"environment"`
-	Codex       codexStatusJSON       `json:"codex"`
-	Cursor      cursorStatusJSON      `json:"cursor"`
-	Capture     captureDoctorJSON     `json:"capture"`
-	Service     commandStatus         `json:"service"`
-	MCP         mcpStatusJSON         `json:"mcp"`
-	Ledger      []ledgerRowJSON       `json:"ledger"`
-	Diagnose    diagnoseJSON          `json:"diagnose"`
-	OK          bool                  `json:"ok"`
+	Cursor   cursorStatusJSON  `json:"cursor"`
+	Capture  captureDoctorJSON `json:"capture"`
+	MCP      mcpStatusJSON     `json:"mcp"`
+	Ledger   []ledgerRowJSON   `json:"ledger"`
+	Diagnose diagnoseJSON      `json:"diagnose"`
+	OK       bool              `json:"ok"`
 }
 
 type ledgerRowJSON struct {
@@ -417,35 +376,9 @@ type serviceJSON struct {
 }
 
 func doctorStatusJSON(ctx context.Context) doctorJSON {
-	launchAgent := launchAgentStatus()
-	envValues, envErr := gxservice.NewManager().EnvStatus(ctx)
-	env := envStatusJSON(envValues)
-	service := commandStatus{OK: false}
-	if text, err := gxservice.NewManager().Status(ctx); err != nil {
-		service.Output = text
-		service.Error = err.Error()
-	} else {
-		service.OK = true
-		service.Output = text
-	}
-	if envErr != nil {
-		service.Error = strings.TrimSpace(strings.Join([]string{service.Error, envErr.Error()}, " "))
-	}
-	codex := gxservice.CheckCodexConfig()
 	status := doctorJSON{
-		Proxy:       gxservice.AnthropicBaseURL(),
-		LaunchAgent: launchAgent,
-		Environment: env,
-		Capture:     captureDoctorStatus(ctx, ""),
-		Codex: codexStatusJSON{
-			ConfigPath: codex.ConfigPath,
-			Found:      codex.Found,
-			OK:         codex.Correct,
-			Value:      codex.Value,
-			Expected:   gxservice.OpenAIBaseURL(),
-		},
+		Capture: captureDoctorStatus(ctx, ""),
 		Cursor:  cursorStatus(ctx),
-		Service: service,
 		MCP:     mcpStatus(ctx),
 	}
 	status.OK = status.Capture.OK
@@ -475,7 +408,7 @@ func captureLedgerRows(ctx context.Context, status doctorJSON) []ledgerRowJSON {
 		row := ledgerRowJSON{
 			Agent:    agent,
 			Filepath: truncateLedgerPath(summary.Filepath),
-			Status:   agentLedgerStatus(agent, status),
+			Status:   agentLedgerStatus(agent, status, summary.Calls),
 			Calls:    formatLedgerCount(summary.Calls),
 			Tokens:   formatLedgerTokens(summary.Tokens),
 			Files:    formatLedgerCount(summary.Files),
@@ -495,7 +428,7 @@ func fallbackLedgerRows(status doctorJSON) []ledgerRowJSON {
 		{
 			Agent:    "codex",
 			Filepath: defaultLedgerPath("codex", status),
-			Status:   agentLedgerStatus("codex", status),
+			Status:   agentLedgerStatus("codex", status, 0),
 			Calls:    "0",
 			Tokens:   "—",
 			Files:    "—",
@@ -504,7 +437,7 @@ func fallbackLedgerRows(status doctorJSON) []ledgerRowJSON {
 		{
 			Agent:    "cursor",
 			Filepath: defaultLedgerPath("cursor", status),
-			Status:   agentLedgerStatus("cursor", status),
+			Status:   agentLedgerStatus("cursor", status, status.Cursor.Sessions),
 			Calls:    formatLedgerCount(status.Cursor.Sessions),
 			Tokens:   formatLedgerTokens(status.Cursor.Messages),
 			Files:    "—",
@@ -513,7 +446,7 @@ func fallbackLedgerRows(status doctorJSON) []ledgerRowJSON {
 		{
 			Agent:    "claude",
 			Filepath: defaultLedgerPath("claude", status),
-			Status:   agentLedgerStatus("claude", status),
+			Status:   agentLedgerStatus("claude", status, 0),
 			Calls:    "0",
 			Tokens:   "—",
 			Files:    "—",
@@ -535,21 +468,11 @@ func syncLedgerRow(status doctorJSON) ledgerRowJSON {
 	}
 }
 
-func agentLedgerStatus(agent string, status doctorJSON) string {
-	serviceOK := status.Service.OK
-	switch agent {
-	case "codex":
-		if !status.Codex.Found {
-			return "waiting"
-		}
-		if status.Codex.OK && serviceOK {
-			return "attached"
-		}
-		if serviceOK {
-			return "indexed"
-		}
-		return "paused"
-	case "cursor":
+func agentLedgerStatus(agent string, status doctorJSON, calls int) string {
+	if calls > 0 {
+		return "indexed"
+	}
+	if agent == "cursor" {
 		if !status.Cursor.Found {
 			return "waiting"
 		}
@@ -557,35 +480,12 @@ func agentLedgerStatus(agent string, status doctorJSON) string {
 			return "indexed"
 		}
 		return "attached"
-	case "claude":
-		anthropicOK := envVarOK(status.Environment, gxservice.EnvAnthropic)
-		if anthropicOK && serviceOK {
-			return "attached"
-		}
-		if serviceOK {
-			return "paused"
-		}
-		return "waiting"
-	default:
-		return "waiting"
 	}
-}
-
-func envVarOK(values []envVarStatus, name string) bool {
-	for _, value := range values {
-		if value.Name == name {
-			return value.OK
-		}
-	}
-	return false
+	return "waiting"
 }
 
 func defaultLedgerPath(agent string, status doctorJSON) string {
 	switch agent {
-	case "codex":
-		if status.Codex.ConfigPath != "" {
-			return truncateLedgerPath(filepath.Dir(status.Codex.ConfigPath))
-		}
 	case "cursor":
 		if status.Cursor.VSCDBPath != "" {
 			return truncateLedgerPath(filepath.Dir(filepath.Dir(status.Cursor.VSCDBPath)))

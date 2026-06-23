@@ -202,6 +202,7 @@ private struct CaptureStatus: Decodable {
     let hookInstalled: Bool?
     let uploadAuthed: Bool?
     let uploadAPI: String?
+    let uploadAuthError: String?
     let pendingExtracts: Int?
     let pendingSessions: Int?
     let cursorReachable: Bool?
@@ -609,7 +610,13 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             return menu
         }
         menu.addItem(disabled(capture.hookInstalled == true ? "Pre-push hook: ok" : "Pre-push hook: missing"))
-        menu.addItem(disabled(capture.uploadAuthed == true ? "Upload auth: ok" : "Upload auth: missing"))
+        if capture.uploadAuthed == true {
+            menu.addItem(disabled("Upload auth: ok"))
+        } else if let error = capture.uploadAuthError, !error.isEmpty {
+            menu.addItem(disabled("Upload auth: \(error)"))
+        } else {
+            menu.addItem(disabled("Upload auth: missing"))
+        }
         menu.addItem(disabled(capture.cursorReachable == true ? "Cursor vscdb: ok" : "Cursor vscdb: missing"))
         let backlog = (capture.pendingExtracts ?? 0) + (capture.pendingSessions ?? 0)
         menu.addItem(disabled("Staging backlog: \(backlog) pending"))

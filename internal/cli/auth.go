@@ -18,6 +18,8 @@ type authStatusJSON struct {
 	AvatarURL     string `json:"avatarURL,omitempty"`
 	MachineName   string `json:"machineName,omitempty"`
 	AuthKind      string `json:"authKind"`
+	AuthValid     *bool  `json:"authValid,omitempty"`
+	AuthError     string `json:"authError,omitempty"`
 	ConvexSiteURL string `json:"convexSiteURL,omitempty"`
 	CloudURL      string `json:"cloudURL,omitempty"`
 }
@@ -28,7 +30,7 @@ type authTokenJSON struct {
 	CloudURL string `json:"cloudURL,omitempty"`
 }
 
-func buildAuthStatusJSON() (authStatusJSON, error) {
+func buildAuthStatusJSON(ctx context.Context) (authStatusJSON, error) {
 	convexSiteURL := cloud.ConvexSiteURL()
 	cloudURL := cloud.CloudURL()
 	creds, err := cloud.LoadCloudCredentials()
@@ -36,7 +38,7 @@ func buildAuthStatusJSON() (authStatusJSON, error) {
 		return authStatusJSON{}, err
 	}
 	if kind := authKindForCredentials(creds); kind != "none" {
-		return authStatusJSON{
+		status := authStatusJSON{
 			LoggedIn:      true,
 			Login:         creds.Login,
 			AvatarURL:     creds.AvatarURL,
@@ -44,7 +46,9 @@ func buildAuthStatusJSON() (authStatusJSON, error) {
 			AuthKind:      kind,
 			ConvexSiteURL: convexSiteURL,
 			CloudURL:      cloudURL,
-		}, nil
+		}
+		status = verifyAuthStatus(ctx, status, creds)
+		return status, nil
 	}
 	return authStatusJSON{LoggedIn: false, AuthKind: "none", ConvexSiteURL: convexSiteURL, CloudURL: cloudURL}, nil
 }
@@ -57,7 +61,7 @@ func newAuthCommand(ctx context.Context) *cobra.Command {
 	cmd.AddCommand(
 		newAuthLoginCommand(ctx),
 		newAuthLogoutCommand(ctx),
-		newAuthStatusCommand(),
+		newAuthStatusCommand(ctx),
 		newAuthTokenCommand(),
 	)
 	return cmd
@@ -98,14 +102,14 @@ func newAuthLogoutCommand(ctx context.Context) *cobra.Command {
 	}
 }
 
-func newAuthStatusCommand() *cobra.Command {
+func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show gx cloud login status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOut {
-				status, err := buildAuthStatusJSON()
+				status, err := buildAuthStatusJSON(ctx)
 				if err != nil {
 					return err
 				}
@@ -120,10 +124,18 @@ func newAuthStatusCommand() *cobra.Command {
 			}
 			kind := authKindForCredentials(creds)
 			if kind != "none" {
+				status := verifyAuthStatus(ctx, authStatusJSON{AuthKind: kind}, creds)
 				fmt.Fprintln(cmd.OutOrStdout(), section("Cloud auth"))
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Auth", kind))
 				if strings.TrimSpace(creds.Login) != "" {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
+				}
+				if status.AuthValid != nil && !*status.AuthValid {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", danger("warn")+": "+status.AuthError))
+				} else if status.AuthValid != nil && *status.AuthValid {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", success("ok")))
+				} else if status.AuthError != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Token", danger("warn")+": "+status.AuthError))
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine", creds.MachineName))
 				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Machine ID", creds.MachineID))
@@ -140,6 +152,32 @@ func newAuthStatusCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	return cmd
+}
+
+func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.CloudCredentials) authStatusJSON {
+	if creds == nil || strings.TrimSpace(creds.GitHubAccessToken) == "" {
+		return status
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, creds.GitHubAccessToken)
+	if err != nil {
+		status.AuthError = "could not verify GitHub token: " + err.Error()
+		return status
+	}
+	status.AuthValid = &validation.Valid
+	if validation.Valid {
+		if strings.TrimSpace(validation.Login) != "" {
+			status.Login = validation.Login
+		}
+		return status
+	}
+	status.AuthError = strings.TrimSpace(validation.Error)
+	if status.AuthError == "" {
+		status.AuthError = "GitHub rejected stored token"
+	}
+	status.AuthError += "; run `gx auth logout` then `gx auth login`"
+	return status
 }
 
 func newAuthTokenCommand() *cobra.Command {

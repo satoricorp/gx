@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/hooks"
 	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
 	"github.com/satoricorp/gx/internal/storage"
@@ -18,6 +21,7 @@ type captureDoctorJSON struct {
 	HookInstalled   bool   `json:"hookInstalled"`
 	UploadAuthed    bool   `json:"uploadAuthed"`
 	UploadAPI       string `json:"uploadAPI,omitempty"`
+	UploadAuthError string `json:"uploadAuthError,omitempty"`
 	PendingExtracts int    `json:"pendingExtracts"`
 	PendingSessions int    `json:"pendingSessions"`
 	CursorReachable bool   `json:"cursorReachable"`
@@ -35,9 +39,12 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 		}
 	}
 	status.HookInstalled = hooks.IsInstalled(repoRoot)
-	if creds, ok := uploadauth.Load(); ok {
+	if creds, kind, ok := uploadauth.LoadWithKind(); ok {
 		status.UploadAuthed = true
 		status.UploadAPI = creds.APIURL
+		if kind == "github" {
+			status.UploadAuthed, status.UploadAuthError = validateCaptureUploadToken(ctx, creds.Token)
+		}
 	}
 	if counts, err := storage.PendingCaptureCounts(ctx); err == nil {
 		status.PendingExtracts = counts.Extracts
@@ -71,7 +78,11 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload credentials", success("ok")+": "+status.UploadAPI))
 	} else {
-		fmt.Fprintln(out, labelValue("Upload credentials", danger("warn")+": run `gx auth login`"))
+		hint := "run `gx auth login`"
+		if strings.TrimSpace(status.UploadAuthError) != "" {
+			hint = status.UploadAuthError
+		}
+		fmt.Fprintln(out, labelValue("Upload credentials", danger("warn")+": "+hint))
 	}
 	backlog := status.PendingExtracts + status.PendingSessions
 	if backlog == 0 {
@@ -97,6 +108,23 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 		}
 		fmt.Fprintln(out, labelValue("Disk free", label+fmt.Sprintf(": %d GB", status.DiskFreeGB)))
 	}
+}
+
+func validateCaptureUploadToken(ctx context.Context, token string) (bool, string) {
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, token)
+	if err != nil {
+		return false, "could not verify GitHub token: " + err.Error()
+	}
+	if validation.Valid {
+		return true, ""
+	}
+	message := strings.TrimSpace(validation.Error)
+	if message == "" {
+		message = "GitHub rejected stored token"
+	}
+	return false, message + "; run `gx auth logout` then `gx auth login`"
 }
 
 type fmtWriter interface {

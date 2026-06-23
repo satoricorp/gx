@@ -61,6 +61,15 @@ type accessTokenResponse struct {
 	Error       string `json:"error"`
 }
 
+// GitHubTokenValidation reports whether GitHub accepts a bearer token.
+type GitHubTokenValidation struct {
+	Valid      bool
+	Login      string
+	UserID     int64
+	StatusCode int
+	Error      string
+}
+
 // CompleteAuthResponse is returned by POST /cx/auth/complete.
 type CompleteAuthResponse struct {
 	UserID              string `json:"user_id"`
@@ -260,6 +269,66 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		case <-time.After(time.Duration(interval) * time.Second):
 		}
 	}
+}
+
+// ValidateGitHubAccessToken checks the token against GitHub's user endpoint.
+func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token string) (GitHubTokenValidation, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return GitHubTokenValidation{Valid: false, Error: "missing token"}, nil
+	}
+	userURL := strings.TrimSpace(os.Getenv("GX_GITHUB_USER_URL"))
+	if userURL == "" {
+		userURL = "https://api.github.com/user"
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
+	if err != nil {
+		return GitHubTokenValidation{}, fmt.Errorf("create github token validation request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", "gx/"+version.Current())
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return GitHubTokenValidation{}, fmt.Errorf("validate github token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Login   string `json:"login"`
+		ID      int64  `json:"id"`
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		message := strings.TrimSpace(body.Message)
+		if message == "" {
+			message = resp.Status
+		}
+		return GitHubTokenValidation{
+			Valid:      false,
+			StatusCode: resp.StatusCode,
+			Error:      message,
+		}, nil
+	}
+	if body.ID == 0 {
+		return GitHubTokenValidation{
+			Valid:      false,
+			StatusCode: resp.StatusCode,
+			Error:      "GitHub response missing user id",
+		}, nil
+	}
+	return GitHubTokenValidation{
+		Valid:      true,
+		Login:      body.Login,
+		UserID:     body.ID,
+		StatusCode: resp.StatusCode,
+	}, nil
 }
 
 func completeConvexAuth(ctx context.Context, client *http.Client, convexURL string, body completeAuthRequest) (CompleteAuthResponse, error) {
