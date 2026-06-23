@@ -290,39 +290,6 @@ After `gx publish`, gx uploads the pushed change, changed files, linked sessions
 responses, token usage, and the GitHub PR URL when available. When the cloud API returns
 a review URL, `gx publish` prints it.
 
-### Review steering
-
-Add a root `REVIEW.md` to steer code review. The file is plain Markdown so it
-stays compatible with tools that paste it verbatim into review agents.
-
-GX additionally extracts URLs and reviewer model hints from the Markdown. URL
-contents are fetched and summarized into bounded review context. Normal
-`gx review` uses the policy text and references with the configured default
-reviewer; `gx review --deep` may also fan out to supported model reviewers named
-in `REVIEW.md`. GitHub PR review comments use `REVIEW.md` from the PR head when
-available, falling back to the default branch.
-
-Example:
-
-```markdown
-# REVIEW.md
-
-## Severity
-
-Important means behavior bugs, data leaks, authz mistakes, unsafe migrations,
-or rollback risks. Style and naming are Nit at most.
-
-## Review references
-
-Use https://google.github.io/eng-practices/review/reviewer/looking-for.html
-as review guidance.
-
-## Reviewer models
-
-Use gpt-5.4 for correctness review.
-Use claude-sonnet-4-6 as a dissent reviewer.
-```
-
 ### Semantic transcript indexing
 
 Semantic indexing is opt-in because it sends linked session transcript chunks to
@@ -351,6 +318,16 @@ export GX_SEMANTIC_MAX_CHUNK_BYTES=12000
 
 If semantic indexing is misconfigured or unavailable, `gx publish` still uploads the
 review bundle and reports the semantic indexing error separately.
+
+`gx review` can also use the same OpenAI and TurboPuffer credentials to retrieve
+general review guidance from the `gx-review-knowledge` namespace:
+
+```bash
+export GX_REVIEW_KNOWLEDGE_NAMESPACE="gx-review-knowledge"
+export GX_REVIEW_RESOURCES_TOP_K=6
+```
+
+Set `GX_REVIEW_RESOURCES=0` to disable this retrieval for a review run.
 
 ### Local development overrides
 
@@ -398,8 +375,8 @@ VERSION="1.2.3"
 ```
 
 `GX_CLOUD_URL` is the deployed GX API origin. The CLI appends API paths such as
-`/v1/publish`; auth uses `CONVEX_SITE_URL` separately (`/cx/auth/complete`,
-`/cx/auth/revoke`). `GX_CLOUD_URL` should not point at the Convex `.site` host.
+`/v1/publish`; auth uses `CONVEX_SITE_URL` separately (`/cx/auth/complete`).
+`GX_CLOUD_URL` should not point at the Convex `.site` host.
 
 Only the GitHub OAuth client ID is embedded in the binary — never the client secret.
 
