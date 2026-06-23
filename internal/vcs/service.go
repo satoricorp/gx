@@ -2025,6 +2025,31 @@ func (s *Service) PreparePublish(ctx context.Context, args []string, opts PushOp
 	return s.PushWithOptions(ctx, args, opts)
 }
 
+func (s *Service) PrepareNamedPublish(ctx context.Context, name string, args []string, opts PushOptions) (PushResult, error) {
+	repo, err := s.ResolveGitRepo(ctx)
+	if err != nil {
+		return PushResult{}, err
+	}
+	lockRoot := repo.RootPath
+	if repo.Backend == "jj" || hasJJRepo(ctx, s, repo.RootPath) {
+		if jjRepo, jjErr := s.ResolveJJRepoAtPath(ctx, repo.RootPath); jjErr == nil {
+			repo = jjRepo
+			lockRoot = jjRepo.RootPath
+		}
+	}
+	var result PushResult
+	err = withRepoLock(lockRoot, func() error {
+		stack, err := s.stackBySelector(ctx, repo, name)
+		if err != nil {
+			return err
+		}
+		var pushErr error
+		result, pushErr = s.pushStackUnlocked(ctx, repo, args, opts, stack)
+		return pushErr
+	})
+	return result, err
+}
+
 func (s *Service) PrepareAllPublishes(ctx context.Context, args []string, opts PushOptions) ([]PushResult, error) {
 	return s.PublishAllStacks(ctx, args, opts, nil)
 }
