@@ -165,13 +165,22 @@ func newInternalDaemonCommand(ctx context.Context) *cobra.Command {
 }
 
 func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print gx version",
 		Run: func(cmd *cobra.Command, args []string) {
+			if jsonOut {
+				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(version.BuildInfo()); err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), err)
+				}
+				return
+			}
 			fmt.Fprintln(cmd.OutOrStdout(), logoText("version "+version.Current()))
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable version metadata")
+	return cmd
 }
 
 func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
@@ -241,8 +250,8 @@ func newAddCommand(ctx context.Context, engine *authoring.Engine, use string, he
 			"",
 			"A non-empty commit message is required; pass it with -m.",
 			"",
-			"From gx/<base>, gx add records the current work into a new inferred GX stack based on <base>.",
-			"From gx/edit, gx add is edit-mode surgery: it records onto the active edited stack/revision and should only run after intentionally choosing that stack.",
+			"From the base branch, gx add records the current work into a new inferred GX stack based on that base.",
+			"From an active stack branch, gx add records onto the active edited stack/revision and should only run after intentionally choosing that stack.",
 		}, "\n"),
 		Example: strings.Join([]string{
 			`  gx add -m "describe this revision"`,
@@ -1688,7 +1697,7 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
 	next := []string{"gx compose", "gx stacks"}
-	if gitCheckoutRef == "gx/edit" && len(current.Files) > 0 {
+	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
 		next = []string{`gx add -m "describe this revision"`, "gx stacks"}
 	}
 	refs := currentStatusRefs{
@@ -1770,7 +1779,7 @@ func printCurrentStatusHuman(out io.Writer, status currentStatus) {
 	}
 	if len(status.Files) > 0 {
 		fmt.Fprintf(out, "%d files are currently waiting to be assigned.\n", len(status.Files))
-		if status.Refs.GitCheckoutRef == "gx/edit" {
+		if status.Stack != nil && status.Stack.BookmarkName != "" && status.Refs.GitCheckoutRef == status.Stack.BookmarkName {
 			fmt.Fprintf(out, "Run %s to record them onto the active edited stack revision.\n", command(`gx add -m "describe this revision"`))
 		} else {
 			fmt.Fprintf(out, "Run %s to add them to the pending compose proposal.\n", command("gx compose"))
@@ -1856,7 +1865,12 @@ func printPublishUploadStatus(out io.Writer, status publication.QueueStatus) {
 func currentStatusBaseStack(status currentStatus) string {
 	if status.Repo.AuthoringBase != nil && strings.TrimSpace(*status.Repo.AuthoringBase) != "" {
 		base := strings.TrimSpace(*status.Repo.AuthoringBase)
-		if !strings.HasPrefix(base, "gx/") {
+		if strings.HasPrefix(base, "gx/") {
+			name := strings.TrimPrefix(strings.TrimPrefix(base, "gx/draft/"), "gx/")
+			if name != "" {
+				return "feature/" + name
+			}
+		} else {
 			return base
 		}
 	}

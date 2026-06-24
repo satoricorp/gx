@@ -56,7 +56,7 @@ func TestStackMergedIntoBaseUsesLiveBookmark(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "jj", "log", "-r", "(gx/work) & ancestors(main)", "-n", "1", "--no-graph", "-T", "change_id"): {
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/work) & ancestors(main)", "-n", "1", "--no-graph", "-T", "change_id"): {
 				"workchange\n",
 			},
 		},
@@ -64,10 +64,10 @@ func TestStackMergedIntoBaseUsesLiveBookmark(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 
 	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
-		BookmarkName: "gx/work",
+		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		Status:       "draft",
-	}, map[string]string{"gx/work": "workchange"})
+	}, map[string]string{"feature/work": "workchange"})
 	if !merged {
 		t.Fatal("expected live bookmark ancestor of main to be merged")
 	}
@@ -78,7 +78,7 @@ func TestStackMergedIntoBaseIgnoresStoredHeadWhenBookmarkExists(t *testing.T) {
 	headCommit := "abc123"
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "jj", "log", "-r", "(gx/work) & ancestors(main)", "-n", "1", "--no-graph", "-T", "change_id"): {
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/work) & ancestors(main)", "-n", "1", "--no-graph", "-T", "change_id"): {
 				"",
 			},
 		},
@@ -86,11 +86,11 @@ func TestStackMergedIntoBaseIgnoresStoredHeadWhenBookmarkExists(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 
 	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
-		BookmarkName: "gx/work",
+		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		HeadCommitID: &headCommit,
 		Status:       "draft",
-	}, map[string]string{"gx/work": "workchange"})
+	}, map[string]string{"feature/work": "workchange"})
 	if merged {
 		t.Fatal("stored head should not classify a stack as merged while its live bookmark is not merged")
 	}
@@ -109,7 +109,7 @@ func TestStackMergedIntoBaseFallsBackToStoredHeadWithoutBookmark(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 
 	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
-		BookmarkName: "gx/work",
+		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		HeadCommitID: &headCommit,
 		Status:       "draft",

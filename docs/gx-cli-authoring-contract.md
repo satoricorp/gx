@@ -159,8 +159,8 @@ The intended visible-branch rules are:
 - After apply, visible Git checkout returns to `main`.
 - Publish may create or update branch refs for stacks.
 - After publish, visible Git checkout returns to `main`.
-- Edit surgery may use `gx/edit` or another internal branch, but only for
-  explicit edit workflows.
+- Edit surgery should attach visible Git to the real stack branch when one
+  exists. GX must not create `gx/...` checkout branches for edit/base state.
 
 Branches/bookmarks created by compose should match the stack names shown in
 compose. If compose proposes `feature/stack-management`, then accepting it

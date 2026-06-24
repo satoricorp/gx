@@ -14,8 +14,8 @@ func TestDemuxInteractiveModelAppliesSelectedStack(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", TargetStack: "gx/demux-routing"},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", TargetStack: "feature/demux-routing"},
 		},
 	})
 
@@ -24,7 +24,7 @@ func TestDemuxInteractiveModelAppliesSelectedStack(t *testing.T) {
 	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 's', Text: "s"}))
 	model = next.(demuxInteractiveModel)
 
-	if model.action.Kind != "apply_stack" || model.action.Target != "gx/demux-routing" {
+	if model.action.Kind != "apply_stack" || model.action.Target != "feature/demux-routing" {
 		t.Fatalf("action = %#v, want apply demux routing stack", model.action)
 	}
 }
@@ -33,7 +33,7 @@ func TestDemuxInteractiveModelAppliesAllOnlyFromShiftA(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management"},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management"},
 		},
 	})
 
@@ -65,8 +65,8 @@ func TestDemuxInteractiveViewShowsAllStacksAndAcceptCallout(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, TargetStack: "gx/demux-routing"},
+			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, TargetStack: "feature/demux-routing"},
 		},
 	})
 	next, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
@@ -77,9 +77,9 @@ func TestDemuxInteractiveViewShowsAllStacksAndAcceptCallout(t *testing.T) {
 		"Stacks",
 		"s accept stack",
 		"Shift+A accept all",
-		"gx/stack-management",
+		"feature/stack-management",
 		"r1 stack storage",
-		"gx/demux-routing",
+		"feature/demux-routing",
 		"r2 route planner",
 		"j/k stack",
 		"● selected",
@@ -97,7 +97,7 @@ func TestDemuxInteractiveModelNavigatesRevisionsAndEscapesToStacks(t *testing.T)
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management"},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management"},
 		},
 	})
 
@@ -118,8 +118,8 @@ func TestDemuxInteractiveModelSelectsAcrossStacks(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", TargetStack: "gx/demux-routing"},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", TargetStack: "feature/demux-routing"},
 		},
 	})
 
@@ -145,8 +145,8 @@ func TestDemuxInteractiveModelCombinesSelectedRevisions(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, HunkIDs: []string{"h1"}, Hunks: []authoring.HunkRange{{ID: "h1", File: "storage.go"}}, TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, HunkIDs: []string{"h2"}, Hunks: []authoring.HunkRange{{ID: "h2", File: "demux.go"}}, TargetStack: "gx/stack-management"},
+			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, HunkIDs: []string{"h1"}, Hunks: []authoring.HunkRange{{ID: "h1", File: "storage.go"}}, TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, HunkIDs: []string{"h2"}, Hunks: []authoring.HunkRange{{ID: "h2", File: "demux.go"}}, TargetStack: "feature/stack-management"},
 		},
 	})
 	model.mode = demuxInteractiveRevisions
@@ -171,8 +171,8 @@ func TestDemuxInteractiveModelReleasesSelectedRevisions(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", TargetStack: "gx/demux-routing"},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", TargetStack: "feature/demux-routing"},
 		},
 	})
 	model.mode = demuxInteractiveRevisions
@@ -193,7 +193,7 @@ func TestDemuxInteractiveModelOpensDiffInPlace(t *testing.T) {
 	model := newDemuxInteractiveModel(authoring.DemuxProposal{
 		ID: "demux-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", TargetStack: "gx/stack-management", Hunks: []authoring.HunkRange{{ID: "h1", File: "storage.go", Patch: "@@ -1 +1 @@\n-old\n+new\n"}}},
+			{ID: "r1", Intent: "stack storage", TargetStack: "feature/stack-management", Hunks: []authoring.HunkRange{{ID: "h1", File: "storage.go", Patch: "@@ -1 +1 @@\n-old\n+new\n"}}},
 		},
 	})
 	model.mode = demuxInteractiveRevisions
@@ -224,8 +224,8 @@ func TestFilterDemuxProposalForStackKeepsOnlySelectedStack(t *testing.T) {
 			{ID: "h2", File: "demux.go"},
 		},
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, TargetStack: "gx/demux-routing"},
+			{ID: "r1", Intent: "stack storage", Files: []string{"storage.go"}, TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", Files: []string{"demux.go"}, TargetStack: "feature/demux-routing"},
 		},
 		FeasibilityWarnings: []authoring.FeasibilityWarning{
 			{RevisionID: "r1", Severity: "warning", Message: "selected"},
@@ -233,7 +233,7 @@ func TestFilterDemuxProposalForStackKeepsOnlySelectedStack(t *testing.T) {
 		},
 	}
 
-	filtered := filterDemuxProposalForStack(proposal, "gx/stack-management")
+	filtered := filterDemuxProposalForStack(proposal, "feature/stack-management")
 
 	if filtered.ID != "" {
 		t.Fatalf("filtered ID = %q, want new proposal", filtered.ID)

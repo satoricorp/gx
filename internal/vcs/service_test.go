@@ -3,7 +3,6 @@ package vcs
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,25 +28,25 @@ type fakeRunner struct {
 func TestStackMatchesDirectNameRequiresStackNameOrBookmarkRef(t *testing.T) {
 	body := storage.Stack{
 		Name:         "Update terminal theme",
-		BookmarkName: "gx/update-terminal-theme",
+		BookmarkName: "feature/update-terminal-theme",
 	}
 
-	for _, name := range []string{"Update terminal theme", "gx/update-terminal-theme"} {
+	for _, name := range []string{"Update terminal theme", "feature/update-terminal-theme"} {
 		if !stackMatchesDirectName(body, name) {
 			t.Fatalf("stackMatchesDirectName(%q) = false, want true", name)
 		}
 	}
 	if stackMatchesDirectName(body, "update-terminal-theme") {
-		t.Fatalf("stackMatchesDirectName() accepted bookmark slug without gx/ prefix")
+		t.Fatalf("stackMatchesDirectName() accepted bookmark slug without conventional prefix")
 	}
 }
 
-func TestRepoAuthoringBaseRefPreservesGXStackBookmark(t *testing.T) {
+func TestRepoAuthoringBaseRefNormalizesLegacyGXStackBookmark(t *testing.T) {
 	base := "gx/source-stack"
 	repo := RepoInfo{AuthoringBase: &base}
 
-	if got := repo.authoringBaseRef(); got != "gx/source-stack" {
-		t.Fatalf("authoringBaseRef() = %q, want gx stack bookmark", got)
+	if got := repo.authoringBaseRef(); got != "feature/source-stack" {
+		t.Fatalf("authoringBaseRef() = %q, want conventional stack bookmark", got)
 	}
 }
 
@@ -359,7 +358,7 @@ func TestEnsureGitHubPullRequestReturnsExistingPR(t *testing.T) {
 	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "main",
-	}, "gx/demo", nil)
+	}, "feature/demo", nil)
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/7" {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want existing PR URL", got)
 	}
@@ -385,7 +384,7 @@ func TestEnsureGitHubPullRequestReusesStoredPR(t *testing.T) {
 		Name:        "Demo stack",
 		BaseRef:     "main",
 		GitHubPRURL: &prURL,
-	}, "gx/demo", nil)
+	}, "feature/demo", nil)
 	if got == nil || *got != prURL {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want stored PR URL", got)
 	}
@@ -429,7 +428,7 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "origin/main",
-	}, "gx/demo", []PushedChange{{
+	}, "feature/demo", []PushedChange{{
 		Change: ChangeInfo{ChangeID: "abc123", Description: "Add publish flow"},
 	}})
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/8" {
@@ -438,7 +437,7 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	if status != "created" || len(warnings) != 0 {
 		t.Fatalf("status=%q warnings=%#v, want created without warnings", status, warnings)
 	}
-	if createPayload["base"] != "main" || createPayload["head"] != "gx/demo" || createPayload["title"] != "Demo stack" {
+	if createPayload["base"] != "main" || createPayload["head"] != "feature/demo" || createPayload["title"] != "Demo stack" {
 		t.Fatalf("create payload = %#v", createPayload)
 	}
 }
@@ -473,8 +472,7 @@ func TestEnsureGitHubPullRequestResolvesInternalBaseRefToPublicBookmark(t *testi
 			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
 				"feature/recovered-compose-batch|basechange\n" +
 					"gx/base|basechange\n" +
-					"gx/edit|basechange\n" +
-					"gx/gx-base|basechange\n",
+					"gx/edit|basechange\n",
 			},
 			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "feature/recovered-compose-batch"): {
 				"abc123\trefs/heads/feature/recovered-compose-batch\n",
@@ -491,7 +489,7 @@ func TestEnsureGitHubPullRequestResolvesInternalBaseRefToPublicBookmark(t *testi
 	}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "gx/edit",
-	}, "gx/demo", nil)
+	}, "feature/demo", nil)
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/9" {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want created PR URL", got)
 	}
@@ -540,7 +538,7 @@ func TestEnsureGitHubPullRequestWarnsWhenBaseBranchMissing(t *testing.T) {
 	}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "gx-internal-checkout-refs",
-	}, "gx/gx-internal-checkout-refs", nil)
+	}, "feature/gx-internal-checkout-refs", nil)
 	if got != nil {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
 	}
@@ -574,7 +572,7 @@ func TestEnsureGitHubPullRequestWarnsWhenGXStackBaseNotPublished(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token-one")
 	runner := &fakeRunner{
 		stdoutOutputs: map[string][]string{
-			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "gx/base-stack"): {
+			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "feature/base-stack"): {
 				"",
 			},
 		},
@@ -587,15 +585,15 @@ func TestEnsureGitHubPullRequestWarnsWhenGXStackBaseNotPublished(t *testing.T) {
 		RemoteURL: &remoteURL,
 	}, StackInfo{
 		Name:    "Demo stack",
-		BaseRef: "gx/base-stack",
-	}, "gx/demo-stack", nil)
+		BaseRef: "feature/base-stack",
+	}, "feature/demo-stack", nil)
 	if got != nil {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
 	}
 	if status != "warning" {
 		t.Fatalf("status=%q warnings=%#v, want warning", status, warnings)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "Run `gx publish gx/base-stack` first, then retry `gx publish gx/demo-stack`") {
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Run `gx publish feature/base-stack` first, then retry `gx publish feature/demo-stack`") {
 		t.Fatalf("warnings=%#v, want stack publish guidance", warnings)
 	}
 	if posted {
@@ -612,7 +610,7 @@ func TestEnsureGitHubPullRequestSkipsNonGitHubRemote(t *testing.T) {
 	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "main",
-	}, "gx/demo", nil)
+	}, "feature/demo", nil)
 	if got != nil {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
 	}
@@ -628,9 +626,9 @@ func TestPublishRefUsesExplicitArgOrStackName(t *testing.T) {
 	if got := publishRefFromArgs([]string{"feature/login"}); got != "feature/login" {
 		t.Fatalf("publishRefFromArgs() = %q, want feature/login", got)
 	}
-	body := StackInfo{Name: "Login Flow", BookmarkName: "gx/login-flow"}
-	if got := publishRefForStack(body); got != "gx/login-flow" {
-		t.Fatalf("publishRefForStack() = %q, want gx/login-flow", got)
+	body := StackInfo{Name: "Login Flow", BookmarkName: "feature/login-flow"}
+	if got := publishRefForStack(body); got != "feature/login-flow" {
+		t.Fatalf("publishRefForStack() = %q, want feature/login-flow", got)
 	}
 }
 
@@ -725,7 +723,7 @@ func TestSwitchUsesStoredStackBookmark(t *testing.T) {
 	}
 }
 
-func TestModifyReattachesVisibleGitHeadToEditBranch(t *testing.T) {
+func TestModifyReattachesVisibleGitHeadToStackBranch(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
@@ -758,7 +756,7 @@ func TestModifyReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "feature",
-		BookmarkName: "gx/feature",
+		BookmarkName: "feature/feature",
 		BaseRef:      "main",
 		BaseCommitID: "base123",
 		HeadChangeID: &head,
@@ -786,10 +784,10 @@ func TestModifyReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 		outputs: map[string][]string{
 			runnerKey(cwd, "jj", "root"): {cwd + "\n"},
 			runnerKey(cwd, "git", "branch", "--show-current"): {
-				"gx/feature\n",
+				"feature/feature\n",
 				"",
 				"",
-				"gx/edit\n",
+				"feature/feature\n",
 			},
 			runnerKey(cwd, "git", "rev-parse", "--git-path", "info/exclude"): {filepath.Join(cwd, ".git", "info", "exclude") + "\n"},
 			runnerKey(cwd, "jj", "config", "get", "user.name"):               {"Joe Example\n"},
@@ -804,16 +802,16 @@ func TestModifyReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 				"beforechg|beforecommit|before|basechg\n",
 				"targetchg|targetcommit|target|basechg\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                {""},
-			runnerKey(cwd, "jj", "edit", "targetchg"):                                             {"Working copy now at targetchg\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feature", "-r", "@", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/feature)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                     {""},
+			runnerKey(cwd, "jj", "edit", "targetchg"):                                                  {"Working copy now at targetchg\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feature", "-r", "@", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/feature)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"targetchg|targetcommit|target|basechg\n",
 			},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):   {"targetcommit\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "targetcommit"): {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"):       {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                         {""},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):           {"targetcommit\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feature", "targetcommit"): {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feature"):       {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                 {""},
 			runnerKey(cwd, "jj", "op", "log", "-n", "1", "--no-graph", "-T", "id"): {
 				"op123\n",
 			},
@@ -831,8 +829,8 @@ func TestModifyReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 	if result.CurrentChange.ChangeID != "targetchg" {
 		t.Fatalf("Modify() current change = %q, want targetchg", result.CurrentChange.ChangeID)
 	}
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "targetcommit"))
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feature", "targetcommit"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feature"))
 	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "reset", "--mixed", "HEAD"))
 	assertRunnerNotCalled(t, runner.calls, runnerKey(cwd, "git", "switch", "-f", "main"))
 }
@@ -881,7 +879,7 @@ func TestResolveStoredRevisionRefUsesCommitForStoredChange(t *testing.T) {
 	}
 }
 
-func TestEditRevisionReattachesVisibleGitHeadToEditBranch(t *testing.T) {
+func TestEditRevisionReattachesVisibleGitHeadToStackBranch(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
@@ -909,7 +907,7 @@ func TestEditRevisionReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "feature",
-		BookmarkName: "gx/feature",
+		BookmarkName: "feature/feature",
 		BaseRef:      "main",
 		BaseCommitID: "base123",
 		HeadChangeID: &head,
@@ -939,7 +937,7 @@ func TestEditRevisionReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 				"",
 				"",
 				"",
-				"gx/edit\n",
+				"feature/feature\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"): {
 				"false\n",
@@ -949,13 +947,16 @@ func TestEditRevisionReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 				"targetchg|targetcommit|target|basechg\n",
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {""},
-			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
-				"gx/feature|targetchg\n",
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "change_id"): {
+				"targetchg\n",
 			},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):   {"targetcommit\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "targetcommit"): {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"):       {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                         {""},
+			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
+				"feature/feature|targetchg\n",
+			},
+			runnerKey(cwd, "jj", "log", "-r", "feature/feature", "--no-graph", "-T", "commit_id"): {"targetcommit\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feature", "targetcommit"):     {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feature"):           {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                     {""},
 		},
 		errors: map[string][]error{
 			runnerKey(cwd, "git", "remote"):                                              {fmt.Errorf("no remote")},
@@ -966,66 +967,15 @@ func TestEditRevisionReattachesVisibleGitHeadToEditBranch(t *testing.T) {
 	if err := svc.EditRevision(context.Background(), cwd, "targetchg"); err != nil {
 		t.Fatalf("EditRevision() unexpected error = %v\ncalls: %v", err, runner.calls)
 	}
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "targetcommit"))
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feature", "targetcommit"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feature"))
 	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "reset", "--mixed", "HEAD"))
-}
-
-func TestInternalCheckoutRefUsesHashedWorktreeSuffixWhenMultipleWorktreesExist(t *testing.T) {
-	repoRoot := t.TempDir()
-	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
-		repoRoot = resolved
-	}
-	otherRoot := t.TempDir()
-	if resolved, err := filepath.EvalSymlinks(otherRoot); err == nil {
-		otherRoot = resolved
-	}
-	commonDir := filepath.Join(repoRoot, ".git")
-	runner := &fakeRunner{
-		stdoutOutputs: map[string][]string{
-			runnerKey(repoRoot, "git", "worktree", "list", "--porcelain"): {
-				"worktree " + repoRoot + "\nHEAD abc123\n\nworktree " + otherRoot + "\nHEAD def456\n",
-			},
-			runnerKey(repoRoot, "git", "rev-parse", "--git-common-dir"): {commonDir + "\n"},
-		},
-	}
-	svc := NewServiceWithRunner(runner)
-
-	got, err := svc.internalCheckoutRef(context.Background(), repoRoot, gxInternalEditRef)
-	if err != nil {
-		t.Fatalf("internalCheckoutRef() error = %v", err)
-	}
-	sum := sha256.Sum256([]byte(commonDir + "\x00" + repoRoot))
-	want := "gx/edit/worktree-" + fmt.Sprintf("%x", sum[:])[:12]
-	if got != want {
-		t.Fatalf("internalCheckoutRef() = %q, want %q", got, want)
-	}
-}
-
-func TestInternalCheckoutRefUsesSimpleNameForSingleWorktree(t *testing.T) {
-	repoRoot := t.TempDir()
-	runner := &fakeRunner{
-		stdoutOutputs: map[string][]string{
-			runnerKey(repoRoot, "git", "worktree", "list", "--porcelain"): {
-				"worktree " + repoRoot + "\nHEAD abc123\n",
-			},
-		},
-	}
-	svc := NewServiceWithRunner(runner)
-
-	got, err := svc.internalCheckoutRef(context.Background(), repoRoot, gxInternalBaseRef)
-	if err != nil {
-		t.Fatalf("internalCheckoutRef() error = %v", err)
-	}
-	if got != gxInternalBaseRef {
-		t.Fatalf("internalCheckoutRef() = %q, want %q", got, gxInternalBaseRef)
-	}
 }
 
 func TestBaseResultTreatsEquivalentRefsAsOnBase(t *testing.T) {
 	repoRoot := t.TempDir()
 	base := "codex/gx-desktop-local-data-auth"
-	current := gxInternalBaseRef
+	current := "main"
 	runner := &fakeRunner{
 		stdoutOutputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "log", "-r", current, "--no-graph", "-T", "change_id"): {"same-change\n"},
@@ -1162,7 +1112,7 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 	stackID, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "docs",
-		BookmarkName: "gx/docs",
+		BookmarkName: "feature/docs",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &head,
@@ -1218,10 +1168,10 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 	}
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(cwd, "jj", "root"):                          {cwd + "\n"},
-			runnerKey(cwd, "jj", "abandon", "chg-one"):            {"Abandoned one\n"},
-			runnerKey(cwd, "jj", "abandon", "chg-two"):            {"Abandoned two\n"},
-			runnerKey(cwd, "jj", "bookmark", "delete", "gx/docs"): {"Deleted bookmark\n"},
+			runnerKey(cwd, "jj", "root"):                               {cwd + "\n"},
+			runnerKey(cwd, "jj", "abandon", "chg-one"):                 {"Abandoned one\n"},
+			runnerKey(cwd, "jj", "abandon", "chg-two"):                 {"Abandoned two\n"},
+			runnerKey(cwd, "jj", "bookmark", "delete", "feature/docs"): {"Deleted bookmark\n"},
 		},
 		errors: map[string][]error{
 			runnerKey(cwd, "git", "remote"):                                              {fmt.Errorf("no remote")},
@@ -1230,11 +1180,11 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 		},
 	}
 	svc := NewServiceWithRunner(runner)
-	result, err := svc.DeleteStack(context.Background(), "gx/docs")
+	result, err := svc.DeleteStack(context.Background(), "feature/docs")
 	if err != nil {
 		t.Fatalf("DeleteStack() error = %v", err)
 	}
-	if result.Stack.BookmarkName != "gx/docs" || len(result.Revisions) != 2 {
+	if result.Stack.BookmarkName != "feature/docs" || len(result.Revisions) != 2 {
 		t.Fatalf("DeleteStack() = %#v", result)
 	}
 
@@ -1247,7 +1197,7 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 		t.Fatalf("storage.NewStore() reopen error = %v", err)
 	}
 	defer store.Close()
-	if stack, err := store.FindStackByBookmark(context.Background(), repoID, "gx/docs"); err != nil {
+	if stack, err := store.FindStackByBookmark(context.Background(), repoID, "feature/docs"); err != nil {
 		t.Fatalf("FindStackByBookmark() error = %v", err)
 	} else if stack != nil {
 		t.Fatalf("stack still exists: %#v", stack)
@@ -1296,7 +1246,7 @@ func TestSwitchForksMutableChangeWhenImmutable(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "fork",
-		BookmarkName: "gx/fork",
+		BookmarkName: "feature/fork",
 		BaseRef:      "main",
 		BaseCommitID: "base123",
 		HeadChangeID: &head,
@@ -1323,24 +1273,24 @@ func TestSwitchForksMutableChangeWhenImmutable(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(cwd, "jj", "root"): {cwd + "\n", cwd + "\n"},
-			runnerKey(cwd, "jj", "config", "set", "--user", "user.name", "Joe Example"):         {""},
-			runnerKey(cwd, "jj", "config", "set", "--user", "user.email", "joe@example.com"):    {""},
-			runnerKey(cwd, "jj", "new", "gx/fork"):                                              {"Working copy now at new456\n"},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"):                 {"true\n", "true\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/fork", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):             {"abc123\n"},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):            {"abc123\n"},
-			runnerKey(cwd, "jj", "log", "-r", "gx/fork", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/fork", "abc123"):                 {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/fork"):                 {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                   {""},
+			runnerKey(cwd, "jj", "config", "set", "--user", "user.name", "Joe Example"):              {""},
+			runnerKey(cwd, "jj", "config", "set", "--user", "user.email", "joe@example.com"):         {""},
+			runnerKey(cwd, "jj", "new", "feature/fork"):                                              {"Working copy now at new456\n"},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"):                      {"true\n", "true\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/fork", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):                  {"abc123\n"},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                 {"abc123\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/fork", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/fork", "abc123"):                 {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/fork"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                        {""},
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"new456|abc123|fork|published123\n",
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {""},
 		},
 		errors: map[string][]error{
-			runnerKey(cwd, "jj", "edit", "gx/fork"):                                      {immutableErr},
+			runnerKey(cwd, "jj", "edit", "feature/fork"):                                 {immutableErr},
 			runnerKey(cwd, "git", "remote"):                                              {fmt.Errorf("no remote"), fmt.Errorf("no remote")},
 			runnerKey(cwd, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"): {fmt.Errorf("no origin head"), fmt.Errorf("no origin head")},
 			runnerKey(cwd, "git", "branch", "--show-current"):                            {fmt.Errorf("detached")},
@@ -1357,7 +1307,7 @@ func TestSwitchForksMutableChangeWhenImmutable(t *testing.T) {
 		t.Fatalf("Switch() change = %q, want new456", result.CurrentChange.ChangeID)
 	}
 	for _, got := range runner.calls {
-		if got == runnerKey(cwd, "jj", "new", "gx/fork") {
+		if got == runnerKey(cwd, "jj", "new", "feature/fork") {
 			return
 		}
 	}
@@ -1367,7 +1317,7 @@ func TestSwitchForksMutableChangeWhenImmutable(t *testing.T) {
 func TestSwitchBaseCreatesMutableChildOfBase(t *testing.T) {
 	repoRoot := t.TempDir()
 	main := "main"
-	current := gxInternalEditRef
+	current := "feature/current-stack"
 	tmpl := `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`
 	runner := &fakeRunner{
 		outputs: map[string][]string{
@@ -1443,7 +1393,7 @@ func TestStackForRevisionUsesRevisionOwner(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "Compact AI review brief payloads",
-		BookmarkName: "gx/compact-ai-review-brief-payloads",
+		BookmarkName: "feature/compact-ai-review-brief-payloads",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &baseHead,
@@ -1457,7 +1407,7 @@ func TestStackForRevisionUsesRevisionOwner(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "edits",
-		BookmarkName: "gx/edits",
+		BookmarkName: "feature/edits",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &editHead,
@@ -1474,9 +1424,9 @@ func TestStackForRevisionUsesRevisionOwner(t *testing.T) {
 		stdoutOutputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "log", "-r", "zprnwwy", "--no-graph", "-T", "change_id"): {"editchange\n"},
 			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
-				"gx/compact-ai-review-brief-payloads|basechange\n" +
-					"gx/edits|editchange\n" +
-					"gx/main|basechange\n",
+				"feature/compact-ai-review-brief-payloads|basechange\n" +
+					"feature/edits|editchange\n" +
+					"main|basechange\n",
 			},
 		},
 	}
@@ -1492,8 +1442,8 @@ func TestStackForRevisionUsesRevisionOwner(t *testing.T) {
 	if !found {
 		t.Fatal("stackForRevision() found = false")
 	}
-	if got.BookmarkName != "gx/edits" {
-		t.Fatalf("stackForRevision() bookmark = %q, want gx/edits", got.BookmarkName)
+	if got.BookmarkName != "feature/edits" {
+		t.Fatalf("stackForRevision() bookmark = %q, want feature/edits", got.BookmarkName)
 	}
 }
 
@@ -1547,7 +1497,7 @@ func TestResolveCurrentStackCreatesNewStackFromBaseBranch(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "old",
-		BookmarkName: "gx/old",
+		BookmarkName: "feature/old",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &oldHead,
@@ -1566,10 +1516,10 @@ func TestResolveCurrentStackCreatesNewStackFromBaseBranch(t *testing.T) {
 			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"newchange|newcommit||base\n",
 			},
-			runnerKey(repoRoot, "jj", "diff", "-r", "@", "--name-only"):                   {"new.txt\n"},
-			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl):       {""},
-			runnerKey(repoRoot, "git", "rev-parse", "main"):                               {"basecommit\n"},
-			runnerKey(repoRoot, "jj", "bookmark", "set", "gx/change-newchang", "-r", "@"): {""},
+			runnerKey(repoRoot, "jj", "diff", "-r", "@", "--name-only"):                        {"new.txt\n"},
+			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl):            {""},
+			runnerKey(repoRoot, "git", "rev-parse", "main"):                                    {"basecommit\n"},
+			runnerKey(repoRoot, "jj", "bookmark", "set", "feature/change-newchang", "-r", "@"): {""},
 		},
 	}
 	svc := NewServiceWithRunner(runner)
@@ -1582,7 +1532,7 @@ func TestResolveCurrentStackCreatesNewStackFromBaseBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCurrentStack() unexpected error = %v", err)
 	}
-	if body.BookmarkName != "gx/change-newchang" {
+	if body.BookmarkName != "feature/change-newchang" {
 		t.Fatalf("resolveCurrentStack() bookmark = %q, want new stack", body.BookmarkName)
 	}
 }
@@ -1616,7 +1566,7 @@ func TestResolveCurrentStackIgnoresLatestCursorGXRequest(t *testing.T) {
 	oldStackID, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "old",
-		BookmarkName: "gx/old",
+		BookmarkName: "feature/old",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &oldHead,
@@ -1683,7 +1633,7 @@ func TestResolveCurrentStackIgnoresLatestCursorGXRequest(t *testing.T) {
 		t.Fatalf("store.Close() error = %v", err)
 	}
 
-	bookmark := "gx/old"
+	bookmark := "feature/old"
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"): {"false\n"},
@@ -1698,7 +1648,7 @@ func TestResolveCurrentStackIgnoresLatestCursorGXRequest(t *testing.T) {
 		RootPath:      repoRoot,
 		Backend:       "jj",
 		DefaultBranch: ptr("main"),
-		BranchName:    ptr("gx/old"),
+		BranchName:    ptr("feature/old"),
 	}, true, "feat one")
 	if err != nil {
 		t.Fatalf("resolveCurrentStackWithDescription() unexpected error = %v", err)
@@ -1740,7 +1690,7 @@ func TestResolveCurrentStackForPublishPrefersAttachedStackOverCursorSession(t *t
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "document-gx-pr",
-		BookmarkName: "gx/document-gx-pr",
+		BookmarkName: "feature/document-gx-pr",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &workHead,
@@ -1784,7 +1734,7 @@ func TestResolveCurrentStackForPublishPrefersAttachedStackOverCursorSession(t *t
 			},
 			runnerKey(repoRoot, "jj", "diff", "-r", "@-", "--name-only"): {""},
 			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
-				"gx/document-gx-pr|" + workHead + "\n",
+				"feature/document-gx-pr|" + workHead + "\n",
 			},
 		},
 	}
@@ -1793,13 +1743,13 @@ func TestResolveCurrentStackForPublishPrefersAttachedStackOverCursorSession(t *t
 		RootPath:      repoRoot,
 		Backend:       "jj",
 		DefaultBranch: ptr("main"),
-		BranchName:    ptr("gx/document-gx-pr"),
+		BranchName:    ptr("feature/document-gx-pr"),
 	})
 	if err != nil {
 		t.Fatalf("resolveCurrentStackForPublish() unexpected error = %v", err)
 	}
-	if body.BookmarkName != "gx/document-gx-pr" {
-		t.Fatalf("resolveCurrentStackForPublish() bookmark = %q, want gx/document-gx-pr", body.BookmarkName)
+	if body.BookmarkName != "feature/document-gx-pr" {
+		t.Fatalf("resolveCurrentStackForPublish() bookmark = %q, want feature/document-gx-pr", body.BookmarkName)
 	}
 }
 
@@ -1830,7 +1780,7 @@ func TestResolveCurrentStackForReadIgnoresLegacyBaseCheckout(t *testing.T) {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "edits",
-		BookmarkName: "gx/edits",
+		BookmarkName: "feature/edits",
 		BaseRef:      "main",
 		BaseCommitID: "basecommit",
 		HeadChangeID: &head,
@@ -1843,7 +1793,7 @@ func TestResolveCurrentStackForReadIgnoresLegacyBaseCheckout(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatalf("store.Close() error = %v", err)
 	}
-	current := gxInternalBaseRef
+	current := "main"
 	runner := &fakeRunner{
 		stdoutOutputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "log", "-r", current, "--no-graph", "-T", "change_id"): {"basechange\n"},
@@ -1895,7 +1845,7 @@ func TestResolveCurrentStackForReadDoesNotSyncOrRouteByCursorRequest(t *testing.
 	oldStackID, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "old",
-		BookmarkName: "gx/old",
+		BookmarkName: "feature/old",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &oldHead,
@@ -1965,8 +1915,8 @@ func TestResolveCurrentStackForReadDoesNotSyncOrRouteByCursorRequest(t *testing.
 	if !found {
 		t.Fatal("resolveCurrentStackForRead() found = false, want true")
 	}
-	if body.BookmarkName != "gx/old" {
-		t.Fatalf("resolveCurrentStackForRead() bookmark = %q, want gx/old", body.BookmarkName)
+	if body.BookmarkName != "feature/old" {
+		t.Fatalf("resolveCurrentStackForRead() bookmark = %q, want feature/old", body.BookmarkName)
 	}
 }
 
@@ -2178,16 +2128,16 @@ func TestCommitUpdatesStackBookmarkAndAttachesGitBranch(t *testing.T) {
 				"chg123|abc123|feat one|parent1\n",
 				"chg123|abc123|feat one|parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                 {"a.txt\n", "a.txt\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-"):                      {""},
-			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                        {"Committed\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                {"abc123\n"},
-			runnerKey(cwd, "jj", "log", "-r", "gx/feat-one", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/feat-one", "abc123"):                 {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/feat-one"):                 {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                       {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                      {"a.txt\n", "a.txt\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-"):                      {""},
+			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                             {"Committed\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc123\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/feat-one", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-one", "abc123"):                 {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feat-one"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                            {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"chg123|abc123|feat one|parent1\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "chg123", "-n", "1", "--no-graph", "-T", "hidden"): {"false\n"},
@@ -2209,10 +2159,10 @@ func TestCommitUpdatesStackBookmarkAndAttachesGitBranch(t *testing.T) {
 	if result.Change.CommitID != "abc123" {
 		t.Fatalf("Commit() commit id = %q", result.Change.CommitID)
 	}
-	wantBookmarkUpdate := runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-", "--allow-backwards")
+	wantBookmarkUpdate := runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards")
 	assertRunnerCalled(t, runner.calls, wantBookmarkUpdate)
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/gx/feat-one", "abc123"))
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/feat-one"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-one", "abc123"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feat-one"))
 	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "reset", "--mixed", "HEAD"))
 }
 
@@ -2250,16 +2200,16 @@ func TestSplitCommitUsesJJSplitAndRecordsSelectedChange(t *testing.T) {
 				"chg123|abc123|feat selected|parent1\n",
 				"chg123|abc123|feat selected|parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                      {"src/app.ts\n", "src/app.ts\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-selected", "-r", "@-"):                      {""},
-			runnerKey(cwd, "jj", "split", "-m", "feat selected", "src/app.ts"):                           {"Split\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-selected", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc123\n"},
-			runnerKey(cwd, "jj", "log", "-r", "gx/feat-selected", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/feat-selected", "abc123"):                 {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/feat-selected"):                 {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                            {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/feat-selected)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                           {"src/app.ts\n", "src/app.ts\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-selected", "-r", "@-"):                      {""},
+			runnerKey(cwd, "jj", "split", "-m", "feat selected", "src/app.ts"):                                {"Split\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-selected", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                          {"abc123\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/feat-selected", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-selected", "abc123"):                 {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feat-selected"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                                 {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/feat-selected)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"chg123|abc123|feat selected|parent1\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "chg123", "-n", "1", "--no-graph", "-T", "hidden"): {"false\n"},
@@ -2302,7 +2252,7 @@ func TestSplitCommitUsesJJSplitAndRecordsSelectedChange(t *testing.T) {
 			if index > splitIndex && selectedReadIndex == -1 {
 				selectedReadIndex = index
 			}
-		case runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-selected", "-r", "@-", "--allow-backwards"):
+		case runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-selected", "-r", "@-", "--allow-backwards"):
 			if index > splitIndex {
 				reattachIndex = index
 			}
@@ -2353,16 +2303,16 @@ func TestRecordRevisionCommitsAndPersistsMetadata(t *testing.T) {
 				"chg123|abc123|feat one|parent1\n",
 				"chg123|abc123|feat one|parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                 {"a.txt\n", "a.txt\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-"):                      {""},
-			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                        {"Committed\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                {"abc123\n"},
-			runnerKey(cwd, "jj", "log", "-r", "gx/feat-one", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/feat-one", "abc123"):                 {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/feat-one"):                 {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                       {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                      {"a.txt\n", "a.txt\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-"):                      {""},
+			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                             {"Committed\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc123\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/feat-one", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-one", "abc123"):                 {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feat-one"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                            {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"chg123|abc123|feat one|parent1\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "chg123", "-n", "1", "--no-graph", "-T", "hidden"): {"false\n"},
@@ -2402,12 +2352,12 @@ func TestRecordRevisionCommitsAndPersistsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query recorded revision: %v", err)
 	}
-	if description != "feat one" || bookmark != "gx/feat-one" {
-		t.Fatalf("recorded revision = (%q, %q), want (feat one, gx/feat-one)", description, bookmark)
+	if description != "feat one" || bookmark != "feature/feat-one" {
+		t.Fatalf("recorded revision = (%q, %q), want (feat one, feature/feat-one)", description, bookmark)
 	}
 }
 
-func TestRecordRevisionFromEditCheckoutReattachesGitHeadToEditBranch(t *testing.T) {
+func TestRecordRevisionFromStackCheckoutReattachesGitHeadToStackBranch(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
@@ -2440,7 +2390,7 @@ func TestRecordRevisionFromEditCheckoutReattachesGitHeadToEditBranch(t *testing.
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "edits",
-		BookmarkName: "gx/edits",
+		BookmarkName: "feature/edits",
 		BaseRef:      "main",
 		BaseCommitID: "base123",
 		HeadChangeID: &head,
@@ -2467,7 +2417,7 @@ func TestRecordRevisionFromEditCheckoutReattachesGitHeadToEditBranch(t *testing.
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(cwd, "jj", "root"):                      {cwd + "\n", cwd + "\n", cwd + "\n"},
-			runnerKey(cwd, "git", "branch", "--show-current"): {"gx/edit\n", "", "", "gx/edit\n"},
+			runnerKey(cwd, "git", "branch", "--show-current"): {"feature/edits\n", "", "", "feature/edits\n"},
 			runnerKey(cwd, "jj", "config", "set", "--user", "user.name", "Joe Example"): {
 				"",
 			},
@@ -2479,19 +2429,20 @@ func TestRecordRevisionFromEditCheckoutReattachesGitHeadToEditBranch(t *testing.
 				"edit-chg|edit-commit|editing|base123\n",
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):             {"internal/cli/root.go\n"},
-			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {"gx/edits|edit-chg\n"},
+			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {"feature/edits|edit-chg\n"},
 			runnerKey(cwd, "jj", "commit", "-m", "all loose"):                  {"Committed\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"recorded-chg|a6fcefbe|all loose|edit-chg\n",
 				"recorded-chg|a6fcefbe|all loose|edit-chg\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                              {"internal/cli/root.go\n", "internal/cli/root.go\n"},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/edits", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):             {"a6fcefbe\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "a6fcefbe"):                {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"):                  {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                    {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/edits)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                   {"internal/cli/root.go\n", "internal/cli/root.go\n"},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/edits", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                  {"a6fcefbe\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/edits", "--no-graph", "-T", "commit_id"):       {"a6fcefbe\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/edits", "a6fcefbe"):               {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/edits"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                         {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/edits)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"recorded-chg|a6fcefbe|all loose|edit-chg\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "recorded-chg", "-n", "1", "--no-graph", "-T", "hidden"): {"false\n"},
@@ -2510,13 +2461,8 @@ func TestRecordRevisionFromEditCheckoutReattachesGitHeadToEditBranch(t *testing.
 	if err != nil {
 		t.Fatalf("RecordRevision() unexpected error = %v", err)
 	}
-	for _, call := range runner.calls {
-		if call == runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edits") {
-			t.Fatalf("RecordRevision() attached HEAD to stack branch, calls: %v", runner.calls)
-		}
-	}
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/gx/edit", "a6fcefbe"))
-	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/edit"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "update-ref", "refs/heads/feature/edits", "a6fcefbe"))
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/edits"))
 	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "git", "reset", "--mixed", "HEAD"))
 }
 
@@ -2536,14 +2482,14 @@ func TestPushRecordedStackRejectsEmptyStackBeforeGitSideEffects(t *testing.T) {
 
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(cwd, "jj", "root"):                                            {cwd + "\n"},
-			runnerKey(cwd, "git", "remote"):                                         {"origin\n"},
-			runnerKey(cwd, "git", "remote", "get-url", "origin"):                    {"git@github.com:example/repo.git\n"},
-			runnerKey(cwd, "git", "branch", "--show-current"):                       {"gx/body\n"},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"):     {"false\n"},
-			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"): {"head123\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/body", "head123"):    {""},
-			runnerKey(cwd, "git", "push", "origin", "gx/body"):                      {""},
+			runnerKey(cwd, "jj", "root"):                                              {cwd + "\n"},
+			runnerKey(cwd, "git", "remote"):                                           {"origin\n"},
+			runnerKey(cwd, "git", "remote", "get-url", "origin"):                      {"git@github.com:example/repo.git\n"},
+			runnerKey(cwd, "git", "branch", "--show-current"):                         {"feature/body\n"},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"):       {"false\n"},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", "commit_id"):   {"head123\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/body", "head123"): {""},
+			runnerKey(cwd, "git", "push", "origin", "feature/body"):                   {""},
 		},
 		errors: map[string][]error{
 			runnerKey(cwd, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"): {fmt.Errorf("no origin head")},
@@ -2556,17 +2502,17 @@ func TestPushRecordedStackRejectsEmptyStackBeforeGitSideEffects(t *testing.T) {
 		Backend:       "jj",
 		DefaultRemote: ptr("origin"),
 		DefaultBranch: ptr("main"),
-		BranchName:    ptr("gx/body"),
+		BranchName:    ptr("feature/body"),
 		RemoteURL:     ptr("git@github.com:example/repo.git"),
-	}, "origin", "gx/body", StackInfo{BaseRef: "main"}, PushOptions{Mode: PublishModeReviewOnly})
+	}, "origin", "feature/body", StackInfo{BaseRef: "main"}, PushOptions{Mode: PublishModeReviewOnly})
 	if err == nil || !strings.Contains(err.Error(), "no revisions on stack to publish") {
 		t.Fatalf("pushRecordedStack() error = %v, want no revisions", err)
 	}
 	for _, call := range runner.calls {
-		if call == runnerKey(cwd, "git", "update-ref", "refs/heads/gx/body", "head123") {
+		if call == runnerKey(cwd, "git", "update-ref", "refs/heads/feature/body", "head123") {
 			t.Fatalf("pushRecordedStack() updated git ref before validating stack: %v", runner.calls)
 		}
-		if call == runnerKey(cwd, "git", "push", "origin", "gx/body") {
+		if call == runnerKey(cwd, "git", "push", "origin", "feature/body") {
 			t.Fatalf("pushRecordedStack() pushed before validating stack: %v", runner.calls)
 		}
 	}
@@ -2602,7 +2548,7 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 	stackID, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "body",
-		BookmarkName: "gx/body",
+		BookmarkName: "feature/body",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		HeadChangeID: &head,
@@ -2629,10 +2575,10 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 		t.Fatalf("AddChangeToStack() error = %v", err)
 	}
 	remoteName := "origin"
-	remoteRef := "refs/heads/gx/body"
+	remoteRef := "refs/heads/feature/body"
 	if err := store.UpsertChangeBookmark(context.Background(), storage.ChangeBookmark{
 		ChangeID:           changeID,
-		BookmarkName:       "gx/body",
+		BookmarkName:       "feature/body",
 		RemoteName:         &remoteName,
 		RemoteRef:          &remoteRef,
 		LastPushedCommitID: "old123",
@@ -2643,18 +2589,18 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 	}
 	runner := &fakeRunner{
 		stdoutOutputs: map[string][]string{
-			runnerKey(repoRoot, "jj", "log", "-r", "gx/body", "--no-graph", "-T", "commit_id"): {
+			runnerKey(repoRoot, "jj", "log", "-r", "feature/body", "--no-graph", "-T", "commit_id"): {
 				"head123\n",
 			},
-			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "gx/body"): {
-				"head123\trefs/heads/gx/body\n",
+			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "feature/body"): {
+				"head123\trefs/heads/feature/body\n",
 			},
 			runnerKey(repoRoot, "jj", "diff", "-r", "head123", "--git"): {
 				"diff --git a/file b/file\n",
 			},
 		},
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "git", "update-ref", "refs/heads/gx/body", "head123"): {""},
+			runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/body", "head123"): {""},
 		},
 	}
 	svc := NewServiceWithRunner(runner)
@@ -2664,9 +2610,9 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 		Backend:       "jj",
 		DefaultRemote: ptr("origin"),
 		DefaultBranch: ptr("main"),
-		BranchName:    ptr("gx/body"),
+		BranchName:    ptr("feature/body"),
 		RemoteURL:     ptr("git@github.com:example/repo.git"),
-	}, "origin", "gx/body", StackInfo{ID: stackID, BookmarkName: "gx/body", BaseRef: "main"}, PushOptions{Mode: PublishModeReviewAndGit})
+	}, "origin", "feature/body", StackInfo{ID: stackID, BookmarkName: "feature/body", BaseRef: "main"}, PushOptions{Mode: PublishModeReviewAndGit})
 	if err != nil {
 		t.Fatalf("pushRecordedStack() error = %v", err)
 	}
@@ -2677,7 +2623,7 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 		t.Fatalf("pushed len = %d, want 1", len(pushed))
 	}
 	for _, call := range runner.calls {
-		if call == runnerKey(repoRoot, "git", "push", "origin", "gx/body") {
+		if call == runnerKey(repoRoot, "git", "push", "origin", "feature/body") {
 			t.Fatalf("pushRecordedStack() pushed despite matching remote head: %v", runner.calls)
 		}
 	}
@@ -2695,7 +2641,7 @@ func TestPublishResultRecordsLocalMetadataBeforeHook(t *testing.T) {
 			RemoteURL:     ptr("git@github.com:example/repo.git"),
 		},
 		RemoteName:   ptr("origin"),
-		GXStackRef:   "gx/body",
+		GXStackRef:   "feature/body",
 		HeadCommitID: "head123",
 		CurrentChange: &ChangeInfo{
 			ChangeID:    "chg123",
@@ -2720,7 +2666,7 @@ func TestPublishResultRecordsLocalMetadataBeforeHook(t *testing.T) {
 		if repo == nil {
 			return fmt.Errorf("repo was not recorded before hook")
 		}
-		push, err := store.LatestPushByBranchName(context.Background(), repo.ID, "gx/body")
+		push, err := store.LatestPushByBranchName(context.Background(), repo.ID, "feature/body")
 		if err != nil {
 			return err
 		}
@@ -2807,16 +2753,16 @@ func TestCommitCreatesStackBookmarkWithoutActiveBranch(t *testing.T) {
 				"chg|abc|desc|\n",
 				"chg|abc|desc|\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                 {"", ""},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-"):                      {""},
-			runnerKey(cwd, "jj", "bookmark", "set", "gx/feat-one", "-r", "@-", "--allow-backwards"): {""},
-			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                        {""},
-			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                {"abc\n"},
-			runnerKey(cwd, "jj", "log", "-r", "gx/feat-one", "--no-graph", "-T", "commit_id"):       {"abc\n"},
-			runnerKey(cwd, "git", "update-ref", "refs/heads/gx/feat-one", "abc"):                    {""},
-			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/gx/feat-one"):                 {""},
-			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                       {""},
-			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(gx/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                      {"", ""},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-"):                      {""},
+			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards"): {""},
+			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                             {""},
+			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc\n"},
+			runnerKey(cwd, "jj", "log", "-r", "feature/feat-one", "--no-graph", "-T", "commit_id"):       {"abc\n"},
+			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-one", "abc"):                    {""},
+			runnerKey(cwd, "git", "symbolic-ref", "HEAD", "refs/heads/feature/feat-one"):                 {""},
+			runnerKey(cwd, "git", "reset", "--mixed", "HEAD"):                                            {""},
+			runnerKey(cwd, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(feature/feat-one)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"chg|abc|desc|\n",
 			},
 			runnerKey(cwd, "jj", "log", "-r", "chg", "-n", "1", "--no-graph", "-T", "hidden"): {"false\n"},
@@ -2836,8 +2782,8 @@ func TestCommitCreatesStackBookmarkWithoutActiveBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Commit() unexpected error = %v", err)
 	}
-	if result.Stack == nil || result.Stack.BookmarkName != "gx/feat-one" {
-		t.Fatalf("Commit() stack = %#v, want gx/feat-one", result.Stack)
+	if result.Stack == nil || result.Stack.BookmarkName != "feature/feat-one" {
+		t.Fatalf("Commit() stack = %#v, want feature/feat-one", result.Stack)
 	}
 }
 
@@ -2919,7 +2865,7 @@ func TestCommitUsesGXMentionSessionForStackBookmark(t *testing.T) {
 		t.Fatalf("Getwd() error = %v", err)
 	}
 
-	bookmark := "gx/feat-one"
+	bookmark := "feature/feat-one"
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(cwd, "jj", "root"):                      {cwd + "\n", cwd + "\n"},
@@ -3047,7 +2993,7 @@ func TestRecordRevisionMetadataAttachesSessionForBookmark(t *testing.T) {
 			Backend:  "jj",
 		},
 		Stack: &StackInfo{
-			BookmarkName: "gx/feat-one",
+			BookmarkName: "feature/feat-one",
 		},
 		Change: ChangeInfo{
 			ChangeID:    "chg123",
@@ -3123,7 +3069,7 @@ func TestRecordRevisionMetadataAttachesRepoLocalSessionWithoutEnv(t *testing.T) 
 			Backend:  "jj",
 		},
 		Stack: &StackInfo{
-			BookmarkName: "gx/feat-one",
+			BookmarkName: "feature/feat-one",
 		},
 		Change: ChangeInfo{
 			ChangeID:    "chg123",

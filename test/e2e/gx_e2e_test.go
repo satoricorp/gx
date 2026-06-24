@@ -184,7 +184,7 @@ func TestGXAddMaintainsBookmarkStateAndAttachesExplicitSession(t *testing.T) {
 	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "add", "-m", "feat alpha")
 
 	bookmarks := h.bookmarkTargets()
-	alphaBookmark := "gx/feat-alpha"
+	alphaBookmark := "feature/feat-alpha"
 	alphaTarget := bookmarks[alphaBookmark]
 	if alphaTarget == "" {
 		t.Fatalf("after gx add missing %s bookmark: %#v", alphaBookmark, bookmarks)
@@ -672,7 +672,7 @@ func TestGXDemuxReviewPlanReportsRepairableErrorsWithoutApplying(t *testing.T) {
 	h.writeTrackedFile("alpha.txt", numberedLines(20, nil))
 	h.run("jj", "describe", "-m", "seed alpha")
 	h.gx("add", "-m", "seed alpha")
-	h.gx("base", "--set", "gx/seed-alpha")
+	h.gx("base", "--set", "feature/seed-alpha")
 
 	h.writeTrackedFile("alpha.txt", numberedLines(20, map[int]string{
 		2:  "line 02 changed",
@@ -732,7 +732,7 @@ func TestGXDemuxApplyPlanResolvesHunkIDs(t *testing.T) {
 	h.writeTrackedFile("alpha.txt", numberedLines(20, nil))
 	h.run("jj", "describe", "-m", "seed alpha")
 	h.gx("add", "-m", "seed alpha")
-	h.gx("base", "--set", "gx/seed-alpha")
+	h.gx("base", "--set", "feature/seed-alpha")
 
 	h.insertSession("session-alpha")
 	h.writeTrackedFile("alpha.txt", numberedLines(20, map[int]string{
@@ -798,7 +798,7 @@ func TestGXDemuxApplyPlanRoutesRevisionToExistingStack(t *testing.T) {
 	h.writeTrackedFile("target-anchor.txt", "target\n")
 	h.run("jj", "describe", "-m", "target stack")
 	h.gx("add", "-m", "target stack")
-	targetBookmark := "gx/target-stack"
+	targetBookmark := "feature/target-stack"
 	targetBefore := h.bookmarkTargets()[targetBookmark]
 	if targetBefore == "" {
 		t.Fatalf("missing target bookmark before routed demux: %#v", h.bookmarkTargets())
@@ -808,7 +808,7 @@ func TestGXDemuxApplyPlanRoutesRevisionToExistingStack(t *testing.T) {
 	h.writeTrackedFile("source-anchor.txt", "source\n")
 	h.run("jj", "describe", "-m", "source stack")
 	h.gx("add", "-m", "source stack")
-	sourceBookmark := "gx/source-stack"
+	sourceBookmark := "feature/source-stack"
 	h.gx("base", "--set", sourceBookmark)
 
 	h.insertSession("session-route")
@@ -895,13 +895,13 @@ func TestGXDemuxFixPlanRepairsStackRoutes(t *testing.T) {
 	h.writeTrackedFile("target-anchor.txt", "target\n")
 	h.run("jj", "describe", "-m", "target stack")
 	h.gx("add", "-m", "target stack")
-	targetBookmark := "gx/target-stack"
+	targetBookmark := "feature/target-stack"
 
 	h.run("git", "switch", "main")
 	h.writeTrackedFile("source-anchor.txt", "source\n")
 	h.run("jj", "describe", "-m", "source stack")
 	h.gx("add", "-m", "source stack")
-	sourceBookmark := "gx/source-stack"
+	sourceBookmark := "feature/source-stack"
 	h.gx("base", "--set", sourceBookmark)
 
 	h.writeTrackedFile("routed.txt", "routed\n")
@@ -977,7 +977,7 @@ func TestGXDemuxApplyPlanRoutesRevisionToNewStack(t *testing.T) {
 	h.writeTrackedFile("source-anchor.txt", "source\n")
 	h.run("jj", "describe", "-m", "source stack")
 	h.gx("add", "-m", "source stack")
-	sourceBookmark := "gx/source-stack"
+	sourceBookmark := "feature/source-stack"
 	h.gx("base", "--set", sourceBookmark)
 
 	h.insertSession("session-new-route")
@@ -991,7 +991,7 @@ func TestGXDemuxApplyPlanRoutesRevisionToNewStack(t *testing.T) {
 		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
 	}
 
-	newBookmark := "gx/new-routed-stack"
+	newBookmark := "feature/new-routed-stack"
 	plan := map[string]any{
 		"id":                 proposal.ID,
 		"repo_root":          proposal.RepoRoot,
@@ -1078,8 +1078,8 @@ func TestGXDemuxApplyPlanRoutesBaseRevisionToNewStacks(t *testing.T) {
 		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
 	}
 
-	firstBookmark := "gx/base-routed-first"
-	secondBookmark := "gx/base-routed-second"
+	firstBookmark := "feature/base-routed-first"
+	secondBookmark := "feature/base-routed-second"
 	planFile := h.writeDemuxPlan(proposal, []map[string]any{
 		{
 			"id":                "r1",
@@ -1143,13 +1143,13 @@ func TestGXDemuxRoutedApplyCopiesFilesAbsentFromTargetTree(t *testing.T) {
 	h.writeTrackedFile("target-anchor.txt", "target\n")
 	h.run("jj", "describe", "-m", "target stack")
 	h.gx("add", "-m", "target stack")
-	targetBookmark := "gx/target-stack"
+	targetBookmark := "feature/target-stack"
 
 	h.run("git", "switch", "main")
 	h.writeTrackedFile("source-anchor.txt", "source\n")
 	h.run("jj", "describe", "-m", "source stack")
 	h.gx("add", "-m", "source stack")
-	sourceBookmark := "gx/source-stack"
+	sourceBookmark := "feature/source-stack"
 	h.gx("base", "--set", sourceBookmark)
 
 	if err := os.MkdirAll(filepath.Join(h.repo, "internal", "hooks"), 0o755); err != nil {
@@ -1198,14 +1198,14 @@ func TestGXComposeRoutedApplyRestoresSourceStackOnTargetRecordFailure(t *testing
 	h.writeTrackedFile("target-anchor.txt", "target\n")
 	h.run("jj", "describe", "-m", "target stack")
 	h.gx("add", "-m", "target stack")
-	targetBookmark := "gx/target-stack"
+	targetBookmark := "feature/target-stack"
 	targetBefore := h.bookmarkTargets()[targetBookmark]
 
 	h.run("git", "switch", "main")
 	h.writeTrackedFile("source-anchor.txt", "source\n")
 	h.run("jj", "describe", "-m", "source stack")
 	h.gx("add", "-m", "source stack")
-	sourceBookmark := "gx/source-stack"
+	sourceBookmark := "feature/source-stack"
 	h.gx("base", "--set", sourceBookmark)
 
 	h.writeTrackedFile("record-fail.txt", "record fail\n")
@@ -1250,7 +1250,7 @@ func TestGXComposeRoutedApplyRestoresMainOnTargetRecordFailure(t *testing.T) {
 	h.writeTrackedFile("target-anchor.txt", "target\n")
 	h.run("jj", "describe", "-m", "target stack")
 	h.gx("add", "-m", "target stack")
-	targetBookmark := "gx/target-stack"
+	targetBookmark := "feature/target-stack"
 	targetBefore := h.bookmarkTargets()[targetBookmark]
 
 	h.run("git", "switch", "main")
@@ -1297,7 +1297,7 @@ func TestGXDemuxProposesSymbolLevelRevisions(t *testing.T) {
 	h.writeTrackedFile("app.go", symbolFixture("one", "two"))
 	h.run("jj", "describe", "-m", "seed symbols")
 	h.gx("add", "-m", "seed symbols")
-	h.gx("base", "--set", "gx/seed-symbols")
+	h.gx("base", "--set", "feature/seed-symbols")
 
 	h.insertSession("session-alpha")
 	h.writeTrackedFile("app.go", symbolFixture("ONE", "TWO"))
@@ -1336,7 +1336,7 @@ func TestGXPublishAllPublishesEveryStack(t *testing.T) {
 	h.insertSession("session-alpha")
 	h.insertSessionRequest("session-alpha", "implement alpha")
 	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "add", "-m", "feat alpha")
-	alphaBookmark := "gx/feat-alpha"
+	alphaBookmark := "feature/feat-alpha"
 	alphaTarget := h.bookmarkTargets()[alphaBookmark]
 
 	h.run("git", "switch", "main")
@@ -1345,7 +1345,7 @@ func TestGXPublishAllPublishesEveryStack(t *testing.T) {
 	h.insertSession("session-beta")
 	h.insertSessionRequest("session-beta", "implement beta")
 	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "add", "-m", "feat beta")
-	betaBookmark := "gx/feat-beta"
+	betaBookmark := "feature/feat-beta"
 	betaTarget := h.bookmarkTargets()[betaBookmark]
 
 	assertRemoteBranchMissing(t, h, alphaBookmark)
@@ -1385,7 +1385,7 @@ func TestGXStacksHidesStackMergedIntoBase(t *testing.T) {
 	h.writeTrackedFile("alpha.txt", "alpha\n")
 	h.run("jj", "describe", "-m", "alpha")
 	h.gx("add", "-m", "feat alpha")
-	alphaBookmark := "gx/feat-alpha"
+	alphaBookmark := "feature/feat-alpha"
 	assertStackInStacksJSON(t, h, alphaBookmark, 1)
 
 	h.run("jj", "bookmark", "set", "main", "-r", alphaBookmark, "--allow-backwards")
@@ -1532,13 +1532,15 @@ func (h *harness) saveCloudCredentials() {
 	}
 	credentials := map[string]any{
 		"cloud": map[string]any{
-			"token":        e2eCloudToken,
-			"user_id":      "e2e-user",
-			"login":        "e2e",
-			"session_id":   "e2e-session",
-			"machine_id":   "e2e-machine",
-			"machine_name": "e2e-machine",
-			"obtained_at":  time.Now().UTC().Format(time.RFC3339Nano),
+			"token":                  e2eCloudToken,
+			"cli_session_token":      e2eCloudToken,
+			"cli_session_expires_at": time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339Nano),
+			"user_id":                "e2e-user",
+			"login":                  "e2e",
+			"session_id":             "e2e-session",
+			"machine_id":             "e2e-machine",
+			"machine_name":           "e2e-machine",
+			"obtained_at":            time.Now().UTC().Format(time.RFC3339Nano),
 		},
 	}
 	data, err := json.MarshalIndent(credentials, "", "  ")

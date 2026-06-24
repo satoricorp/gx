@@ -153,14 +153,14 @@ func TestBuildPushStackIncludesPatchesAndDedupedSessions(t *testing.T) {
 		Published: []vcs.PushedChange{
 			{
 				Change:         vcs.ChangeInfo{ChangeID: "alpha-change", CommitID: "alpha-commit"},
-				BranchName:     "gx/alpha",
+				BranchName:     "feature/alpha",
 				BaseBranchName: "main",
 				Patch:          "diff --git a/alpha.txt b/alpha.txt\n",
 			},
 			{
 				Change:         vcs.ChangeInfo{ChangeID: "beta-change", CommitID: "beta-commit"},
-				BranchName:     "gx/beta",
-				BaseBranchName: "gx/alpha",
+				BranchName:     "feature/beta",
+				BaseBranchName: "feature/alpha",
 				Patch:          "diff --git a/beta.txt b/beta.txt\n",
 			},
 		},
@@ -347,7 +347,7 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 		Repo:          RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          PushPayload{HeadCommitID: "commit-1"},
 		Stack: []StackPayload{{
-			BranchName: "gx/alpha",
+			BranchName: "feature/alpha",
 			Patch:      "diff --git a/a.txt b/a.txt\n",
 			Change: ChangePayload{
 				JJChangeID:      "change-1",

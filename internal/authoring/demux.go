@@ -362,15 +362,13 @@ func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID s
 		return ApplyDemuxResult{}, err
 	}
 	remainingChanges := demuxProposalLeavesSourceFiles(current.Files, proposal)
-	if !remainingChanges {
-		remainingChanges, err = e.demuxHasRemainingChanges(ctx, proposal.RepoRoot)
-		if err != nil {
-			return ApplyDemuxResult{}, fmt.Errorf("inspect remaining compose changes: %w", err)
-		}
-	}
 	if remainingChanges && source.Stack == nil && strings.TrimSpace(source.GitCheckoutRef) != "" {
 		if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, source.GitCheckoutRef, demuxProposalCoveredFiles(proposal)); err != nil {
 			return ApplyDemuxResult{}, fmt.Errorf("remove accepted compose files from remaining worktree: %w", err)
+		}
+		remainingChanges, err = e.demuxHasRemainingChanges(ctx, proposal.RepoRoot)
+		if err != nil {
+			return ApplyDemuxResult{}, fmt.Errorf("inspect remaining compose changes after cleanup: %w", err)
 		}
 	}
 	source.PreserveVisibleCurrent = remainingChanges
@@ -645,6 +643,7 @@ func (s demuxSourceLocation) restoreVisibleGitCheckout(ctx context.Context, e *E
 				return err
 			}
 		}
+		return e.vcs.ForceGitCheckoutPreservingWorktree(ctx, repoRoot, s.GitCheckoutRef)
 	}
 	return e.vcs.ForceGitCheckout(ctx, repoRoot, s.GitCheckoutRef)
 }

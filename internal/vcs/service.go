@@ -3,7 +3,6 @@ package vcs
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -581,10 +580,7 @@ func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, r
 		return CommitResult{}, err
 	}
 	name := firstNonEmpty(strings.TrimSpace(stackName), stackNameFromBookmark(bookmarkName), message)
-	bookmark := strings.TrimSpace(bookmarkName)
-	if bookmark == "" {
-		bookmark = stackBookmarkName(name, change.ChangeID)
-	}
+	bookmark := stackBookmarkName(firstNonEmpty(bookmarkName, name), change.ChangeID)
 	if existing, err := s.resolveAppendExistingStack(ctx, store, repo, repoID, bookmark); err != nil {
 		return CommitResult{}, err
 	} else if existing != nil {
@@ -1007,8 +1003,15 @@ func (s *Service) editRevision(ctx context.Context, repoRoot, rev string, reatta
 		if err != nil {
 			return err
 		}
-		_, err = s.reattachGitHeadToEditRef(ctx, repo)
-		return err
+		bookmark := s.publicBookmarkForRev(ctx, repoRoot, "@", repo.defaultBaseBranch())
+		if bookmark == "" || bookmark == repo.defaultBaseBranch() {
+			return nil
+		}
+		commitID, err := s.commitIDForRev(ctx, repoRoot, bookmark)
+		if err != nil {
+			return err
+		}
+		return s.attachGitBranch(ctx, repoRoot, bookmark, commitID)
 	})
 }
 
@@ -1023,10 +1026,6 @@ func (s *Service) ReattachGitCheckoutRef(ctx context.Context, repoRoot, checkout
 	return withRepoLock(repoRoot, func() error {
 		repo, err := s.configuredJJRepo(ctx)
 		if err != nil {
-			return err
-		}
-		if isGXEditCheckoutBranch(checkoutRef) {
-			_, err = s.reattachGitHeadToEditRef(ctx, repo)
 			return err
 		}
 		_, err = s.reattachGitHeadToBaseRef(ctx, repo, checkoutRef)
@@ -1215,13 +1214,19 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 			result.Repo = reattached
 			result.Actions = append(result.Actions, fmt.Sprintf("returned clean checkout to %s", authoringRef))
 		} else if s.currentGitCheckoutRef(ctx, repo.RootPath) == "" {
-			reattached, err := s.reattachGitHeadToEditRef(ctx, repo)
-			if err != nil {
-				return err
+			if stack, found, stackErr := s.resolveCurrentStackForRead(ctx, repo); stackErr != nil {
+				return stackErr
+			} else if found && strings.TrimSpace(stack.BookmarkName) != "" {
+				reattached, err := s.reattachContainer(ctx, repo.RootPath, stack.BookmarkName)
+				if err != nil {
+					return err
+				}
+				repo = reattached
+				result.Repo = reattached
+				result.Actions = append(result.Actions, fmt.Sprintf("reattached detached Git HEAD to %s because the working copy has changes", stack.BookmarkName))
+			} else {
+				result.Warnings = append(result.Warnings, "left detached Git HEAD with changes because no stack bookmark could be identified")
 			}
-			repo = reattached
-			result.Repo = reattached
-			result.Actions = append(result.Actions, "reattached detached Git HEAD to gx/edit because the working copy has changes")
 		} else if changeErr == nil && len(currentChange.Files) > 0 {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("left checkout on %s because %d changed %s must be recorded or moved first", firstNonEmpty(s.currentGitCheckoutRef(ctx, repo.RootPath), "(detached)"), len(currentChange.Files), vcsPluralize("file", len(currentChange.Files))))
 		}
@@ -1235,7 +1240,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 		if err != nil {
 			return err
 		}
-		if repo.AuthoringBase != nil && isGXInternalCheckoutRef(*repo.AuthoringBase) {
+		if repo.AuthoringBase != nil && legacyGXInternalCheckoutRef(*repo.AuthoringBase) {
 			previousBase := strings.TrimSpace(*repo.AuthoringBase)
 			if err := store.SetRepoAuthoringBase(ctx, repoID, logicalBase, time.Now().UnixMilli()); err != nil {
 				return err
@@ -1251,7 +1256,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 		now := time.Now().UnixMilli()
 		for _, stack := range stacks {
 			updated := false
-			if isGXInternalCheckoutRef(stack.BaseRef) {
+			if legacyGXInternalCheckoutRef(stack.BaseRef) {
 				next := s.publicBookmarkForRev(ctx, repo.RootPath, firstNonEmpty(stack.BaseCommitID, stack.BaseRef), repo.defaultBaseBranch())
 				if next == "" {
 					next = s.publicStackBaseRef(ctx, repo, stack.BaseRef)
@@ -1282,7 +1287,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 
 func isInternalGitPublishedRef(value string) bool {
 	value = strings.TrimPrefix(strings.TrimSpace(value), "refs/heads/")
-	return isGXInternalCheckoutRef(value)
+	return legacyGXInternalCheckoutRef(value)
 }
 
 func (s *Service) ApplyPatch(ctx context.Context, repoRoot, patchFile string, reverse bool) error {
@@ -1364,7 +1369,7 @@ func (s *Service) modifyUnlocked(ctx context.Context, repo RepoInfo, rev string)
 	if err := s.reconcileRepoChanges(ctx, repo, body.BookmarkName); err != nil {
 		return ModifyResult{}, err
 	}
-	repo, err = s.reattachGitHeadToEditRef(ctx, repo)
+	repo, err = s.reattachContainer(ctx, repo.RootPath, body.BookmarkName)
 	if err != nil {
 		return ModifyResult{}, err
 	}
@@ -1556,12 +1561,10 @@ func (s *Service) authoringBaseParentRefs(ctx context.Context, repo RepoInfo, ba
 	refs := []string{
 		gxAuthoringCheckoutRef(baseRef),
 		baseRef,
-		gxInternalBaseRef,
 		s.publicStackBaseRef(ctx, repo, baseRef),
 		repo.defaultBaseBranch(),
 		"main",
 		"main@origin",
-		"gx/base",
 	}
 	if resolved, err := s.resolveAuthoringBaseRef(ctx, repo.RootPath, baseRef); err == nil {
 		refs = append(refs, resolved)
@@ -1671,23 +1674,10 @@ func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, co
 		current = "(detached)"
 	}
 	if result.OnBase {
-		if current == gxInternalEditRef {
-			change, changeErr := s.CurrentChange(ctx, repo.RootPath, "@")
-			if changeErr == nil && len(change.Files) == 0 {
-				return "", "", fmt.Errorf("%s cannot run from clean gx/edit; run `gx base --set %s` to return to %s", commandName, result.BaseRef, gxAuthoringCheckoutRef(result.BaseRef))
-			}
-			return result.BaseRef, "edit", nil
-		}
 		return result.BaseRef, "base", nil
 	}
 	change, changeErr := s.CurrentChange(ctx, repo.RootPath, "@")
 	if changeErr == nil && len(change.Files) > 0 {
-		if current == gxInternalEditRef {
-			if commandName == "gx add" {
-				return result.BaseRef, "edit", nil
-			}
-			return "", "", fmt.Errorf("%s cannot run from dirty gx/edit with %d changed %s. You are editing a stack revision; run `gx add -m \"...\"` to record it, or move the changes before running `gx base --set %s`", commandName, len(change.Files), vcsPluralize("file", len(change.Files)), result.BaseRef)
-		}
 		if _, ok, reattachErr := s.reattachAuthoringBaseGitIfParent(ctx, repo, result.BaseRef); reattachErr != nil {
 			return "", "", reattachErr
 		} else if ok {
@@ -2198,6 +2188,9 @@ func (s *Service) ListStacks(ctx context.Context) ([]StackInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoID); err != nil {
+		return nil, err
+	}
 	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoID); err != nil {
 		return nil, err
 	}
@@ -2249,6 +2242,9 @@ func (s *Service) stackBySelector(ctx context.Context, repo RepoInfo, selector s
 	defer store.Close()
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
+		return StackInfo{}, err
+	}
+	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoID); err != nil {
 		return StackInfo{}, err
 	}
 	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoID); err != nil {
@@ -2708,6 +2704,9 @@ func (s *Service) Stack(ctx context.Context) (StackSummary, error) {
 	}
 	if repoRow == nil {
 		return stackSummaryForStack(repo, body, stackFound, nil, nil, 0), nil
+	}
+	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoRow.ID); err != nil {
+		return StackSummary{}, err
 	}
 	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
 		return StackSummary{}, err
@@ -3655,7 +3654,7 @@ func (s *Service) stackFromAttachedBranch(ctx context.Context, store *storage.St
 		return nil, nil
 	}
 	name := strings.TrimSpace(*repo.BranchName)
-	if name == "" || isGXInternalCheckoutRef(name) || name == repo.defaultBaseBranch() {
+	if name == "" || legacyGXInternalCheckoutRef(name) || name == repo.defaultBaseBranch() {
 		return nil, nil
 	}
 	return store.FindStackByBookmark(ctx, repoID, name)
@@ -3676,11 +3675,28 @@ func (s *Service) repairMissingStackRowsFromBookmarks(ctx context.Context, store
 	}
 	for _, target := range targets {
 		bookmark := strings.TrimSpace(target.Name)
-		if bookmark == "" || strings.Contains(bookmark, "@") || isGXInternalCheckoutRef(bookmark) {
+		if bookmark == "" || strings.Contains(bookmark, "@") || legacyGXInternalCheckoutRef(bookmark) {
 			continue
 		}
 		if _, isBase := baseNames[bookmark]; isBase {
 			continue
+		}
+		if legacyStackBookmarkName(bookmark) {
+			canonical := stackBookmarkName(bookmark, target.ChangeID)
+			if canonical == "" {
+				continue
+			}
+			if canonical != bookmark {
+				if exists, err := s.jjBookmarkExists(ctx, repo.RootPath, canonical); err != nil {
+					return err
+				} else if exists {
+					continue
+				}
+				if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "rename", bookmark, canonical); err != nil {
+					return fmt.Errorf("rename legacy stack bookmark %q to %q: %w", bookmark, canonical, err)
+				}
+				bookmark = canonical
+			}
 		}
 		existing, err := store.FindStackByBookmark(ctx, repoID, bookmark)
 		if err != nil {
@@ -3819,9 +3835,7 @@ func (s *Service) onAuthoringCheckout(ctx context.Context, repo RepoInfo) bool {
 	result := s.baseResult(ctx, repo)
 	current := strings.TrimSpace(result.CurrentRef)
 	return current == gxAuthoringCheckoutRef(result.BaseRef) ||
-		current == result.BaseRef ||
-		current == gxInternalBaseRef ||
-		strings.HasPrefix(current, gxInternalBaseRef+"/")
+		current == result.BaseRef
 }
 
 func (s *Service) stackFromCurrentBookmark(ctx context.Context, store *storage.Store, repoID int64, repoRoot string) (*storage.Stack, error) {
@@ -3969,6 +3983,9 @@ func (s *Service) publicStackBaseRef(ctx context.Context, repo RepoInfo, baseRef
 	if baseRef == "" {
 		return repo.defaultBaseBranch()
 	}
+	if legacyStackBookmarkName(baseRef) && !legacyGXInternalCheckoutRef(baseRef) {
+		return stackBookmarkName(baseRef, "")
+	}
 	if base, ok := gxAuthoringBaseFromCheckoutRef(baseRef); ok {
 		if base == repo.defaultBaseBranch() {
 			if _, err := s.commitIDForRev(ctx, repo.RootPath, base); err == nil {
@@ -3983,7 +4000,7 @@ func (s *Service) publicStackBaseRef(ctx context.Context, repo RepoInfo, baseRef
 			return base
 		}
 	}
-	if isGXInternalCheckoutRef(baseRef) {
+	if legacyGXInternalCheckoutRef(baseRef) {
 		if bookmark := s.publicBookmarkForRev(ctx, repo.RootPath, baseRef, repo.defaultBaseBranch()); bookmark != "" {
 			return bookmark
 		}
@@ -3997,13 +4014,6 @@ func (s *Service) currentGitCheckoutRef(ctx context.Context, repoRoot string) st
 		return strings.TrimSpace(branch)
 	}
 	return ""
-}
-
-func isGXInternalCheckoutRef(name string) bool {
-	name = strings.TrimSpace(name)
-	return name == gxInternalBaseRef || name == gxInternalEditRef ||
-		strings.HasPrefix(name, gxInternalBaseRef+"/") ||
-		strings.HasPrefix(name, gxInternalEditRef+"/")
 }
 
 func (s *Service) publicBookmarkForRev(ctx context.Context, repoRoot, rev, defaultBranch string) string {
@@ -4023,12 +4033,12 @@ func (s *Service) publicBookmarkForRev(ctx context.Context, repoRoot, rev, defau
 			continue
 		}
 		name := strings.TrimSpace(parts[0])
-		if name == "" || isGXInternalCheckoutRef(name) {
+		if name == "" || legacyGXInternalCheckoutRef(name) {
 			continue
 		}
 		rank := 3
 		switch {
-		case name != defaultBranch && !strings.HasPrefix(name, gxStackBookmarkPrefix):
+		case name != defaultBranch && !isGXStackBookmark(name):
 			rank = 0
 		case name == defaultBranch:
 			rank = 1
@@ -4132,20 +4142,8 @@ func stackAlias(index int) string {
 	return "s" + strconv.Itoa(index+1)
 }
 
-func recordedEditCheckoutBranch(repo RepoInfo) string {
-	if repo.BranchName == nil {
-		return ""
-	}
-	branch := strings.TrimSpace(*repo.BranchName)
-	if isGXEditCheckoutBranch(branch) {
-		return branch
-	}
+func recordedEditCheckoutBranch(_ RepoInfo) string {
 	return ""
-}
-
-func isGXEditCheckoutBranch(branch string) bool {
-	branch = strings.TrimSpace(branch)
-	return branch == "gx/edit" || strings.HasPrefix(branch, "gx/edit/")
 }
 
 func (s *Service) reattachRecordedContainer(ctx context.Context, repoRoot, stackBookmark, checkoutBranch string) (RepoInfo, error) {
@@ -4243,91 +4241,8 @@ func (s *Service) attachGitBranch(ctx context.Context, repoRoot, name, commitID 
 	return nil
 }
 
-func (s *Service) internalCheckoutRef(ctx context.Context, repoRoot, base string) (string, error) {
-	worktrees, err := s.gitWorktreeRoots(ctx, repoRoot)
-	if err != nil || len(worktrees) <= 1 {
-		return base, nil
-	}
-	root, err := stableAbsPath(repoRoot)
-	if err != nil {
-		return "", err
-	}
-	commonDir, err := s.gitCommonDir(ctx, repoRoot)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256([]byte(commonDir + "\x00" + root))
-	return base + "/worktree-" + fmt.Sprintf("%x", sum[:])[:12], nil
-}
-
-func (s *Service) gitWorktreeRoots(ctx context.Context, repoRoot string) ([]string, error) {
-	out, err := s.runStdoutTrimmed(ctx, repoRoot, "git", "worktree", "list", "--porcelain")
-	if err != nil {
-		return nil, err
-	}
-	var roots []string
-	for _, line := range splitLines(out) {
-		path, ok := strings.CutPrefix(line, "worktree ")
-		if !ok {
-			continue
-		}
-		root, err := stableAbsPath(path)
-		if err != nil {
-			root = strings.TrimSpace(path)
-		}
-		if root != "" {
-			roots = append(roots, root)
-		}
-	}
-	return roots, nil
-}
-
-func (s *Service) gitCommonDir(ctx context.Context, repoRoot string) (string, error) {
-	out, err := s.runStdoutTrimmed(ctx, repoRoot, "git", "rev-parse", "--git-common-dir")
-	if err != nil {
-		return "", err
-	}
-	commonDir := strings.TrimSpace(out)
-	if commonDir == "" {
-		return stableAbsPath(filepath.Join(repoRoot, ".git"))
-	}
-	if !filepath.IsAbs(commonDir) {
-		commonDir = filepath.Join(repoRoot, commonDir)
-	}
-	return stableAbsPath(commonDir)
-}
-
-func stableAbsPath(path string) (string, error) {
-	abs, err := filepath.Abs(strings.TrimSpace(path))
-	if err != nil {
-		return "", err
-	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved, nil
-	}
-	return filepath.Clean(abs), nil
-}
-
-func (s *Service) reattachGitHeadToEditRef(ctx context.Context, repo RepoInfo) (RepoInfo, error) {
-	checkoutRef, err := s.internalCheckoutRef(ctx, repo.RootPath, gxInternalEditRef)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	commitID, err := s.commitIDForContainer(ctx, repo.RootPath)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.attachGitBranch(ctx, repo.RootPath, checkoutRef, commitID); err != nil {
-		return RepoInfo{}, err
-	}
-	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
-}
-
 func (s *Service) reattachGitHeadToBaseRef(ctx context.Context, repo RepoInfo, baseRef string) (RepoInfo, error) {
-	checkoutRef, err := s.internalCheckoutRef(ctx, repo.RootPath, baseCheckoutRef(baseRef))
-	if err != nil {
-		return RepoInfo{}, err
-	}
+	checkoutRef := baseCheckoutRef(baseRef)
 	commitID, err := s.commitIDForContainer(ctx, repo.RootPath)
 	if err != nil {
 		return RepoInfo{}, err
@@ -4461,13 +4376,16 @@ func (r RepoInfo) defaultBaseBranch() string {
 func (r RepoInfo) authoringBaseRef() string {
 	if r.AuthoringBase != nil && strings.TrimSpace(*r.AuthoringBase) != "" {
 		ref := strings.TrimPrefix(strings.TrimSpace(*r.AuthoringBase), "origin/")
+		if legacyStackBookmarkName(ref) && !legacyGXInternalCheckoutRef(ref) {
+			return stackBookmarkName(ref, "")
+		}
 		if isGXStackBookmark(ref) {
 			return ref
 		}
 		if base, ok := gxAuthoringBaseFromCheckoutRef(ref); ok {
 			return base
 		}
-		if isGXInternalCheckoutRef(ref) {
+		if legacyGXInternalCheckoutRef(ref) {
 			return r.defaultBaseBranch()
 		}
 		return ref
@@ -4618,16 +4536,12 @@ func publishRefFromArgs(args []string) string {
 
 func publishRefForStack(body StackInfo) string {
 	if bookmark := strings.TrimSpace(body.BookmarkName); bookmark != "" {
-		return bookmark
+		if legacyStackBookmarkName(bookmark) {
+			return stackBookmarkName(bookmark, derefString(body.HeadChangeID))
+		}
+		return cleanRefName(bookmark)
 	}
-	name := bookmarkSlug(body.Name)
-	if name == "" && body.HeadChangeID != nil {
-		name = shortID(*body.HeadChangeID, 8)
-	}
-	if name == "" {
-		name = "draft"
-	}
-	return "gx/" + name
+	return stackBookmarkName(body.Name, derefString(body.HeadChangeID))
 }
 
 func recordStackBookmarks(ctx context.Context, repo RepoInfo, remoteName string, stack []PushedChange) error {

@@ -14,7 +14,7 @@ func TestBuildSessionChunksUsesRevisionTranscriptSources(t *testing.T) {
 	bundle := reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: "/repo"},
 		Stack: []reviewbundle.StackPayload{{
-			BranchName: "gx/alpha",
+			BranchName: "feature/alpha",
 			Change: reviewbundle.ChangePayload{
 				JJChangeID:      "change-alpha",
 				CurrentCommitID: "commit-alpha",
@@ -78,7 +78,7 @@ func TestBuildSessionChunksUsesRevisionTranscriptSources(t *testing.T) {
 	wantAttrs := map[string]any{
 		"source_kind":       "session_transcript",
 		"repo_root":         "/repo",
-		"branch_name":       "gx/alpha",
+		"branch_name":       "feature/alpha",
 		"jj_change_id":      "change-alpha",
 		"session_id":        "session-one",
 		"request_id":        "request-one",

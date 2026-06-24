@@ -40,7 +40,7 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 	defer os.RemoveAll(tmp)
 
 	attemptRoot := filepath.Join(tmp, "repo")
-	if err := copyTree(proposal.RepoRoot, attemptRoot); err != nil {
+	if err := copyTreeForDemuxPreflight(proposal, attemptRoot); err != nil {
 		return fmt.Errorf("copy repo into compose attempt dir: %w", err)
 	}
 	attemptGXHome := filepath.Join(tmp, "gx-home")
@@ -62,6 +62,43 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 		}
 		return nil
 	})
+}
+
+func copyTreeForDemuxPreflight(proposal DemuxProposal, dst string) error {
+	return copyTreeWithSkips(proposal.RepoRoot, dst, demuxPreflightProtectedPaths(proposal), demuxPreflightSkippableDir)
+}
+
+func demuxPreflightProtectedPaths(proposal DemuxProposal) map[string]struct{} {
+	protected := map[string]struct{}{}
+	add := func(path string) {
+		path = filepath.Clean(strings.TrimSpace(path))
+		if path == "." || path == "" || strings.HasPrefix(path, "..") || filepath.IsAbs(path) {
+			return
+		}
+		protected[path] = struct{}{}
+	}
+	for _, hunk := range proposal.Hunks {
+		add(hunk.File)
+	}
+	for _, revision := range proposal.Revisions {
+		for _, file := range revision.Files {
+			add(file)
+		}
+		for _, hunk := range revision.Hunks {
+			add(hunk.File)
+		}
+	}
+	return protected
+}
+
+func demuxPreflightSkippableDir(rel string) bool {
+	switch filepath.Base(rel) {
+	case "node_modules", ".next", ".turbo", ".cache", ".parcel-cache", ".vite",
+		"dist", "build", "coverage", "target", "tmp", "temp", ".venv":
+		return true
+	default:
+		return false
+	}
 }
 
 func loadDemuxApplyPreflightState(ctx context.Context, repoRoot string) (demuxApplyPreflightState, error) {
@@ -193,6 +230,10 @@ func withTemporaryGXHomeAndDir(gxHome, workDir string, fn func() error) error {
 }
 
 func copyTree(src, dst string) error {
+	return copyTreeWithSkips(src, dst, nil, nil)
+}
+
+func copyTreeWithSkips(src, dst string, protected map[string]struct{}, skipDir func(string) bool) error {
 	src = filepath.Clean(src)
 	return filepath.WalkDir(src, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -218,6 +259,9 @@ func copyTree(src, dst string) error {
 			}
 			return os.Symlink(link, target)
 		case entry.IsDir():
+			if skipDir != nil && skipDir(rel) && !hasProtectedPathUnder(protected, rel) {
+				return filepath.SkipDir
+			}
 			return os.MkdirAll(target, mode.Perm())
 		case mode.IsRegular():
 			return copyFile(path, target, mode.Perm())
@@ -225,6 +269,19 @@ func copyTree(src, dst string) error {
 			return nil
 		}
 	})
+}
+
+func hasProtectedPathUnder(protected map[string]struct{}, rel string) bool {
+	if len(protected) == 0 {
+		return false
+	}
+	rel = filepath.Clean(rel)
+	for path := range protected {
+		if path == rel || strings.HasPrefix(path, rel+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func copyFile(src, dst string, mode fs.FileMode) error {

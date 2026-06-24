@@ -34,9 +34,13 @@ func (p demuxPipeline) proposeChanges(ctx context.Context, opts ProposeDemuxOpti
 		})
 		if err != nil {
 			if strings.TrimSpace(result.Proposal.ID) != "" {
+				result.Proposal.Warnings = appendDemuxPipelineWarning(result.Proposal.Warnings, "Compose repair failed: "+err.Error())
+				if saved, saveErr := p.engine.SaveDemuxProposal(ctx, result.Proposal); saveErr == nil {
+					result.Proposal = saved
+				}
 				packet, packetErr := p.packetForProposal(ctx, result.Proposal)
 				if packetErr == nil {
-					return packet, err
+					return packet, nil
 				}
 			}
 			return DemuxPlanPacket{}, err
@@ -107,13 +111,13 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 		} else {
 			lastErr = err
 		}
-		proposal.Warnings = appendDemuxApplyPreflightWarning(proposal.Warnings, lastErr)
+		proposal = appendDemuxApplyPreflightWarning(proposal, lastErr)
 		if attempt == attempts {
 			saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal)
 			if saveErr == nil {
 				proposal = saved
 			}
-			return proposal, fmt.Errorf("compose apply preflight failed after %d attempt(s): %w", attempt, lastErr)
+			return proposal, nil
 		}
 		demuxProgress(opts.ProgressWriter, "Repairing compose proposal after apply preflight failure...")
 		result, err := p.engine.demuxRepair().repairApplyPreflightFailure(ctx, proposal, lastErr, DemuxAIReviewOptions{
@@ -124,22 +128,48 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 			if strings.TrimSpace(result.Proposal.ID) != "" {
 				proposal = result.Proposal
 			}
-			return proposal, fmt.Errorf("compose apply preflight failed and repair did not produce a new apply-ready proposal: %w; preflight: %v", err, lastErr)
+			proposal = appendDemuxApplyPreflightWarning(proposal, fmt.Errorf("repair did not produce a new apply-ready proposal: %w; preflight: %v", err, lastErr))
+			if saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal); saveErr == nil {
+				proposal = saved
+			}
+			return proposal, nil
 		}
 		proposal = result.Proposal
 	}
-	return proposal, lastErr
+	if lastErr != nil {
+		proposal = appendDemuxApplyPreflightWarning(proposal, lastErr)
+		if saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal); saveErr == nil {
+			proposal = saved
+		}
+	}
+	return proposal, nil
 }
 
-func appendDemuxApplyPreflightWarning(warnings []string, err error) []string {
+func appendDemuxApplyPreflightWarning(proposal DemuxProposal, err error) DemuxProposal {
 	message := "Compose apply preflight failed: " + err.Error()
+	proposal.Warnings = appendDemuxPipelineWarning(proposal.Warnings, message)
+	feasibility := make([]FeasibilityWarning, 0, len(proposal.FeasibilityWarnings)+1)
+	for _, warning := range proposal.FeasibilityWarnings {
+		if warning.Source != "apply_preflight" {
+			feasibility = append(feasibility, warning)
+		}
+	}
+	proposal.FeasibilityWarnings = append(feasibility, FeasibilityWarning{
+		Severity: "warning",
+		Source:   "apply_preflight",
+		Message:  message,
+	})
+	return proposal
+}
+
+func appendDemuxPipelineWarning(warnings []string, message string) []string {
 	out := make([]string, 0, len(warnings)+1)
 	for _, warning := range warnings {
 		if !strings.HasPrefix(warning, "Compose apply preflight failed: ") {
 			out = append(out, warning)
 		}
 	}
-	return append(out, message)
+	return append(out, strings.TrimSpace(message))
 }
 
 func (p demuxPipeline) packetForProposal(ctx context.Context, proposal DemuxProposal) (DemuxPlanPacket, error) {

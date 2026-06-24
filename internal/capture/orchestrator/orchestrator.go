@@ -393,7 +393,7 @@ func buildToolParsers(tools []string, claudeParser, codexParser, cursorParser pa
 }
 
 func detectDefaultBase(repoRoot string) string {
-	for _, candidate := range []string{"main", "master", "gx/main", "origin/main", "origin/master"} {
+	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
 		if refExists(repoRoot, candidate) {
 			return candidate
 		}

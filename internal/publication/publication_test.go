@@ -169,7 +169,7 @@ func TestPublishStackPreparesUploadsAndRecords(t *testing.T) {
 	}
 	engine := &fakeStackPublisher{push: push}
 
-	result, err := PublishStack(context.Background(), engine, []string{"gx/demo"}, vcs.PushOptions{Mode: vcs.PublishModeReviewOnly}, publisher)
+	result, err := PublishStack(context.Background(), engine, []string{"feature/demo"}, vcs.PushOptions{Mode: vcs.PublishModeReviewOnly}, publisher)
 	if err != nil {
 		t.Fatalf("PublishStack() error = %v", err)
 	}

@@ -66,7 +66,7 @@ func TestRequireRecordedAddsForPublish(t *testing.T) {
 	stackID, err := store.UpsertStack(ctx, storage.Stack{
 		RepoID:       repoID,
 		Name:         "login",
-		BookmarkName: "gx/login",
+		BookmarkName: "feature/login",
 		BaseRef:      "main",
 		BaseCommitID: "base",
 		Status:       "draft",

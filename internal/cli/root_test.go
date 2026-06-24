@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -55,7 +56,7 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 	current := authoring.StackInfo{
 		Name:         "waitlist + gx-pr",
 		Alias:        "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -68,7 +69,7 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 			{
 				Name:           "onboarding repo picker",
 				Alias:          "onboarding",
-				BookmarkName:   "gx/onboarding",
+				BookmarkName:   "feature/onboarding",
 				BaseRef:        "main",
 				Status:         "published",
 				RevisionCount:  1,
@@ -112,7 +113,7 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 		"j/k select",
 		"repo acme/console",
 		"stacks 2",
-		"ref gx/waitlist",
+		"ref feature/waitlist",
 		"base main",
 		"state draft",
 		"12345678",
@@ -129,7 +130,7 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 
 func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	branch := "gx/change-kxwqpvuo"
+	branch := "feature/change-kxwqpvuo"
 	main := "main"
 	stack := authoring.StackSummary{
 		Repo: authoring.RepoInfo{RootPath: "/tmp/console", BranchName: &branch, DefaultBranch: &main},
@@ -142,8 +143,8 @@ func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *test
 	for _, want := range []string{
 		"$ gx stacks",
 		"console",
-		"● change-kxwqpvuo",
-		"change-kxwqpvuo  main · draft · ↑1",
+		"● feature/change-kxwqpvuo",
+		"feature/change-kxwqpvuo  main · draft · ↑1",
 		"gx-pr payload sync",
 		"j/k revision · e edit · d diff · Shift+D delete · esc stacks · q quit",
 	} {
@@ -187,7 +188,7 @@ func displayColumn(line string, needle string) int {
 func TestStacksModelDShowsDiffForSelectedRevision(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -220,13 +221,13 @@ func TestStacksModelDShowsDiffForSelectedRevision(t *testing.T) {
 func TestStacksModelEnterShowsSelectedStackRevisions(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
 	other := authoring.StackInfo{
 		Name:         "docs",
-		BookmarkName: "gx/docs",
+		BookmarkName: "feature/docs",
 		BaseRef:      "main",
 		Status:       "draft",
 		Revisions: []authoring.RevisionSummary{
@@ -260,7 +261,7 @@ func TestStacksModelEnterShowsSelectedStackRevisions(t *testing.T) {
 func TestStacksModelEnterUsesCurrentStackEntryRevisions(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 		Revisions: []authoring.RevisionSummary{
@@ -304,7 +305,7 @@ func TestColorizeDiffLeavesAnsiColoredOutputUntouched(t *testing.T) {
 func TestStacksModelShiftDDeletesActiveRevision(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -331,7 +332,7 @@ func TestStacksModelShiftDDeletesActiveRevision(t *testing.T) {
 func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -339,7 +340,7 @@ func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
 		Stack: &current,
 		Stacks: []authoring.StackInfo{
 			current,
-			{Name: "docs", BookmarkName: "gx/docs", BaseRef: "main", Status: "draft"},
+			{Name: "docs", BookmarkName: "feature/docs", BaseRef: "main", Status: "draft"},
 		},
 	}, nil)
 	model.mode = stacksModeStacks
@@ -350,7 +351,7 @@ func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update() = %T, want stacksModel", next)
 	}
-	if updated.action != (stacksAction{Kind: "delete-stack", Target: "gx/docs"}) {
+	if updated.action != (stacksAction{Kind: "delete-stack", Target: "feature/docs"}) {
 		t.Fatalf("Update(D).action = %#v, want selected stack delete", updated.action)
 	}
 }
@@ -358,7 +359,7 @@ func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
 func TestStacksModelEnterDoesNotSwitchCurrentStack(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -438,13 +439,13 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 		Repo: authoring.RepoInfo{DefaultBranch: &main},
 		Stack: &authoring.StackInfo{
 			Name:         "change-kxwqpvuo",
-			BookmarkName: "gx/change-kxwqpvuo",
+			BookmarkName: "feature/change-kxwqpvuo",
 			BaseRef:      "main",
 		},
 		Refs: currentStatusRefs{
 			GXBaseRef:      "main",
-			GXStackRef:     "gx/change-kxwqpvuo",
-			GitCheckoutRef: "gx/edit",
+			GXStackRef:     "feature/change-kxwqpvuo",
+			GitCheckoutRef: "feature/change-kxwqpvuo",
 		},
 		Current: authoring.ChangeInfo{
 			ChangeID: "rzlmkskwokkzwnqpxttqstlwrpvlmttl",
@@ -461,7 +462,7 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"Run gx add -m \"describe this revision\" to record them onto the active edited stack revision.",
-		"Git checkout ref: gx/edit",
+		"Git checkout ref: feature/change-kxwqpvuo",
 		"gx add -m \"describe this revision\"",
 	} {
 		if !strings.Contains(text, want) {
@@ -475,7 +476,7 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 
 func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	current := authoring.StackInfo{Name: "waitlist + gx-pr", Alias: "waitlist", BookmarkName: "gx/waitlist", BaseRef: "main", Status: "draft"}
+	current := authoring.StackInfo{Name: "waitlist + gx-pr", Alias: "waitlist", BookmarkName: "feature/waitlist", BaseRef: "main", Status: "draft"}
 	stack := authoring.StackSummary{
 		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
 		Stack: &current,
@@ -484,7 +485,7 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 			{
 				Name:         "device auth polish",
 				Alias:        "device-auth",
-				BookmarkName: "gx/device-auth",
+				BookmarkName: "feature/device-auth",
 				BaseRef:      "main",
 				Status:       "draft",
 				Revisions: []authoring.RevisionSummary{
@@ -522,15 +523,15 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 
 func TestStacksDisplayHidesMergedAndKeepsPublishedAtBottomByDefault(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "gx/active", BaseRef: "main", Status: "draft"}
+	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "feature/active", BaseRef: "main", Status: "draft"}
 	stack := authoring.StackSummary{
 		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
 		Stack: &current,
 		Stacks: []authoring.StackInfo{
-			{Name: "published work", Alias: "published", BookmarkName: "gx/published", BaseRef: "main", Status: "published"},
+			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published"},
 			current,
-			{Name: "merged work", Alias: "merged", BookmarkName: "gx/merged", BaseRef: "main", Status: "merged"},
-			{Name: "next work", Alias: "next", BookmarkName: "gx/next", BaseRef: "main", Status: "draft"},
+			{Name: "merged work", Alias: "merged", BookmarkName: "feature/merged", BaseRef: "main", Status: "merged"},
+			{Name: "next work", Alias: "next", BookmarkName: "feature/next", BaseRef: "main", Status: "draft"},
 		},
 	}
 
@@ -553,13 +554,13 @@ func TestStacksDisplayHidesMergedAndKeepsPublishedAtBottomByDefault(t *testing.T
 
 func TestStacksDisplayShowAllStillHidesMerged(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "gx/active", BaseRef: "main", Status: "draft"}
+	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "feature/active", BaseRef: "main", Status: "draft"}
 	stack := authoring.StackSummary{
 		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
 		Stack: &current,
 		Stacks: []authoring.StackInfo{
-			{Name: "merged work", Alias: "merged", BookmarkName: "gx/merged", BaseRef: "main", Status: "merged", RevisionCount: 2, PublishedCount: 2},
-			{Name: "published work", Alias: "published", BookmarkName: "gx/published", BaseRef: "main", Status: "published"},
+			{Name: "merged work", Alias: "merged", BookmarkName: "feature/merged", BaseRef: "main", Status: "merged", RevisionCount: 2, PublishedCount: 2},
+			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published"},
 			current,
 		},
 	}
@@ -585,7 +586,7 @@ func TestPrintStatusAgentListsStacksAndTargetDetails(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist + gx-pr",
 		Alias:        "waitlist",
-		BookmarkName: "gx/waitlist",
+		BookmarkName: "feature/waitlist",
 		BaseRef:      "main",
 		Status:       "draft",
 	}
@@ -595,7 +596,7 @@ func TestPrintStatusAgentListsStacksAndTargetDetails(t *testing.T) {
 		PublishedCount: 0,
 		Stacks: []authoring.StackInfo{
 			current,
-			{Name: "device auth polish", Alias: "device-auth", BookmarkName: "gx/device-auth", BaseRef: "main", Status: "draft"},
+			{Name: "device auth polish", Alias: "device-auth", BookmarkName: "feature/device-auth", BaseRef: "main", Status: "draft"},
 		},
 		Revisions: []authoring.RevisionSummary{
 			{Index: 1, ChangeID: "a3f8c12abcde", CommitID: "abcdef1234", Description: "gx-pr payload sync", Active: true},
@@ -607,9 +608,9 @@ func TestPrintStatusAgentListsStacksAndTargetDetails(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"repo=console stacks=2 current=\"waitlist + gx-pr\"",
-		"stack name=\"waitlist + gx-pr\" alias=waitlist ref=gx/waitlist base=main status=draft changes=1 published=0/1 sync=local current=true",
+		"stack name=\"waitlist + gx-pr\" alias=waitlist ref=feature/waitlist base=main status=draft changes=1 published=0/1 sync=local current=true",
 		"revision id=a3f8c12abcde message=\"gx-pr payload sync\" status=draft commit=abcdef12 active=true",
-		"stack name=\"device auth polish\" alias=device-auth ref=gx/device-auth base=main status=draft changes=0 published=0/0 sync=local current=false",
+		"stack name=\"device auth polish\" alias=device-auth ref=feature/device-auth base=main status=draft changes=0 published=0/0 sync=local current=false",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printStatusAgent() missing %q in:\n%s", want, text)
@@ -621,7 +622,7 @@ func TestPrintStatusAgentListsStacksAndTargetDetails(t *testing.T) {
 	text = out.String()
 	for _, want := range []string{
 		"stack=\"waitlist + gx-pr\" repo=console",
-		"stack alias=waitlist ref=gx/waitlist base=main status=draft changes=1 published=0/1 sync=local current=true",
+		"stack alias=waitlist ref=feature/waitlist base=main status=draft changes=1 published=0/1 sync=local current=true",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printStatusAgent(target) missing %q in:\n%s", want, text)
@@ -634,7 +635,7 @@ func TestPrintModifySummaryKeepsTargetAndNextCommand(t *testing.T) {
 	result := authoring.ModifyResult{
 		Output:        "Working copy now at abc",
 		CurrentChange: authoring.ChangeInfo{ChangeID: "qpvkpnrmtxyp", CommitID: "abcdef1234", Description: "Review demux hunk coverage"},
-		Stack:         &authoring.StackInfo{Name: "waitlist + gx-pr", Alias: "waitlist", BookmarkName: "gx/waitlist", BaseRef: "main", Status: "draft"},
+		Stack:         &authoring.StackInfo{Name: "waitlist + gx-pr", Alias: "waitlist", BookmarkName: "feature/waitlist", BaseRef: "main", Status: "draft"},
 	}
 	var out bytes.Buffer
 
@@ -709,9 +710,9 @@ func TestPrintDemuxProposalGroupsRevisionsByStack(t *testing.T) {
 		ID:               "demux-1",
 		ProposedChangeID: "change-1",
 		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", Files: []string{"internal/storage/schema.sql"}, TargetStack: "gx/stack-management"},
-			{ID: "r2", Intent: "route planner", Files: []string{"internal/authoring/demux_routing.go"}, TargetStack: "gx/demux-routing"},
-			{ID: "r3", Intent: "stack CLI", Files: []string{"internal/cli/root.go"}, TargetStack: "gx/stack-management"},
+			{ID: "r1", Intent: "stack storage", Files: []string{"internal/storage/schema.sql"}, TargetStack: "feature/stack-management"},
+			{ID: "r2", Intent: "route planner", Files: []string{"internal/authoring/demux_routing.go"}, TargetStack: "feature/demux-routing"},
+			{ID: "r3", Intent: "stack CLI", Files: []string{"internal/cli/root.go"}, TargetStack: "feature/stack-management"},
 		},
 	}
 	var out bytes.Buffer
@@ -721,10 +722,10 @@ func TestPrintDemuxProposalGroupsRevisionsByStack(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"Stacks",
-		"● gx/stack-management  2 revisions",
+		"● feature/stack-management  2 revisions",
 		"r1 stack storage",
 		"r3 stack CLI",
-		"● gx/demux-routing  1 revision",
+		"● feature/demux-routing  1 revision",
 		"r2 route planner",
 	} {
 		if !strings.Contains(text, want) {
@@ -1328,6 +1329,31 @@ func TestVersionCommandPrintsLabeledVersion(t *testing.T) {
 	}
 	if strings.Contains(text, "$ gx version") {
 		t.Fatalf("version output should not echo command:\n%s", text)
+	}
+}
+
+func TestVersionCommandPrintsJSON(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	root := NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"version", "--json"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute() error = %v", err)
+	}
+
+	var got struct {
+		Version  string `json:"version"`
+		Release  string `json:"release_version"`
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("version --json output is not JSON: %v\n%s", err, out.String())
+	}
+	if got.Version == "" {
+		t.Fatalf("version --json = %#v, want non-empty version", got)
 	}
 }
 

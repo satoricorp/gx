@@ -18,7 +18,7 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 		if r.URL.Path != "/repos/satoricorp/gx/pulls" {
 			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls", r.URL.Path)
 		}
-		if r.URL.Query().Get("head") != "satoricorp:gx/demo" {
+		if r.URL.Query().Get("head") != "satoricorp:feature/demo" {
 			t.Fatalf("head query = %q", r.URL.Query().Get("head"))
 		}
 		_, _ = w.Write([]byte(`[{"html_url":"https://github.com/satoricorp/gx/pull/7"}]`))
@@ -30,7 +30,7 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 	pr, err := client.FindPullRequest(context.Background(), CreatePullRequestOptions{
 		Owner:      "satoricorp",
 		Repo:       "gx",
-		HeadBranch: "gx/demo",
+		HeadBranch: "feature/demo",
 	})
 	if err != nil {
 		t.Fatalf("FindPullRequest() error = %v", err)
@@ -52,7 +52,7 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if payload["base"] != "main" || payload["head"] != "gx/demo" || payload["title"] != "Demo" {
+		if payload["base"] != "main" || payload["head"] != "feature/demo" || payload["title"] != "Demo" {
 			t.Fatalf("payload = %#v", payload)
 		}
 		_, _ = w.Write([]byte(`{"html_url":"https://github.com/satoricorp/gx/pull/8"}`))
@@ -65,7 +65,7 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 		Owner:      "satoricorp",
 		Repo:       "gx",
 		BaseBranch: "main",
-		HeadBranch: "gx/demo",
+		HeadBranch: "feature/demo",
 		Title:      "Demo",
 		Body:       "Published by GX.",
 	})
@@ -85,7 +85,7 @@ func TestGitHubAuthError(t *testing.T) {
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
 
 	client := NewClientWithToken("github.com", "bad-token", server.Client())
-	_, err := client.FindPullRequest(context.Background(), CreatePullRequestOptions{Owner: "satoricorp", Repo: "gx", HeadBranch: "gx/demo"})
+	_, err := client.FindPullRequest(context.Background(), CreatePullRequestOptions{Owner: "satoricorp", Repo: "gx", HeadBranch: "feature/demo"})
 	if err == nil || !strings.Contains(err.Error(), "github auth failed") {
 		t.Fatalf("FindPullRequest() error = %v, want auth failure", err)
 	}

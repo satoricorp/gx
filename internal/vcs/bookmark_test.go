@@ -10,7 +10,7 @@ import (
 func TestStackEditRevisionUsesBookmarkForPublishedStack(t *testing.T) {
 	head := "rsnwoxsqtmmmrlnkqvyqrqwolywoqozo"
 	stack := storage.Stack{
-		BookmarkName: "gx/remove-logo-shimmer-animation-from-root-intro-pr",
+		BookmarkName: "feature/remove-logo-shimmer-animation-from-root-intro-pr",
 		HeadChangeID: &head,
 		Status:       "published",
 	}
@@ -23,7 +23,7 @@ func TestStackEditRevisionUsesHeadForDraftStack(t *testing.T) {
 	head := "chg123"
 	commit := "commit123"
 	stack := storage.Stack{
-		BookmarkName: "gx/login",
+		BookmarkName: "feature/login",
 		HeadChangeID: &head,
 		HeadCommitID: &commit,
 		Status:       "draft",
@@ -56,13 +56,33 @@ func TestIsJJImmutableError(t *testing.T) {
 
 func TestInternalCheckoutRefsAreNotStackBookmarks(t *testing.T) {
 	for _, name := range []string{
-		gxInternalBaseRef,
-		gxInternalBaseRef + "/worktree-abc123",
-		gxInternalEditRef,
-		gxInternalEditRef + "/worktree-abc123",
+		"gx/base",
+		"gx/base/worktree-abc123",
+		"gx/edit",
+		"gx/edit/worktree-abc123",
 	} {
 		if isGXStackBookmark(name) {
 			t.Fatalf("isGXStackBookmark(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestStackBookmarkNameUsesConventionalPrefixes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{name: "add login flow", want: "feature/add-login-flow"},
+		{name: "fix compose panic", want: "bug/fix-compose-panic"},
+		{name: "docs readme", want: "docs/docs-readme"},
+		{name: "test publish flow", want: "test/test-publish-flow"},
+		{name: "chore release notes", want: "chore/chore-release-notes"},
+		{name: "gx/legacy-name", want: "feature/legacy-name"},
+		{name: "gx/draft/legacy-name", want: "feature/legacy-name"},
+		{name: "feature/keep-prefix", want: "feature/keep-prefix"},
+	} {
+		if got := stackBookmarkName(tc.name, "abcdef123456"); got != tc.want {
+			t.Fatalf("stackBookmarkName(%q) = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

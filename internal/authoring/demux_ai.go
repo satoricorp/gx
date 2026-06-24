@@ -128,7 +128,7 @@ func (r demuxRepairModule) repairApplyPreflightFailure(ctx context.Context, prop
 		Kind:       "apply_preflight",
 		Suggestion: "revise revision order, grouping, hunk coverage, target_stack, or base_stack so the proposal can be applied in a clean disposable checkout",
 	})
-	review.Proposal.Warnings = appendDemuxApplyPreflightWarning(review.Proposal.Warnings, preflightErr)
+	review.Proposal = appendDemuxApplyPreflightWarning(review.Proposal, preflightErr)
 	proposal = review.Proposal
 	return r.repairReviewed(ctx, proposal, review, opts)
 }

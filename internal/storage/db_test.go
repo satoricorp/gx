@@ -249,7 +249,7 @@ func TestStackTracksChangeAndCommitRefs(t *testing.T) {
 	stackID, err := store.UpsertStack(ctx, Stack{
 		RepoID:       repoID,
 		Name:         "feat a",
-		BookmarkName: "gx/feat-a",
+		BookmarkName: "feature/feat-a",
 		BaseRef:      "main",
 		BaseCommitID: "base-a",
 		HeadChangeID: &headChange,
@@ -280,7 +280,7 @@ func TestStackTracksChangeAndCommitRefs(t *testing.T) {
 	if _, err := store.UpsertStack(ctx, Stack{
 		RepoID:       repoID,
 		Name:         "feat a",
-		BookmarkName: "gx/feat-a",
+		BookmarkName: "feature/feat-a",
 		BaseRef:      "main",
 		BaseCommitID: "base-a",
 		HeadChangeID: &headChange,
@@ -295,7 +295,7 @@ func TestStackTracksChangeAndCommitRefs(t *testing.T) {
 		t.Fatalf("AddChangeToStack(rewrite) error = %v", err)
 	}
 
-	stack, err := store.FindStackByBookmark(ctx, repoID, "gx/feat-a")
+	stack, err := store.FindStackByBookmark(ctx, repoID, "feature/feat-a")
 	if err != nil {
 		t.Fatalf("FindStackByBookmark() error = %v", err)
 	}

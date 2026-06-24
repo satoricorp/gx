@@ -14,7 +14,7 @@ func TestIngestStackReviewBundle(t *testing.T) {
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "commit-head"},
 		Stack: []reviewbundle.StackPayload{{
-			BranchName:     "gx/alpha",
+			BranchName:     "feature/alpha",
 			BaseBranchName: "main",
 			Patch:          "diff --git a/alpha.txt b/alpha.txt\n",
 			Change: reviewbundle.ChangePayload{
@@ -64,7 +64,7 @@ func TestIngestStackReviewBundle(t *testing.T) {
 		t.Fatalf("revisions = %#v, want one", review.Revisions)
 	}
 	revision := review.Revisions[0]
-	if revision.BranchName != "gx/alpha" || revision.Description != "feat alpha" || revision.ProvenanceStatus != "explicit" {
+	if revision.BranchName != "feature/alpha" || revision.Description != "feat alpha" || revision.ProvenanceStatus != "explicit" {
 		t.Fatalf("revision = %#v", revision)
 	}
 	if !revision.WhyContextAvailable {

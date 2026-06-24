@@ -9,7 +9,7 @@ own wire format. Use these mappings when changing authoring code.
 - **JJ change**: the durable local VCS object for a revision. This is the
   stable key to use for local provenance because JJ rewrites Git commits.
 - **Stack**: the named line of revisions. Locally it is backed by GX metadata
-  and a JJ/Git-compatible ref such as `gx/feature`.
+  and a JJ/Git-compatible conventional ref such as `feature/login-flow`.
 - **Published stack**: a stack that has been exported to the remote review/Git
   surface.
 - **Stack entry**: the review-surface view of a published revision.

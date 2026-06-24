@@ -3,6 +3,7 @@ package authoring
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -418,6 +419,47 @@ func TestDemuxPipelinePacketOwnsWorkflowState(t *testing.T) {
 	}
 }
 
+func TestAppendDemuxApplyPreflightWarningBlocksApplyWithoutInvalidatingProposal(t *testing.T) {
+	proposal := appendDemuxApplyPreflightWarning(DemuxProposal{
+		Warnings:            []string{"keep this warning", "Compose apply preflight failed: old failure"},
+		FeasibilityWarnings: []FeasibilityWarning{{Severity: "info", Source: "inferred_dependency", Message: "keep info"}},
+	}, errors.New("apply exploded"))
+
+	if got := demuxWorkflowState(ReviewDemuxResult{Valid: true, Proposal: proposal}, proposal); got != DemuxWorkflowRepairRequired {
+		t.Fatalf("demuxWorkflowState() = %q, want repair_required", got)
+	}
+	if len(proposal.FeasibilityWarnings) != 2 {
+		t.Fatalf("feasibility warnings = %#v, want info plus apply_preflight warning", proposal.FeasibilityWarnings)
+	}
+	warning := proposal.FeasibilityWarnings[1]
+	if warning.Source != "apply_preflight" || warning.Severity != "warning" || !strings.Contains(warning.Message, "apply exploded") {
+		t.Fatalf("apply preflight warning = %#v", warning)
+	}
+	if len(proposal.Warnings) != 2 || proposal.Warnings[0] != "keep this warning" || !strings.Contains(proposal.Warnings[1], "apply exploded") {
+		t.Fatalf("plain warnings = %#v", proposal.Warnings)
+	}
+}
+
+func TestDemuxPreflightSkipsGeneratedDirsUnlessProposalTouchesThem(t *testing.T) {
+	if !demuxPreflightSkippableDir("node_modules") || !demuxPreflightSkippableDir("frontend/.next") {
+		t.Fatal("expected generated dependency/build dirs to be skippable")
+	}
+	protected := demuxPreflightProtectedPaths(DemuxProposal{
+		Revisions: []RevisionProposal{{
+			Files: []string{"node_modules/local-patch/index.js", ".next/required-manifest.json"},
+		}},
+	})
+	if !hasProtectedPathUnder(protected, "node_modules") {
+		t.Fatalf("node_modules should stay protected when proposal touches it: %#v", protected)
+	}
+	if !hasProtectedPathUnder(protected, ".next") {
+		t.Fatalf(".next should stay protected when proposal touches it: %#v", protected)
+	}
+	if hasProtectedPathUnder(protected, "coverage") {
+		t.Fatalf("coverage should be skippable when untouched: %#v", protected)
+	}
+}
+
 func TestReviewDemuxPlanReturnsNormalizedWarnings(t *testing.T) {
 	engine := NewEngine()
 	result, err := engine.ReviewDemuxPlan(context.Background(), DemuxProposal{
@@ -545,17 +587,17 @@ func TestShapeDemuxProposalNormalizesRoutesForSamePackageCluster(t *testing.T) {
 			{FromFile: "internal/authoring/demux_ai.go", ToFile: "internal/authoring/demux_review_shape.go", Symbol: "shapeDemuxProposalForReview"},
 		},
 		Revisions: []RevisionProposal{
-			{ID: "u1", Intent: "wire compose", Files: []string{"internal/authoring/demux.go"}, TargetStack: "gx/demux-routing", EffectiveLOC: 12},
-			{ID: "u2", Intent: "wire repair", Files: []string{"internal/authoring/demux_ai.go"}, TargetStack: "gx/internal-authoring", EffectiveLOC: 12},
-			{ID: "u3", Intent: "add shape module", Files: []string{"internal/authoring/demux_review_shape.go"}, TargetStack: "gx/internal-authoring", EffectiveLOC: 200},
+			{ID: "u1", Intent: "wire compose", Files: []string{"internal/authoring/demux.go"}, TargetStack: "feature/demux-routing", EffectiveLOC: 12},
+			{ID: "u2", Intent: "wire repair", Files: []string{"internal/authoring/demux_ai.go"}, TargetStack: "feature/internal-authoring", EffectiveLOC: 12},
+			{ID: "u3", Intent: "add shape module", Files: []string{"internal/authoring/demux_review_shape.go"}, TargetStack: "feature/internal-authoring", EffectiveLOC: 200},
 		},
 	}, defaultDemuxReviewShapePolicy)
 	if !changed {
 		t.Fatalf("shapeDemuxProposalWithPolicy() changed = false, want route normalization")
 	}
 	for _, revision := range proposal.Revisions {
-		if revision.TargetStack != "gx/internal-authoring" {
-			t.Fatalf("revision %s target stack = %q, want gx/internal-authoring in %#v", revision.ID, revision.TargetStack, proposal.Revisions)
+		if revision.TargetStack != "feature/internal-authoring" {
+			t.Fatalf("revision %s target stack = %q, want feature/internal-authoring in %#v", revision.ID, revision.TargetStack, proposal.Revisions)
 		}
 	}
 }
@@ -575,11 +617,11 @@ func TestShapeDemuxProposalCoalescesRelatedPackageRevisionsUnderSoftMax(t *testi
 			{FromFile: "internal/authoring/demux_test.go", ToFile: "internal/authoring/demux.go", Symbol: "ReviewDemuxPlan"},
 		},
 		Revisions: []RevisionProposal{
-			{ID: "u1", Intent: "add proposal shape fields", Files: []string{"internal/authoring/proposal.go"}, UseHunks: true, HunkIDs: []string{"h1"}, TargetStack: "gx/internal-authoring"},
-			{ID: "u2", Intent: "wire review shape compose", Files: []string{"internal/authoring/demux.go"}, UseHunks: true, HunkIDs: []string{"h2"}, TargetStack: "gx/internal-authoring"},
-			{ID: "u3", Intent: "wire review shape repair", Files: []string{"internal/authoring/demux_ai.go"}, UseHunks: true, HunkIDs: []string{"h3"}, TargetStack: "gx/internal-authoring"},
-			{ID: "u4", Intent: "test review shape", Files: []string{"internal/authoring/demux_test.go"}, UseHunks: true, HunkIDs: []string{"h4"}, TargetStack: "gx/internal-authoring"},
-			{ID: "u5", Intent: "add review shape module", Files: []string{"internal/authoring/demux_review_shape.go"}, UseHunks: true, HunkIDs: []string{"h5"}, TargetStack: "gx/internal-authoring"},
+			{ID: "u1", Intent: "add proposal shape fields", Files: []string{"internal/authoring/proposal.go"}, UseHunks: true, HunkIDs: []string{"h1"}, TargetStack: "feature/internal-authoring"},
+			{ID: "u2", Intent: "wire review shape compose", Files: []string{"internal/authoring/demux.go"}, UseHunks: true, HunkIDs: []string{"h2"}, TargetStack: "feature/internal-authoring"},
+			{ID: "u3", Intent: "wire review shape repair", Files: []string{"internal/authoring/demux_ai.go"}, UseHunks: true, HunkIDs: []string{"h3"}, TargetStack: "feature/internal-authoring"},
+			{ID: "u4", Intent: "test review shape", Files: []string{"internal/authoring/demux_test.go"}, UseHunks: true, HunkIDs: []string{"h4"}, TargetStack: "feature/internal-authoring"},
+			{ID: "u5", Intent: "add review shape module", Files: []string{"internal/authoring/demux_review_shape.go"}, UseHunks: true, HunkIDs: []string{"h5"}, TargetStack: "feature/internal-authoring"},
 		},
 	}, defaultDemuxReviewShapePolicy)
 	if !changed {
@@ -1346,8 +1388,8 @@ func TestBlockingFeasibilityWarningsOnlyBlocksWarningSeverity(t *testing.T) {
 	}
 }
 
-func TestRouteTextScoreMatchesGXBookmarkSlug(t *testing.T) {
-	got := routeTextScore("update terminal theme status", "gx/update-terminal-theme")
+func TestRouteTextScoreMatchesConventionalBookmarkSlug(t *testing.T) {
+	got := routeTextScore("update terminal theme status", "feature/update-terminal-theme")
 	if got < 0.8 {
 		t.Fatalf("routeTextScore() = %v, want strong bookmark slug match", got)
 	}
@@ -1366,7 +1408,7 @@ func TestReviewDemuxRoutesAllowsUnknownTargetAsNewStack(t *testing.T) {
 			ID:          "r1",
 			Intent:      "alpha",
 			Files:       []string{"alpha.txt"},
-			TargetStack: "gx/missing",
+			TargetStack: "feature/missing",
 		}},
 	})
 	if err != nil {
@@ -1648,8 +1690,8 @@ func TestReviewDemuxRoutesAcceptsBaseStackForCrossStackDependency(t *testing.T) 
 			{ID: "h2", File: "other.go", Patch: "patch two"},
 		},
 		Revisions: []RevisionProposal{
-			{ID: "r1", Intent: "theme", Files: []string{"theme.go"}, TargetStack: "gx/update-terminal-theme"},
-			{ID: "r2", Intent: "other", Files: []string{"other.go"}, TargetStack: "gx/other", BaseStack: "gx/update-terminal-theme", DependsOn: []string{"r1"}},
+			{ID: "r1", Intent: "theme", Files: []string{"theme.go"}, TargetStack: "feature/update-terminal-theme"},
+			{ID: "r2", Intent: "other", Files: []string{"other.go"}, TargetStack: "feature/other", BaseStack: "feature/update-terminal-theme", DependsOn: []string{"r1"}},
 		},
 	})
 	if err != nil {
@@ -1669,20 +1711,20 @@ func TestAutoRepairDemuxProposalAppliesStackRouteHints(t *testing.T) {
 	proposal := DemuxProposal{
 		Revisions: []RevisionProposal{
 			{ID: "r1", Intent: "theme", TargetStack: "s1"},
-			{ID: "r2", Intent: "other", TargetStack: "gx/other", DependsOn: []string{"r1"}},
+			{ID: "r2", Intent: "other", TargetStack: "feature/other", DependsOn: []string{"r1"}},
 		},
 	}
 	got, changed := autoRepairDemuxProposal(proposal, []RepairHint{
-		{Kind: "invalid_demux_route", RevisionID: "r1", TargetStack: "gx/update-terminal-theme"},
-		{Kind: "cross_stack_dependency", RevisionID: "r2", DependsOn: "r1", BaseStack: "gx/update-terminal-theme"},
+		{Kind: "invalid_demux_route", RevisionID: "r1", TargetStack: "feature/update-terminal-theme"},
+		{Kind: "cross_stack_dependency", RevisionID: "r2", DependsOn: "r1", BaseStack: "feature/update-terminal-theme"},
 	})
 	if !changed {
 		t.Fatal("autoRepairDemuxProposal() changed = false, want true")
 	}
-	if got.Revisions[0].TargetStack != "gx/update-terminal-theme" {
+	if got.Revisions[0].TargetStack != "feature/update-terminal-theme" {
 		t.Fatalf("first target_stack = %q, want canonical stack", got.Revisions[0].TargetStack)
 	}
-	if got.Revisions[1].BaseStack != "gx/update-terminal-theme" {
+	if got.Revisions[1].BaseStack != "feature/update-terminal-theme" {
 		t.Fatalf("second base_stack = %q, want dependency stack", got.Revisions[1].BaseStack)
 	}
 }
@@ -1695,7 +1737,7 @@ func setupDemuxRouteStore(t *testing.T) string {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "update terminal theme",
-		BookmarkName: "gx/update-terminal-theme",
+		BookmarkName: "feature/update-terminal-theme",
 		BaseRef:      "main",
 		HeadChangeID: &head,
 		Status:       "draft",
@@ -1706,7 +1748,7 @@ func setupDemuxRouteStore(t *testing.T) string {
 	if _, err := store.UpsertStack(context.Background(), storage.Stack{
 		RepoID:       repoID,
 		Name:         "other",
-		BookmarkName: "gx/other",
+		BookmarkName: "feature/other",
 		BaseRef:      "main",
 		HeadChangeID: &otherHead,
 		Status:       "draft",
