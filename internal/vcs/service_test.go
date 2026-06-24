@@ -444,10 +444,9 @@ func TestEnsureGitHubPullRequestReusesStoredPR(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &fakeRunner{}
 	svc := NewServiceWithRunner(runner)
-	remoteURL := "git@github.com:satoricorp/gx.git"
 	prURL := "https://github.com/satoricorp/gx/pull/42"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot}, StackInfo{
 		Name:        "Demo stack",
 		BaseRef:     "main",
 		GitHubPRURL: &prURL,
@@ -460,6 +459,60 @@ func TestEnsureGitHubPullRequestReusesStoredPR(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("runner calls = %#v, want none", runner.calls)
+	}
+}
+
+func TestEnsureGitHubPullRequestUpdatesStoredGXBody(t *testing.T) {
+	repoRoot := t.TempDir()
+	prURL := "https://github.com/satoricorp/gx/pull/11"
+	var patchPayload map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			response := []map[string]any{{
+				"html_url": prURL,
+				"number":   11,
+				"body":     "Published by GX.\n\nRevisions:\n- add PR summaries to GX publish bodies",
+			}}
+			_ = json.NewEncoder(w).Encode(response)
+		case http.MethodPatch:
+			if r.URL.Path != "/repos/satoricorp/gx/pulls/11" {
+				t.Fatalf("patch path = %q", r.URL.Path)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&patchPayload); err != nil {
+				t.Fatalf("decode patch payload: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"html_url": prURL,
+				"number":   11,
+				"body":     patchPayload["body"],
+			})
+		default:
+			t.Fatalf("method = %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+	remoteURL := "git@github.com:satoricorp/gx.git"
+	svc := NewServiceWithRunner(&fakeRunner{})
+
+	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+		Name:        "fix-github-pr-summary",
+		BaseRef:     "main",
+		GitHubPRURL: &prURL,
+	}, "bug/fix-github-pr-summary", []PushedChange{{
+		Change: ChangeInfo{ChangeID: "abc123", Description: "add PR summaries to GX publish bodies"},
+	}})
+	if got == nil || *got != prURL {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want stored PR URL", got)
+	}
+	if status != "updated" || len(warnings) != 0 {
+		t.Fatalf("status=%q warnings=%#v, want updated without warnings", status, warnings)
+	}
+	wantBody := "Published by GX.\n\n## Summary\nfix-github-pr-summary\n\n## Revisions\n- add PR summaries to GX publish bodies"
+	if patchPayload["body"] != wantBody {
+		t.Fatalf("patched body = %q, want %q", patchPayload["body"], wantBody)
 	}
 }
 

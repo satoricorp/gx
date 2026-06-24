@@ -2458,14 +2458,21 @@ func (s *Service) pushRecordedStack(ctx context.Context, repo RepoInfo, remoteNa
 }
 
 func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, stack StackInfo, refName string, pushed []PushedChange) (*string, string, []string) {
-	if stack.GitHubPRURL != nil && strings.TrimSpace(*stack.GitHubPRURL) != "" {
-		return ptr(strings.TrimSpace(*stack.GitHubPRURL)), "stored", nil
+	storedPRURL := ""
+	if stack.GitHubPRURL != nil {
+		storedPRURL = strings.TrimSpace(*stack.GitHubPRURL)
 	}
 	if repo.RemoteURL == nil || strings.TrimSpace(*repo.RemoteURL) == "" {
+		if storedPRURL != "" {
+			return ptr(storedPRURL), "stored", nil
+		}
 		return nil, "skipped", nil
 	}
 	host, owner, repoName, ok := parseGitHubRemote(*repo.RemoteURL)
 	if !ok {
+		if storedPRURL != "" {
+			return ptr(storedPRURL), "stored", nil
+		}
 		return nil, "skipped", nil
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, stack.BaseRef)
@@ -2474,6 +2481,9 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 
 	client, err := githubapi.NewClient(host)
 	if err != nil {
+		if storedPRURL != "" {
+			return ptr(storedPRURL), "stored", []string{fmt.Sprintf("Could not refresh GitHub PR body for branch %s: %v. The stored PR is still at %s.", refName, err, storedPRURL)}
+		}
 		return nil, "warning", []string{fmt.Sprintf("Could not prepare GitHub PR for branch %s: %v. Re-run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN, then retry `gx publish %s`.", refName, err, refName)}
 	}
 	opts := githubapi.CreatePullRequestOptions{
@@ -2487,6 +2497,9 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 	}
 	existing, err := client.FindPullRequest(ctx, opts)
 	if err != nil {
+		if storedPRURL != "" {
+			return ptr(storedPRURL), "stored", []string{fmt.Sprintf("Could not refresh GitHub PR body for branch %s: %v. The stored PR is still at %s.", refName, err, storedPRURL)}
+		}
 		return nil, "warning", []string{fmt.Sprintf("Could not check for an existing GitHub PR for target branch %s (the published branch): %v. Retry `gx publish %s` after GitHub access is fixed.", refName, err, refName)}
 	}
 	if existing != nil && strings.TrimSpace(existing.URL) != "" {
@@ -2507,6 +2520,9 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 			return ptr(existingURL), "updated", nil
 		}
 		return ptr(existingURL), "existing", nil
+	}
+	if storedPRURL != "" {
+		return ptr(storedPRURL), "stored", nil
 	}
 	remoteName := "origin"
 	if repo.DefaultRemote != nil && strings.TrimSpace(*repo.DefaultRemote) != "" {
