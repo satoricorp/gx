@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 type authStatusJSON struct {
@@ -82,6 +83,11 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			telemetry.EmitProductEvent(ctx, telemetry.EventCLIAuthLogin, map[string]any{
+				"status":           "success",
+				"auth_kind":        "cloud",
+				"machine_name_set": strings.TrimSpace(machineName) != "",
+			})
 			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Logged in", creds.Login))
 			return nil
 		},
@@ -95,9 +101,29 @@ func newAuthLogoutCommand(ctx context.Context) *cobra.Command {
 		Use:   "logout",
 		Short: "Log out of gx cloud on this machine",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			props := map[string]any{
+				"status":    "success",
+				"auth_kind": "cloud",
+			}
+			if creds, err := cloud.LoadCloudCredentials(); err == nil && creds != nil {
+				if id := strings.TrimSpace(creds.UserID); id != "" {
+					props["user_id"] = id
+					props["distinct_id"] = id
+				}
+				if login := strings.TrimSpace(creds.Login); login != "" {
+					props["login"] = login
+				}
+				if machineID := strings.TrimSpace(creds.MachineID); machineID != "" {
+					props["machine_id"] = machineID
+					if _, ok := props["distinct_id"]; !ok {
+						props["distinct_id"] = machineID
+					}
+				}
+			}
 			if err := cloud.Logout(ctx, cloud.AuthEndpoints{}, nil); err != nil {
 				return err
 			}
+			telemetry.EmitProductEvent(ctx, telemetry.EventCLIAuthLogout, props)
 			fmt.Fprintln(cmd.OutOrStdout(), success("Logged out"))
 			return nil
 		},

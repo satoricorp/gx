@@ -1,0 +1,103 @@
+package telemetry
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/version"
+)
+
+// EmitProductEvent sends low-cardinality product analytics when PostHog is configured.
+func EmitProductEvent(ctx context.Context, event string, properties map[string]any) {
+	if !Configured() {
+		return
+	}
+	NewFromEnv().EmitEvent(ctx, event, ProductProperties(properties))
+}
+
+func EmitInstallOnce(ctx context.Context) {
+	if !Configured() {
+		return
+	}
+	source := Entrypoint()
+	path, err := installSentinelPath(source)
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	EmitProductEvent(ctx, EventCLIInstall, map[string]any{
+		"source": source,
+		"os":     runtime.GOOS,
+		"arch":   runtime.GOARCH,
+	})
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, []byte("1\n"), 0o600)
+}
+
+func ProductProperties(properties map[string]any) map[string]any {
+	out := map[string]any{
+		"gx_version": version.Current(),
+		"entrypoint": Entrypoint(),
+	}
+	if properties != nil {
+		for key, value := range properties {
+			out[key] = value
+		}
+	}
+
+	if creds, err := cloud.LoadCloudCredentials(); err == nil && creds != nil {
+		if id := strings.TrimSpace(creds.UserID); id != "" {
+			out["user_id"] = id
+			if _, ok := out["distinct_id"]; !ok {
+				out["distinct_id"] = id
+			}
+		}
+		if login := strings.TrimSpace(creds.Login); login != "" {
+			out["login"] = login
+		}
+		if machineID := strings.TrimSpace(creds.MachineID); machineID != "" {
+			out["machine_id"] = machineID
+			if _, ok := out["distinct_id"]; !ok {
+				out["distinct_id"] = machineID
+			}
+		}
+	} else if machineID, err := cloud.DefaultMachineID(); err == nil && strings.TrimSpace(machineID) != "" {
+		out["machine_id"] = strings.TrimSpace(machineID)
+		if _, ok := out["distinct_id"]; !ok {
+			out["distinct_id"] = strings.TrimSpace(machineID)
+		}
+	}
+	if _, ok := out["distinct_id"]; !ok {
+		out["distinct_id"] = "anonymous"
+	}
+	return out
+}
+
+func installSentinelPath(source string) (string, error) {
+	dir, err := storage.DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	name := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_").Replace(source + "-" + version.Current())
+	if name == "" {
+		name = "unknown"
+	}
+	return filepath.Join(dir, "telemetry", "install-"+name), nil
+}
+
+func Entrypoint() string {
+	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
+		return "mcp"
+	}
+	if strings.TrimSpace(os.Getenv("GX_MENUBAR")) != "" {
+		return "menubar"
+	}
+	return "cli"
+}

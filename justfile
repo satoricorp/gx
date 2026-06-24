@@ -8,6 +8,8 @@ gx_ldflags := "\
   -X github.com/satoricorp/gx/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
   -X github.com/satoricorp/gx/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
   -X github.com/satoricorp/gx/internal/buildconfig.CloudURL=${GX_CLOUD_URL:-} \
+  -X github.com/satoricorp/gx/internal/buildconfig.PostHogKey=${GX_POSTHOG_KEY:-} \
+  -X github.com/satoricorp/gx/internal/buildconfig.PostHogHost=${GX_POSTHOG_HOST:-} \
   -X github.com/satoricorp/gx/internal/version.Version=${VERSION:-dev}"
 
 build:
@@ -49,6 +51,8 @@ verify-bake bin="gx":
   check GITHUB_CLIENT_ID "${GITHUB_CLIENT_ID:-}"
   check CONVEX_SITE_URL "${CONVEX_SITE_URL:-}"
   check GX_CLOUD_URL "${GX_CLOUD_URL:-}"
+  check GX_POSTHOG_KEY "${GX_POSTHOG_KEY:-}"
+  check GX_POSTHOG_HOST "${GX_POSTHOG_HOST:-}"
   if [[ "$missing" -ne 0 ]]; then
     exit 1
   fi

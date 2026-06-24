@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/satoricorp/gx/internal/buildconfig"
 )
 
 const defaultPostHogHost = "https://us.i.posthog.com"
@@ -21,11 +22,11 @@ type ClientImpl struct {
 
 // NewFromEnv returns a PostHog client or a no-op when GX_POSTHOG_KEY is unset.
 func NewFromEnv() Client {
-	key := strings.TrimSpace(os.Getenv("GX_POSTHOG_KEY"))
+	key := postHogKey()
 	if key == "" {
 		return NopClient{}
 	}
-	host := strings.TrimSpace(os.Getenv("GX_POSTHOG_HOST"))
+	host := postHogHost()
 	if host == "" {
 		host = defaultPostHogHost
 	}
@@ -40,10 +41,19 @@ func NewFromEnv() Client {
 // NopClient discards telemetry events.
 type NopClient struct{}
 
+func (NopClient) EmitEvent(context.Context, string, map[string]any)         {}
 func (NopClient) EmitCaptureCoverage(context.Context, CaptureCoverageProps) {}
 func (NopClient) EmitMatchRate(context.Context, MatchRateProps)             {}
 func (NopClient) EmitSessionUploaded(context.Context, SessionUploadedProps) {}
 func (NopClient) EmitComposeRun(context.Context, ComposeRunProps)           {}
+
+func Configured() bool {
+	return postHogKey() != ""
+}
+
+func (c *ClientImpl) EmitEvent(ctx context.Context, event string, properties map[string]any) {
+	c.capture(ctx, event, properties)
+}
 
 func (c *ClientImpl) EmitCaptureCoverage(ctx context.Context, props CaptureCoverageProps) {
 	c.capture(ctx, EventCaptureCoverage, map[string]any{
@@ -58,12 +68,12 @@ func (c *ClientImpl) EmitCaptureCoverage(ctx context.Context, props CaptureCover
 
 func (c *ClientImpl) EmitMatchRate(ctx context.Context, props MatchRateProps) {
 	c.capture(ctx, EventMatchRate, map[string]any{
-		"repo":             props.Repo,
-		"ref_range":        props.RefRange,
-		"agent_precision":  props.AgentPrecision,
-		"eligible_hunks":   props.EligibleHunks,
-		"eligible_events":  props.EligibleEvents,
-		"tools":            props.Tools,
+		"repo":            props.Repo,
+		"ref_range":       props.RefRange,
+		"agent_precision": props.AgentPrecision,
+		"eligible_hunks":  props.EligibleHunks,
+		"eligible_events": props.EligibleEvents,
+		"tools":           props.Tools,
 	})
 }
 
@@ -110,4 +120,12 @@ func (c *ClientImpl) capture(ctx context.Context, event string, properties map[s
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+func postHogKey() string {
+	return strings.TrimSpace(buildconfig.PostHogKeyFromEnvOrEmbedded())
+}
+
+func postHogHost() string {
+	return strings.TrimSpace(buildconfig.PostHogHostFromEnvOrEmbedded())
 }

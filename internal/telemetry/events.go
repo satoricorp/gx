@@ -10,6 +10,12 @@ const (
 	EventMatchRate       = "match.rate"
 	EventSessionUploaded = "session.uploaded"
 	EventComposeRun      = "compose.run"
+	EventCLIInstall      = "cli.install"
+	EventCLIComposeRun   = "cli.compose.run"
+	EventCLIPublishRun   = "cli.publish.run"
+	EventCLIReviewRun    = "cli.review.run"
+	EventCLIAuthLogin    = "cli.auth.login"
+	EventCLIAuthLogout   = "cli.auth.logout"
 )
 
 // CaptureCoverageProps are properties for capture.coverage.
@@ -53,6 +59,7 @@ type ComposeRunProps struct {
 
 // Client emits capture telemetry events.
 type Client interface {
+	EmitEvent(ctx context.Context, event string, properties map[string]any)
 	EmitCaptureCoverage(ctx context.Context, props CaptureCoverageProps)
 	EmitMatchRate(ctx context.Context, props MatchRateProps)
 	EmitSessionUploaded(ctx context.Context, props SessionUploadedProps)

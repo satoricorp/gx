@@ -44,6 +44,12 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		Long:          gxTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if strings.Contains(cmd.CommandPath(), "__") {
+				return
+			}
+			telemetry.EmitInstallOnce(ctx)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printInitNoteIfNeeded(cmd)
 			return printRootHelp(cmd)
@@ -401,6 +407,17 @@ func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 					progress = cmd.ErrOrStderr()
 				}
 				packet, err = run(progress)
+			}
+			if cmd.Name() == "compose" {
+				emitComposeRunTelemetry(ctx, packet, err, composeRunTelemetryOptions{
+					JSON:         jsonOut,
+					Raw:          raw,
+					PlanOnly:     planOnly,
+					Filesets:     args,
+					ExcludeCount: len(excludeFilesets),
+					HasIntent:    strings.TrimSpace(intent) != "",
+					ModelSet:     strings.TrimSpace(model) != "",
+				})
 			}
 			if err != nil {
 				if strings.TrimSpace(packet.Proposal.ID) != "" {
@@ -1343,6 +1360,49 @@ func demuxProposalFileCount(proposal authoring.DemuxProposal) int {
 	return len(seen)
 }
 
+type composeRunTelemetryOptions struct {
+	JSON         bool
+	Raw          bool
+	PlanOnly     bool
+	Filesets     []string
+	ExcludeCount int
+	HasIntent    bool
+	ModelSet     bool
+}
+
+func emitComposeRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, runErr error, opts composeRunTelemetryOptions) {
+	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
+	status := "success"
+	if runErr != nil {
+		status = "error"
+	}
+	props := map[string]any{
+		"status":                   status,
+		"state":                    string(packet.State),
+		"proposal_status":          string(packet.Proposal.Status),
+		"revision_count":           len(packet.Proposal.Revisions),
+		"stack_count":              len(demuxStackDisplayGroups(packet.Proposal.Revisions)),
+		"hunk_count":               len(packet.Proposal.Hunks),
+		"file_count":               demuxProposalFileCount(packet.Proposal),
+		"warning_count":            len(packet.Proposal.Warnings) + len(packet.Proposal.FeasibilityWarnings),
+		"blocking_warning_count":   len(blockingWarnings),
+		"diagnostic_warning_count": len(diagnosticWarnings),
+		"repair_hint_count":        len(packet.Review.RepairHints),
+		"review_error_count":       len(packet.Review.Errors),
+		"json":                     opts.JSON,
+		"raw":                      opts.Raw,
+		"plan_only":                opts.PlanOnly,
+		"fileset_count":            len(opts.Filesets),
+		"exclude_count":            opts.ExcludeCount,
+		"has_intent":               opts.HasIntent,
+		"model_set":                opts.ModelSet,
+	}
+	if packet.Proposal.HunkCoverage > 0 {
+		props["hunk_coverage"] = packet.Proposal.HunkCoverage
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIComposeRun, props)
+}
+
 func demuxProposalDisplayStatus(proposal authoring.DemuxProposal, state authoring.DemuxWorkflowState) string {
 	if state == authoring.DemuxWorkflowRepairRequired || state == authoring.DemuxWorkflowRepairRecommended {
 		return "needs review"
@@ -1492,18 +1552,21 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 		Short: "Review current changes with local facts, indexed context, and configured AI reviewers",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			startedAt := time.Now()
+			reviewScope := ""
+			scopeExplicit := cmd.Flags().Changed("scope")
+			if scopeExplicit {
+				reviewScope = scope
+			}
 			repo, err := vcs.NewService().ResolveGitRepo(ctx)
 			if err != nil {
+				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, deep, verbose, time.Since(startedAt))
 				return err
 			}
 			report, err := runReviewWithLoader(
 				cmd.InOrStdin(),
 				cmd.ErrOrStderr(),
 				func(progress io.Writer) (codereview.Report, error) {
-					reviewScope := ""
-					if cmd.Flags().Changed("scope") {
-						reviewScope = scope
-					}
 					return codereview.Review(ctx, repo.RootPath, codereview.Options{
 						Scope:          reviewScope,
 						Deep:           deep,
@@ -1514,6 +1577,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 					})
 				},
 			)
+			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, deep, verbose, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -1526,6 +1590,45 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
 	return cmd
+}
+
+func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, deep bool, verbose bool, duration time.Duration) {
+	status := "success"
+	if runErr != nil {
+		status = "error"
+	}
+	mode := "patch"
+	if deep {
+		mode = "deep"
+	} else if scopeExplicit {
+		mode = "scope"
+	}
+	effectiveScope := strings.TrimSpace(report.Scope)
+	if effectiveScope == "" {
+		effectiveScope = strings.TrimSpace(reviewScope)
+	}
+	if effectiveScope == "" {
+		effectiveScope = codereview.DefaultScope
+	}
+	props := map[string]any{
+		"status":                status,
+		"mode":                  mode,
+		"scope":                 effectiveScope,
+		"scope_explicit":        scopeExplicit,
+		"has_focus":             strings.TrimSpace(focus) != "",
+		"deep":                  deep,
+		"verbose":               verbose,
+		"duration_ms":           duration.Milliseconds(),
+		"finding_count":         len(report.Findings),
+		"changed_file_count":    len(report.ChangedFiles),
+		"tracked_file_count":    report.TrackedFileCount,
+		"test_file_count":       report.TestFileCount,
+		"context_snippet_count": report.ContextSnippets,
+	}
+	if strings.TrimSpace(report.Reviewer) != "" {
+		props["reviewer"] = report.Reviewer
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
 }
 
 type currentStatus struct {
@@ -2698,16 +2801,24 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 						return err
 					}
 					fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results))))
+					emitPublishRunTelemetry(ctx, results, false, false, publishAllRequested, len(args) > 0)
 					return nil
 				}
 
-				var err error
+				var (
+					push authoring.PushResult
+					err  error
+				)
 				if len(args) > 0 {
-					_, err = engine.PublishNamed(ctx, args[0], nil, authoring.PushOptions{Mode: mode}, publishHook)
+					push, err = engine.PublishNamed(ctx, args[0], nil, authoring.PushOptions{Mode: mode}, publishHook)
 				} else {
-					_, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+					push, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
 				}
-				return err
+				if err != nil {
+					return err
+				}
+				emitPublishRunTelemetry(ctx, []authoring.PushResult{push}, false, false, publishAllRequested, len(args) > 0)
+				return nil
 			}
 
 			if publishAllRequested {
@@ -2735,6 +2846,7 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 					startPublishUploadWorker(out)
 				}
 				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", published)))
+				emitPublishRunTelemetry(ctx, prepared, true, published > 0, publishAllRequested, len(args) > 0)
 				return nil
 			}
 
@@ -2758,6 +2870,7 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 			printPublishPush(out, push)
 			printPublishReview(out, review)
 			startPublishUploadWorker(out)
+			emitPublishRunTelemetry(ctx, []authoring.PushResult{push}, true, true, publishAllRequested, len(args) > 0)
 			return nil
 		},
 	}
@@ -2772,6 +2885,64 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 		flag.Hidden = true
 	}
 	return cmd
+}
+
+func emitPublishRunTelemetry(ctx context.Context, pushes []authoring.PushResult, cloudConfigured bool, uploadQueued bool, publishAllRequested bool, selectedStack bool) {
+	revisionCount := 0
+	githubPRCount := 0
+	gitPushCount := 0
+	warningCount := 0
+	for _, push := range pushes {
+		publishedCount := len(push.Published)
+		if publishedCount == 0 && push.CurrentChange != nil {
+			publishedCount = 1
+		}
+		revisionCount += publishedCount
+		warningCount += len(push.Warnings)
+		if publishWasPushedToGitHub(push.GitPushStatus) {
+			gitPushCount++
+		}
+		githubPRCount += publishGitHubPRCount(push)
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIPublishRun, map[string]any{
+		"status":                "success",
+		"cloud_configured":      cloudConfigured,
+		"upload_queued":         uploadQueued,
+		"publish_all_requested": publishAllRequested,
+		"selected_stack":        selectedStack,
+		"stack_count":           len(pushes),
+		"revision_count":        revisionCount,
+		"github_pr_count":       githubPRCount,
+		"git_push_count":        gitPushCount,
+		"warning_count":         warningCount,
+	})
+}
+
+func publishWasPushedToGitHub(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "pushed", "already up to date":
+		return true
+	default:
+		return false
+	}
+}
+
+func publishGitHubPRCount(push authoring.PushResult) int {
+	seen := map[string]bool{}
+	if push.GitHubPullRequestURL != nil {
+		if url := strings.TrimSpace(*push.GitHubPullRequestURL); url != "" {
+			seen[url] = true
+		}
+	}
+	for _, published := range push.Published {
+		if published.GitHubPullRequestURL == nil {
+			continue
+		}
+		if url := strings.TrimSpace(*published.GitHubPullRequestURL); url != "" {
+			seen[url] = true
+		}
+	}
+	return len(seen)
 }
 
 func printPublishPush(out io.Writer, result authoring.PushResult) {

@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 func newLoginCommand(ctx context.Context) *cobra.Command {
@@ -33,6 +34,12 @@ func newLoginCommand(ctx context.Context) *cobra.Command {
 			if err := auth.Save(creds); err != nil {
 				return err
 			}
+			telemetry.EmitProductEvent(ctx, telemetry.EventCLIAuthLogin, map[string]any{
+				"status":             "success",
+				"auth_kind":          "upload_token",
+				"api_url_configured": apiURL != "",
+				"org_id_set":         orgID != "",
+			})
 			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Upload API", creds.APIURL))
 			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Capture upload", success("ok")))
 			if creds.OrgID != "" {
@@ -45,6 +52,5 @@ func newLoginCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "GX CLI upload bearer token")
 	cmd.Flags().StringVar(&apiURL, "api-url", "", "GX server base URL (default http://localhost:3201)")
 	cmd.Flags().StringVar(&orgID, "org-id", "", "optional org id for telemetry")
-	_ = ctx
 	return cmd
 }

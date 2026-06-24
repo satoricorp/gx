@@ -10,6 +10,8 @@ var (
 	GitHubClientID string
 	ConvexSiteURL  string
 	CloudURL       string
+	PostHogKey     string
+	PostHogHost    string
 )
 
 func envOrEmbedded(envKey, embedded string) string {
@@ -29,4 +31,12 @@ func ConvexSiteURLFromEnv() string {
 
 func CloudURLFromEnvOrEmbedded() string {
 	return strings.TrimSpace(envOrEmbedded("GX_CLOUD_URL", CloudURL))
+}
+
+func PostHogKeyFromEnvOrEmbedded() string {
+	return envOrEmbedded("GX_POSTHOG_KEY", PostHogKey)
+}
+
+func PostHogHostFromEnvOrEmbedded() string {
+	return strings.TrimRight(envOrEmbedded("GX_POSTHOG_HOST", PostHogHost), "/")
 }
