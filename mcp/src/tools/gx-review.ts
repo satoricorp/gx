@@ -16,16 +16,16 @@ const reviewScope = z.enum([
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
-  scope: reviewScope.optional().describe("Review scope. Defaults to gx review's architecture scope."),
+  scope: reviewScope.optional().describe("Optional focused review scope. Omit for gx review's patch-focused default."),
   focus: z.string().optional().describe("Limit review to files under this path prefix."),
-  deep: z.boolean().optional().describe("Retrieve more local and indexed context."),
+  deep: z.boolean().optional().describe("Run full-spectrum review with more local and indexed context."),
   verbose: z.boolean().optional().describe("Include repo facts, docs, and changed files."),
 };
 
 export const metadata: ToolMetadata = {
   name: "gx_review",
   description:
-    "Run gx review for local facts, previous-session context, PR/code-change context, and configured AI reviewers. MCP forces GX_REVIEW_AI=1 for this command.",
+    "Run gx review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Pass deep=true for full-spectrum review. MCP forces GX_REVIEW_AI=1 for this command.",
   annotations: {
     title: "GX Review",
     readOnlyHint: true,

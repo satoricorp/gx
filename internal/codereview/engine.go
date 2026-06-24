@@ -83,7 +83,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if err != nil {
 		return Report{}, err
 	}
-	active := activeScopeList(opts.Scope)
+	active := activeScopeList(opts)
 	sources := catalog.SourcesForScopes(active)
 	reviewProgress(opts, "Building review context")
 	brief, err := BuildReviewBrief(ctx, repoRoot, opts, facts, sources, retriever)
@@ -107,6 +107,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			reviewerLabel = "ai"
 		}
 	}
+	findings = filterPatchFocusedFindings(reviewContext, findings)
 
 	return Report{
 		RepoRoot:          repoRoot,
@@ -135,8 +136,11 @@ func Review(ctx context.Context, repoRoot string, opts Options) (Report, error) 
 	return NewEngine().Review(ctx, repoRoot, opts)
 }
 
-func activeScopeList(scope string) []string {
-	return append([]string{scope}, baselineFor(scope)...)
+func activeScopeList(opts Options) []string {
+	if opts.PatchFocused {
+		return []string{"security", "dependencies", "testing", "maintainability"}
+	}
+	return append([]string{opts.Scope}, baselineFor(opts.Scope)...)
 }
 
 func reviewProgress(opts Options, message string) {

@@ -326,6 +326,76 @@ func evaluateFindings(ctx ReviewContext, rules []Rule) []Finding {
 	return out
 }
 
+func filterPatchFocusedFindings(ctx ReviewContext, findings []Finding) []Finding {
+	if !ctx.Options.PatchFocused || len(findings) == 0 {
+		return findings
+	}
+	changed := normalizedChangedFiles(ctx.Brief.Static.ChangedFiles)
+	var out []Finding
+	for _, finding := range findings {
+		if strings.HasPrefix(finding.ID, "tools.") {
+			out = append(out, finding)
+			continue
+		}
+		if len(changed) == 0 {
+			continue
+		}
+		if findingMentionsChangedFile(finding, changed) {
+			out = append(out, finding)
+		}
+	}
+	return out
+}
+
+func normalizedChangedFiles(files []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, file := range files {
+		file = strings.TrimSpace(filepath.ToSlash(file))
+		if file == "" {
+			continue
+		}
+		if _, ok := seen[file]; ok {
+			continue
+		}
+		seen[file] = struct{}{}
+		out = append(out, file)
+	}
+	return out
+}
+
+func findingMentionsChangedFile(finding Finding, changed []string) bool {
+	text := strings.Join([]string{
+		finding.Title,
+		finding.Summary,
+		finding.Benefit,
+		finding.Recommendation,
+		evidenceText(finding.Evidence),
+	}, "\n")
+	text = filepath.ToSlash(text)
+	for _, file := range changed {
+		if strings.Contains(text, file) {
+			return true
+		}
+	}
+	return false
+}
+
+func evidenceText(evidence []Evidence) string {
+	var b strings.Builder
+	for _, item := range evidence {
+		if item.Label != "" {
+			b.WriteString(item.Label)
+			b.WriteByte('\n')
+		}
+		if item.Value != "" {
+			b.WriteString(item.Value)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 func activeScopes(scopes []string) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, baseline := range scopes {

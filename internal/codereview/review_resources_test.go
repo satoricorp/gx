@@ -70,6 +70,53 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	}
 }
 
+func TestReviewResourceQueryTextUsesPatchAndDeepReviewIntents(t *testing.T) {
+	patchOpts := normalizeOptions(Options{})
+	patchSignals := reviewResourceSignalSet{
+		Files:      []string{"internal/auth/session.go"},
+		Languages:  []string{"go"},
+		RiskTags:   riskTagsForReview([]string{"internal/auth/session.go"}, nil, patchOpts),
+		Categories: categoriesForReview(patchOpts),
+		Intents:    reviewResourceIntents(patchOpts),
+	}
+	patchQuery := reviewResourceQueryText(patchOpts, patchSignals)
+	for _, want := range []string{
+		"profile: patch_focused",
+		"changed-line bug and regression checks",
+		"security authn authz secret token and webhook verification checks",
+		"race concurrency retry and idempotency checks",
+		"production observability",
+		"internal/auth/session.go",
+	} {
+		if !strings.Contains(patchQuery, want) {
+			t.Fatalf("patch query missing %q in:\n%s", want, patchQuery)
+		}
+	}
+
+	deepOpts := normalizeOptions(Options{Deep: true})
+	deepSignals := reviewResourceSignalSet{
+		Files:      []string{"internal/review/engine.go"},
+		Languages:  []string{"go"},
+		RiskTags:   riskTagsForReview([]string{"internal/review/engine.go"}, nil, deepOpts),
+		Categories: categoriesForReview(deepOpts),
+		Intents:    reviewResourceIntents(deepOpts),
+	}
+	deepQuery := reviewResourceQueryText(deepOpts, deepSignals)
+	for _, want := range []string{
+		"profile: deep_full_spectrum",
+		"Module Interface Depth locality and adapter architecture checks",
+		"performance scalability and resource usage checks",
+		"supply-chain dependency CI and deployment checks",
+		"documentation onboarding and REVIEW.md policy checks",
+		"observability",
+		"performance",
+	} {
+		if !strings.Contains(deepQuery, want) {
+			t.Fatalf("deep query missing %q in:\n%s", want, deepQuery)
+		}
+	}
+}
+
 func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	var gotPath string
 	var gotAuth string

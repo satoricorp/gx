@@ -222,7 +222,7 @@ func TestEngineUsesInjectedScannerCatalogAndRules(t *testing.T) {
 		[]Rule{fakeRule{}},
 	)
 
-	report, err := engine.Review(context.Background(), "/repo", Options{})
+	report, err := engine.Review(context.Background(), "/repo", Options{Scope: "architecture"})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestEngineUsesAIReviewerWhenAvailable(t *testing.T) {
 		}}},
 	)
 
-	report, err := engine.Review(context.Background(), "/repo", Options{})
+	report, err := engine.Review(context.Background(), "/repo", Options{Scope: "architecture"})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -299,6 +299,50 @@ func TestStaticToolFailureBeatsSpeculativeFindings(t *testing.T) {
 	}
 }
 
+func TestPatchFocusedReviewFiltersGenericArchitectureFindings(t *testing.T) {
+	findings := filterPatchFocusedFindings(ReviewContext{
+		Options: Options{PatchFocused: true},
+		Brief:   ReviewBrief{Static: StaticSnapshot{ChangedFiles: []string{"internal/auth/session.go"}}},
+	}, []Finding{
+		{
+			ID:             "architecture.implementation-heavy-module",
+			Scopes:         []string{"architecture", "maintainability"},
+			Title:          "Deepen the auth Module",
+			Summary:        "`internal/auth` has many files.",
+			Benefit:        "Better locality.",
+			Recommendation: "Refactor the auth Module.",
+		},
+		{
+			ID:             "ai.review.1",
+			Scopes:         []string{"security", "testing"},
+			Title:          "Preserve webhook signature verification",
+			Summary:        "The changed code in `internal/auth/session.go` can accept an unsigned callback.",
+			Benefit:        "Prevents accepting forged auth callbacks.",
+			Recommendation: "Update `internal/auth/session.go` to reject missing signatures and add a failing callback test.",
+		},
+	})
+	if len(findings) != 1 || findings[0].Title != "Preserve webhook signature verification" {
+		t.Fatalf("Findings = %#v, want only changed-file security finding", findings)
+	}
+}
+
+func TestPatchFocusedReviewKeepsChangedFileQualityBug(t *testing.T) {
+	root := initRepo(t)
+	writeFile(t, root, "go.mod", "module example.com/repo\n")
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	gitAdd(t, root, "go.mod", "internal/app/app.go")
+	gitCommit(t, root)
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() { result, _ := maybe(); _ = result }\nfunc maybe() (int, error) { return 0, nil }\n")
+
+	report, err := Review(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if !hasFinding(report.Findings, "quality.ignored-results") {
+		t.Fatalf("Findings = %#v, want changed-file ignored result finding", report.Findings)
+	}
+}
+
 func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# repo\n")
@@ -316,15 +360,18 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 		TrackedFileCount: 5,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, Options{}, facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
+	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
 	if len(brief.Hints) == 0 || brief.Hints[0].Kind != "deepening_candidate" {
 		t.Fatalf("Hints = %#v, want deepening candidate", brief.Hints)
 	}
-	if !strings.Contains(strings.Join(brief.Rubric.Questions, "\n"), "deletion test") {
-		t.Fatalf("Rubric = %#v, want deletion test", brief.Rubric)
+	if brief.ReviewProfile != "patch_focused" {
+		t.Fatalf("ReviewProfile = %q, want patch_focused", brief.ReviewProfile)
+	}
+	if !strings.Contains(strings.Join(brief.Rubric.Questions, "\n"), "static.diff_snippets") {
+		t.Fatalf("Rubric = %#v, want patch-focused diff question", brief.Rubric)
 	}
 	if len(brief.Context) == 0 {
 		t.Fatalf("Context = %#v, want local snippets", brief.Context)
@@ -337,6 +384,96 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	}
 	if len(brief.SourceCatalog) != 1 || brief.SourceCatalog[0].ID != "go-package-names" {
 		t.Fatalf("SourceCatalog = %#v", brief.SourceCatalog)
+	}
+}
+
+func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
+	root := initRepo(t)
+	writeFile(t, root, "go.mod", "module example.com/repo\n")
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	gitAdd(t, root, "go.mod", "internal/app/app.go")
+	gitCommit(t, root)
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\nfunc NewBehavior() {}\n")
+	facts := RepoFacts{
+		Docs:             []FilePresence{{Path: "README.md", Present: false}},
+		DependencyFiles:  []string{"go.mod"},
+		Files:            []string{"go.mod", "internal/app/app.go"},
+		GoPackages:       []PackageFact{{Path: "internal/app", GoFiles: 1, TestFiles: 0}},
+		TrackedFileCount: 2,
+	}
+
+	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
+	if err != nil {
+		t.Fatalf("BuildReviewBrief() error = %v", err)
+	}
+	if len(brief.Static.DiffSnippets) != 1 {
+		t.Fatalf("DiffSnippets = %#v, want one changed file diff", brief.Static.DiffSnippets)
+	}
+	if !strings.Contains(brief.Static.DiffSnippets[0].Diff, "+func NewBehavior()") {
+		t.Fatalf("DiffSnippets[0] = %#v, want added function diff", brief.Static.DiffSnippets[0])
+	}
+}
+
+func TestBuildReviewBriefLabelsRetrievedContext(t *testing.T) {
+	brief, err := BuildReviewBrief(
+		context.Background(),
+		t.TempDir(),
+		normalizeOptions(Options{}),
+		RepoFacts{},
+		nil,
+		fakeRetriever{snippets: []ContextSnippet{
+			{Kind: "review_resource", Ref: "owasp#1", Source: "turbopuffer:gx-review-knowledge", Text: "Parameterized queries prevent injection."},
+			{Kind: "repo_doc", Ref: "REVIEW.md", Source: "local", Text: "Review auth changes carefully."},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("BuildReviewBrief() error = %v", err)
+	}
+	if len(brief.Context) != 2 {
+		t.Fatalf("Context = %#v, want two snippets", brief.Context)
+	}
+	if brief.Context[0].SourceLabel != "R1" || !strings.Contains(brief.Context[0].Text, "[R1] kind=review_resource") {
+		t.Fatalf("review resource label = %#v", brief.Context[0])
+	}
+	if brief.Context[1].SourceLabel != "L1" || !strings.Contains(brief.Context[1].Text, "[L1] kind=repo_doc") {
+		t.Fatalf("local label = %#v", brief.Context[1])
+	}
+}
+
+func TestDeepReviewBriefUsesFullSpectrumRubric(t *testing.T) {
+	root := t.TempDir()
+	facts := RepoFacts{Docs: []FilePresence{{Path: "README.md", Present: false}}}
+
+	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{Deep: true}), facts, nil, LocalContextRetriever{})
+	if err != nil {
+		t.Fatalf("BuildReviewBrief(deep) error = %v", err)
+	}
+	if brief.ReviewProfile != "deep_full_spectrum" {
+		t.Fatalf("ReviewProfile = %q, want deep_full_spectrum", brief.ReviewProfile)
+	}
+	questions := strings.Join(brief.Rubric.Questions, "\n")
+	for _, want := range []string{"authn/authz", "idempotency", "observability", "performance", "deletion test"} {
+		if !strings.Contains(questions, want) {
+			t.Fatalf("Deep rubric missing %q in %#v", want, brief.Rubric.Questions)
+		}
+	}
+}
+
+func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
+	prompt := reviewDeveloperPrompt()
+	for _, want := range []string{
+		"patch_focused",
+		"deep_full_spectrum",
+		"static.diff_snippets",
+		"security/auth",
+		"race/idempotency",
+		"observability",
+		"broad architecture",
+		"empty recommendations array",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("review prompt missing %q in:\n%s", want, prompt)
+		}
 	}
 }
 
@@ -353,7 +490,7 @@ func TestBuildReviewBriefIncludesCodeQualityHints(t *testing.T) {
 		TrackedFileCount: 2,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, Options{}, facts, nil, LocalContextRetriever{})
+	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -401,7 +538,7 @@ func TestDomainLanguageDriftFindingUsesContextInternalTerms(t *testing.T) {
 	}, "\n"))
 	writeFile(t, root, "README.md", "Use demux to split work.\n")
 
-	report, err := Review(context.Background(), root, Options{})
+	report, err := Review(context.Background(), root, Options{Scope: "architecture"})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -504,7 +641,7 @@ func TestArchitecturePackageFindings(t *testing.T) {
 	writeFile(t, root, "internal/orchestrator/e.go", "package orchestrator\n")
 	writeFile(t, root, "internal/orchestrator/f.go", "package orchestrator\n")
 
-	report, err := Review(context.Background(), root, Options{})
+	report, err := Review(context.Background(), root, Options{Scope: "architecture"})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}

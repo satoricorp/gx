@@ -1500,8 +1500,12 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				cmd.InOrStdin(),
 				cmd.ErrOrStderr(),
 				func(progress io.Writer) (codereview.Report, error) {
+					reviewScope := ""
+					if cmd.Flags().Changed("scope") {
+						reviewScope = scope
+					}
 					return codereview.Review(ctx, repo.RootPath, codereview.Options{
-						Scope:          scope,
+						Scope:          reviewScope,
 						Deep:           deep,
 						Focus:          focus,
 						Verbose:        verbose,
@@ -1517,9 +1521,9 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
+	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
 	cmd.Flags().StringVar(&focus, "focus", "", "limit review to files under this path prefix")
-	cmd.Flags().BoolVar(&deep, "deep", false, "retrieve more local and indexed context")
+	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
 	return cmd
 }

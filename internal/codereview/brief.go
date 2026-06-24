@@ -1,20 +1,26 @@
 package codereview
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
 const maxContextSnippetBytes = 3200
+const maxDiffSnippetBytes = 5000
+const maxDiffSnippetFiles = 10
+const maxDeepDiffSnippetFiles = 24
 
 type ReviewBrief struct {
 	RepoRoot      string             `json:"repo_root"`
 	Scope         string             `json:"scope"`
 	Depth         string             `json:"depth"`
+	ReviewProfile string             `json:"review_profile"`
 	Focus         string             `json:"focus,omitempty"`
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
@@ -31,6 +37,7 @@ type StaticSnapshot struct {
 	ADRFiles        []string           `json:"adr_files,omitempty"`
 	Modules         []ModuleSummary    `json:"modules"`
 	ChangedFiles    []string           `json:"changed_files"`
+	DiffSnippets    []DiffSnippet      `json:"diff_snippets,omitempty"`
 	ToolResults     []StaticToolResult `json:"static_tool_results,omitempty"`
 	CodeQuality     []CodeQualityHint  `json:"code_quality_hints,omitempty"`
 }
@@ -40,6 +47,11 @@ type ModuleSummary struct {
 	GoFiles   int    `json:"go_files"`
 	TestFiles int    `json:"test_files"`
 	Reason    string `json:"reason,omitempty"`
+}
+
+type DiffSnippet struct {
+	File string `json:"file"`
+	Diff string `json:"diff"`
 }
 
 type ReviewHint struct {
@@ -58,10 +70,11 @@ type CodeQualityHint struct {
 }
 
 type ContextSnippet struct {
-	Kind   string `json:"kind"`
-	Ref    string `json:"ref"`
-	Text   string `json:"text"`
-	Source string `json:"source,omitempty"`
+	Kind        string `json:"kind"`
+	Ref         string `json:"ref"`
+	Text        string `json:"text"`
+	Source      string `json:"source,omitempty"`
+	SourceLabel string `json:"source_label,omitempty"`
 }
 
 type SourceBrief struct {
@@ -88,11 +101,14 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 	if err != nil {
 		return ReviewBrief{}, err
 	}
+	contextSnippets = labelContextSnippets(contextSnippets)
+	changed := changedFiles(ctx, repoRoot)
 	return ReviewBrief{
-		RepoRoot: repoRoot,
-		Scope:    opts.Scope,
-		Depth:    depthLabel(opts.Deep),
-		Focus:    strings.TrimSpace(opts.Focus),
+		RepoRoot:      repoRoot,
+		Scope:         opts.Scope,
+		Depth:         depthLabel(opts.Deep),
+		ReviewProfile: reviewProfile(opts),
+		Focus:         strings.TrimSpace(opts.Focus),
 		Static: StaticSnapshot{
 			FileCount:       facts.TrackedFileCount,
 			TestFileCount:   facts.TestFileCount,
@@ -100,14 +116,15 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 			Docs:            facts.Docs,
 			ADRFiles:        facts.ADRFiles,
 			Modules:         moduleSummaries(facts),
-			ChangedFiles:    changedFiles(ctx, repoRoot),
+			ChangedFiles:    changed,
+			DiffSnippets:    collectDiffSnippets(ctx, repoRoot, changed, opts.Deep),
 			ToolResults:     collectStaticToolResults(ctx, repoRoot, facts, opts),
 			CodeQuality:     collectCodeQualityHints(repoRoot, facts, opts),
 		},
 		Hints:         hints,
 		Context:       contextSnippets,
 		SourceCatalog: sourceBriefs(sources),
-		Rubric:        architectureRubric(),
+		Rubric:        reviewRubric(opts),
 	}, nil
 }
 
@@ -187,6 +204,57 @@ func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts O
 	return snippets, nil
 }
 
+func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, deep bool) []DiffSnippet {
+	files = normalizedChangedFiles(files)
+	limit := maxDiffSnippetFiles
+	if deep {
+		limit = maxDeepDiffSnippetFiles
+	}
+	if len(files) > limit {
+		files = files[:limit]
+	}
+	var snippets []DiffSnippet
+	for _, file := range files {
+		diff := fileDiff(ctx, repoRoot, file)
+		if strings.TrimSpace(diff) == "" {
+			diff = fileContentSnippet(repoRoot, file)
+		}
+		diff = truncateReviewText(diff, maxDiffSnippetBytes)
+		if strings.TrimSpace(diff) == "" {
+			continue
+		}
+		snippets = append(snippets, DiffSnippet{File: file, Diff: diff})
+	}
+	return snippets
+}
+
+func fileDiff(ctx context.Context, repoRoot, file string) string {
+	var parts []string
+	for _, args := range [][]string{
+		{"diff", "--no-ext-diff", "--", file},
+		{"diff", "--cached", "--no-ext-diff", "--", file},
+	} {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoRoot
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+		_ = cmd.Run()
+		if text := strings.TrimSpace(out.String()); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func fileContentSnippet(repoRoot, file string) string {
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(file)))
+	if err != nil {
+		return ""
+	}
+	return "No git diff was available for this changed file. Current file content:\n" + string(data)
+}
+
 func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
 	if err != nil {
@@ -197,6 +265,34 @@ func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 		text = text[:maxContextSnippetBytes] + "\n[truncated]\n"
 	}
 	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local"}, true
+}
+
+func labelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
+	counts := map[string]int{}
+	out := make([]ContextSnippet, 0, len(snippets))
+	for _, snippet := range snippets {
+		prefix := contextLabelPrefix(snippet)
+		counts[prefix]++
+		label := fmt.Sprintf("%s%d", prefix, counts[prefix])
+		snippet.SourceLabel = label
+		header := fmt.Sprintf("[%s] kind=%s ref=%s source=%s", label, strings.TrimSpace(snippet.Kind), strings.TrimSpace(snippet.Ref), strings.TrimSpace(snippet.Source))
+		if !strings.HasPrefix(strings.TrimSpace(snippet.Text), "["+label+"]") {
+			snippet.Text = strings.TrimSpace(header + "\n" + snippet.Text)
+		}
+		out = append(out, snippet)
+	}
+	return out
+}
+
+func contextLabelPrefix(snippet ContextSnippet) string {
+	switch {
+	case strings.HasPrefix(strings.TrimSpace(snippet.Source), "turbopuffer:"):
+		return "R"
+	case strings.EqualFold(strings.TrimSpace(snippet.Source), "local"):
+		return "L"
+	default:
+		return "C"
+	}
 }
 
 func moduleFiles(files []string, module string, deep bool) []string {
@@ -332,27 +428,81 @@ func sourceBriefs(sources []Source) []SourceBrief {
 	return out
 }
 
-func architectureRubric() ArchitectureRubric {
+func reviewRubric(opts Options) ArchitectureRubric {
+	if opts.Deep {
+		return deepReviewRubric()
+	}
+	if opts.PatchFocused {
+		return patchReviewRubric()
+	}
+	return scopedReviewRubric(opts.Scope)
+}
+
+func patchReviewRubric() ArchitectureRubric {
 	return ArchitectureRubric{
-		Goal: "Find bugs, brittle code, poorly structured Modules, best-practice gaps, and deepening opportunities that improve locality, leverage, testability, and AI navigability.",
+		Goal: "Review the current patch for concrete regressions, security issues, data correctness problems, race/idempotency risks, error-handling gaps, missing tests, and observability gaps.",
+		Questions: []string{
+			"What behavior changed in static.diff_snippets and static.changed_files?",
+			"Can the changed code fail for realistic inputs, missing state, retries, concurrency, timeouts, or partial external failures?",
+			"Does the patch change authn/authz, token handling, secrets, webhook verification, database writes, migrations, file IO, shell execution, network calls, or deploy/CI behavior?",
+			"What test would fail before the correct fix and pass after it?",
+			"Would an operator have enough logs, errors, metrics, or status to diagnose this changed behavior in production?",
+			"Is any architecture recommendation directly required to fix a bug or review risk introduced by this patch?",
+		},
+		Reject: []string{
+			"Do not report repo-wide architecture, naming, docs, or cleanup advice unless the changed diff directly creates the risk.",
+			"Do not turn file counts, missing docs, missing tests, or large Modules directly into findings.",
+			"Do not recommend broad refactors when a localized fix or test would address the changed behavior.",
+			"Do not expose source URLs or source titles.",
+			"If there is no concrete patch-grounded issue, return no recommendations.",
+		},
+		Output: "Return only concrete patch-grounded recommendations with title, summary, benefit, recommendation, optional evidence, and strength.",
+	}
+}
+
+func scopedReviewRubric(scope string) ArchitectureRubric {
+	return ArchitectureRubric{
+		Goal: "Review the requested scope for concrete findings tied to code, tool output, local project policy, or retrieved review resources.",
 		Questions: []string{
 			"Do static tools reveal failing tests, vet warnings, compile errors, or dependency problems?",
-			"Which code looks brittle, non-idiomatic, or likely to break under realistic inputs?",
+			"Which code looks brittle, non-idiomatic, insecure, undertested, or likely to break under realistic inputs?",
+			"Which findings are specific to the requested scope `" + strings.TrimSpace(scope) + "`?",
+			"Which recommendation has a clear first file to edit and verification command to run?",
+		},
+		Reject: []string{
+			"Do not turn static hints directly into findings.",
+			"Do not call something best-practice advice unless it is tied to code, tool output, or retrieved context.",
+			"Do not expose source URLs or source titles.",
+			"Do not produce generic audit facts.",
+		},
+		Output: "Return only concrete scoped recommendations with title, summary, benefit, recommendation, optional evidence, and strength.",
+	}
+}
+
+func deepReviewRubric() ArchitectureRubric {
+	return ArchitectureRubric{
+		Goal: "Run a full-spectrum review across bugs, security, data integrity, race/idempotency, architecture, testing, observability, performance, dependencies, documentation, and operability.",
+		Questions: []string{
+			"Do static tools reveal failing tests, vet warnings, compile errors, or dependency problems?",
+			"Which changed paths are high risk for authn/authz, token lifecycle, secrets, webhook verification, data writes, migrations, retries, concurrency, shell execution, network calls, deploys, or CI?",
+			"Where does the patch need tests for failure modes, idempotency, rollback, retries, permissions, or compatibility?",
 			"Where does understanding one concept require bouncing across many Modules?",
 			"Where is the Interface nearly as complex as the Implementation?",
 			"Apply the deletion test: if deleting the Module removes complexity, it may be shallow; if complexity spreads to callers, it earns its keep.",
 			"Where do tests bypass the Interface or verify implementation details?",
 			"Where does a seam have only one adapter and exist mostly as indirection?",
 			"Which dependency category applies: in-process, local-substitutable, remote but owned, or true external?",
+			"Does the change introduce performance, scalability, or resource-use risk?",
+			"Would production observability through logs, errors, metrics, status, or traces identify the failure if this change regresses?",
 		},
 		Reject: []string{
 			"Do not turn static hints directly into findings.",
 			"Do not call something best-practice advice unless it is tied to code, tool output, or retrieved context.",
-			"Do not report missing docs unless it blocks a concrete Module or Interface recommendation.",
+			"Do not report missing docs unless it blocks a concrete Module, Interface, operation, or review policy recommendation.",
 			"Do not expose source URLs or source titles.",
 			"Do not use component, service, API, or boundary when Module, Interface, or seam fits.",
 		},
-		Output: "Return only concrete recommendations with title, summary, recommendation, optional evidence, and strength.",
+		Output: "Return only concrete recommendations with title, summary, benefit, recommendation, optional evidence, and strength.",
 	}
 }
 

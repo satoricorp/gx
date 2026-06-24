@@ -40,12 +40,13 @@ var supportedFormats = map[string]struct{}{
 var baselineScopes = []string{"dependencies", "testing", "maintainability"}
 
 type Options struct {
-	Scope   string
-	Format  string
-	Deep    bool
-	Since   string
-	Focus   string
-	Verbose bool
+	Scope        string
+	Format       string
+	Deep         bool
+	Since        string
+	Focus        string
+	Verbose      bool
+	PatchFocused bool
 
 	ProgressWriter io.Writer
 	Color          bool
@@ -172,9 +173,14 @@ func reviewLabel(report Report, text string) string {
 }
 
 func normalizeOptions(opts Options) Options {
-	opts.Scope = strings.ToLower(strings.TrimSpace(opts.Scope))
-	if opts.Scope == "" {
+	scope := strings.ToLower(strings.TrimSpace(opts.Scope))
+	if scope == "" {
 		opts.Scope = DefaultScope
+		if !opts.Deep {
+			opts.PatchFocused = true
+		}
+	} else {
+		opts.Scope = scope
 	}
 	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
 	if opts.Format == "" {
@@ -198,6 +204,16 @@ func depthLabel(deep bool) string {
 		return "deep"
 	}
 	return "shallow"
+}
+
+func reviewProfile(opts Options) string {
+	if opts.Deep {
+		return "deep_full_spectrum"
+	}
+	if opts.PatchFocused {
+		return "patch_focused"
+	}
+	return "scope_focused"
 }
 
 type RepoFacts struct {

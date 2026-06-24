@@ -476,11 +476,27 @@ func compactReviewBriefForAI(brief ReviewBrief) ReviewBrief {
 
 	brief.Static.DependencyFiles = limitStrings(brief.Static.DependencyFiles, maxAIChangedFiles)
 	brief.Static.ChangedFiles = limitStrings(brief.Static.ChangedFiles, maxAIChangedFiles)
+	brief.Static.DiffSnippets = compactDiffSnippets(brief.Static.DiffSnippets, contextLimit)
 	brief.Static.Modules = limitModules(brief.Static.Modules, maxAIModuleSummaries)
 	brief.Static.ToolResults = compactStaticToolResults(brief.Static.ToolResults)
 	brief.Static.CodeQuality = limitCodeQualityHints(brief.Static.CodeQuality, maxAICodeQualityHints)
 	brief.Context = compactContextSnippets(brief.Context, contextLimit)
 	return brief
+}
+
+func compactDiffSnippets(snippets []DiffSnippet, limit int) []DiffSnippet {
+	if limit > 0 && len(snippets) > limit {
+		snippets = snippets[:limit]
+	}
+	out := make([]DiffSnippet, 0, len(snippets))
+	for _, snippet := range snippets {
+		snippet.Diff = truncateReviewText(snippet.Diff, maxAIContextSnippetBytes)
+		if strings.TrimSpace(snippet.File) == "" || strings.TrimSpace(snippet.Diff) == "" {
+			continue
+		}
+		out = append(out, snippet)
+	}
+	return out
 }
 
 func compactStaticToolResults(results []StaticToolResult) []StaticToolResult {
@@ -608,23 +624,27 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation) []Finding {
 
 func reviewDeveloperPrompt() string {
 	return strings.Join([]string{
-		"You are GX Review. Review the codebase for concrete recommendations, not generic audit facts.",
-		"Look for bugs, brittle behavior, poorly structured code, maintainability risks, test gaps, dependency risks, and non-idiomatic implementation choices.",
-		"Use the architecture vocabulary exactly: Module, Interface, Implementation, Depth, deep, shallow, seam, adapter, leverage, locality.",
+		"You are GX Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
+		"Use review_profile and depth to choose behavior: patch_focused means current-change review; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
+		"For patch_focused reviews, prioritize concrete bugs, security/auth issues, data correctness, race/idempotency, error handling, missing tests, observability, deploy/CI risks, and dependency regressions introduced or exposed by static.diff_snippets.",
+		"For patch_focused reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
+		"For deep_full_spectrum reviews, check security, bugs, data integrity, concurrency, idempotency, architecture, testing, observability, performance, dependencies, docs, and operability while still grounding every finding in changed files, tool output, local policy, or retrieved context.",
+		"Use the architecture vocabulary exactly when discussing structure: Module, Interface, Implementation, Depth, deep, shallow, seam, adapter, leverage, locality.",
 		"Never use component, service, API, boundary, or layer when Module, Interface, seam, or adapter fits.",
 		"Treat static facts and hints as clues only. Do not turn file counts, missing docs, or missing tests directly into findings.",
 		"Use static_tool_results as hard evidence. Failed tests, vet warnings, compile errors, and linter-like diagnostics should outrank speculative architecture advice. Ignore skipped tool results unless the skipped reason itself is clearly actionable.",
 		"Use static.diff_snippets as the primary evidence for what changed. Prefer findings tied to changed lines over repo-wide advice.",
 		"Use code_quality_hints as concrete candidates. Confirm whether they matter from the provided snippets before recommending a fix.",
-		"Every recommendation must name at least one file path, Module, static tool result, or code_quality_hint. Do not produce coverage-only or structure-only recommendations without concrete evidence.",
+		"Every recommendation must name at least one changed file path, Module, static tool result, code_quality_hint, or context source label. Do not produce coverage-only or structure-only recommendations without concrete evidence.",
 		"The recommendation field must be concrete work: name the specific files or Modules to touch, the first operation to perform, and the verification to run. Avoid vague verbs like assess, consider, clarify, improve, harden, or refactor unless followed by exact code actions.",
 		"The benefit field must state the expected payoff in concrete engineering terms: performance, readability, fewer lines of code, better error handling, better testability, lower coupling, faster onboarding, more reproducible dependencies, or better observability.",
 		"If you cannot name a concrete payoff, do not emit that recommendation.",
-		"Explore like the architecture skill: find deepening opportunities, leaked Implementation knowledge, shallow Interfaces, unclear seams, weak locality, test friction, and unjustified adapters.",
+		"In deep_full_spectrum or architecture scope only, explore like the architecture skill: find deepening opportunities, leaked Implementation knowledge, shallow Interfaces, unclear seams, weak locality, test friction, and unjustified adapters.",
 		"Apply the deletion test: if deleting a Module removes complexity, call it shallow; if complexity spreads across callers, the Module is earning its keep.",
 		"Use dependency categories internally: in-process, local-substitutable, remote but owned, true external. Mention adapters only when the seam needs more than one adapter.",
-		"Use source_catalog and external guidance internally only. Never output source ids, source titles, URLs, or citations.",
+		"Use source_catalog and labeled context snippets internally. It is okay to mention source labels like R1 or L2 in evidence, but never output source titles or URLs.",
 		"Only produce recommendations tied to the provided repo context. Reject generic best-practice advice.",
+		"If no concrete issue meets the active profile, return an empty recommendations array.",
 		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string]}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")

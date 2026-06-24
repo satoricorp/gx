@@ -207,6 +207,7 @@ type reviewResourceSignalSet struct {
 	RiskTags   []string
 	Categories []string
 	Hints      []string
+	Intents    []string
 }
 
 func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) reviewResourceSignalSet {
@@ -229,7 +230,8 @@ func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, f
 		Languages:  languageTagsForFiles(files),
 		Frameworks: frameworkTagsForFiles(files, facts.DependencyFiles),
 		RiskTags:   riskTagsForReview(files, facts.DependencyFiles, opts),
-		Categories: categoriesForReviewScope(opts.Scope),
+		Categories: categoriesForReview(opts),
+		Intents:    reviewResourceIntents(opts),
 	}
 	for _, hint := range hints {
 		if title := strings.TrimSpace(hint.Title); title != "" {
@@ -243,9 +245,12 @@ func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, f
 func reviewResourceQueryText(opts Options, signals reviewResourceSignalSet) string {
 	parts := []string{
 		"GX code review resource query",
+		"profile: " + reviewProfile(opts),
 		"scope: " + opts.Scope,
 		"depth: " + depthLabel(opts.Deep),
 		"focus: " + strings.TrimSpace(opts.Focus),
+		"primary task: find concrete review rules and failure modes for the current code change",
+		"review intents: " + strings.Join(signals.Intents, "; "),
 		"languages: " + strings.Join(signals.Languages, " "),
 		"frameworks: " + strings.Join(signals.Frameworks, " "),
 		"risk tags: " + strings.Join(signals.RiskTags, " "),
@@ -346,6 +351,16 @@ func reviewResourceSnippetText(title string, row reviewResourceRow, text string)
 	return strings.TrimSpace(b.String())
 }
 
+func categoriesForReview(opts Options) []string {
+	if opts.Deep {
+		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain", "performance", "observability"}
+	}
+	if opts.PatchFocused {
+		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain"}
+	}
+	return categoriesForReviewScope(opts.Scope)
+}
+
 func categoriesForReviewScope(scope string) []string {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "security":
@@ -361,6 +376,29 @@ func categoriesForReviewScope(scope string) []string {
 	default:
 		return []string{"core-process", "language", "framework", "security", "database", "tooling"}
 	}
+}
+
+func reviewResourceIntents(opts Options) []string {
+	intents := []string{
+		"changed-line bug and regression checks",
+		"security authn authz secret token and webhook verification checks",
+		"data correctness migration transaction and partial failure checks",
+		"race concurrency retry and idempotency checks",
+		"error handling timeout cancellation and external API failure checks",
+		"focused test coverage for changed behavior",
+		"production observability logs errors metrics and status checks",
+	}
+	if opts.Deep {
+		intents = append(intents,
+			"Module Interface Depth locality and adapter architecture checks",
+			"performance scalability and resource usage checks",
+			"supply-chain dependency CI and deployment checks",
+			"documentation onboarding and REVIEW.md policy checks",
+		)
+	} else if !opts.PatchFocused {
+		intents = append(intents, "requested scope "+strings.TrimSpace(opts.Scope)+" checks")
+	}
+	return intents
 }
 
 func languageTagsForFiles(files []string) []string {
@@ -436,6 +474,14 @@ func frameworkTagsForFiles(files []string, dependencyFiles []string) []string {
 
 func riskTagsForReview(files []string, dependencyFiles []string, opts Options) []string {
 	tags := map[string]struct{}{}
+	for _, tag := range []string{"bug", "regression", "error-handling", "testing"} {
+		tags[tag] = struct{}{}
+	}
+	if opts.PatchFocused || opts.Deep {
+		for _, tag := range []string{"secure-coding", "data-correctness", "race-condition", "idempotency", "observability"} {
+			tags[tag] = struct{}{}
+		}
+	}
 	scope := strings.ToLower(strings.TrimSpace(opts.Scope))
 	if scope != "" {
 		tags[scope] = struct{}{}
