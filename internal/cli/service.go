@@ -543,11 +543,7 @@ func formatLedgerLast(lastSeenAt *int64) string {
 
 func diagnoseSummary(status doctorJSON) diagnoseJSON {
 	parts := []string{}
-	if status.Capture.OK {
-		parts = append(parts, "capture ok")
-	} else {
-		parts = append(parts, "capture warn")
-	}
+	parts = append(parts, captureDiagnoseSummary(status.Capture))
 	if status.Cursor.Found {
 		parts = append(parts, "cursor ok")
 	} else {
@@ -557,6 +553,37 @@ func diagnoseSummary(status doctorJSON) diagnoseJSON {
 		Summary:   strings.Join(parts, " · "),
 		LastCheck: time.Now().Format("3:04 PM"),
 	}
+}
+
+func captureDiagnoseSummary(status captureDoctorJSON) string {
+	if status.OK {
+		return "capture ok"
+	}
+	if len(status.Issues) == 0 {
+		return "capture warn"
+	}
+	prefix := "capture warn"
+	for _, issue := range status.Issues {
+		if issue.Severity == "fail" {
+			prefix = "capture fail"
+			break
+		}
+	}
+	messages := make([]string, 0, 2)
+	for _, issue := range status.Issues {
+		message := strings.TrimSpace(issue.Message)
+		if message == "" {
+			continue
+		}
+		messages = append(messages, message)
+		if len(messages) == 2 {
+			break
+		}
+	}
+	if len(messages) == 0 {
+		return prefix
+	}
+	return prefix + ": " + strings.Join(messages, ", ")
 }
 
 func cursorStatus(ctx context.Context) cursorStatusJSON {

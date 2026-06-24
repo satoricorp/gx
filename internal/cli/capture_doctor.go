@@ -36,7 +36,15 @@ type captureDoctorJSON struct {
 	CursorPath           string               `json:"cursorPath,omitempty"`
 	DiskFreeGB           int                  `json:"diskFreeGB"`
 	DiskWarn             bool                 `json:"diskWarn"`
+	Issues               []captureIssueJSON   `json:"issues,omitempty"`
 	OK                   bool                 `json:"ok"`
+}
+
+type captureIssueJSON struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Action   string `json:"action"`
 }
 
 type repoHookDoctorJSON struct {
@@ -48,12 +56,7 @@ type repoHookDoctorJSON struct {
 
 func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON {
 	status := captureDoctorJSON{}
-	if repoRoot == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			repoRoot = cwd
-		}
-	}
-	status.HookInstalled, status.HookApplicable, status.RepoRoot = captureHookStatus(ctx, repoRoot)
+	status.HookInstalled, status.HookApplicable, status.RepoRoot = capturePrimaryHookStatus(ctx, repoRoot)
 	status.RepoHooks = captureRegisteredRepoHooks(ctx)
 	status.RepoHooksTotal = len(status.RepoHooks)
 	status.RepoHooksOK = true
@@ -97,6 +100,7 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 		status.CursorReachable &&
 		status.PendingExtracts+status.PendingSessions <= captureBacklogWarnThreshold &&
 		!status.DiskWarn
+	status.Issues = captureDoctorIssues(status)
 	return status
 }
 
@@ -153,6 +157,52 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 }
 
 func captureRegisteredRepoHooks(ctx context.Context) []repoHookDoctorJSON {
+	candidates := captureRepoRootCandidates(ctx)
+	statuses := make([]repoHookDoctorJSON, 0, len(candidates))
+	for _, candidate := range candidates {
+		installed, reachable, resolvedRoot := captureHookStatus(ctx, candidate.root)
+		if !reachable && !candidate.reportUnreachable {
+			continue
+		}
+		status := repoHookDoctorJSON{
+			RepoRoot:      firstNonEmptyCaptureString(resolvedRoot, candidate.root),
+			HookInstalled: installed,
+			GitReachable:  reachable,
+		}
+		if !reachable {
+			status.Error = "git repo not reachable"
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
+func capturePrimaryHookStatus(ctx context.Context, repoRoot string) (installed bool, applicable bool, resolvedRoot string) {
+	repoRoot = strings.TrimSpace(repoRoot)
+	if repoRoot != "" {
+		return captureHookStatus(ctx, repoRoot)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		installed, applicable, resolvedRoot = captureHookStatus(ctx, cwd)
+		if applicable {
+			return installed, true, resolvedRoot
+		}
+	}
+	for _, candidate := range captureRepoRootCandidates(ctx) {
+		installed, applicable, resolvedRoot = captureHookStatus(ctx, candidate.root)
+		if applicable {
+			return installed, true, resolvedRoot
+		}
+	}
+	return false, false, ""
+}
+
+type captureRepoRootCandidate struct {
+	root              string
+	reportUnreachable bool
+}
+
+func captureRepoRootCandidates(ctx context.Context) []captureRepoRootCandidate {
 	db, err := storage.Open(ctx)
 	if err != nil {
 		return nil
@@ -163,24 +213,53 @@ func captureRegisteredRepoHooks(ctx context.Context) []repoHookDoctorJSON {
 		return nil
 	}
 	defer store.Close()
-	repos, err := store.ListInitializedRepos(ctx)
+
+	initialized, err := store.ListInitializedRepos(ctx)
 	if err != nil {
 		return nil
 	}
-	statuses := make([]repoHookDoctorJSON, 0, len(repos))
-	for _, repo := range repos {
-		installed, reachable, resolvedRoot := captureHookStatus(ctx, repo.RootPath)
-		status := repoHookDoctorJSON{
-			RepoRoot:      firstNonEmptyCaptureString(resolvedRoot, repo.RootPath),
-			HookInstalled: installed,
-			GitReachable:  reachable,
-		}
-		if !reachable {
-			status.Error = "git repo not reachable"
-		}
-		statuses = append(statuses, status)
+	if len(initialized) > 0 {
+		return captureInitializedRepoCandidates(initialized)
 	}
-	return statuses
+	repos, err := store.ListRepos(ctx)
+	if err != nil {
+		return nil
+	}
+	return captureKnownRepoCandidates(repos)
+}
+
+func captureInitializedRepoCandidates(repos []storage.InitializedRepo) []captureRepoRootCandidate {
+	roots := make([]captureRepoRootCandidate, 0, len(repos))
+	seen := map[string]struct{}{}
+	for _, repo := range repos {
+		root := strings.TrimSpace(repo.RootPath)
+		if root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, captureRepoRootCandidate{root: root, reportUnreachable: true})
+	}
+	return roots
+}
+
+func captureKnownRepoCandidates(repos []storage.Repo) []captureRepoRootCandidate {
+	roots := make([]captureRepoRootCandidate, 0, len(repos))
+	seen := map[string]struct{}{}
+	for _, repo := range repos {
+		root := strings.TrimSpace(repo.RootPath)
+		if root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, captureRepoRootCandidate{root: root})
+	}
+	return roots
 }
 
 func captureHookStatus(ctx context.Context, repoRoot string) (installed bool, applicable bool, resolvedRoot string) {
@@ -208,6 +287,80 @@ func resolveGitRoot(ctx context.Context, startPath string) (string, bool) {
 		return "", false
 	}
 	return root, true
+}
+
+func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
+	issues := []captureIssueJSON{}
+	if status.HookApplicable && !status.HookInstalled {
+		issues = append(issues, captureIssueJSON{
+			Code:     "hook_missing",
+			Severity: "fail",
+			Message:  "pre-push hook missing",
+			Action:   "run `gx init` in this repo",
+		})
+	}
+	if status.RepoHooksUnreachable > 0 {
+		issues = append(issues, captureIssueJSON{
+			Code:     "repo_hooks_unreachable",
+			Severity: "fail",
+			Message:  fmt.Sprintf("%d registered repo hooks unreachable", status.RepoHooksUnreachable),
+			Action:   "remove stale repo registrations or restore the missing repos",
+		})
+	}
+	if status.RepoHooksMissing > 0 {
+		issues = append(issues, captureIssueJSON{
+			Code:     "repo_hooks_missing",
+			Severity: "fail",
+			Message:  fmt.Sprintf("%d registered repo hooks missing", status.RepoHooksMissing),
+			Action:   "run `gx init` in each registered repo",
+		})
+	}
+	if !status.UploadAuthed {
+		code := "upload_auth_missing"
+		message := "upload auth missing"
+		action := "run `gx auth login`"
+		if strings.TrimSpace(status.UploadAuthError) != "" {
+			code = "upload_auth_invalid"
+			message = "upload auth invalid"
+			action = status.UploadAuthError
+		}
+		issues = append(issues, captureIssueJSON{
+			Code:     code,
+			Severity: "fail",
+			Message:  message,
+			Action:   action,
+		})
+	}
+	backlog := status.PendingExtracts + status.PendingSessions
+	if backlog > captureBacklogWarnThreshold {
+		issues = append(issues, captureIssueJSON{
+			Code:     "capture_backlog",
+			Severity: "warn",
+			Message:  fmt.Sprintf("%d pending capture uploads", backlog),
+			Action:   "run `gx capture sync` after upload auth is working",
+		})
+	}
+	if !status.CursorReachable {
+		action := "open Cursor once so GX can read state.vscdb"
+		if strings.TrimSpace(status.CursorPath) != "" {
+			action = "check Cursor state.vscdb at " + status.CursorPath
+		}
+		issues = append(issues, captureIssueJSON{
+			Code:     "cursor_vscdb_missing",
+			Severity: "fail",
+			Message:  "Cursor state.vscdb missing",
+			Action:   action,
+		})
+	}
+	if status.DiskWarn {
+		issues = append(issues, captureIssueJSON{
+			Code:     "disk_low",
+			Severity: "fail",
+			Message:  fmt.Sprintf("disk free low: %d GB", status.DiskFreeGB),
+			Action:   "free disk space before running more capture jobs",
+		})
+	}
+	return issues
 }
 
 func firstNonEmptyCaptureString(values ...string) string {
