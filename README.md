@@ -89,8 +89,8 @@ This creates:
 
 Users download `GX-macOS.dmg`, drag `GX.app` to Applications, and launch it.
 On launch, the app installs the bundled CLI to `~/.local/bin/gx`, shows
-`gx doctor` stats and activity, links to the GX console, and provides MCP
-setup instructions.
+`gx doctor` status and stats, links to gx.run, and provides MCP setup
+instructions.
 
 The `Build macOS App` GitHub Action builds ZIP/DMG artifacts from this repo,
 uploads the latest ZIP/DMG to S3, keeps commit-addressed copies under
