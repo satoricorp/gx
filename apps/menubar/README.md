@@ -27,7 +27,7 @@ Open the DMG to get the standard drag-to-Applications install window.
 | **Activity** | Last 10 events from `GET /v1/activity` when upload auth is configured |
 | **Pause capture** | Writes `~/.gx/pause-capture`; hooks no-op until resumed |
 | **Open GX Console** | Opens `GX_CONSOLE_URL`, or the base of `GX_CLOUD_URL` |
-| **MCP Setup** | Copies Cursor and Claude Desktop setup snippets for the bundled MCP server |
+| **MCP Setup** | Copies Cursor, Codex, and Claude Desktop setup snippets for the bundled MCP server |
 | **Quit** | Exits the app |
 
 ## Finding the `gx` binary
@@ -62,14 +62,14 @@ Pre-push capture returns an empty result without running the pipeline.
 
 The package includes a standalone `gx-mcp` stdio binary. After
 dragging `GX.app` to Applications, use the menu's MCP Setup items to copy a
-Cursor command or Claude Desktop JSON. The snippets point MCP at:
+Cursor command, Codex command, or Claude Desktop JSON. The snippets point MCP at:
 
 - `GX_BINARY=~/.local/bin/gx`
 - `/Applications/GX.app/Contents/Resources/bin/gx-mcp`
 
-MCP is stdio-only. Cursor or Claude launches the server when it needs a tool
-call; the menu-bar app does not run a local HTTP MCP daemon. Cloud review context
-uses `gx auth login` credentials:
+MCP is stdio-only. Cursor, Codex, or Claude launches the server when it needs a
+tool call; the menu-bar app does not run a local HTTP MCP daemon. Cloud review
+context uses `gx auth login` credentials:
 
 ```bash
 gx auth login
@@ -87,8 +87,8 @@ export GX_BINARY="$PWD/apps/menubar/bin/gx"
 swift run --package-path apps/menubar
 ```
 
-Then open **MCP Setup** from the tray menu. The copied Cursor command will point
-at the local `$PWD/mcp/dist/gx-mcp` build. For the installed app, run
+Then open **MCP Setup** from the tray menu. Copied commands will point at the
+local `$PWD/mcp/dist/gx-mcp` build. For the installed app, run
 `apps/menubar/scripts/package.sh`, move `apps/menubar/dist/GX.app` to
 Applications, and use the same MCP Setup menu.
 

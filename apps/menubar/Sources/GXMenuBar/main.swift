@@ -467,6 +467,10 @@ private enum MCPInstructions {
         "cursor mcp add gx -- env GX_BINARY=\(shellQuote(CLIInstaller.gxExecutable())) \(shellQuote(mcpExecutablePath()))"
     }
 
+    static func codexCommand() -> String {
+        "codex mcp add gx --env \(shellQuote("GX_BINARY=\(CLIInstaller.gxExecutable())")) -- \(shellQuote(mcpExecutablePath()))"
+    }
+
     static func claudeJSON() -> String {
         let args = [
             "GX_BINARY=\(CLIInstaller.gxExecutable())",
@@ -491,6 +495,9 @@ private enum MCPInstructions {
 
         Cursor:
         \(cursorCommand())
+
+        Codex:
+        \(codexCommand())
 
         Claude Desktop JSON:
         \(claudeJSON())
@@ -713,6 +720,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(actionItem("Show Instructions", #selector(showMCPInstructions)))
         menu.addItem(actionItem("Copy Cursor Command", #selector(copyCursorMCPCommand)))
+        menu.addItem(actionItem("Copy Codex Command", #selector(copyCodexMCPCommand)))
         menu.addItem(actionItem("Copy Claude JSON", #selector(copyClaudeMCPJSON)))
         return menu
     }
@@ -804,18 +812,25 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         alert.messageText = "GX MCP Setup"
         alert.informativeText = MCPInstructions.fullText()
         alert.addButton(withTitle: "Copy Cursor Command")
+        alert.addButton(withTitle: "Copy Codex Command")
         alert.addButton(withTitle: "Copy Claude JSON")
         alert.addButton(withTitle: "OK")
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             copyToPasteboard(MCPInstructions.cursorCommand())
         } else if response == .alertSecondButtonReturn {
+            copyToPasteboard(MCPInstructions.codexCommand())
+        } else if response == .alertThirdButtonReturn {
             copyToPasteboard(MCPInstructions.claudeJSON())
         }
     }
 
     @objc private func copyCursorMCPCommand() {
         copyToPasteboard(MCPInstructions.cursorCommand())
+    }
+
+    @objc private func copyCodexMCPCommand() {
+        copyToPasteboard(MCPInstructions.codexCommand())
     }
 
     @objc private func copyClaudeMCPJSON() {
