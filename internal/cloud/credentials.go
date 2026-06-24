@@ -157,6 +157,9 @@ func CloudAPITokenWithKind() (string, string, error) {
 	}
 	if creds != nil && strings.TrimSpace(creds.CLISessionToken) != "" {
 		if !creds.CLISessionExpiresAt.IsZero() && time.Now().UTC().After(creds.CLISessionExpiresAt.UTC()) {
+			if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
+				return "", "gx-cli", fmt.Errorf("gx cloud session expired: run `gx auth logout` then `gx auth login` in a terminal, then retry the MCP tool")
+			}
 			return "", "gx-cli", fmt.Errorf("gx cloud session expired: run `gx auth logout` then `gx auth login`")
 		}
 		return strings.TrimSpace(creds.CLISessionToken), "gx-cli", nil

@@ -30,7 +30,7 @@ describe("gx_review and gx_publish CLI invocation", () => {
   let callLog: string;
   let previousEnv: Record<string, string | undefined>;
 
-  const envKeys = ["GX_BINARY", "JJ_BINARY", "GX_MOCK_LOG"];
+  const envKeys = ["GX_BINARY", "JJ_BINARY", "GX_MOCK_LOG", "GX_MOCK_AUTH_ERROR"];
 
   beforeEach(async () => {
     mockDir = await mkdtemp(join(tmpdir(), "gx-mcp-tools-"));
@@ -49,6 +49,10 @@ if [ "$1" = review ]; then
   exit 0
 fi
 if [ "$1" = publish ]; then
+  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
+    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
+    exit 1
+  fi
   echo "publish ok"
   exit 0
 fi
@@ -78,6 +82,7 @@ exit 1
     process.env.GX_BINARY = mockGx;
     process.env.JJ_BINARY = mockJj;
     process.env.GX_MOCK_LOG = callLog;
+    delete process.env.GX_MOCK_AUTH_ERROR;
   });
 
   afterEach(() => {
@@ -126,5 +131,21 @@ exit 1
     expect(parsed.display).toBe("publish ok");
     expect(parsed.command).toEqual([process.env.GX_BINARY, "publish", "feature/review"]);
     expect(parsed.next_actions).toEqual(["Run gx_sync after GitHub merges land."]);
+  });
+
+  test("gx_publish surfaces MCP auth login guidance", async () => {
+    process.env.GX_MOCK_AUTH_ERROR = "1";
+
+    const output = await gxPublish({ cwd: repoRoot });
+    const parsed = JSON.parse(output);
+
+    expect(parsed.ok).toBe(false);
+    expect(parsed.action).toBe("publish");
+    expect(parsed.auth_required).toBe(true);
+    expect(parsed.display).toBe(
+      "GX cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",
+    );
+    expect(parsed.stderr).toContain("run `gx auth login` in a terminal");
+    expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });
 });

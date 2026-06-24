@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -223,5 +224,25 @@ func TestCloudAPITokenRequiresStoredToken(t *testing.T) {
 
 	if _, err := CloudAPIToken(); err == nil {
 		t.Fatal("expected error when GitHub token is missing")
+	}
+}
+
+func TestCloudAPITokenRequiresStoredTokenForMCP(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_MCP", "1")
+
+	_, err := CloudAPIToken()
+	if err == nil {
+		t.Fatal("expected error when GitHub token is missing")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "run `gx auth login` in a terminal") {
+		t.Fatalf("missing MCP login hint: %q", message)
+	}
+	if strings.Contains(message, "GH_TOKEN") || strings.Contains(message, "GITHUB_TOKEN") {
+		t.Fatalf("MCP login hint should not prefer env token fallbacks: %q", message)
 	}
 }

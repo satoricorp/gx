@@ -48,6 +48,9 @@ func accessToken() (string, error) {
 }
 
 func tokenError() error {
+	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
+		return fmt.Errorf("github token is not configured for MCP: run `gx auth login` in a terminal, then retry the MCP tool")
+	}
 	return fmt.Errorf("github token is not configured: run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN")
 }
 

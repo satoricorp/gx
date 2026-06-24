@@ -61,6 +61,7 @@ function resolveCwd(raw?: string) {
 export function commandEnvironment() {
   const env = { ...process.env };
   env.GX_REVIEW_AI = "1";
+  env.GX_MCP = "1";
   const pathEntries = [
     join(homedir(), ".local", "bin"),
     env.PATH || "",
@@ -187,22 +188,69 @@ export function formatJsonResult(result: GxJsonRunResult, options: FormatOptions
 export function formatError(error: unknown, options: FormatOptions = {}): string {
   const maybeResult = (error as { result?: GxRunResult }).result;
   if (maybeResult) {
-    return formatResult(maybeResult, options);
+    return formatResult(maybeResult, withAuthGuidance(`${maybeResult.stderr}\n${maybeResult.stdout}`, options));
   }
   const message = error instanceof Error ? error.message : String(error);
+  const guided = withAuthGuidance(message, options);
   return JSON.stringify(
     {
       ok: false,
-      action: options.action,
+      action: guided.action,
       command: undefined,
-      cwd: options.extra?.cwd ?? undefined,
+      cwd: guided.extra?.cwd ?? undefined,
       exit_code: 1,
-      display: message,
+      display: guided.display ?? message,
       result: null,
-      stderr: message,
-      next_actions: options.nextActions,
+      stderr: guided.stderr ?? message,
+      next_actions: guided.nextActions,
+      ...(guided.extra ?? {}),
     },
     null,
     2,
   );
+}
+
+function withAuthGuidance(message: string, options: FormatOptions): FormatOptions {
+  const guidance = authGuidance(message);
+  if (!guidance) {
+    return options;
+  }
+  return {
+    ...options,
+    display: options.display ?? guidance.display,
+    nextActions: prependNextAction(options.nextActions, guidance.nextAction),
+    extra: {
+      ...(options.extra ?? {}),
+      auth_required: true,
+    },
+  };
+}
+
+function authGuidance(message: string): { display: string; nextAction: string } | undefined {
+  const text = message.toLowerCase();
+  if (!text.trim()) {
+    return undefined;
+  }
+  const mentionsLogin = text.includes("gx auth login");
+  const missingToken = text.includes("github token is not configured") || text.includes("not logged in");
+  if (!mentionsLogin && !missingToken) {
+    return undefined;
+  }
+  if (text.includes("gx auth logout") || text.includes("session expired")) {
+    const nextAction = "Run `gx auth logout` then `gx auth login` in a terminal, then retry the MCP tool.";
+    return {
+      display: `GX cloud authentication needs to be refreshed. ${nextAction}`,
+      nextAction,
+    };
+  }
+  const nextAction = "Run `gx auth login` in a terminal, then retry the MCP tool.";
+  return {
+    display: `GX cloud authentication is required. ${nextAction}`,
+    nextAction,
+  };
+}
+
+function prependNextAction(existing: string[] | undefined, action: string): string[] {
+  const actions = [action, ...(existing ?? [])];
+  return actions.filter((item, index) => actions.indexOf(item) === index);
 }
