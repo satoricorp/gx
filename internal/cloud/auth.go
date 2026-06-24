@@ -348,11 +348,17 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 
 // ValidateCloudAPISession checks the token against gx-cloud's auth endpoint.
 func ValidateCloudAPISession(ctx context.Context, client *http.Client, token string) (CloudAPISessionValidation, error) {
+	return ValidateCloudAPISessionWithBaseURL(ctx, client, CloudBaseURL(), token)
+}
+
+// ValidateCloudAPISessionWithBaseURL checks the token against the auth endpoint
+// on the same API origin used for subsequent gx-cloud requests.
+func ValidateCloudAPISessionWithBaseURL(ctx context.Context, client *http.Client, baseURL, token string) (CloudAPISessionValidation, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return CloudAPISessionValidation{Valid: false, Error: "missing token"}, nil
 	}
-	meURL := CloudURLWithPath("/v1/auth/me")
+	meURL := cloudURLWithPath(baseURL, "/v1/auth/me")
 	if meURL == "" {
 		return CloudAPISessionValidation{Valid: false, Error: "gx cloud URL is not configured"}, nil
 	}
