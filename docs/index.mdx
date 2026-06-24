@@ -1,0 +1,26 @@
+---
+title: "GX"
+description: "Context-native stacked review workflows for agentic coding sessions."
+---
+
+GX captures coding sessions and attaches that context to reviewable revisions, then uses those revisions to publish stacked PRs and generate better review artifacts.
+
+## Core Workflow
+
+```bash
+gx compose
+gx stacks
+gx publish
+```
+
+`gx compose` turns working-copy changes into proposed revisions and stacks. `gx stacks` shows accepted local stacks. `gx publish` publishes accepted stacks to the remote review surface.
+
+## Product Model
+
+GX centers the reviewable revision rather than the branch:
+
+- **Session**: captured context from agent prompts, responses, commands, tests, and files touched.
+- **Revision**: one logical change with attached evidence.
+- **Stack**: an ordered set of revisions that can be published as stacked PRs.
+
+JJ provides the local change engine, and Git remains the remote compatibility layer.
