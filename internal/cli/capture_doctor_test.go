@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
 )
@@ -250,6 +254,94 @@ func TestCaptureDoctorIssuesExplainAuthAndBacklog(t *testing.T) {
 	}).Summary
 	if !strings.Contains(summary, "upload auth missing") || !strings.Contains(summary, "26 pending") {
 		t.Fatalf("diagnoseSummary() = %q, want auth and backlog details", summary)
+	}
+}
+
+func TestCaptureDoctorStatusValidatesResolvedTokenAgainstUploadAPI(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_API_URL", "")
+
+	var gotPath string
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		if gotAuth != "Bearer gho_api_token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "bad token"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"user_id":           "user_1",
+			"github_user_login": "octocat",
+		})
+	}))
+	defer server.Close()
+	t.Setenv("GX_CLOUD_URL", server.URL)
+
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
+		GitHubAccessToken: "gho_api_token",
+	}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+
+	status := captureDoctorStatus(context.Background(), "")
+	if !status.UploadAuthed {
+		t.Fatalf("UploadAuthed = false, error = %q", status.UploadAuthError)
+	}
+	if status.UploadAPI != server.URL {
+		t.Fatalf("UploadAPI = %q, want %q", status.UploadAPI, server.URL)
+	}
+	if gotPath != "/v1/auth/me" {
+		t.Fatalf("auth validation path = %q, want /v1/auth/me", gotPath)
+	}
+	if gotAuth != "Bearer gho_api_token" {
+		t.Fatalf("Authorization = %q, want bearer upload token", gotAuth)
+	}
+}
+
+func TestCaptureDoctorStatusReportsAPIRejectedTokenAsInvalid(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_API_URL", "")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer gxcs_bad" {
+			t.Fatalf("Authorization = %q, want CLI session token", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+	}))
+	defer server.Close()
+	t.Setenv("GX_CLOUD_URL", server.URL)
+
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{
+		CLISessionToken: "gxcs_bad",
+	}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+
+	status := captureDoctorStatus(context.Background(), "")
+	if status.UploadAuthed {
+		t.Fatal("UploadAuthed = true, want false")
+	}
+	if !strings.Contains(status.UploadAuthError, "Unauthorized") {
+		t.Fatalf("UploadAuthError = %q, want API rejection", status.UploadAuthError)
+	}
+	var foundInvalid bool
+	for _, issue := range status.Issues {
+		if issue.Code == "upload_auth_invalid" {
+			foundInvalid = true
+			break
+		}
+	}
+	if !foundInvalid {
+		t.Fatalf("issues = %#v, want upload_auth_invalid", status.Issues)
 	}
 }
 

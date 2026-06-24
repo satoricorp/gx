@@ -70,15 +70,9 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 			status.RepoHooksOK = false
 		}
 	}
-	if creds, kind, ok := uploadauth.LoadWithKind(); ok {
-		status.UploadAuthed = true
+	if creds, _, ok := uploadauth.LoadWithKind(); ok {
 		status.UploadAPI = creds.APIURL
-		switch kind {
-		case "gx-cli":
-			status.UploadAuthed, status.UploadAuthError = validateCaptureCloudSession(ctx, creds.Token)
-		case "github":
-			status.UploadAuthed, status.UploadAuthError = validateCaptureUploadToken(ctx, creds.Token)
-		}
+		status.UploadAuthed, status.UploadAuthError = validateCaptureAPIToken(ctx, creds.APIURL, creds.Token)
 	}
 	if counts, err := storage.PendingCaptureCounts(ctx); err == nil {
 		status.PendingExtracts = counts.Extracts
@@ -372,27 +366,10 @@ func firstNonEmptyCaptureString(values ...string) string {
 	return ""
 }
 
-func validateCaptureUploadToken(ctx context.Context, token string) (bool, string) {
+func validateCaptureAPIToken(ctx context.Context, apiURL, token string) (bool, string) {
 	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, token)
-	if err != nil {
-		return false, "could not verify GitHub token: " + err.Error()
-	}
-	if validation.Valid {
-		return true, ""
-	}
-	message := strings.TrimSpace(validation.Error)
-	if message == "" {
-		message = "GitHub rejected stored token"
-	}
-	return false, message + "; run `gx auth logout` then `gx auth login`"
-}
-
-func validateCaptureCloudSession(ctx context.Context, token string) (bool, string) {
-	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	validation, err := cloud.ValidateCloudAPISession(verifyCtx, nil, token)
+	validation, err := cloud.ValidateCloudAPISessionWithBaseURL(verifyCtx, nil, apiURL, token)
 	if err != nil {
 		return false, "could not verify GX API session: " + err.Error()
 	}

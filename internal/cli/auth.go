@@ -196,13 +196,17 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if strings.TrimSpace(creds.CLISessionToken) != "" {
+	if authKindForCredentials(creds) != "none" {
 		token, _, err := cloud.CloudAPITokenWithKind()
 		if err != nil {
+			valid := false
+			status.APIValid = &valid
 			status.APIError = err.Error()
 		} else {
 			validation, err := cloud.ValidateCloudAPISession(verifyCtx, nil, token)
 			if err != nil {
+				valid := false
+				status.APIValid = &valid
 				status.APIError = "could not verify GX API session: " + err.Error()
 			} else {
 				status.APIValid = &validation.Valid

@@ -2,8 +2,7 @@ import AppKit
 import Foundation
 
 private let pollInterval: TimeInterval = 60
-private let defaultAPIURL = "http://localhost:3201"
-private let defaultConsoleURL = "https://gx.dev/console"
+private let defaultConsoleURL = "https://gx.run"
 
 private struct CommandResult {
     let ok: Bool
@@ -87,12 +86,6 @@ private enum CommandRunner {
     }
 }
 
-private struct UploadCredentials {
-    let apiURL: String
-    let token: String
-    let orgID: String
-}
-
 private enum GXConfig {
     static var gxHome: URL {
         let custom = ProcessInfo.processInfo.environment["GX_HOME"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -100,33 +93,6 @@ private enum GXConfig {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
         return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent(".gx", isDirectory: true)
-    }
-
-    static var uploadCredentialsPath: URL {
-        gxHome.appendingPathComponent("upload.json")
-    }
-
-    static func readUploadCredentials() -> UploadCredentials {
-        let env = ProcessInfo.processInfo.environment
-        let envAPI = cleanURL(env["GX_API_URL"] ?? "")
-        let envToken = (env["GX_UPLOAD_TOKEN"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let envOrg = (env["GX_ORG_ID"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var fileAPI = ""
-        var fileToken = ""
-        var fileOrg = ""
-        if let data = try? Data(contentsOf: uploadCredentialsPath),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            fileAPI = cleanURL(object["api_url"] as? String ?? "")
-            fileToken = (object["token"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            fileOrg = (object["org_id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        return UploadCredentials(
-            apiURL: envAPI.isEmpty ? (fileAPI.isEmpty ? defaultAPIURL : fileAPI) : envAPI,
-            token: envToken.isEmpty ? fileToken : envToken,
-            orgID: envOrg.isEmpty ? fileOrg : envOrg
-        )
     }
 
     static func cleanURL(_ value: String) -> String {
@@ -166,7 +132,7 @@ private enum CLIInstaller {
     static func installBundledCLI() -> String {
         guard let source = bundledGXURL() else {
             if FileManager.default.isExecutableFile(atPath: installPath.path) {
-                return "CLI installed at \(installPath.path)"
+                return "CLI ready"
             }
             return "Bundled gx CLI not found"
         }
@@ -180,7 +146,7 @@ private enum CLIInstaller {
                 try FileManager.default.copyItem(at: source, to: installPath)
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installPath.path)
-            return "CLI installed at \(installPath.path)"
+            return "CLI ready"
         } catch {
             return "CLI install failed: \(error.localizedDescription)"
         }
@@ -307,132 +273,6 @@ private enum DoctorClient {
     }
 }
 
-private struct ActivityEvent {
-    let title: String
-}
-
-private struct ActivityResult {
-    let ok: Bool
-    let events: [ActivityEvent]
-    let source: String
-    let error: String?
-}
-
-private enum ActivityClient {
-    static func fetch(limit: Int) -> ActivityResult {
-        if ProcessInfo.processInfo.environment["GX_ACTIVITY_MOCK"]?.trimmingCharacters(in: .whitespacesAndNewlines) == "1" {
-            return ActivityResult(ok: true, events: mockActivity(limit), source: "mock", error: nil)
-        }
-
-        let creds = GXConfig.readUploadCredentials()
-        guard !creds.token.isEmpty else {
-            return ActivityResult(ok: false, events: [], source: "local", error: "Not logged in for activity")
-        }
-        guard let url = URL(string: "\(creds.apiURL)/v1/activity?limit=\(limit)") else {
-            return ActivityResult(ok: false, events: [], source: "local", error: "Invalid activity URL")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(creds.token)", forHTTPHeaderField: "Authorization")
-        request.setValue("GX-Menubar/0.1.0", forHTTPHeaderField: "User-Agent")
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var loadedData: Data?
-        var loadedError: Error?
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                loadedError = NSError(domain: "GXActivity", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
-            } else {
-                loadedData = data
-                loadedError = error
-            }
-            semaphore.signal()
-        }
-        task.resume()
-        if semaphore.wait(timeout: .now() + 15) == .timedOut {
-            task.cancel()
-            return ActivityResult(ok: false, events: [], source: "api", error: "Activity request timed out")
-        }
-        if let loadedError {
-            return ActivityResult(ok: false, events: mockActivity(min(limit, 3)), source: "fallback", error: loadedError.localizedDescription)
-        }
-        let events = normalizeActivity(data: loadedData).prefix(limit).map { ActivityEvent(title: activityTitle($0)) }
-        return ActivityResult(ok: true, events: Array(events), source: "api", error: nil)
-    }
-
-    private static func normalizeActivity(data: Data?) -> [[String: Any]] {
-        guard let data,
-              let object = try? JSONSerialization.jsonObject(with: data) else {
-            return []
-        }
-        if let array = object as? [[String: Any]] {
-            return array
-        }
-        if let dict = object as? [String: Any] {
-            if let events = dict["events"] as? [[String: Any]] {
-                return events
-            }
-            if let items = dict["items"] as? [[String: Any]] {
-                return items
-            }
-        }
-        return []
-    }
-
-    private static func activityTitle(_ event: [String: Any]) -> String {
-        for key in ["title", "summary", "type"] {
-            let value = (event[key] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty {
-                if key == "type" {
-                    return value.replacingOccurrences(of: "_", with: " ")
-                }
-                return value.count > 72 ? String(value.prefix(69)) + "..." : value
-            }
-        }
-        return "Activity event"
-    }
-
-    private static func mockActivity(_ limit: Int) -> [ActivityEvent] {
-        [
-            "PR Summary posted for gx/main",
-            "Cursor session uploaded",
-            "Capture sync completed"
-        ].prefix(limit).map { ActivityEvent(title: $0) }
-    }
-}
-
-private enum PauseState {
-    static var pausePath: URL {
-        GXConfig.gxHome.appendingPathComponent("pause-capture")
-    }
-
-    static var legacyPausePath: URL {
-        GXConfig.gxHome.appendingPathComponent("capture-paused")
-    }
-
-    static func isPaused() -> Bool {
-        let value = ProcessInfo.processInfo.environment["GX_CAPTURE_PAUSED"]?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if ["1", "true", "yes"].contains(value) {
-            return true
-        }
-        return FileManager.default.fileExists(atPath: pausePath.path) || FileManager.default.fileExists(atPath: legacyPausePath.path)
-    }
-
-    static func setPaused(_ paused: Bool) throws {
-        try FileManager.default.createDirectory(at: GXConfig.gxHome, withIntermediateDirectories: true)
-        if paused {
-            try "paused\n".write(to: pausePath, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pausePath.path)
-            return
-        }
-        for path in [pausePath, legacyPausePath] where FileManager.default.fileExists(atPath: path.path) {
-            try FileManager.default.removeItem(at: path)
-        }
-    }
-}
-
 private enum MCPInstructions {
     private static var localMCPPath: String {
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -502,9 +342,6 @@ private enum MCPInstructions {
         Claude Desktop JSON:
         \(claudeJSON())
 
-        The app installs the CLI at:
-        \(CLIInstaller.installPath.path)
-
         MCP runs over stdio from a standalone gx-mcp binary. Local menu-bar runs use the repo-local mcp/dist/gx-mcp build when present; installed app runs use bundled resources. Cloud context uses gx auth credentials from disk.
         """
     }
@@ -535,8 +372,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private var doctorRawJSON = ""
     private var doctorError: String?
     private var authStatus: AuthStatus?
-    private var activity = ActivityResult(ok: false, events: [], source: "local", error: "Not loaded yet")
-    private var capturePaused = PauseState.isPaused()
     private var lastUpdated: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -574,8 +409,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             let installMessage = installCLI ? CLIInstaller.installBundledCLI() : self?.cliStatus
             let doctorLoad = DoctorClient.fetch()
             let auth = DoctorClient.authStatus()
-            let activity = ActivityClient.fetch(limit: 10)
-            let paused = PauseState.isPaused()
 
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -586,8 +419,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
                 self.doctorRawJSON = doctorLoad.rawJSON
                 self.doctorError = doctorLoad.error
                 self.authStatus = auth
-                self.activity = activity
-                self.capturePaused = paused
                 self.lastUpdated = Date()
                 self.refreshing = false
                 self.rebuildMenu()
@@ -598,7 +429,9 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         menu.addItem(disabled("GX \(appVersion())"))
-        menu.addItem(disabled(cliStatus))
+        if cliStatus != "CLI ready" {
+            menu.addItem(disabled(cliStatus))
+        }
         if let updated = lastUpdated {
             menu.addItem(disabled("Updated \(Self.timeFormatter.string(from: updated))"))
         } else if refreshing {
@@ -608,18 +441,15 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
 
         menu.addItem(submenuItem(title: doctorLabel(), submenu: doctorMenu()))
         menu.addItem(submenuItem(title: "Stats", submenu: statsMenu()))
-        menu.addItem(submenuItem(title: "Activity", submenu: activityMenu()))
         menu.addItem(.separator())
 
-        menu.addItem(actionItem("Run Doctor Now", #selector(runDoctorNow)))
-        menu.addItem(actionItem(capturePaused ? "Resume Capture" : "Pause Capture", #selector(toggleCapturePause), state: capturePaused ? .on : .off))
+        menu.addItem(actionItem("Run Doctor", #selector(runDoctorNow)))
         menu.addItem(actionItem("Install or Update CLI", #selector(installCLI)))
         menu.addItem(.separator())
 
-        menu.addItem(actionItem("Open GX Console", #selector(openConsole)))
-        menu.addItem(submenuItem(title: "MCP Setup", submenu: mcpMenu()))
+        menu.addItem(actionItem("Open gx.run", #selector(openConsole)))
+        menu.addItem(submenuItem(title: "MCP", submenu: mcpMenu()))
         menu.addItem(.separator())
-        menu.addItem(actionItem("Reveal GX in Finder", #selector(revealInFinder)))
         menu.addItem(actionItem("Quit", #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
     }
@@ -630,7 +460,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             menu.addItem(disabled(error))
         }
         guard let capture = doctor?.capture else {
-            menu.addItem(disabled("Run gx init and gx login to finish setup"))
+            menu.addItem(disabled("Run gx init and gx auth login to finish setup"))
             return menu
         }
         if capture.hookApplicable == false {
@@ -699,29 +529,15 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         return menu
     }
 
-    private func activityMenu() -> NSMenu {
-        let menu = NSMenu()
-        if activity.events.isEmpty {
-            menu.addItem(disabled(activity.error ?? "No recent activity"))
-        } else {
-            for event in activity.events.prefix(10) {
-                menu.addItem(disabled(event.title))
-            }
-        }
-        menu.addItem(.separator())
-        menu.addItem(actionItem("Refresh Activity", #selector(runDoctorNow)))
-        return menu
-    }
-
     private func mcpMenu() -> NSMenu {
         let menu = NSMenu()
         let serverReady = MCPInstructions.serverReady()
         menu.addItem(disabled(MCPInstructions.serverLocationLabel() + (serverReady ? ": ready" : ": missing")))
         menu.addItem(.separator())
         menu.addItem(actionItem("Show Instructions", #selector(showMCPInstructions)))
-        menu.addItem(actionItem("Copy Cursor Command", #selector(copyCursorMCPCommand)))
-        menu.addItem(actionItem("Copy Codex Command", #selector(copyCodexMCPCommand)))
-        menu.addItem(actionItem("Copy Claude JSON", #selector(copyClaudeMCPJSON)))
+        menu.addItem(actionItem("Copy Cursor Install Command", #selector(copyCursorMCPCommand)))
+        menu.addItem(actionItem("Copy Codex Install Command", #selector(copyCodexMCPCommand)))
+        menu.addItem(actionItem("Copy Claude Desktop JSON", #selector(copyClaudeMCPJSON)))
         return menu
     }
 
@@ -746,13 +562,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         let envConsole = GXConfig.cleanURL(ProcessInfo.processInfo.environment["GX_CONSOLE_URL"] ?? "")
         if !envConsole.isEmpty, let url = URL(string: envConsole) {
             return url
-        }
-        let rawCloudURL = GXConfig.cleanURL(authStatus?.cloudURL ?? ProcessInfo.processInfo.environment["GX_CLOUD_URL"] ?? "")
-        if !rawCloudURL.isEmpty {
-            let base = rawCloudURL.replacingOccurrences(of: #"/gx/pr$"#, with: "", options: .regularExpression)
-            if let url = URL(string: base) {
-                return url
-            }
         }
         return URL(string: defaultConsoleURL)!
     }
@@ -784,22 +593,8 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         refreshAll(installCLI: true)
     }
 
-    @objc private func toggleCapturePause() {
-        do {
-            try PauseState.setPaused(!capturePaused)
-            capturePaused.toggle()
-        } catch {
-            doctorError = "Pause toggle failed: \(error.localizedDescription)"
-        }
-        rebuildMenu()
-    }
-
     @objc private func openConsole() {
         NSWorkspace.shared.open(consoleURL())
-    }
-
-    @objc private func revealInFinder() {
-        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
     @objc private func copyDoctorJSON() {
@@ -809,11 +604,11 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     @objc private func showMCPInstructions() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "GX MCP Setup"
+        alert.messageText = "GX MCP"
         alert.informativeText = MCPInstructions.fullText()
-        alert.addButton(withTitle: "Copy Cursor Command")
-        alert.addButton(withTitle: "Copy Codex Command")
-        alert.addButton(withTitle: "Copy Claude JSON")
+        alert.addButton(withTitle: "Copy Cursor Install Command")
+        alert.addButton(withTitle: "Copy Codex Install Command")
+        alert.addButton(withTitle: "Copy Claude Desktop JSON")
         alert.addButton(withTitle: "OK")
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
