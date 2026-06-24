@@ -63,7 +63,7 @@ echo "Building gx-mcp for ${goos}/${goarch}"
 )
 chmod 755 "$stage_dir/bin/gx-mcp"
 
-go run ./cmd/gx-gen-completions "$stage_dir/completions/gx.bash" "$stage_dir/completions/_gx"
+env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/gx-gen-completions "$stage_dir/completions/gx.bash" "$stage_dir/completions/_gx"
 
 cat > "$stage_dir/README.txt" <<EOF
 GX CLI package
