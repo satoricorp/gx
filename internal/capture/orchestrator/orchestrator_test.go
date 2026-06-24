@@ -2,9 +2,12 @@ package orchestrator_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +80,39 @@ func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 		if link.Authorship != matcher.AuthorshipHuman && link.Authorship != matcher.AuthorshipAgent && link.Authorship != matcher.AuthorshipUnknown {
 			t.Fatalf("invalid authorship %q", link.Authorship)
 		}
+	}
+}
+
+func TestOrchestrator_StagesWhenUploadIsUnauthorized(t *testing.T) {
+	repo := initTestGitRepo(t)
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GX_CLOUD_URL", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "bad-token")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	t.Setenv("GX_API_URL", server.URL)
+
+	ctx := context.Background()
+	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
+		RepoRoot: repo,
+		Base:     "HEAD~1",
+		Head:     "HEAD",
+		Tools:    []string{capture.ToolClaude},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.StagedExtractID == "" {
+		t.Fatal("expected staged extract id")
+	}
+	if !strings.Contains(result.UploadError, "status 401") {
+		t.Fatalf("UploadError = %q, want status 401", result.UploadError)
 	}
 }
 

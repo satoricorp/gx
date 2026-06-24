@@ -86,6 +86,9 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 				result.HunkCoverage*100,
 				result.RefRange,
 			)
+			if result.UploadError != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "capture upload warning: %s; run `gx auth login` then `gx sync --capture`\n", result.UploadError)
+			}
 			return nil
 		},
 	}

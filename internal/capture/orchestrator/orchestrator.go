@@ -58,6 +58,7 @@ type Result struct {
 	StagedExtractID string             `json:"stagedExtractID,omitempty"`
 	StagedSessions  int                `json:"stagedSessions"`
 	Tools           []string           `json:"tools"`
+	UploadError     string             `json:"uploadError,omitempty"`
 }
 
 // StagedExtract is the redacted extract payload written to SQLite.
@@ -277,7 +278,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 				sessionPayloads,
 				client,
 			); err != nil {
-				return result, fmt.Errorf("upload capture: %w", err)
+				result.UploadError = fmt.Sprintf("upload capture: %v", err)
 			}
 		}
 	}
