@@ -2987,12 +2987,17 @@ func startPublishUploadWorker(out io.Writer) {
 		return
 	}
 	cmd := exec.Command(exe, "__gx-upload-outbox", "--quiet")
+	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
+		defer devNull.Close()
+		cmd.Stdin = devNull
+	}
 	if logFile, err := publishUploadLogFile(); err == nil {
 		defer logFile.Close()
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}
 	cmd.Env = os.Environ()
+	configureDetachedCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintln(out, labelWarningValue("GX context upload", "queued; run `gx sync` to upload"))
 		return
