@@ -18,6 +18,9 @@ build:
 build-release:
   go build -ldflags "{{gx_ldflags}}" -o gx ./cmd/gx
 
+package-cli:
+  scripts/package-cli.sh
+
 install-completions:
   mkdir -p ~/.local/share/bash-completion/completions ~/.zfunc
   go run ./cmd/gx-gen-completions ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx

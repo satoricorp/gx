@@ -48,6 +48,28 @@ func TestCurrentKeepsDevWithoutVCSRevision(t *testing.T) {
 	}
 }
 
+func TestBuildInfoExposesReleaseAndRevision(t *testing.T) {
+	restore := stubVersion(t, "1.2.3", &debug.BuildInfo{
+		GoVersion: "go1.25.8",
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "2f59fcaa1234567890"},
+			{Key: "vcs.modified", Value: "true"},
+		},
+	}, true)
+	defer restore()
+
+	got := BuildInfo()
+	if got.Version != "2f59fcaa" || got.Release != "1.2.3" || got.Revision != "2f59fcaa1234567890" || got.ShortSHA != "2f59fcaa" {
+		t.Fatalf("BuildInfo() = %#v, want release and revision metadata", got)
+	}
+	if !got.Modified {
+		t.Fatalf("BuildInfo().Modified = false, want true")
+	}
+	if got.GoVersion != "go1.25.8" {
+		t.Fatalf("BuildInfo().GoVersion = %q, want go1.25.8", got.GoVersion)
+	}
+}
+
 func stubVersion(t *testing.T, version string, info *debug.BuildInfo, ok bool) func() {
 	t.Helper()
 	prevVersion := Version

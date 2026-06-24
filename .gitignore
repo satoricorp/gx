@@ -2,6 +2,7 @@
 .env.local
 .gx/
 /gx
+dist/
 node_modules/
 apps/menubar/.build/
 apps/menubar/bin/

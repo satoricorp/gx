@@ -51,6 +51,15 @@ Set `GX_MCP_WORKSPACE_ROOT` to override the workspace directory.
 
 ## Install
 
+Released CLI-only install:
+
+```bash
+curl -fsSL https://download.gx.run/install.sh | sh
+```
+
+That package installs both `gx` and the bundled `gx-mcp` stdio server to
+`~/.local/bin`.
+
 ```bash
 cd mcp
 bun install
@@ -60,7 +69,7 @@ bun run build
 Register stdio MCP (example):
 
 ```bash
-cursor mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx /Applications/GX.app/Contents/Resources/bin/gx-mcp
+cursor mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
 ```
 
 For cloud auth, log in once with GitHub:
@@ -101,3 +110,8 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 
 Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Cloud calls use credentials from `gx auth login` when available.
+
+The released `gx-mcp` checks `https://download.gx.run/cli/manifest.json` and adds an
+update notice plus `curl -fsSL https://download.gx.run/install.sh | sh` to tool responses
+when a newer CLI package is available. Set `GX_MCP_UPDATE_CHECK=0` to disable
+that check.

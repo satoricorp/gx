@@ -9,6 +9,7 @@ import gxPublish, { metadata as publishMetadata, schema as publishSchema } from 
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/gx-review";
 import gxSetBase, { metadata as setBaseMetadata, schema as setBaseSchema } from "./tools/gx-set-base";
 import gxSync, { metadata as syncMetadata, schema as syncSchema } from "./tools/gx-sync";
+import { withUpdateNotice } from "./update";
 
 type ToolModule = {
   metadata: {
@@ -98,7 +99,7 @@ async function main() {
         inputSchema: z.object(tool.schema),
         annotations: tool.metadata.annotations,
       },
-      async (args, extra) => toCallToolResult(await tool.handler(args as Record<string, unknown>, extra)),
+      async (args, extra) => toCallToolResult(await withUpdateNotice(await tool.handler(args as Record<string, unknown>, extra))),
     );
   }
 
