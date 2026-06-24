@@ -89,8 +89,8 @@ This creates:
 
 Users download `GX-macOS.dmg`, drag `GX.app` to Applications, and launch it.
 On launch, the app installs the bundled CLI to `~/.local/bin/gx`, shows
-`gx doctor` stats and activity, links to the GX console, and provides MCP
-setup instructions.
+`gx doctor` status and stats, links to gx.run, and provides MCP setup
+instructions.
 
 The `Build macOS App` GitHub Action builds ZIP/DMG artifacts from this repo,
 uploads the latest ZIP/DMG to S3, keeps commit-addressed copies under
@@ -144,7 +144,7 @@ gx capture sync
 
 Captured sessions are recorded in `~/.gx/gx.db`.
 When a captured session originates inside a repo, the next `gx add`, `gx edit`,
-or `gx demux` can attach unlinked captured sessions from that repo to the GX
+or `gx compose` can attach unlinked captured sessions from that repo to the GX
 revision. Sessions provide provenance only; they do not route work to a body,
 bookmark, or branch.
 
@@ -171,16 +171,16 @@ gx init --name "Some One" --email "someone@example.com"
 gx add -m "describe this revision"
 gx add --interactive -m "describe selected changes"
 gx add --hunk --patch-file /tmp/selected.patch -m "describe selected hunks"
-gx demux
-gx demux --plan
-gx demux --json
-gx demux list
-gx demux proposals
-gx demux review d1
-gx demux fix d1
-gx demux show d1
-gx demux show u1
-gx demux apply <proposal-id>
+gx compose
+gx compose --plan
+gx compose --json
+gx compose list
+gx compose proposals
+gx compose review d1
+gx compose fix d1
+gx compose show d1
+gx compose show u1
+gx compose apply <proposal-id>
 gx edit
 gx status
 gx stacks
@@ -195,30 +195,30 @@ Current behavior:
 - `gx add --interactive` opens JJ's interactive split editor for a human to select hunks or lines, records the selected changes, and leaves the remaining changes in the next revision.
 - `gx add --hunk --patch-file <path>` splits using selected hunks from a unified patch file for agent-friendly non-interactive workflows.
 - `gx add` always prints the recorded change hash, commit hash, description, split summary, and edit commands.
-- `gx demux` proposes ordered revisions from the current working copy, applies deterministic repair passes, then asks OpenAI to refine the proposal when local repair cannot finish it.
-- `gx demux --plan` stops after local deterministic planning and repair; it never calls OpenAI.
-- `gx demux --json` returns the machine-facing demux workflow packet used by MCP: proposal, review result, workflow state, and review/apply tool guidance.
-- `gx demux` accepts filesets plus `--exclude <fileset>` so humans and agents can demux only part of a dirty working copy.
-- `gx demux list` lists saved proposals for the current repo; `gx demux proposals` is an alias.
-- `gx demux review d1` reviews a saved proposal and prints a compact deterministic state summary without requiring a temporary plan file. Full feasibility warnings, repair hints, and info diagnostics are available with `--raw` or `--json`.
-- `gx demux fix d1` runs the same repair pipeline for a saved proposal: deterministic repair first, then OpenAI when local repair cannot finish it. Pass `--plan` for local-only repair.
-- `gx demux show d1` shows a saved proposal, where `d1` is the newest pending proposal from `gx demux list`.
-- `gx demux show u1` shows one proposed revision from the latest pending proposal; pass `--proposal <id-or-dN>` to inspect a revision from another proposal.
-- Agent-only commands such as `gx demux review-plan` and `gx demux apply-plan` are hidden from human help, but remain callable by MCP/agent workflows.
-- The demux JSON packet includes a top-level hunk catalog, lightweight local structural facts, and dependency edges for MCP/LLM-authored revision plans.
+- `gx compose` proposes ordered revisions from the current working copy, applies deterministic repair passes, then asks OpenAI to refine the proposal when local repair cannot finish it.
+- `gx compose --plan` stops after local deterministic planning and repair; it never calls OpenAI.
+- `gx compose --json` returns the machine-facing compose workflow packet used by MCP: proposal, review result, workflow state, and review/apply tool guidance.
+- `gx compose` accepts filesets plus `--exclude <fileset>` so humans and agents can compose only part of a dirty working copy.
+- `gx compose list` lists saved proposals for the current repo; `gx compose proposals` is an alias.
+- `gx compose review d1` reviews a saved proposal and prints a compact deterministic state summary without requiring a temporary plan file. Full feasibility warnings, repair hints, and info diagnostics are available with `--raw` or `--json`.
+- `gx compose fix d1` runs the same repair pipeline for a saved proposal: deterministic repair first, then OpenAI when local repair cannot finish it. Pass `--plan` for local-only repair.
+- `gx compose show d1` shows a saved proposal, where `d1` is the newest pending proposal from `gx compose list`.
+- `gx compose show u1` shows one proposed revision from the latest pending proposal; pass `--proposal <id-or-dN>` to inspect a revision from another proposal.
+- Agent-only commands such as `gx compose review-plan` and `gx compose apply-plan` are hidden from human help, but remain callable by MCP/agent workflows.
+- The compose JSON packet includes a top-level hunk catalog, lightweight local structural facts, and dependency edges for MCP/LLM-authored revision plans.
 - Changed hunks are annotated with enclosing symbols when GX can infer them locally.
-- When one file has multiple changed symbols, deterministic demux can propose separate hunk-level revisions before the MCP/LLM refines the plan.
-- Demux proposals include `feasibility_warnings` for deterministic concerns such as unmapped hunks, dependency-order conflicts, inferred `depends_on` hints, and separated test/source counterparts.
-- If no explicit `GX_SESSION_ID(S)` is present, `gx demux` looks for unlinked captured sessions from the same repo and marks those revisions with `provenance_status: "repo_local"`.
-- Provenance attachment is centralized: `gx add`, `gx edit`, and `gx demux` all classify sessions as `explicit`, `repo_local`, or `absent` through the same local provenance logic.
-- Hidden `gx demux review-plan --plan-file <path>` reviews an LLM-authored revision plan without applying JJ changes; invalid, under-specified, and structurally misordered plans return structured JSON errors or `repair_hints`.
-- Hidden `gx demux apply-plan --plan-file <path>` applies a revision plan; hunk-level revisions can refer to `hunk_ids` instead of copying patch payloads. GX checks that every proposed hunk is covered exactly once before applying, and blocks structural warning-severity plans unless `--allow-warnings` is passed after review.
-- Applied demux records are persisted per revision and included in push review bundles as `demux_evidence`.
+- When one file has multiple changed symbols, deterministic compose can propose separate hunk-level revisions before the MCP/LLM refines the plan.
+- Compose proposals include `feasibility_warnings` for deterministic concerns such as unmapped hunks, dependency-order conflicts, inferred `depends_on` hints, and separated test/source counterparts.
+- If no explicit `GX_SESSION_ID(S)` is present, `gx compose` looks for unlinked captured sessions from the same repo and marks those revisions with `provenance_status: "repo_local"`.
+- Provenance attachment is centralized: `gx add`, `gx edit`, and `gx compose` all classify sessions as `explicit`, `repo_local`, or `absent` through the same local provenance logic.
+- Hidden `gx compose review-plan --plan-file <path>` reviews an LLM-authored revision plan without applying JJ changes; invalid, under-specified, and structurally misordered plans return structured JSON errors or `repair_hints`.
+- Hidden `gx compose apply-plan --plan-file <path>` applies a revision plan; hunk-level revisions can refer to `hunk_ids` instead of copying patch payloads. GX checks that every proposed hunk is covered exactly once before applying, and blocks structural warning-severity plans unless `--allow-warnings` is passed after review.
+- Applied compose records are persisted per revision and included in push review bundles as compose evidence.
 - Push review bundles are assembled by a dedicated local review-bundle module before cloud upload, so the versioned review payload shape is testable without the HTTP adapter.
 - Review publication is coordinated by a dedicated publication module; the cloud client is only the HTTP upload adapter, and semantic indexing sits behind an optional indexing seam.
-- Review bundles expose first-class `review_context` per revision, including provenance status, per-revision provenance sources, transcript source IDs, linked session count, structural signal availability, structural facts, changed symbols, feasibility warnings, typed evidence entries (`provenance`, `structural`, `risk`), and an initial deterministic risk score derived from local evidence. Revisions without demux evidence still get an honest context shell so the review surface can distinguish missing provenance from unavailable structural evidence.
+- Review bundles expose first-class `review_context` per revision, including provenance status, per-revision provenance sources, transcript source IDs, linked session count, structural signal availability, structural facts, changed symbols, feasibility warnings, typed evidence entries (`provenance`, `structural`, `risk`), and an initial deterministic risk score derived from local evidence. Revisions without compose evidence still get an honest context shell so the review surface can distinguish missing provenance from unavailable structural evidence.
 - A cloud ingest module turns review bundles into stored review artifacts, risk/context fields, transcript source availability, and a session index for the review surface.
-- MCP callers should use `gx_compose_changes` for messy diffs. It shells to `gx compose --json --plan` by default, which returns the hunk catalog, an initial review result, and a state without calling GX's configured OpenAI repair model. Apply directly when ready; when repair is recommended or required, revise the proposal with the calling codegen's LLM, review again with `gx_review_compose_plan`, then call `gx_accept_compose_plan`. Pass `use_gx_llm: true` only when the user explicitly wants GX to spend its configured LLM tokens.
+- MCP callers should use `gx_compose` for messy diffs. It shells to `gx compose --json` by default, which returns the hunk catalog, an initial review result, and a state. Apply directly when ready; when repair is recommended or required, revise the proposal with the calling codegen's LLM, review again with `gx_compose` action `review-plan`, then call `gx_compose` action `apply` or `gx_accept`. Pass `use_gx_llm: true` only when the user explicitly wants GX to spend its configured LLM tokens.
 - `gx init` initializes a JJ-backed GX repo for the current working tree, or reuses the nearest existing one.
 - `gx init` also sets up gx user identity and writes JJ `user.name` / `user.email`.
 - if `GX_POSTLIST_URL` is set, `gx init` also sends identity to gx signup
@@ -324,10 +324,22 @@ general review guidance from the `gx-review-knowledge` namespace:
 
 ```bash
 export GX_REVIEW_KNOWLEDGE_NAMESPACE="gx-review-knowledge"
-export GX_REVIEW_RESOURCES_TOP_K=6
+export GX_REVIEW_RESOURCES_TOP_K=8
 ```
 
 Set `GX_REVIEW_RESOURCES=0` to disable this retrieval for a review run.
+
+### Optional review context docs
+
+`gx review` reads local guidance files when they are present, but none are
+required and missing files do not create review findings:
+
+- `CONTEXT.md` can define the repo's product vocabulary, internal-only terms,
+  invariants, and naming conventions.
+- `REVIEW.md` can define repo-specific review policy, recurring risks, and
+  guidance that should shape review recommendations.
+- `docs/adr/` can record accepted architecture decisions that future reviews
+  should respect instead of relitigating.
 
 ### Local development overrides
 
