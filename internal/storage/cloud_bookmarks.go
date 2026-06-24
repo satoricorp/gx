@@ -69,6 +69,23 @@ func UpsertCloudBookmark(ctx context.Context, db *sql.DB, state CloudBookmarkSta
 	return nil
 }
 
+func (s *Store) UpsertCloudBookmark(ctx context.Context, state CloudBookmarkState) error {
+	return UpsertCloudBookmark(ctx, s.db, state)
+}
+
+func (s *Store) CountOpenCloudBookmarksByRepoID(ctx context.Context, repoID int64) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM cloud_bookmarks
+		WHERE repo_id = ? AND merge_status = 'open'
+	`, repoID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count open cloud bookmarks: %w", err)
+	}
+	return count, nil
+}
+
 func GetCloudBookmarkRevision(ctx context.Context, db *sql.DB, postgresBookmarkID string) (int, bool, error) {
 	var revision int
 	err := db.QueryRowContext(ctx, `

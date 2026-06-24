@@ -219,7 +219,7 @@ func TestCaptureRegisteredRepoHooksFallsBackToReachableKnownRepos(t *testing.T) 
 	}
 }
 
-func TestCaptureDoctorIssuesExplainAuthAndBacklog(t *testing.T) {
+func TestCaptureDoctorIssuesExplainAuthOnly(t *testing.T) {
 	status := captureDoctorJSON{
 		HookApplicable:  true,
 		HookInstalled:   true,
@@ -239,7 +239,7 @@ func TestCaptureDoctorIssuesExplainAuthAndBacklog(t *testing.T) {
 			t.Fatalf("issue %s missing action: %#v", issue.Code, issue)
 		}
 	}
-	wantCodes := []string{"upload_auth_missing", "capture_backlog"}
+	wantCodes := []string{"upload_auth_missing"}
 	if !equalDoctorStrings(codes, wantCodes) {
 		t.Fatalf("captureDoctorIssues() codes = %#v, want %#v", codes, wantCodes)
 	}
@@ -248,8 +248,117 @@ func TestCaptureDoctorIssuesExplainAuthAndBacklog(t *testing.T) {
 		Capture: captureDoctorJSON{Issues: issues},
 		Cursor:  cursorStatusJSON{Found: true},
 	}).Summary
-	if !strings.Contains(summary, "upload auth missing") || !strings.Contains(summary, "26 pending") {
-		t.Fatalf("diagnoseSummary() = %q, want auth and backlog details", summary)
+	if !strings.Contains(summary, "upload auth missing") || strings.Contains(summary, "pending") {
+		t.Fatalf("diagnoseSummary() = %q, want auth detail only", summary)
+	}
+}
+
+func TestCaptureDoctorBacklogDoesNotAffectHealth(t *testing.T) {
+	status := captureDoctorJSON{
+		HookApplicable:  true,
+		HookInstalled:   true,
+		RepoHooksOK:     true,
+		UploadAuthed:    true,
+		PendingExtracts: 29,
+		PendingSessions: 75,
+		CursorReachable: true,
+		DiskFreeGB:      100,
+	}
+
+	if !captureDoctorOK(status) {
+		t.Fatal("captureDoctorOK() = false, want true for staged backlog")
+	}
+	if issues := captureDoctorIssues(status); len(issues) != 0 {
+		t.Fatalf("captureDoctorIssues() = %#v, want no issues for staged backlog", issues)
+	}
+}
+
+func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("GX_HOME", t.TempDir())
+	store := openTestStore(t, ctx)
+
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:  "/repo",
+		Backend:   "jj",
+		CreatedAt: 1,
+		UpdatedAt: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	draftChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "draft-change")
+	draftStackID := insertDoctorStatsStack(t, ctx, store, repoID, "gx/draft-stack", "draft")
+	if err := store.AddChangeToStack(ctx, draftStackID, draftChangeID, 2); err != nil {
+		t.Fatalf("AddChangeToStack(draft) error = %v", err)
+	}
+	manualChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "manual-change")
+	manualStackID := insertDoctorStatsStack(t, ctx, store, repoID, "feature/manual-stack", "draft")
+	if err := store.AddChangeToStack(ctx, manualStackID, manualChangeID, 3); err != nil {
+		t.Fatalf("AddChangeToStack(manual) error = %v", err)
+	}
+	publishedChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "published-change")
+	publishedStackID := insertDoctorStatsStack(t, ctx, store, repoID, "published-stack", "published")
+	if err := store.AddChangeToStack(ctx, publishedStackID, publishedChangeID, 4); err != nil {
+		t.Fatalf("AddChangeToStack(published) error = %v", err)
+	}
+	if err := store.UpsertCloudBookmark(ctx, storage.CloudBookmarkState{
+		PostgresBookmarkID: "cloud-open",
+		RepoID:             repoID,
+		RepoFullName:       "satoricorp/gx",
+		BranchName:         "gx/published-stack",
+		Revision:           1,
+		MergeStatus:        "open",
+		UpdatedAtMs:        1,
+		SyncedAt:           1,
+	}); err != nil {
+		t.Fatalf("UpsertCloudBookmark(open) error = %v", err)
+	}
+	if err := store.UpsertCloudBookmark(ctx, storage.CloudBookmarkState{
+		PostgresBookmarkID: "cloud-merged",
+		RepoID:             repoID,
+		RepoFullName:       "satoricorp/gx",
+		BranchName:         "gx/merged-stack",
+		Revision:           1,
+		MergeStatus:        "merged",
+		UpdatedAtMs:        1,
+		SyncedAt:           1,
+	}); err != nil {
+		t.Fatalf("UpsertCloudBookmark(merged) error = %v", err)
+	}
+	mergedChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "merged-change")
+	mergedStackID := insertDoctorStatsStack(t, ctx, store, repoID, "merged-stack", "merged")
+	if err := store.AddChangeToStack(ctx, mergedStackID, mergedChangeID, 5); err != nil {
+		t.Fatalf("AddChangeToStack(merged) error = %v", err)
+	}
+	_ = insertDoctorStatsStack(t, ctx, store, repoID, "gx/empty-stack", "draft")
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close() error = %v", err)
+	}
+
+	stats := doctorStats(ctx, doctorJSON{
+		Capture: captureDoctorJSON{RepoRoot: "/repo"},
+		Cursor:  cursorStatusJSON{Found: true},
+		Ledger: []ledgerRowJSON{
+			{Agent: "cursor", Status: "indexed", Calls: "15"},
+			{Agent: "codex", Status: "indexed", Calls: "7"},
+			{Agent: "claude", Status: "waiting", Calls: "0"},
+		},
+	})
+	if stats.ApprovedStacksWaitingForPublish != 1 {
+		t.Fatalf("approved waiting = %d, want 1", stats.ApprovedStacksWaitingForPublish)
+	}
+	if stats.PublishedStacksWaitingForReview != 1 {
+		t.Fatalf("published waiting = %d, want 1", stats.PublishedStacksWaitingForReview)
+	}
+	if len(stats.Agents) != 3 {
+		t.Fatalf("agents = %d, want 3", len(stats.Agents))
+	}
+	if stats.Agents[0].Agent != "cursor" || stats.Agents[0].Health != "green" || stats.Agents[0].Sessions != 15 {
+		t.Fatalf("cursor stats = %#v, want green 15 sessions", stats.Agents[0])
+	}
+	if stats.Agents[2].Agent != "claude" || stats.Agents[2].Health != "yellow" {
+		t.Fatalf("claude stats = %#v, want yellow", stats.Agents[2])
 	}
 }
 
@@ -289,6 +398,41 @@ func openTestStore(t *testing.T, ctx context.Context) *storage.Store {
 		t.Fatalf("storage.NewStore() error = %v", err)
 	}
 	return store
+}
+
+func insertDoctorStatsChange(t *testing.T, ctx context.Context, store *storage.Store, repoID int64, name string) int64 {
+	t.Helper()
+	id, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      name,
+		CurrentCommitID: name + "-commit",
+		Description:     name,
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange(%s) error = %v", name, err)
+	}
+	return id
+}
+
+func insertDoctorStatsStack(t *testing.T, ctx context.Context, store *storage.Store, repoID int64, name, status string) int64 {
+	t.Helper()
+	id, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         name,
+		BookmarkName: name,
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		Status:       status,
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack(%s) error = %v", name, err)
+	}
+	return id
 }
 
 func equalDoctorStrings(a, b []string) bool {

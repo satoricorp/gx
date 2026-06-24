@@ -154,6 +154,7 @@ private struct DoctorStatus: Decodable {
     let ok: Bool?
     let capture: CaptureStatus?
     let ledger: [LedgerRow]?
+    let stats: StatsStatus?
     let diagnose: DiagnoseStatus?
 }
 
@@ -198,6 +199,20 @@ private struct LedgerRow: Decodable {
 private struct DiagnoseStatus: Decodable {
     let summary: String?
     let lastCheck: String?
+}
+
+private struct StatsStatus: Decodable {
+    let approvedStacksWaitingForPublish: Int?
+    let publishedStacksWaitingForReview: Int?
+    let agents: [AgentStats]?
+    let diskUsedBytes: Int64?
+}
+
+private struct AgentStats: Decodable {
+    let agent: String?
+    let label: String?
+    let health: String?
+    let sessions: Int?
 }
 
 private struct AuthStatus: Decodable {
@@ -258,8 +273,7 @@ private enum DoctorClient {
         if hardFail {
             return .red
         }
-        let backlog = (capture.pendingExtracts ?? 0) + (capture.pendingSessions ?? 0)
-        if backlog > 10 || doctor.ok == false {
+        if doctor.ok == false {
             return .yellow
         }
         return .green
@@ -386,13 +400,17 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         menu.addItem(doctorSubmenuItem())
+        menu.addItem(disabled("Waiting for Publishing: \(doctor?.stats?.approvedStacksWaitingForPublish ?? 0)"))
+        menu.addItem(disabled("Waiting for Review: \(doctor?.stats?.publishedStacksWaitingForReview ?? 0)"))
         menu.addItem(submenuItem(title: "Stats", submenu: statsMenu()))
         menu.addItem(.separator())
 
         menu.addItem(actionItem("Update CLI", #selector(installCLI)))
         menu.addItem(.separator())
 
-        menu.addItem(actionItem("open gx.run", #selector(openConsole)))
+        menu.addItem(actionItem("Open https://gx.run", #selector(openConsole)))
+        menu.addItem(.separator())
+
         menu.addItem(submenuItem(title: "MCP", submenu: mcpMenu()))
         menu.addItem(.separator())
         menu.addItem(actionItem("Quit", #selector(quit), keyEquivalent: "q"))
@@ -405,72 +423,30 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             menu.addItem(disabled(error))
         }
         if let capture = doctor?.capture {
-            if capture.hookApplicable == false {
-                menu.addItem(disabled("Pre-push hook: not checked outside repo"))
-            } else {
-                menu.addItem(disabled(capture.hookInstalled == true ? "Pre-push hook: ok" : "Pre-push hook: missing"))
-            }
-            let repoHookTotal = capture.repoHooksTotal ?? capture.repoHooks?.count ?? 0
-            if repoHookTotal == 0 {
-                menu.addItem(disabled("Registered repo hooks: none"))
-            } else if capture.repoHooksOK == true {
-                menu.addItem(disabled("Registered repo hooks: \(repoHookTotal) ok"))
-            } else {
-                menu.addItem(disabled("Registered repo hooks: \(capture.repoHooksMissing ?? 0) missing, \(capture.repoHooksUnreachable ?? 0) unreachable"))
-                if let repoHooks = capture.repoHooks {
-                    for repoHook in repoHooks.filter({ $0.hookInstalled != true || $0.gitReachable == false }).prefix(4) {
-                        menu.addItem(disabled("- \(repoHook.repoRoot ?? "repo")"))
-                    }
-                }
-            }
-            if capture.uploadAuthed == true {
-                menu.addItem(disabled("Upload auth: ok"))
-            } else if let error = capture.uploadAuthError, !error.isEmpty {
-                menu.addItem(disabled("Upload auth: \(error)"))
-            } else {
-                menu.addItem(disabled("Upload auth: missing"))
-            }
-            menu.addItem(disabled(capture.cursorReachable == true ? "Cursor vscdb: ok" : "Cursor vscdb: missing"))
-            let backlog = (capture.pendingExtracts ?? 0) + (capture.pendingSessions ?? 0)
-            menu.addItem(disabled("Staging backlog: \(backlog) pending"))
-            if let diskFree = capture.diskFreeGB {
-                menu.addItem(disabled(capture.diskWarn == true ? "Disk free: \(diskFree) GB low" : "Disk free: \(diskFree) GB"))
-            }
-            if let api = capture.uploadAPI, !api.isEmpty {
-                menu.addItem(disabled("Upload API: \(api)"))
-            }
+            menu.addItem(healthMenuItem(label: "Hooks", value: hooksLabel(capture), state: hooksState(capture)))
+            menu.addItem(healthMenuItem(label: "Auth", value: authLabel(capture), state: authState(capture)))
+            menu.addItem(disabled("Upload: \(uploadEnvironment(capture.uploadAPI))"))
         } else {
-            menu.addItem(disabled("Run gx init and gx login to finish setup"))
+            menu.addItem(healthMenuItem(label: "Hooks", value: "unknown", state: .unknown))
+            menu.addItem(healthMenuItem(label: "Auth", value: "unknown", state: .unknown))
+            menu.addItem(disabled("Upload: unknown"))
         }
         menu.addItem(.separator())
         menu.addItem(actionItem("Run Doctor", #selector(runDoctorNow)))
-        menu.addItem(actionItem("Copy gx doctor JSON", #selector(copyDoctorJSON)))
+        menu.addItem(actionItem("Copy Diagnostics", #selector(copyDoctorJSON)))
         return menu
     }
 
     private func statsMenu() -> NSMenu {
         let menu = NSMenu()
-        if let summary = doctor?.diagnose?.summary {
-            menu.addItem(disabled(summary))
-            menu.addItem(.separator())
-        }
-        if let capture = doctor?.capture {
-            menu.addItem(disabled("Pending extracts: \(capture.pendingExtracts ?? 0)"))
-            menu.addItem(disabled("Pending sessions: \(capture.pendingSessions ?? 0)"))
-            if let diskFree = capture.diskFreeGB {
-                menu.addItem(disabled("Disk free: \(diskFree) GB"))
+        if let stats = doctor?.stats {
+            for agent in statsAgentRows(stats.agents) {
+                menu.addItem(agentStatsItem(agent))
             }
+            menu.addItem(.separator())
+            menu.addItem(disabled("Disk Used: \(formatDiskUsed(stats.diskUsedBytes ?? 0))"))
         } else {
             menu.addItem(disabled("Stats unavailable"))
-        }
-        if let ledger = doctor?.ledger, !ledger.isEmpty {
-            menu.addItem(.separator())
-            for row in ledger.prefix(5) {
-                let agent = row.agent ?? "agent"
-                let status = row.status ?? "unknown"
-                let calls = row.calls ?? "0"
-                menu.addItem(disabled("\(agent): \(status), \(calls) calls"))
-            }
         }
         return menu
     }
@@ -479,10 +455,111 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(actionItem("Show Instructions", #selector(openMCPDocumentation)))
         menu.addItem(.separator())
-        menu.addItem(actionItem("Copy Cursor Install Command", #selector(copyCursorMCPCommand)))
-        menu.addItem(actionItem("Copy Codex Install Command", #selector(copyCodexMCPCommand)))
-        menu.addItem(actionItem("Copy Claude Code Install Command", #selector(copyClaudeCodeMCPCommand)))
+        menu.addItem(mcpActionItem(
+            "Copy Cursor Install Command",
+            #selector(copyCursorMCPCommand),
+            icon: appIcon(
+                bundleIdentifiers: ["com.todesktop.230313mzl4w4u92", "com.cursor.Cursor"],
+                appNames: ["Cursor"]
+            )
+        ))
+        menu.addItem(mcpActionItem(
+            "Copy Codex Install Command",
+            #selector(copyCodexMCPCommand),
+            icon: appIcon(
+                bundleIdentifiers: ["com.openai.chat", "com.openai.chatgpt", "com.openai.ChatGPT"],
+                appNames: ["Codex", "ChatGPT"]
+            )
+        ))
+        menu.addItem(mcpActionItem(
+            "Copy Claude Code Install Command",
+            #selector(copyClaudeCodeMCPCommand),
+            icon: appIcon(
+                bundleIdentifiers: ["com.anthropic.claudefordesktop", "com.anthropic.Claude"],
+                appNames: ["Claude Code", "Claude"]
+            )
+        ))
         return menu
+    }
+
+    private func healthMenuItem(label: String, value: String, state: HealthState) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        let title = NSMutableAttributedString(
+            string: "●  ",
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: healthColor(state)
+            ]
+        )
+        title.append(NSAttributedString(
+            string: "\(label): \(value)",
+            attributes: [.font: NSFont.menuFont(ofSize: 0)]
+        ))
+        item.attributedTitle = title
+        return item
+    }
+
+    private func hooksState(_ capture: CaptureStatus) -> HealthState {
+        let hookMissing = capture.hookApplicable != false && capture.hookInstalled == false
+        let registeredHookIssue = (capture.repoHooksMissing ?? 0) > 0 || (capture.repoHooksUnreachable ?? 0) > 0 || capture.repoHooksOK == false
+        if hookMissing || registeredHookIssue {
+            return .red
+        }
+        let repoHookTotal = capture.repoHooksTotal ?? capture.repoHooks?.count ?? 0
+        if capture.hookApplicable == false && repoHookTotal == 0 {
+            return .yellow
+        }
+        return .green
+    }
+
+    private func hooksLabel(_ capture: CaptureStatus) -> String {
+        let missing = capture.repoHooksMissing ?? 0
+        let unreachable = capture.repoHooksUnreachable ?? 0
+        if missing > 0 || unreachable > 0 {
+            var parts: [String] = []
+            if missing > 0 {
+                parts.append("\(missing) missing")
+            }
+            if unreachable > 0 {
+                parts.append("\(unreachable) unreachable")
+            }
+            return parts.joined(separator: ", ")
+        }
+        if capture.hookApplicable != false && capture.hookInstalled == false {
+            return "missing"
+        }
+        let repoHookTotal = capture.repoHooksTotal ?? capture.repoHooks?.count ?? 0
+        if capture.hookApplicable == false && repoHookTotal == 0 {
+            return "not checked"
+        }
+        return "ok"
+    }
+
+    private func authState(_ capture: CaptureStatus) -> HealthState {
+        capture.uploadAuthed == true ? .green : .red
+    }
+
+    private func authLabel(_ capture: CaptureStatus) -> String {
+        if capture.uploadAuthed == true {
+            return "ok"
+        }
+        if let error = capture.uploadAuthError?.trimmingCharacters(in: .whitespacesAndNewlines), !error.isEmpty {
+            return error
+        }
+        return "missing"
+    }
+
+    private func uploadEnvironment(_ api: String?) -> String {
+        let value = GXConfig.cleanURL(api ?? "")
+        if value.isEmpty {
+            return "unknown"
+        }
+        let lower = value.lowercased()
+        if lower.contains("staging") || lower.contains("localhost") || lower.contains("127.0.0.1") {
+            return "staging"
+        }
+        return "prod"
     }
 
     private func doctorSubmenuItem() -> NSMenuItem {
@@ -493,22 +570,25 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
 
     private func doctorAttributedTitle() -> NSAttributedString {
         let title = NSMutableAttributedString(
-            string: "Doctor",
-            attributes: [.font: NSFont.menuFont(ofSize: 0)]
+            string: "●  ",
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: doctorDotColor()
+            ]
         )
         title.append(NSAttributedString(
-            string: "  •",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 8, weight: .bold),
-                .foregroundColor: doctorDotColor(),
-                .baselineOffset: 1
-            ]
+            string: "Doctor",
+            attributes: [.font: NSFont.menuFont(ofSize: 0)]
         ))
         return title
     }
 
     private func doctorDotColor() -> NSColor {
-        switch doctorMenuState() {
+        healthColor(doctorMenuState())
+    }
+
+    private func healthColor(_ state: HealthState) -> NSColor {
+        switch state {
         case .green:
             return .systemGreen
         case .yellow:
@@ -518,6 +598,56 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         case .unknown:
             return .systemYellow
         }
+    }
+
+    private func statsAgentRows(_ agents: [AgentStats]?) -> [AgentStats] {
+        let agents = agents ?? []
+        return ["cursor", "codex", "claude"].map { id in
+            agents.first { ($0.agent ?? "").lowercased() == id } ??
+                AgentStats(agent: id, label: Self.agentLabel(id), health: "yellow", sessions: 0)
+        }
+    }
+
+    private func agentStatsItem(_ agent: AgentStats) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        let health = HealthState(rawValue: (agent.health ?? "").lowercased()) ?? .unknown
+        let label = agent.label ?? Self.agentLabel(agent.agent ?? "")
+        let title = NSMutableAttributedString(
+            string: "●  ",
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: healthColor(health)
+            ]
+        )
+        title.append(NSAttributedString(
+            string: "\(label): \(agent.sessions ?? 0) Sessions",
+            attributes: [.font: NSFont.menuFont(ofSize: 0)]
+        ))
+        item.attributedTitle = title
+        return item
+    }
+
+    private static func agentLabel(_ agent: String) -> String {
+        switch agent.lowercased() {
+        case "cursor":
+            return "Cursor"
+        case "codex":
+            return "Codex"
+        case "claude":
+            return "Claude"
+        default:
+            return agent.isEmpty ? "Agent" : agent
+        }
+    }
+
+    private func formatDiskUsed(_ bytes: Int64) -> String {
+        let gb = Double(bytes) / 1_073_741_824
+        if gb >= 1 {
+            return String(format: "%.1fGB", gb)
+        }
+        let mb = Double(bytes) / 1_048_576
+        return String(format: "%.1fMB", max(0, mb))
     }
 
     private func doctorMenuState() -> HealthState {
@@ -557,6 +687,42 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         item.target = self
         item.state = state
         return item
+    }
+
+    private func mcpActionItem(_ title: String, _ selector: Selector, icon: NSImage?) -> NSMenuItem {
+        let item = actionItem(title, selector)
+        item.image = icon
+        return item
+    }
+
+    private func appIcon(bundleIdentifiers: [String], appNames: [String]) -> NSImage? {
+        for bundleIdentifier in bundleIdentifiers {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+                return menuIcon(for: url)
+            }
+        }
+        for appName in appNames {
+            for directory in applicationDirectories() {
+                let url = directory.appendingPathComponent("\(appName).app")
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return menuIcon(for: url)
+                }
+            }
+        }
+        return nil
+    }
+
+    private func applicationDirectories() -> [URL] {
+        [
+            URL(fileURLWithPath: "/Applications", isDirectory: true),
+            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Applications", isDirectory: true)
+        ]
+    }
+
+    private func menuIcon(for appURL: URL) -> NSImage {
+        let image = NSWorkspace.shared.icon(forFile: appURL.path)
+        image.size = NSSize(width: 16, height: 16)
+        return image
     }
 
     private func submenuItem(title: String, submenu: NSMenu) -> NSMenuItem {

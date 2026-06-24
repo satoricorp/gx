@@ -16,8 +16,6 @@ import (
 	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
-const captureBacklogWarnThreshold = 10
-
 type captureDoctorJSON struct {
 	HookInstalled        bool                 `json:"hookInstalled"`
 	HookApplicable       bool                 `json:"hookApplicable"`
@@ -94,14 +92,17 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 		status.DiskFreeGB = freeGB
 		status.DiskWarn = warn
 	}
-	status.OK = (!status.HookApplicable || status.HookInstalled) &&
+	status.OK = captureDoctorOK(status)
+	status.Issues = captureDoctorIssues(status)
+	return status
+}
+
+func captureDoctorOK(status captureDoctorJSON) bool {
+	return (!status.HookApplicable || status.HookInstalled) &&
 		status.RepoHooksOK &&
 		status.UploadAuthed &&
 		status.CursorReachable &&
-		status.PendingExtracts+status.PendingSessions <= captureBacklogWarnThreshold &&
 		!status.DiskWarn
-	status.Issues = captureDoctorIssues(status)
-	return status
 }
 
 func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
@@ -133,8 +134,6 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	backlog := status.PendingExtracts + status.PendingSessions
 	if backlog == 0 {
 		fmt.Fprintln(out, labelValue("Staging backlog", success("ok")+": 0 pending"))
-	} else if backlog > captureBacklogWarnThreshold {
-		fmt.Fprintln(out, labelValue("Staging backlog", danger("warn")+fmt.Sprintf(": %d pending (run `gx capture sync`)", backlog)))
 	} else {
 		fmt.Fprintln(out, labelValue("Staging backlog", fmt.Sprintf("%d pending", backlog)))
 	}
@@ -329,15 +328,6 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Severity: "fail",
 			Message:  message,
 			Action:   action,
-		})
-	}
-	backlog := status.PendingExtracts + status.PendingSessions
-	if backlog > captureBacklogWarnThreshold {
-		issues = append(issues, captureIssueJSON{
-			Code:     "capture_backlog",
-			Severity: "warn",
-			Message:  fmt.Sprintf("%d pending capture uploads", backlog),
-			Action:   "run `gx capture sync` after upload auth is working",
 		})
 	}
 	if !status.CursorReachable {

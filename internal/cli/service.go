@@ -329,6 +329,7 @@ type doctorJSON struct {
 	Capture  captureDoctorJSON `json:"capture"`
 	MCP      mcpStatusJSON     `json:"mcp"`
 	Ledger   []ledgerRowJSON   `json:"ledger"`
+	Stats    statsJSON         `json:"stats"`
 	Diagnose diagnoseJSON      `json:"diagnose"`
 	OK       bool              `json:"ok"`
 }
@@ -346,6 +347,20 @@ type ledgerRowJSON struct {
 type diagnoseJSON struct {
 	Summary   string `json:"summary"`
 	LastCheck string `json:"lastCheck"`
+}
+
+type statsJSON struct {
+	ApprovedStacksWaitingForPublish int              `json:"approvedStacksWaitingForPublish"`
+	PublishedStacksWaitingForReview int              `json:"publishedStacksWaitingForReview"`
+	Agents                          []agentStatsJSON `json:"agents"`
+	DiskUsedBytes                   int64            `json:"diskUsedBytes"`
+}
+
+type agentStatsJSON struct {
+	Agent    string `json:"agent"`
+	Label    string `json:"label"`
+	Health   string `json:"health"`
+	Sessions int    `json:"sessions"`
 }
 
 type cursorStatusJSON struct {
@@ -383,6 +398,7 @@ func doctorStatusJSON(ctx context.Context) doctorJSON {
 	}
 	status.OK = status.Capture.OK
 	status.Ledger = captureLedgerRows(ctx, status)
+	status.Stats = doctorStats(ctx, status)
 	status.Diagnose = diagnoseSummary(status)
 	return status
 }
@@ -539,6 +555,168 @@ func formatLedgerLast(lastSeenAt *int64) string {
 	default:
 		return fmt.Sprintf("%dd", int(elapsed.Hours()/24))
 	}
+}
+
+func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
+	stats := statsJSON{
+		Agents:        agentStatsRows(status),
+		DiskUsedBytes: gxStorageDiskUsedBytes(),
+	}
+
+	db, err := storage.Open(ctx)
+	if err != nil {
+		return stats
+	}
+	defer db.Close()
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		return stats
+	}
+	defer store.Close()
+
+	repos, err := doctorStatsRepos(ctx, store, status.Capture.RepoRoot)
+	if err != nil {
+		return stats
+	}
+	for _, repo := range repos {
+		repoStats, err := doctorRepoStackStats(ctx, store, repo.ID)
+		if err != nil {
+			continue
+		}
+		stats.ApprovedStacksWaitingForPublish += repoStats.ApprovedStacksWaitingForPublish
+		stats.PublishedStacksWaitingForReview += repoStats.PublishedStacksWaitingForReview
+	}
+	return stats
+}
+
+func doctorStatsRepos(ctx context.Context, store *storage.Store, repoRoot string) ([]storage.Repo, error) {
+	repoRoot = strings.TrimSpace(repoRoot)
+	if repoRoot != "" {
+		repo, err := store.FindRepoByRoot(ctx, repoRoot)
+		if err != nil {
+			return nil, err
+		}
+		if repo != nil {
+			return []storage.Repo{*repo}, nil
+		}
+	}
+	return store.ListRepos(ctx)
+}
+
+func doctorRepoStackStats(ctx context.Context, store *storage.Store, repoID int64) (statsJSON, error) {
+	var stats statsJSON
+	openCloudBookmarks, err := store.CountOpenCloudBookmarksByRepoID(ctx, repoID)
+	if err == nil {
+		stats.PublishedStacksWaitingForReview = openCloudBookmarks
+	}
+	stacks, err := store.ListStacksByRepoID(ctx, repoID)
+	if err != nil {
+		return stats, err
+	}
+	for _, stack := range stacks {
+		if vcs.IsTerminalStackStatus(stack.Status) {
+			continue
+		}
+		changes, err := store.ListChangesByStackID(ctx, stack.ID)
+		if err != nil || len(changes) == 0 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(stack.Status), "draft") && isGXOwnedStack(stack) {
+			stats.ApprovedStacksWaitingForPublish++
+		}
+	}
+	return stats, nil
+}
+
+func isGXOwnedStack(stack storage.Stack) bool {
+	return strings.HasPrefix(strings.TrimSpace(stack.BookmarkName), "gx/")
+}
+
+func agentStatsRows(status doctorJSON) []agentStatsJSON {
+	byAgent := make(map[string]ledgerRowJSON, len(status.Ledger))
+	for _, row := range status.Ledger {
+		byAgent[row.Agent] = row
+	}
+	rows := make([]agentStatsJSON, 0, 3)
+	for _, agent := range []string{"cursor", "codex", "claude"} {
+		ledger := byAgent[agent]
+		sessions := parseLedgerSessions(ledger.Calls)
+		if agent == "cursor" && sessions == 0 {
+			sessions = status.Cursor.Sessions
+		}
+		rows = append(rows, agentStatsJSON{
+			Agent:    agent,
+			Label:    agentStatsLabel(agent),
+			Health:   agentStatsHealth(agent, ledger, status),
+			Sessions: sessions,
+		})
+	}
+	return rows
+}
+
+func agentStatsLabel(agent string) string {
+	switch agent {
+	case "cursor":
+		return "Cursor"
+	case "codex":
+		return "Codex"
+	case "claude":
+		return "Claude"
+	default:
+		return agent
+	}
+}
+
+func agentStatsHealth(agent string, row ledgerRowJSON, status doctorJSON) string {
+	if agent == "cursor" && !status.Cursor.Found {
+		return "red"
+	}
+	switch strings.ToLower(strings.TrimSpace(row.Status)) {
+	case "indexed", "attached":
+		return "green"
+	case "waiting":
+		return "yellow"
+	default:
+		return "yellow"
+	}
+}
+
+func parseLedgerSessions(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "—" {
+		return 0
+	}
+	var out int
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			break
+		}
+		out = out*10 + int(r-'0')
+	}
+	return out
+}
+
+func gxStorageDiskUsedBytes() int64 {
+	root, err := storage.DefaultDir()
+	if err != nil {
+		return 0
+	}
+	var total int64
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		if strings.HasPrefix(filepath.Base(path), "gx.db.backup-") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil || info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
 }
 
 func diagnoseSummary(status doctorJSON) diagnoseJSON {
