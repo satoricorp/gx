@@ -3010,7 +3010,7 @@ func publishGitPushStatusText(status string) string {
 
 func publishGitHubPRStatusText(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "created", "existing", "stored":
+	case "created", "existing", "stored", "updated":
 		return "ok: " + strings.TrimSpace(status)
 	case "warning":
 		return "warn: not created"

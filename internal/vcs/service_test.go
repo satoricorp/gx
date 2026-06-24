@@ -335,6 +335,16 @@ func TestGitHubPullRequestURL(t *testing.T) {
 	}
 }
 
+func TestGitHubPullRequestBodyIncludesSummaryAndRevisions(t *testing.T) {
+	got := githubPullRequestBody(StackInfo{Name: "Update Mintlify docs for Aspen"}, []PushedChange{{
+		Change: ChangeInfo{Description: "update Mintlify docs for Aspen"},
+	}})
+	want := "Published by GX.\n\n## Summary\nUpdate Mintlify docs for Aspen\n\n## Revisions\n- update Mintlify docs for Aspen"
+	if got != want {
+		t.Fatalf("githubPullRequestBody() = %q, want %q", got, want)
+	}
+}
+
 func TestEnsureGitHubPullRequestReturnsExistingPR(t *testing.T) {
 	repoRoot := t.TempDir()
 	var gotAuth string
@@ -346,7 +356,12 @@ func TestEnsureGitHubPullRequestReturnsExistingPR(t *testing.T) {
 		if r.URL.Path != "/repos/satoricorp/gx/pulls" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`[{"html_url":"https://github.com/satoricorp/gx/pull/7"}]`))
+		response := []map[string]any{{
+			"html_url": "https://github.com/satoricorp/gx/pull/7",
+			"number":   7,
+			"body":     githubPullRequestBody(StackInfo{Name: "Demo stack", BaseRef: "main"}, nil),
+		}}
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
@@ -370,6 +385,58 @@ func TestEnsureGitHubPullRequestReturnsExistingPR(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("runner calls = %#v, want no gh shellout", runner.calls)
+	}
+}
+
+func TestEnsureGitHubPullRequestUpdatesExistingGXBody(t *testing.T) {
+	repoRoot := t.TempDir()
+	var patchPayload map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			response := []map[string]any{{
+				"html_url": "https://github.com/satoricorp/gx/pull/10",
+				"number":   10,
+				"body":     "Published by GX.\n\nRevisions:\n- update Mintlify docs for Aspen",
+			}}
+			_ = json.NewEncoder(w).Encode(response)
+		case http.MethodPatch:
+			if r.URL.Path != "/repos/satoricorp/gx/pulls/10" {
+				t.Fatalf("patch path = %q", r.URL.Path)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&patchPayload); err != nil {
+				t.Fatalf("decode patch payload: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"html_url": "https://github.com/satoricorp/gx/pull/10",
+				"number":   10,
+				"body":     patchPayload["body"],
+			})
+		default:
+			t.Fatalf("method = %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+	svc := NewServiceWithRunner(&fakeRunner{})
+	remoteURL := "git@github.com:satoricorp/gx.git"
+
+	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+		Name:    "Update Mintlify docs for Aspen",
+		BaseRef: "main",
+	}, "feature/aspen-docs", []PushedChange{{
+		Change: ChangeInfo{ChangeID: "abc123", Description: "update Mintlify docs for Aspen"},
+	}})
+	if got == nil || *got != "https://github.com/satoricorp/gx/pull/10" {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want existing PR URL", got)
+	}
+	if status != "updated" || len(warnings) != 0 {
+		t.Fatalf("status=%q warnings=%#v, want updated without warnings", status, warnings)
+	}
+	wantBody := "Published by GX.\n\n## Summary\nUpdate Mintlify docs for Aspen\n\n## Revisions\n- update Mintlify docs for Aspen"
+	if patchPayload["body"] != wantBody {
+		t.Fatalf("patched body = %q, want %q", patchPayload["body"], wantBody)
 	}
 }
 
@@ -439,6 +506,10 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	}
 	if createPayload["base"] != "main" || createPayload["head"] != "feature/demo" || createPayload["title"] != "Demo stack" {
 		t.Fatalf("create payload = %#v", createPayload)
+	}
+	wantBody := "Published by GX.\n\n## Summary\nDemo stack\n\n## Revisions\n- Add publish flow"
+	if createPayload["body"] != wantBody {
+		t.Fatalf("create body = %q, want %q", createPayload["body"], wantBody)
 	}
 }
 

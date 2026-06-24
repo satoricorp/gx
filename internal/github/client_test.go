@@ -21,7 +21,7 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 		if r.URL.Query().Get("head") != "satoricorp:feature/demo" {
 			t.Fatalf("head query = %q", r.URL.Query().Get("head"))
 		}
-		_, _ = w.Write([]byte(`[{"html_url":"https://github.com/satoricorp/gx/pull/7"}]`))
+		_, _ = w.Write([]byte(`[{"html_url":"https://github.com/satoricorp/gx/pull/7","number":7,"body":"Published by GX."}]`))
 	}))
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
@@ -37,6 +37,9 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 	}
 	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/7" {
 		t.Fatalf("FindPullRequest() = %#v", pr)
+	}
+	if pr.Number != 7 || pr.Body != "Published by GX." {
+		t.Fatalf("FindPullRequest() metadata = %#v, want number and body", pr)
 	}
 	if gotAuth != "Bearer token-one" {
 		t.Fatalf("Authorization = %q", gotAuth)
@@ -74,6 +77,41 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 	}
 	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/8" {
 		t.Fatalf("CreatePullRequest() = %#v", pr)
+	}
+}
+
+func TestUpdatePullRequestUsesGitHubAPI(t *testing.T) {
+	var gotPayload map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if r.URL.Path != "/repos/satoricorp/gx/pulls/8" {
+			t.Fatalf("path = %q, want pull endpoint", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"html_url":"https://github.com/satoricorp/gx/pull/8","number":8,"body":"Published by GX.\n\n## Summary\nDemo"}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	pr, err := client.UpdatePullRequest(context.Background(), UpdatePullRequestOptions{
+		Owner:  "satoricorp",
+		Repo:   "gx",
+		Number: 8,
+		Body:   "Published by GX.\n\n## Summary\nDemo",
+	})
+	if err != nil {
+		t.Fatalf("UpdatePullRequest() error = %v", err)
+	}
+	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/8" || pr.Number != 8 {
+		t.Fatalf("UpdatePullRequest() = %#v", pr)
+	}
+	if gotPayload["body"] != "Published by GX.\n\n## Summary\nDemo" {
+		t.Fatalf("payload body = %q", gotPayload["body"])
 	}
 }
 

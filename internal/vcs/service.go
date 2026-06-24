@@ -2470,7 +2470,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, stack.BaseRef)
 	title := strings.TrimSpace(firstNonEmpty(stack.Name, stack.BookmarkName, refName))
-	body := githubPullRequestBody(pushed)
+	body := githubPullRequestBody(stack, pushed)
 
 	client, err := githubapi.NewClient(host)
 	if err != nil {
@@ -2490,7 +2490,23 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 		return nil, "warning", []string{fmt.Sprintf("Could not check for an existing GitHub PR for target branch %s (the published branch): %v. Retry `gx publish %s` after GitHub access is fixed.", refName, err, refName)}
 	}
 	if existing != nil && strings.TrimSpace(existing.URL) != "" {
-		return ptr(strings.TrimSpace(existing.URL)), "existing", nil
+		existingURL := strings.TrimSpace(existing.URL)
+		if shouldUpdateGitHubPullRequestBody(existing.Body, body) {
+			updated, err := client.UpdatePullRequest(ctx, githubapi.UpdatePullRequestOptions{
+				Owner:  owner,
+				Repo:   repoName,
+				Number: existing.Number,
+				Body:   body,
+			})
+			if err != nil {
+				return ptr(existingURL), "existing", []string{fmt.Sprintf("Could not update GitHub PR body for %s: %v. The PR still exists at %s.", refName, err, existingURL)}
+			}
+			if updated != nil && strings.TrimSpace(updated.URL) != "" {
+				existingURL = strings.TrimSpace(updated.URL)
+			}
+			return ptr(existingURL), "updated", nil
+		}
+		return ptr(existingURL), "existing", nil
 	}
 	remoteName := "origin"
 	if repo.DefaultRemote != nil && strings.TrimSpace(*repo.DefaultRemote) != "" {
@@ -2551,9 +2567,15 @@ func (s *Service) remoteBranchHead(ctx context.Context, repoRoot, remoteName, br
 	return "", nil
 }
 
-func githubPullRequestBody(pushed []PushedChange) string {
+func githubPullRequestBody(stack StackInfo, pushed []PushedChange) string {
 	var body strings.Builder
-	body.WriteString("Published by GX.\n\nRevisions:")
+	body.WriteString("Published by GX.\n\n## Summary\n")
+	summary := githubPullRequestSummary(stack, pushed)
+	if summary == "" {
+		summary = "(none)"
+	}
+	body.WriteString(summary)
+	body.WriteString("\n\n## Revisions")
 	if len(pushed) == 0 {
 		body.WriteString("\n- (none)")
 		return body.String()
@@ -2567,6 +2589,36 @@ func githubPullRequestBody(pushed []PushedChange) string {
 		body.WriteString(description)
 	}
 	return body.String()
+}
+
+func githubPullRequestSummary(stack StackInfo, pushed []PushedChange) string {
+	if summary := strings.TrimSpace(firstNonEmpty(stack.Name, stack.BookmarkName)); summary != "" {
+		return summary
+	}
+	descriptions := make([]string, 0, len(pushed))
+	for _, change := range pushed {
+		description := strings.TrimSpace(change.Change.Description)
+		if description != "" && !IsPlaceholderDescription(description) {
+			descriptions = append(descriptions, description)
+		}
+	}
+	switch len(descriptions) {
+	case 0:
+		return ""
+	case 1:
+		return descriptions[0]
+	default:
+		return fmt.Sprintf("Publishes %d GX revisions: %s.", len(descriptions), strings.Join(descriptions, "; "))
+	}
+}
+
+func shouldUpdateGitHubPullRequestBody(existing, desired string) bool {
+	existing = strings.TrimSpace(existing)
+	desired = strings.TrimSpace(desired)
+	if desired == "" || existing == desired {
+		return false
+	}
+	return existing == "" || strings.HasPrefix(existing, "Published by GX.")
 }
 
 func (s *Service) revisionsForStack(ctx context.Context, stack StackInfo) ([]RevisionSummary, error) {
