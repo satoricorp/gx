@@ -26,6 +26,7 @@ type ReviewBrief struct {
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
 	Context       []ContextSnippet   `json:"context"`
+	SourceRefs    []SourceRef        `json:"source_refs,omitempty"`
 	SourceCatalog []SourceBrief      `json:"source_catalog"`
 	Rubric        ArchitectureRubric `json:"rubric"`
 }
@@ -76,11 +77,37 @@ type ContextSnippet struct {
 	Text        string `json:"text"`
 	Source      string `json:"source,omitempty"`
 	SourceLabel string `json:"source_label,omitempty"`
+	Title       string `json:"title,omitempty"`
+	URL         string `json:"url,omitempty"`
+	File        string `json:"file,omitempty"`
+	StartLine   int    `json:"start_line,omitempty"`
+	EndLine     int    `json:"end_line,omitempty"`
+	Commit      string `json:"commit,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+	RequestID   string `json:"request_id,omitempty"`
+	ResponseID  string `json:"response_id,omitempty"`
+	ChunkHash   string `json:"chunk_hash,omitempty"`
 }
 
 type SourceBrief struct {
 	ID     string   `json:"id"`
 	Scopes []string `json:"scopes"`
+}
+
+type SourceRef struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Title      string `json:"title,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Source     string `json:"source,omitempty"`
+	File       string `json:"file,omitempty"`
+	StartLine  int    `json:"start_line,omitempty"`
+	EndLine    int    `json:"end_line,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	ResponseID string `json:"response_id,omitempty"`
+	ChunkHash  string `json:"chunk_hash,omitempty"`
 }
 
 type ArchitectureRubric struct {
@@ -103,7 +130,7 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		return ReviewBrief{}, err
 	}
 	contextSnippets = labelContextSnippets(contextSnippets)
-	changed := changedFiles(ctx, repoRoot)
+	changed := reviewChangedFiles(ctx, repoRoot)
 	return ReviewBrief{
 		RepoRoot:      repoRoot,
 		Scope:         opts.Scope,
@@ -125,6 +152,7 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		},
 		Hints:         hints,
 		Context:       contextSnippets,
+		SourceRefs:    sourceRefsFromContextSnippets(contextSnippets),
 		SourceCatalog: sourceBriefs(sources),
 		Rubric:        reviewRubric(opts),
 	}, nil
@@ -428,6 +456,76 @@ func sourceBriefs(sources []Source) []SourceBrief {
 		out = append(out, SourceBrief{ID: source.ID, Scopes: source.Scopes})
 	}
 	return out
+}
+
+func sourceRefsFromContextSnippets(snippets []ContextSnippet) []SourceRef {
+	seen := map[string]struct{}{}
+	var out []SourceRef
+	for _, snippet := range snippets {
+		ref := sourceRefFromContextSnippet(snippet)
+		if ref.ID == "" {
+			continue
+		}
+		if _, ok := seen[ref.ID]; ok {
+			continue
+		}
+		seen[ref.ID] = struct{}{}
+		out = append(out, ref)
+	}
+	return out
+}
+
+func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
+	id := strings.TrimSpace(snippet.SourceLabel)
+	if id == "" {
+		id = strings.TrimSpace(snippet.Ref)
+	}
+	if id == "" {
+		return SourceRef{}
+	}
+	return SourceRef{
+		ID:         id,
+		Kind:       sourceRefKind(snippet),
+		Title:      sourceRefTitle(snippet),
+		URL:        strings.TrimSpace(snippet.URL),
+		Source:     strings.TrimSpace(snippet.Source),
+		File:       firstNonEmpty(snippet.File, snippet.Ref),
+		StartLine:  snippet.StartLine,
+		EndLine:    snippet.EndLine,
+		Commit:     strings.TrimSpace(snippet.Commit),
+		SessionID:  strings.TrimSpace(snippet.SessionID),
+		RequestID:  strings.TrimSpace(snippet.RequestID),
+		ResponseID: strings.TrimSpace(snippet.ResponseID),
+		ChunkHash:  strings.TrimSpace(snippet.ChunkHash),
+	}
+}
+
+func sourceRefKind(snippet ContextSnippet) string {
+	switch strings.TrimSpace(snippet.Kind) {
+	case "indexed_code":
+		return "code"
+	case "indexed_session":
+		return "session"
+	case "review_resource":
+		return "resource"
+	case "domain_doc", "repo_doc", "adr", "dependency_manifest":
+		return "local"
+	default:
+		return firstNonEmpty(snippet.Kind, "context")
+	}
+}
+
+func sourceRefTitle(snippet ContextSnippet) string {
+	if title := strings.TrimSpace(snippet.Title); title != "" {
+		return title
+	}
+	if snippet.File != "" && snippet.StartLine > 0 {
+		return fmt.Sprintf("%s:%d", snippet.File, snippet.StartLine)
+	}
+	if snippet.Ref != "" {
+		return snippet.Ref
+	}
+	return snippet.Kind
 }
 
 func reviewRubric(opts Options) ArchitectureRubric {

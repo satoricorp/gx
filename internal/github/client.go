@@ -25,6 +25,12 @@ type PullRequest struct {
 	URL string
 }
 
+type IssueComment struct {
+	ID   int64
+	URL  string
+	Body string
+}
+
 type CreatePullRequestOptions struct {
 	Host       string
 	Owner      string
@@ -33,6 +39,14 @@ type CreatePullRequestOptions struct {
 	HeadBranch string
 	Title      string
 	Body       string
+}
+
+type IssueCommentOptions struct {
+	Owner  string
+	Repo   string
+	Number int
+	Body   string
+	Marker string
 }
 
 func NewClient(host string) (*Client, error) {
@@ -128,6 +142,99 @@ func (c *Client) CreatePullRequest(ctx context.Context, opts CreatePullRequestOp
 		return nil, nil
 	}
 	return &PullRequest{URL: strings.TrimSpace(payload.HTMLURL)}, nil
+}
+
+func (c *Client) ListIssueComments(ctx context.Context, opts IssueCommentOptions) ([]IssueComment, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues/%d/comments?per_page=100", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), opts.Number)
+	req, err := c.request(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	var payload []struct {
+		ID      int64  `json:"id"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("list github issue comments: %w", err)
+	}
+	comments := make([]IssueComment, 0, len(payload))
+	for _, item := range payload {
+		comments = append(comments, IssueComment{
+			ID:   item.ID,
+			URL:  strings.TrimSpace(item.HTMLURL),
+			Body: item.Body,
+		})
+	}
+	return comments, nil
+}
+
+func (c *Client) CreateIssueComment(ctx context.Context, opts IssueCommentOptions) (*IssueComment, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	body, err := json.Marshal(map[string]string{"body": opts.Body})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), opts.Number)
+	req, err := c.request(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		ID      int64  `json:"id"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("create github issue comment: %w", err)
+	}
+	return &IssueComment{ID: payload.ID, URL: strings.TrimSpace(payload.HTMLURL), Body: payload.Body}, nil
+}
+
+func (c *Client) UpdateIssueComment(ctx context.Context, opts IssueCommentOptions, commentID int64) (*IssueComment, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	body, err := json.Marshal(map[string]string{"body": opts.Body})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues/comments/%d", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), commentID)
+	req, err := c.request(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		ID      int64  `json:"id"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("update github issue comment: %w", err)
+	}
+	return &IssueComment{ID: payload.ID, URL: strings.TrimSpace(payload.HTMLURL), Body: payload.Body}, nil
+}
+
+func (c *Client) UpsertIssueComment(ctx context.Context, opts IssueCommentOptions) (*IssueComment, error) {
+	marker := strings.TrimSpace(opts.Marker)
+	if marker == "" {
+		return c.CreateIssueComment(ctx, opts)
+	}
+	comments, err := c.ListIssueComments(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	for _, comment := range comments {
+		if strings.Contains(comment.Body, marker) {
+			return c.UpdateIssueComment(ctx, opts, comment.ID)
+		}
+	}
+	return c.CreateIssueComment(ctx, opts)
 }
 
 func (c *Client) request(ctx context.Context, method, endpoint string, body io.Reader) (*http.Request, error) {

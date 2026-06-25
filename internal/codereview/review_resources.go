@@ -211,7 +211,7 @@ type reviewResourceSignalSet struct {
 }
 
 func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) reviewResourceSignalSet {
-	files := changedFiles(ctx, repoRoot)
+	files := reviewChangedFiles(ctx, repoRoot)
 	if len(files) == 0 {
 		files = facts.Files
 	}
@@ -321,6 +321,8 @@ func reviewResourceSnippets(rows []reviewResourceRow, limit int, namespace strin
 			Kind:   "review_resource",
 			Ref:    ref,
 			Source: "turbopuffer:" + namespace,
+			Title:  title,
+			URL:    stringValue(row["url"]),
 			Text:   reviewResourceSnippetText(title, row, text),
 		})
 		if len(snippets) >= limit {
@@ -598,4 +600,303 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+const (
+	defaultIndexedContextLimit     = 8
+	defaultIndexedDeepContextLimit = 24
+)
+
+type IndexedContextRetriever struct {
+	Embedder  reviewResourceEmbedder
+	Store     indexedContextStore
+	Namespace string
+	Limit     int
+}
+
+type indexedContextStore interface {
+	Query(ctx context.Context, req indexedContextQuery) ([]indexedContextRow, error)
+}
+
+type indexedContextQuery struct {
+	Vector            []float32
+	Limit             int
+	Filters           any
+	IncludeAttributes []string
+}
+
+type indexedContextRow map[string]any
+
+type turboPufferIndexedContextStore struct {
+	apiKey     string
+	baseURL    string
+	namespace  string
+	httpClient *http.Client
+}
+
+func indexedContextRetrieverFromEnv() ContextRetriever {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_INDEXED_CONTEXT")), "0") {
+		return nil
+	}
+	cfg, err := semantic.ConfigFromEnv()
+	if err != nil || !cfg.Enabled {
+		return nil
+	}
+	return IndexedContextRetriever{
+		Embedder: semantic.NewOpenAIEmbedder(cfg),
+		Store: turboPufferIndexedContextStore{
+			apiKey:     cfg.TurboPufferAPIKey,
+			baseURL:    strings.TrimRight(cfg.TurboPufferBaseURL, "/"),
+			namespace:  strings.Trim(cfg.TurboPufferNamespace, "/"),
+			httpClient: &http.Client{Timeout: 20 * time.Second},
+		},
+		Namespace: cfg.TurboPufferNamespace,
+		Limit:     reviewEnvInt("GX_REVIEW_INDEXED_CONTEXT_TOP_K", defaultIndexedContextLimit),
+	}
+}
+
+func (r IndexedContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+	if r.Embedder == nil || r.Store == nil {
+		return nil, nil
+	}
+	signals := reviewResourceSignals(ctx, repoRoot, opts, facts, hints)
+	queryText := strings.Join([]string{
+		"GX indexed codebase and session context query",
+		reviewResourceQueryText(opts, signals),
+		"Find code chunks and prior session transcript chunks that explain changed behavior, related Modules, previous agent decisions, and review risks.",
+	}, "\n")
+	vectors, err := r.Embedder.Embed(ctx, []string{queryText})
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != 1 {
+		return nil, fmt.Errorf("indexed context embedding returned %d vectors", len(vectors))
+	}
+	limit := r.Limit
+	if opts.Deep && limit < defaultIndexedDeepContextLimit {
+		limit = defaultIndexedDeepContextLimit
+	}
+	if limit <= 0 {
+		limit = defaultIndexedContextLimit
+	}
+	rows, err := r.Store.Query(ctx, indexedContextQuery{
+		Vector:            vectors[0],
+		Limit:             limit,
+		Filters:           indexedContextFilter(repoRoot),
+		IncludeAttributes: indexedContextAttributes(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return indexedContextSnippets(rows, limit, r.Namespace), nil
+}
+
+func indexedContextFilter(repoRoot string) any {
+	conditions := []any{
+		[]any{"source_kind", "In", []string{"code_file", "session_transcript"}},
+	}
+	if strings.TrimSpace(repoRoot) != "" {
+		conditions = append(conditions, []any{"repo_root", "Eq", strings.TrimSpace(repoRoot)})
+	}
+	return []any{"And", conditions}
+}
+
+func indexedContextAttributes() []string {
+	return []string{
+		"text",
+		"source_kind",
+		"source_id",
+		"repo_root",
+		"repo_full_name",
+		"branch_name",
+		"commit_id",
+		"revision_title",
+		"file_path",
+		"symbol",
+		"start_line",
+		"end_line",
+		"chunk_hash",
+		"language",
+		"doc_type",
+		"session_id",
+		"request_id",
+		"response_id",
+		"agent_tool",
+		"provider",
+		"model",
+		"created_at",
+		"provenance_status",
+	}
+}
+
+func (s turboPufferIndexedContextStore) Query(ctx context.Context, req indexedContextQuery) ([]indexedContextRow, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = defaultIndexedContextLimit
+	}
+	payload := map[string]any{
+		"rank_by":            []any{"vector", "ANN", req.Vector},
+		"limit":              limit,
+		"include_attributes": req.IncludeAttributes,
+	}
+	if req.Filters != nil {
+		payload["filters"] = req.Filters
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal indexed context query: %w", err)
+	}
+	endpoint := strings.TrimRight(s.baseURL, "/") + "/v2/namespaces/" + url.PathEscape(strings.Trim(s.namespace, "/")) + "/query"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create indexed context query: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+s.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 20 * time.Second}
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("query indexed context: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, fmt.Errorf("indexed context is still building")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("query indexed context: status %s", resp.Status)
+	}
+	var decoded struct {
+		Rows []indexedContextRow `json:"rows"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("decode indexed context query: %w", err)
+	}
+	return decoded.Rows, nil
+}
+
+func indexedContextSnippets(rows []indexedContextRow, limit int, namespace string) []ContextSnippet {
+	if limit <= 0 {
+		limit = defaultIndexedContextLimit
+	}
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = "gx-sessions"
+	}
+	seen := map[string]struct{}{}
+	var snippets []ContextSnippet
+	for _, row := range rows {
+		snippet, ok := indexedContextSnippet(row, namespace)
+		if !ok {
+			continue
+		}
+		key := snippet.Kind + "\x00" + snippet.Ref + "\x00" + snippet.ChunkHash
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		snippets = append(snippets, snippet)
+		if len(snippets) >= limit {
+			break
+		}
+	}
+	return snippets
+}
+
+func indexedContextSnippet(row indexedContextRow, namespace string) (ContextSnippet, bool) {
+	text := stringValue(row["text"])
+	if strings.TrimSpace(text) == "" {
+		return ContextSnippet{}, false
+	}
+	sourceKind := stringValue(row["source_kind"])
+	ref := firstNonEmpty(stringValue(row["source_id"]), stringValue(row["file_path"]), stringValue(row["session_id"]))
+	if ref == "" {
+		return ContextSnippet{}, false
+	}
+	snippet := ContextSnippet{
+		Kind:       "indexed_context",
+		Ref:        ref,
+		Source:     "turbopuffer:" + strings.TrimSpace(namespace),
+		Title:      firstNonEmpty(stringValue(row["revision_title"]), stringValue(row["symbol"]), ref),
+		Text:       indexedContextSnippetText(row, text),
+		File:       stringValue(row["file_path"]),
+		StartLine:  intValue(row["start_line"]),
+		EndLine:    intValue(row["end_line"]),
+		Commit:     stringValue(row["commit_id"]),
+		SessionID:  stringValue(row["session_id"]),
+		RequestID:  stringValue(row["request_id"]),
+		ResponseID: stringValue(row["response_id"]),
+		ChunkHash:  stringValue(row["chunk_hash"]),
+	}
+	switch sourceKind {
+	case "code_file":
+		snippet.Kind = "indexed_code"
+		if snippet.File != "" && snippet.StartLine > 0 {
+			snippet.Ref = fmt.Sprintf("%s:%d", snippet.File, snippet.StartLine)
+		}
+	case "session_transcript":
+		snippet.Kind = "indexed_session"
+		if snippet.SessionID != "" {
+			snippet.Ref = firstNonEmpty(snippet.SessionID+"/"+snippet.RequestID, snippet.SessionID)
+		}
+	default:
+		return ContextSnippet{}, false
+	}
+	return snippet, true
+}
+
+func indexedContextSnippetText(row indexedContextRow, text string) string {
+	var b strings.Builder
+	for _, key := range []string{
+		"source_kind",
+		"repo_full_name",
+		"repo_root",
+		"branch_name",
+		"commit_id",
+		"revision_title",
+		"file_path",
+		"symbol",
+		"start_line",
+		"end_line",
+		"chunk_hash",
+		"session_id",
+		"request_id",
+		"response_id",
+		"agent_tool",
+		"provider",
+		"model",
+		"provenance_status",
+	} {
+		value := displayAttribute(row[key])
+		if value == "" {
+			continue
+		}
+		b.WriteString(key)
+		b.WriteString(": ")
+		b.WriteString(value)
+		b.WriteString("\n")
+	}
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
+	b.WriteString(text)
+	return strings.TrimSpace(b.String())
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		n, _ := typed.Int64()
+		return int(n)
+	default:
+		return 0
+	}
 }

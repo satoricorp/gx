@@ -444,6 +444,31 @@ func strengthRank(strength string) int {
 	}
 }
 
+func mergeFindings(local []Finding, ai []Finding) []Finding {
+	seen := map[string]struct{}{}
+	out := make([]Finding, 0, len(local)+len(ai))
+	for _, finding := range append(append([]Finding{}, local...), ai...) {
+		id := strings.TrimSpace(finding.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, finding)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := strengthRank(out[i].Strength)
+		right := strengthRank(out[j].Strength)
+		if left != right {
+			return left < right
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
 func missingAgentsFinding(facts RepoFacts) Finding {
 	if present(facts.Docs, "AGENTS.md") {
 		return Finding{}

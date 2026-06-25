@@ -637,6 +637,7 @@ func reviewDeveloperPrompt() string {
 		"Use static_tool_results as hard evidence. Failed tests, vet warnings, compile errors, and linter-like diagnostics should outrank speculative architecture advice. Ignore skipped tool results unless the skipped reason itself is clearly actionable.",
 		"Use static.diff_snippets as the primary evidence for what changed. Prefer findings tied to changed lines over repo-wide advice.",
 		"Use code_quality_hints as concrete candidates. Confirm whether they matter from the provided snippets before recommending a fix.",
+		"Treat source_refs as the attribution set. AI output is synthesis, not evidence; every recommendation must be traceable to static facts, diff snippets, context snippets, or source_refs.",
 		"Every recommendation must name at least one changed file path, Module, static tool result, code_quality_hint, or context source label. Do not produce coverage-only or structure-only recommendations without concrete evidence.",
 		"The recommendation field must be concrete work: name the specific files or Modules to touch, the first operation to perform, and the verification to run. Avoid vague verbs like assess, consider, clarify, improve, harden, or refactor unless followed by exact code actions.",
 		"The benefit field must state the expected payoff in concrete engineering terms: performance, readability, fewer lines of code, better error handling, better testability, lower coupling, faster onboarding, more reproducible dependencies, or better observability.",

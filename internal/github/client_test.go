@@ -77,6 +77,87 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 	}
 }
 
+func TestUpsertIssueCommentCreatesWhenMissing(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/satoricorp/gx/issues/8/comments":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/satoricorp/gx/issues/8/comments":
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if payload["body"] != "new body" {
+				t.Fatalf("body = %q, want new body", payload["body"])
+			}
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/satoricorp/gx/pull/8#issuecomment-12","body":"new body"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	comment, err := client.UpsertIssueComment(context.Background(), IssueCommentOptions{
+		Owner:  "satoricorp",
+		Repo:   "gx",
+		Number: 8,
+		Body:   "new body",
+		Marker: "<!-- marker -->",
+	})
+	if err != nil {
+		t.Fatalf("UpsertIssueComment() error = %v", err)
+	}
+	if comment == nil || comment.ID != 12 {
+		t.Fatalf("comment = %#v, want created comment", comment)
+	}
+	if got := strings.Join(methods, ","); got != "GET /repos/satoricorp/gx/issues/8/comments,POST /repos/satoricorp/gx/issues/8/comments" {
+		t.Fatalf("requests = %q", got)
+	}
+}
+
+func TestUpsertIssueCommentUpdatesExistingMarker(t *testing.T) {
+	var patched bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/satoricorp/gx/issues/8/comments":
+			_, _ = w.Write([]byte(`[{"id":22,"html_url":"https://github.com/satoricorp/gx/pull/8#issuecomment-22","body":"old\n<!-- marker -->"}]`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/repos/satoricorp/gx/issues/comments/22":
+			patched = true
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if payload["body"] != "replacement" {
+				t.Fatalf("body = %q, want replacement", payload["body"])
+			}
+			_, _ = w.Write([]byte(`{"id":22,"html_url":"https://github.com/satoricorp/gx/pull/8#issuecomment-22","body":"replacement"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	comment, err := client.UpsertIssueComment(context.Background(), IssueCommentOptions{
+		Owner:  "satoricorp",
+		Repo:   "gx",
+		Number: 8,
+		Body:   "replacement",
+		Marker: "<!-- marker -->",
+	})
+	if err != nil {
+		t.Fatalf("UpsertIssueComment() error = %v", err)
+	}
+	if comment == nil || comment.ID != 22 || !patched {
+		t.Fatalf("comment = %#v patched=%t, want updated comment", comment, patched)
+	}
+}
+
 func TestGitHubAuthError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token", http.StatusUnauthorized)

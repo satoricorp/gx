@@ -103,8 +103,8 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if e.reviewer != nil {
 		reviewProgress(opts, "Asking AI reviewer")
 		if aiFindings, err := e.reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
-			findings = aiFindings
-			reviewerLabel = "ai"
+			findings = mergeFindings(findings, aiFindings)
+			reviewerLabel = "heuristic+ai"
 		}
 	}
 	findings = filterPatchFocusedFindings(reviewContext, findings)
@@ -122,10 +122,11 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		DependencyFiles:   facts.DependencyFiles,
 		TestFileCount:     facts.TestFileCount,
 		TrackedFileCount:  facts.TrackedFileCount,
-		ChangedFiles:      changedFiles(ctx, repoRoot),
+		ChangedFiles:      reviewChangedFiles(ctx, repoRoot),
 		ObservationLabels: facts.observations(),
 		Findings:          findings,
 		Sources:           sources,
+		SourceRefs:        brief.SourceRefs,
 		Reviewer:          reviewerLabel,
 		ContextSnippets:   len(brief.Context),
 		Verbose:           opts.Verbose,

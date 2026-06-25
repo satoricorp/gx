@@ -3,6 +3,7 @@ package codereview
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
@@ -70,6 +72,7 @@ type Report struct {
 	ObservationLabels []string
 	Findings          []Finding
 	Sources           []Source
+	SourceRefs        []SourceRef
 	Reviewer          string
 	ContextSnippets   int
 	Verbose           bool
@@ -479,6 +482,79 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 		if file != "" {
 			files = append(files, file)
 		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+func reviewChangedFiles(ctx context.Context, repoRoot string) []string {
+	files := changedFiles(ctx, repoRoot)
+	if len(files) > 0 {
+		return files
+	}
+	return gxRevisionChangedFiles(ctx, repoRoot)
+}
+
+func gxRevisionChangedFiles(ctx context.Context, repoRoot string) []string {
+	repoRoot = strings.TrimSpace(repoRoot)
+	if repoRoot == "" {
+		return nil
+	}
+	db, err := storage.Open(ctx)
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, `
+		WITH latest_revisions AS (
+			SELECT cr.change_id, cr.changed_files_json
+			FROM change_revisions cr
+			JOIN (
+				SELECT change_id, MAX(created_at) AS created_at
+				FROM change_revisions
+				GROUP BY change_id
+			) latest
+				ON latest.change_id = cr.change_id AND latest.created_at = cr.created_at
+		)
+		SELECT lr.changed_files_json
+		FROM repos r
+		JOIN stacks s ON s.repo_id = r.id
+		JOIN stack_changes sc ON sc.stack_id = s.id
+		JOIN changes c ON c.id = sc.change_id
+		JOIN latest_revisions lr ON lr.change_id = c.id
+		WHERE r.root_path = ? AND COALESCE(s.status, '') != 'merged'
+		ORDER BY sc.position ASC, c.updated_at DESC
+	`, repoRoot)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil
+		}
+		var files []string
+		if err := json.Unmarshal([]byte(raw), &files); err != nil {
+			continue
+		}
+		for _, file := range files {
+			file = strings.TrimSpace(filepath.ToSlash(file))
+			if file == "" {
+				continue
+			}
+			seen[file] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+	files := make([]string, 0, len(seen))
+	for file := range seen {
+		files = append(files, file)
 	}
 	sort.Strings(files)
 	return files
