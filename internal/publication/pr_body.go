@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -570,8 +571,15 @@ func prContextQueryText(artifact reviewbundle.Artifact, catalog prBodyCatalog) s
 
 func buildPRBodyCatalog(artifact reviewbundle.Artifact) prBodyCatalog {
 	revisions := revisionSummaries(artifact)
+	extraRevision, extraPatch, hasExtraRevision := headRevisionFromGit(artifact, revisions)
+	if hasExtraRevision {
+		revisions = append(revisions, extraRevision)
+	}
 	hunks := pullRequestHunks(artifact)
-	stats := bodyStats(artifact, revisions)
+	if hasExtraRevision {
+		hunks = append(hunks, parsePatchHunks(extraPatch, extraRevision.Description, pullRequestURL(artifact), len(hunks))...)
+	}
+	stats := bodyStats(artifact, revisions, []string{extraPatch})
 	filesSet := map[string]struct{}{}
 	areasSet := map[string]struct{}{}
 	for _, revision := range revisions {
@@ -591,6 +599,62 @@ func buildPRBodyCatalog(artifact reviewbundle.Artifact) prBodyCatalog {
 		Files:     sortedKeys(filesSet),
 		Areas:     sortedKeys(areasSet),
 	}
+}
+
+func headRevisionFromGit(artifact reviewbundle.Artifact, revisions []prRevisionSummary) (prRevisionSummary, string, bool) {
+	head := strings.TrimSpace(artifact.Push.HeadCommitID)
+	root := strings.TrimSpace(artifact.Bundle.Repo.RootPath)
+	if head == "" || root == "" {
+		return prRevisionSummary{}, "", false
+	}
+	for _, revision := range revisions {
+		if strings.EqualFold(strings.TrimSpace(revision.CommitID), head) {
+			return prRevisionSummary{}, "", false
+		}
+	}
+	base := ""
+	for i := len(revisions) - 1; i >= 0; i-- {
+		if commit := strings.TrimSpace(revisions[i].CommitID); commit != "" {
+			base = commit
+			break
+		}
+	}
+	if base == "" {
+		return prRevisionSummary{}, "", false
+	}
+	patch := gitOutput(root, "diff", "--no-ext-diff", base+".."+head)
+	if strings.TrimSpace(patch) == "" {
+		return prRevisionSummary{}, "", false
+	}
+	description := gitOutput(root, "show", "-s", "--format=%s", head)
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description = "update PR head"
+	}
+	return prRevisionSummary{
+		Description: description,
+		CommitID:    head,
+		BranchName:  stackName(artifact),
+		Files:       filesFromPatch(patch),
+	}, patch, true
+}
+
+func gitOutput(repoRoot string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = ioDiscard{}
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return out.String()
+}
+
+type ioDiscard struct{}
+
+func (ioDiscard) Write(p []byte) (int, error) {
+	return len(p), nil
 }
 
 func revisionSummaries(artifact reviewbundle.Artifact) []prRevisionSummary {
@@ -652,7 +716,7 @@ func parsePatchHunks(patchText, revisionLabel, prURL string, offset int) []prHun
 		}
 		current.Patch = strings.TrimRight(current.Patch, "\n")
 		current.ChangedLine = changedLineForHunk(*current)
-		current.Link = githubHunkLink(prURL, current.File, current.OldStart, current.NewStart, current.NewLines)
+		current.Link = githubHunkLink(prURL, current.File, current.OldStart, current.ChangedLine, current.NewLines)
 		hunks = append(hunks, *current)
 		current = nil
 	}
@@ -803,7 +867,7 @@ func warningQualityHints(artifact reviewbundle.Artifact) []codereview.CodeQualit
 	return hints
 }
 
-func bodyStats(artifact reviewbundle.Artifact, revisions []prRevisionSummary) prBodyStats {
+func bodyStats(artifact reviewbundle.Artifact, revisions []prRevisionSummary, extraPatches []string) prBodyStats {
 	stats := prBodyStats{
 		RevisionCount: len(revisions),
 		MaxRiskLevel:  "low",
@@ -815,6 +879,10 @@ func bodyStats(artifact reviewbundle.Artifact, revisions []prRevisionSummary) pr
 		stats.AddedLines += addedLines(entry.Patch)
 		stats.DeletedLines += deletedLines(entry.Patch)
 		accumulateContext(&stats, entry.Change.ReviewContext, riskSignals)
+	}
+	for _, patch := range extraPatches {
+		stats.AddedLines += addedLines(patch)
+		stats.DeletedLines += deletedLines(patch)
 	}
 	if len(artifact.Stack) == 0 && artifact.Change != nil {
 		accumulateContext(&stats, artifact.Change.ReviewContext, riskSignals)
@@ -1059,7 +1127,14 @@ func trimSentence(value string, limit int) string {
 	if limit <= 0 || len(value) <= limit {
 		return value
 	}
-	return strings.TrimRight(value[:limit], " .,;:") + "."
+	candidate := value[:limit]
+	if idx := strings.LastIndexAny(candidate, ".!?"); idx >= 80 {
+		return strings.TrimSpace(candidate[:idx+1])
+	}
+	if idx := strings.LastIndex(candidate, ";"); idx >= 80 {
+		return strings.TrimSpace(candidate[:idx]) + "."
+	}
+	return strings.TrimRight(candidate, " .,;:") + "."
 }
 
 func limitText(text string, limit int) string {
