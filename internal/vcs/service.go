@@ -2584,27 +2584,7 @@ func (s *Service) remoteBranchHead(ctx context.Context, repoRoot, remoteName, br
 }
 
 func githubPullRequestBody(stack StackInfo, pushed []PushedChange) string {
-	var body strings.Builder
-	body.WriteString("Published by GX.\n\n## Summary\n")
-	summary := githubPullRequestSummary(stack, pushed)
-	if summary == "" {
-		summary = "(none)"
-	}
-	body.WriteString(summary)
-	body.WriteString("\n\n## Revisions")
-	if len(pushed) == 0 {
-		body.WriteString("\n- (none)")
-		return body.String()
-	}
-	for _, change := range pushed {
-		description := strings.TrimSpace(change.Change.Description)
-		if description == "" {
-			description = "(no description set)"
-		}
-		body.WriteString("\n- ")
-		body.WriteString(description)
-	}
-	return body.String()
+	return "<!-- gx:pr-summary:v1 -->"
 }
 
 func githubPullRequestSummary(stack StackInfo, pushed []PushedChange) string {
@@ -2634,7 +2614,7 @@ func shouldUpdateGitHubPullRequestBody(existing, desired string) bool {
 	if desired == "" || existing == desired {
 		return false
 	}
-	return existing == "" || strings.HasPrefix(existing, "Published by GX.")
+	return existing == "" || strings.HasPrefix(existing, "<!-- gx:pr-summary:v1 -->") || strings.HasPrefix(existing, "Published by GX.")
 }
 
 func (s *Service) revisionsForStack(ctx context.Context, stack StackInfo) ([]RevisionSummary, error) {

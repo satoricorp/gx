@@ -125,6 +125,10 @@ func reviewerFromEnv() AIReviewer {
 	}
 }
 
+func ReviewerFromEnv() AIReviewer {
+	return reviewerFromEnv()
+}
+
 func openAIReviewerFromEnv() AIReviewer {
 	model := strings.TrimSpace(firstNonEmpty(
 		os.Getenv("GX_REVIEW_OPENAI_MODEL"),

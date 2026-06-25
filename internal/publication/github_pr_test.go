@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
@@ -16,6 +17,26 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
 	branchName := "bug/fix-github-pr-summary"
+	oldReviewer := prSummaryReviewerFromEnv
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnv = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnv = func() codereview.AIReviewer {
+		return fakePRSummaryReviewer{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{
+			Sources: []string{"codebase", "review resources", "session"},
+			Snippets: []codereview.ContextSnippet{{
+				Kind:   "review_resource",
+				Ref:    "resource-one",
+				Source: "turbopuffer:gx-review-knowledge",
+				Text:   "Review resource: update external systems before returning publish success.",
+			}},
+		}, nil
+	}
 	var patchedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -61,7 +82,17 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		Stack: []reviewbundle.StackPayload{{
 			BranchName:     branchName,
 			BaseBranchName: "main",
-			Patch:          "diff --git a/internal/publication/github_pr.go b/internal/publication/github_pr.go\n+added\n-old\n",
+			Patch: strings.Join([]string{
+				"diff --git a/internal/publication/publication.go b/internal/publication/publication.go",
+				"--- a/internal/publication/publication.go",
+				"+++ b/internal/publication/publication.go",
+				"@@ -180,6 +180,9 @@ func (p *Publisher) PublishPush(ctx context.Context, push vcs.PushResult) (Result, error) {",
+				"+\tif _, err := UpdateGitHubPullRequestBody(ctx, artifact); err != nil {",
+				"+\t\treturn Result{}, err",
+				"+\t}",
+				" \tresult, err := p.PublishArtifact(ctx, artifact)",
+				"",
+			}, "\n"),
 			Change: reviewbundle.ChangePayload{
 				JJChangeID:      "change-one",
 				CurrentCommitID: "abcdef123456",
@@ -115,26 +146,47 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
 	for _, want := range []string{
-		"Publishes 1 GX revision(s) for `bug/fix-github-pr-summary` with high blast radius.",
-		"## Review signals",
-		"Blast radius: high",
-		"Risk: high (80/100; structural dependencies, warning:structural dependency)",
-		"Provenance: explicit (1 linked session(s)); attribution: codex/openai/gpt-5",
-		"Structural context: available (1 changed symbol(s))",
-		"Feasibility: 1 warning(s), 0 info item(s)",
-		"[render rich PR bodies from review bundles](https://github.com/satoricorp/gx/commit/abcdef123456)",
-		"`internal/publication/github_pr.go`",
-		"and 1 more",
-		"`internal/publication/github_pr.go:UpdateGitHubPullRequestBody`",
-		"[Files changed](https://github.com/satoricorp/gx/pull/11/files)",
+		githubPRBodyMarker,
+		"This PR changes",
+		"Blast radius is high",
+		"Context used: codebase, review resources, session.",
+		"## Needs Review",
+		"Move PR body refresh before upload",
+		"publication currently updated the body after artifact upload",
+		githubHunkLink(prURL, "internal/publication/publication.go", 180, 180, 9),
 	} {
 		if !strings.Contains(patchedBody, want) {
 			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
 		}
 	}
-	if strings.Contains(patchedBody, "and%201%20more") {
-		t.Fatalf("patched body linked truncated file count as a path:\n%s", patchedBody)
+	for _, banned := range []string{
+		"Published by GX",
+		"## Summary",
+		"## Review signals",
+		"Structural context",
+		"Feasibility",
+		"## Links",
+		"[Files changed]",
+	} {
+		if strings.Contains(patchedBody, banned) {
+			t.Fatalf("patched body contains banned text %q:\n%s", banned, patchedBody)
+		}
 	}
+}
+
+type fakePRSummaryReviewer struct{}
+
+func (fakePRSummaryReviewer) Review(_ context.Context, brief codereview.ReviewBrief) ([]codereview.Finding, error) {
+	if len(brief.Context) == 0 {
+		return nil, nil
+	}
+	return []codereview.Finding{{
+		Title:          "Move PR body refresh before upload",
+		Summary:        "internal/publication/publication.go publication currently updated the body after artifact upload, so upload failures could leave the old placeholder visible.",
+		Recommendation: "Update the PR body immediately after building the review bundle and before uploading the artifact.",
+		Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
+		Strength:       "Strong",
+	}}, nil
 }
 
 func TestUpdateGitHubPullRequestBodyPreservesNonGXBody(t *testing.T) {

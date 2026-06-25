@@ -339,7 +339,7 @@ func TestGitHubPullRequestBodyIncludesSummaryAndRevisions(t *testing.T) {
 	got := githubPullRequestBody(StackInfo{Name: "Update Mintlify docs for Aspen"}, []PushedChange{{
 		Change: ChangeInfo{Description: "update Mintlify docs for Aspen"},
 	}})
-	want := "Published by GX.\n\n## Summary\nUpdate Mintlify docs for Aspen\n\n## Revisions\n- update Mintlify docs for Aspen"
+	want := "<!-- gx:pr-summary:v1 -->"
 	if got != want {
 		t.Fatalf("githubPullRequestBody() = %q, want %q", got, want)
 	}
@@ -434,7 +434,7 @@ func TestEnsureGitHubPullRequestUpdatesExistingGXBody(t *testing.T) {
 	if status != "updated" || len(warnings) != 0 {
 		t.Fatalf("status=%q warnings=%#v, want updated without warnings", status, warnings)
 	}
-	wantBody := "Published by GX.\n\n## Summary\nUpdate Mintlify docs for Aspen\n\n## Revisions\n- update Mintlify docs for Aspen"
+	wantBody := "<!-- gx:pr-summary:v1 -->"
 	if patchPayload["body"] != wantBody {
 		t.Fatalf("patched body = %q, want %q", patchPayload["body"], wantBody)
 	}
@@ -510,7 +510,7 @@ func TestEnsureGitHubPullRequestUpdatesStoredGXBody(t *testing.T) {
 	if status != "updated" || len(warnings) != 0 {
 		t.Fatalf("status=%q warnings=%#v, want updated without warnings", status, warnings)
 	}
-	wantBody := "Published by GX.\n\n## Summary\nfix-github-pr-summary\n\n## Revisions\n- add PR summaries to GX publish bodies"
+	wantBody := "<!-- gx:pr-summary:v1 -->"
 	if patchPayload["body"] != wantBody {
 		t.Fatalf("patched body = %q, want %q", patchPayload["body"], wantBody)
 	}
@@ -560,7 +560,7 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	if createPayload["base"] != "main" || createPayload["head"] != "feature/demo" || createPayload["title"] != "Demo stack" {
 		t.Fatalf("create payload = %#v", createPayload)
 	}
-	wantBody := "Published by GX.\n\n## Summary\nDemo stack\n\n## Revisions\n- Add publish flow"
+	wantBody := "<!-- gx:pr-summary:v1 -->"
 	if createPayload["body"] != wantBody {
 		t.Fatalf("create body = %q, want %q", createPayload["body"], wantBody)
 	}

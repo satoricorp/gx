@@ -24,7 +24,10 @@ func UpdateGitHubPullRequestBody(ctx context.Context, artifact reviewbundle.Arti
 	if !ok {
 		return false, nil
 	}
-	body := GitHubPullRequestBodyFromArtifact(artifact)
+	body, err := GitHubPullRequestBodyFromArtifact(ctx, artifact)
+	if err != nil {
+		return false, fmt.Errorf("build GitHub PR summary for %s: %w", ref.URL, err)
+	}
 	client, err := githubapi.NewClient(ref.Host)
 	if err != nil {
 		return false, fmt.Errorf("prepare GitHub PR summary update for %s: %w", ref.URL, err)
@@ -83,5 +86,5 @@ func shouldUpdateGitHubPullRequestBody(existing, desired string) bool {
 	if desired == "" || existing == desired {
 		return false
 	}
-	return existing == "" || strings.HasPrefix(existing, "Published by GX.")
+	return existing == "" || strings.HasPrefix(existing, githubPRBodyMarker) || strings.HasPrefix(existing, "Published by GX.")
 }
