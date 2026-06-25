@@ -179,7 +179,14 @@ func (p *Publisher) PublishPush(ctx context.Context, push vcs.PushResult) (Resul
 	if err != nil {
 		return Result{}, err
 	}
-	return p.PublishArtifact(ctx, reviewbundle.NewArtifact(bundle))
+	result, err := p.PublishArtifact(ctx, reviewbundle.NewArtifact(bundle))
+	if err != nil {
+		return Result{}, err
+	}
+	if _, err := UpdateGitHubPullRequestBody(ctx, result.Artifact); err != nil {
+		return Result{}, err
+	}
+	return result, nil
 }
 
 func (p *Publisher) PublishBundle(ctx context.Context, bundle reviewbundle.Bundle) (Result, error) {

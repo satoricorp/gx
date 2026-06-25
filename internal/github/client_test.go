@@ -46,6 +46,38 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 	}
 }
 
+func TestGetPullRequestUsesGitHubAPI(t *testing.T) {
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/repos/satoricorp/gx/pulls/11" {
+			t.Fatalf("path = %q, want pull endpoint", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"html_url":"https://github.com/satoricorp/gx/pull/11","number":11,"body":"Published by GX."}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	pr, err := client.GetPullRequest(context.Background(), GetPullRequestOptions{
+		Owner:  "satoricorp",
+		Repo:   "gx",
+		Number: 11,
+	})
+	if err != nil {
+		t.Fatalf("GetPullRequest() error = %v", err)
+	}
+	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/11" || pr.Number != 11 || pr.Body != "Published by GX." {
+		t.Fatalf("GetPullRequest() = %#v", pr)
+	}
+	if gotAuth != "Bearer token-one" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+}
+
 func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

@@ -44,6 +44,12 @@ type UpdatePullRequestOptions struct {
 	Body   string
 }
 
+type GetPullRequestOptions struct {
+	Owner  string
+	Repo   string
+	Number int
+}
+
 func NewClient(host string) (*Client, error) {
 	token, err := accessToken()
 	if err != nil {
@@ -112,6 +118,36 @@ func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOpti
 		URL:    strings.TrimSpace(payload[0].HTMLURL),
 		Number: payload[0].Number,
 		Body:   payload[0].Body,
+	}, nil
+}
+
+func (c *Client) GetPullRequest(ctx context.Context, opts GetPullRequestOptions) (*PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	if opts.Number <= 0 {
+		return nil, fmt.Errorf("github pull request number is required")
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), opts.Number)
+	req, err := c.request(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		HTMLURL string `json:"html_url"`
+		Number  int    `json:"number"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("get github pull request: %w", err)
+	}
+	if strings.TrimSpace(payload.HTMLURL) == "" {
+		return nil, nil
+	}
+	return &PullRequest{
+		URL:    strings.TrimSpace(payload.HTMLURL),
+		Number: payload.Number,
+		Body:   payload.Body,
 	}, nil
 }
 
