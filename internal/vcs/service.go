@@ -2982,6 +2982,59 @@ func ResetPublished(ctx context.Context) (int, error) {
 	return stacksUpdated, err
 }
 
+func (s *Service) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
+	publishRef = strings.TrimPrefix(strings.TrimSpace(publishRef), "refs/heads/")
+	if publishRef == "" {
+		return false, nil
+	}
+	var pruned bool
+	err := withBusyRetry(ctx, "prune published stack", func() error {
+		store, err := openStore(ctx)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+
+		repoID, err := upsertRepo(ctx, store, repo)
+		if err != nil {
+			return err
+		}
+		stacks, err := store.ListStacksByRepoID(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		for _, stack := range stacks {
+			info := stackInfoFromStorage(stack)
+			if stackPublishRefMatches(info, publishRef) {
+				if err := store.PrunePublishedStack(ctx, repoID, stack.ID, publishRefForStack(info), time.Now().UnixMilli()); err != nil {
+					return err
+				}
+				pruned = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return pruned, err
+}
+
+func stackPublishRefMatches(stack StackInfo, publishRef string) bool {
+	publishRef = strings.TrimPrefix(strings.TrimSpace(publishRef), "refs/heads/")
+	if publishRef == "" {
+		return false
+	}
+	if publishRefForStack(stack) == publishRef {
+		return true
+	}
+	if strings.TrimSpace(stack.BookmarkName) == publishRef {
+		return true
+	}
+	if stack.RemoteRef != nil && strings.TrimPrefix(strings.TrimSpace(*stack.RemoteRef), "refs/heads/") == publishRef {
+		return true
+	}
+	return false
+}
+
 func recordPush(ctx context.Context, result PushResult) error {
 	return withBusyRetry(ctx, "record push metadata", func() error {
 		store, err := openStore(ctx)

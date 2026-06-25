@@ -3364,6 +3364,9 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				if summary.CaughtUp > 0 {
 					fmt.Fprintln(out, labelValue("Cloud catch-up", fmt.Sprintf("%d bookmark(s) fetched from remote", summary.CaughtUp)))
 				}
+				if summary.Removed > 0 {
+					fmt.Fprintln(out, labelValue("Cloud merged", fmt.Sprintf("%d bookmark(s) removed from published", summary.Removed)))
+				}
 			}
 			if status, err := publication.QueuedUploadStatus(); err == nil && (status.Pending > 0 || status.Failed > 0) {
 				if err := drainPublishUploadOutbox(ctx, out, false, 20); err != nil {

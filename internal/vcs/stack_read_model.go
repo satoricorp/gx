@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/satoricorp/gx/internal/storage"
 )
@@ -144,6 +145,11 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 			}
 		}
 		info.Status = DeriveStackStatus(info.Status, info.RevisionCount, info.PublishedCount, mergedByStack[info.ID])
+		if info.Status == "merged" {
+			if err := store.PrunePublishedStack(ctx, repoID, info.ID, publishRef, time.Now().UnixMilli()); err != nil {
+				return nil, err
+			}
+		}
 		if !stackVisibleInGX(info) {
 			continue
 		}

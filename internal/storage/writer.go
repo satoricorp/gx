@@ -423,6 +423,42 @@ func (s *Store) DeleteStack(ctx context.Context, stackID int64) error {
 	return tx.Commit()
 }
 
+func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, publishRef string, updatedAt int64) error {
+	publishRef = strings.TrimSpace(publishRef)
+	if repoID == 0 || stackID == 0 || publishRef == "" {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin prune published stack: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM change_bookmarks
+		WHERE bookmark_name = ?
+			AND change_id IN (
+				SELECT change_id FROM stack_changes WHERE stack_id = ?
+			)
+	`, publishRef, stackID); err != nil {
+		return fmt.Errorf("delete stack change bookmarks: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM pushes
+		WHERE repo_id = ? AND branch_name = ?
+	`, repoID, publishRef); err != nil {
+		return fmt.Errorf("delete stack pushes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE stacks
+		SET status = 'merged', updated_at = ?
+		WHERE repo_id = ? AND id = ?
+	`, updatedAt, repoID, stackID); err != nil {
+		return fmt.Errorf("mark stack merged: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (s *Store) MarkChangeStatus(ctx context.Context, changeID int64, status string, updatedAt int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE changes

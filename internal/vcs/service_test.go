@@ -1635,6 +1635,124 @@ func TestLoadStoredStackInfosHidesEmptyRevisions(t *testing.T) {
 	}
 }
 
+func TestLoadStoredStackInfosPrunesMergedPublishedStack(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	defer store.Close()
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:  repoRoot,
+		Backend:   "jj",
+		CreatedAt: 1,
+		UpdatedAt: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	stackID, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "merged",
+		BookmarkName: "feature/merged",
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		HeadChangeID: ptr("merged-change"),
+		HeadCommitID: ptr("merged-commit"),
+		Status:       "published",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      "merged-change",
+		CurrentCommitID: "merged-commit",
+		Description:     "merged change",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	if err := store.UpsertChangeBookmark(ctx, storage.ChangeBookmark{
+		ChangeID:           changeID,
+		BookmarkName:       "feature/merged",
+		RemoteName:         ptr("origin"),
+		RemoteRef:          ptr("refs/heads/feature/merged"),
+		LastPushedCommitID: "merged-commit",
+		CreatedAt:          1,
+		UpdatedAt:          1,
+	}); err != nil {
+		t.Fatalf("UpsertChangeBookmark() error = %v", err)
+	}
+	if err := store.WritePush(ctx, storage.Push{
+		RepoID:          repoID,
+		RemoteName:      ptr("origin"),
+		BranchName:      ptr("feature/merged"),
+		HeadCommitID:    "merged-commit",
+		CurrentChangeID: ptr(changeID),
+		CreatedAt:       1,
+	}); err != nil {
+		t.Fatalf("WritePush() error = %v", err)
+	}
+
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {
+				"feature/merged|merged-change\n",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/merged) & ancestors(main) | (feature/merged) & ancestors(main@origin)", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`): {
+				"merged-change|merged-commit\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+	stacks, err := svc.loadStoredStackInfos(ctx, store, RepoInfo{RootPath: repoRoot, Backend: "jj"}, repoID)
+	if err != nil {
+		t.Fatalf("loadStoredStackInfos() error = %v", err)
+	}
+	if len(stacks) != 0 {
+		t.Fatalf("stored stacks = %#v, want merged stack hidden", stacks)
+	}
+	stack, err := store.FindStackByBookmark(ctx, repoID, "feature/merged")
+	if err != nil {
+		t.Fatalf("FindStackByBookmark() error = %v", err)
+	}
+	if stack == nil || stack.Status != "merged" {
+		t.Fatalf("stack = %#v, want merged", stack)
+	}
+	bookmarks, err := store.ListChangeBookmarksByName(ctx, "feature/merged")
+	if err != nil {
+		t.Fatalf("ListChangeBookmarksByName() error = %v", err)
+	}
+	if len(bookmarks) != 0 {
+		t.Fatalf("change bookmarks = %#v, want none", bookmarks)
+	}
+	push, err := store.LatestPushByBranchName(ctx, repoID, "feature/merged")
+	if err != nil {
+		t.Fatalf("LatestPushByBranchName() error = %v", err)
+	}
+	if push != nil {
+		t.Fatalf("push = %#v, want nil", push)
+	}
+}
+
 func TestResolveCurrentStackIgnoresLatestCursorGXRequest(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {

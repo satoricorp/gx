@@ -184,6 +184,10 @@ func (e *Engine) SyncCloudBookmarkTip(ctx context.Context, repo RepoInfo, branch
 	return e.vcs.SyncCloudBookmarkTip(ctx, repo, branchName)
 }
 
+func (e *Engine) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
+	return e.vcs.PrunePublishedStackByRef(ctx, repo, publishRef)
+}
+
 func (e *Engine) SaveDemuxProposal(ctx context.Context, proposal DemuxProposal) (DemuxProposal, error) {
 	now := time.Now().UnixMilli()
 	if strings.TrimSpace(proposal.ID) == "" {

@@ -17,6 +17,7 @@ type cloudSyncSummary struct {
 	Listed   int
 	Updated  int
 	CaughtUp int
+	Removed  int
 }
 
 func syncCloudMetadata(
@@ -90,6 +91,17 @@ func syncCloudMetadata(
 		}
 		if err := storage.UpsertCloudBookmark(ctx, db, state); err != nil {
 			return nil, err
+		}
+
+		if strings.EqualFold(strings.TrimSpace(bookmark.MergeStatus), "merged") {
+			if _, err := engine.PrunePublishedStackByRef(ctx, repo, bookmark.BranchName); err != nil {
+				return nil, err
+			}
+			if err := client.DeleteBookmark(ctx, bookmark.ID); err != nil {
+				return nil, err
+			}
+			summary.Removed++
+			continue
 		}
 
 		needsCatchUp := !hasPrev || bookmark.Revision > prevRevision
