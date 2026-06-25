@@ -956,6 +956,56 @@ func (s *Store) ListChangeBookmarksByName(ctx context.Context, bookmarkName stri
 	return bookmarks, nil
 }
 
+func (s *Store) ListChangeBookmarksByNames(ctx context.Context, bookmarkNames []string) (map[string][]ChangeBookmark, error) {
+	names := uniqueNonEmptyStrings(bookmarkNames)
+	bookmarksByName := make(map[string][]ChangeBookmark, len(names))
+	for _, name := range names {
+		bookmarksByName[name] = nil
+	}
+	if len(names) == 0 {
+		return bookmarksByName, nil
+	}
+	placeholders, args := placeholdersForStrings(names)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, change_id, bookmark_name, remote_name, remote_ref, last_pushed_commit_id, created_at, updated_at
+		FROM change_bookmarks
+		WHERE bookmark_name IN (`+placeholders+`)
+		ORDER BY bookmark_name ASC, id ASC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list change bookmarks by names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var bookmark ChangeBookmark
+		var remoteName sql.NullString
+		var remoteRef sql.NullString
+		if err := rows.Scan(
+			&bookmark.ID,
+			&bookmark.ChangeID,
+			&bookmark.BookmarkName,
+			&remoteName,
+			&remoteRef,
+			&bookmark.LastPushedCommitID,
+			&bookmark.CreatedAt,
+			&bookmark.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan change bookmark: %w", err)
+		}
+		if remoteName.Valid {
+			bookmark.RemoteName = &remoteName.String
+		}
+		if remoteRef.Valid {
+			bookmark.RemoteRef = &remoteRef.String
+		}
+		bookmarksByName[bookmark.BookmarkName] = append(bookmarksByName[bookmark.BookmarkName], bookmark)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate change bookmarks: %w", err)
+	}
+	return bookmarksByName, nil
+}
+
 func (s *Store) WritePush(ctx context.Context, push Push) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO pushes (repo_id, remote_name, branch_name, head_commit_id, current_change_id, created_at)
@@ -1424,6 +1474,56 @@ func (s *Store) ListChangesByStackID(ctx context.Context, stackID int64) ([]Chan
 	return scanChanges(rows)
 }
 
+func (s *Store) ListChangesByStackIDs(ctx context.Context, stackIDs []int64) (map[int64][]Change, error) {
+	ids := uniquePositiveInt64s(stackIDs)
+	changesByStack := make(map[int64][]Change, len(ids))
+	for _, id := range ids {
+		changesByStack[id] = nil
+	}
+	if len(ids) == 0 {
+		return changesByStack, nil
+	}
+	placeholders, args := placeholdersForInt64s(ids)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bc.stack_id, c.id, c.repo_id, c.jj_change_id, c.current_commit_id, c.description, c.parent_change_id, c.status, c.first_seen_at, c.updated_at
+		FROM stack_changes bc
+		INNER JOIN changes c ON bc.change_id = c.id
+		WHERE bc.stack_id IN (`+placeholders+`)
+		ORDER BY bc.stack_id ASC, bc.position ASC, bc.id ASC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list changes by stacks: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var stackID int64
+		var change Change
+		var parentChangeID sql.NullString
+		if err := rows.Scan(
+			&stackID,
+			&change.ID,
+			&change.RepoID,
+			&change.JJChangeID,
+			&change.CurrentCommitID,
+			&change.Description,
+			&parentChangeID,
+			&change.Status,
+			&change.FirstSeenAt,
+			&change.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan stacked change: %w", err)
+		}
+		if parentChangeID.Valid {
+			change.ParentChangeID = &parentChangeID.String
+		}
+		changesByStack[stackID] = append(changesByStack[stackID], change)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stacked changes: %w", err)
+	}
+	return changesByStack, nil
+}
+
 type stackScanner interface {
 	Scan(dest ...any) error
 }
@@ -1587,4 +1687,115 @@ func (s *Store) LatestPushByBranchName(ctx context.Context, repoID int64, branch
 		push.CurrentChangeID = &currentChangeID.Int64
 	}
 	return &push, nil
+}
+
+func (s *Store) LatestPushesByBranchNames(ctx context.Context, repoID int64, branchNames []string) (map[string]Push, error) {
+	names := uniqueNonEmptyStrings(branchNames)
+	pushesByBranch := make(map[string]Push, len(names))
+	if len(names) == 0 {
+		return pushesByBranch, nil
+	}
+	placeholders, branchArgs := placeholdersForStrings(names)
+	args := append([]any{repoID}, branchArgs...)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, repo_id, remote_name, branch_name, head_commit_id, current_change_id, created_at
+		FROM pushes
+		WHERE repo_id = ? AND branch_name IN (`+placeholders+`)
+		ORDER BY branch_name ASC, created_at DESC, id DESC
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("latest pushes by branch names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var push Push
+		var remoteName sql.NullString
+		var branchName sql.NullString
+		var currentChangeID sql.NullInt64
+		if err := rows.Scan(
+			&push.ID,
+			&push.RepoID,
+			&remoteName,
+			&branchName,
+			&push.HeadCommitID,
+			&currentChangeID,
+			&push.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan push by branch: %w", err)
+		}
+		if remoteName.Valid {
+			push.RemoteName = &remoteName.String
+		}
+		if branchName.Valid {
+			push.BranchName = &branchName.String
+		}
+		if currentChangeID.Valid {
+			push.CurrentChangeID = &currentChangeID.Int64
+		}
+		branch := ""
+		if push.BranchName != nil {
+			branch = strings.TrimSpace(*push.BranchName)
+		}
+		if branch == "" {
+			continue
+		}
+		if _, exists := pushesByBranch[branch]; !exists {
+			pushesByBranch[branch] = push
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pushes by branch: %w", err)
+	}
+	return pushesByBranch, nil
+}
+
+func uniquePositiveInt64s(values []int64) []int64 {
+	seen := map[int64]struct{}{}
+	out := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func placeholdersForInt64s(values []int64) (string, []any) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(values)), ",")
+	args := make([]any, len(values))
+	for i, value := range values {
+		args[i] = value
+	}
+	return placeholders, args
+}
+
+func placeholdersForStrings(values []string) (string, []any) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(values)), ",")
+	args := make([]any, len(values))
+	for i, value := range values {
+		args[i] = value
+	}
+	return placeholders, args
 }

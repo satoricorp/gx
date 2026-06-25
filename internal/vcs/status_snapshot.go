@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/satoricorp/gx/internal/storage"
 )
 
 // RevisionSnapshot is one ordered revision in a bookmark stack.
@@ -48,28 +46,6 @@ func (s *Service) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 		return StatusSnapshot{}, err
 	}
 
-	store, err := openStore(ctx)
-	if err != nil {
-		return StatusSnapshot{}, err
-	}
-	defer store.Close()
-
-	repoRow, err := store.FindRepoByRoot(ctx, stack.Repo.RootPath)
-	if err != nil {
-		return StatusSnapshot{}, err
-	}
-
-	publishedThrough := int64(-1)
-	if repoRow != nil {
-		latestPush, pushErr := store.LatestPushByRepoID(ctx, repoRow.ID)
-		if pushErr != nil {
-			return StatusSnapshot{}, pushErr
-		}
-		if latestPush != nil && latestPush.CurrentChangeID != nil {
-			publishedThrough = *latestPush.CurrentChangeID
-		}
-	}
-
 	activeFiles := 0
 	if stack.Repo.RootPath != "" {
 		if current, currentErr := s.CurrentChange(ctx, stack.Repo.RootPath, "@"); currentErr == nil {
@@ -91,7 +67,7 @@ func (s *Service) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 	if len(stack.Stacks) == 0 {
 		if stack.Stack != nil {
 			snapshot.Bookmarks = []BookmarkSnapshot{
-				buildBookmarkSnapshot(*stack.Stack, true, stack.Units, activeFiles, publishedThrough, nil),
+				buildBookmarkSnapshot(*stack.Stack, true, stack.Units, activeFiles),
 			}
 		}
 		return snapshot, nil
@@ -107,21 +83,13 @@ func (s *Service) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 			units = stack.Units
 			fileCount = activeFiles
 		}
-		var storedChanges []storage.Change
-		if repoRow != nil && entry.ID != 0 {
-			rows, listErr := store.ListChangesByStackID(ctx, entry.ID)
-			if listErr != nil {
-				return StatusSnapshot{}, listErr
-			}
-			storedChanges = rows
-		}
-		bookmarks = append(bookmarks, buildBookmarkSnapshot(entry, current, units, fileCount, publishedThrough, storedChanges))
+		bookmarks = append(bookmarks, buildBookmarkSnapshot(entry, current, units, fileCount))
 	}
 	snapshot.Bookmarks = bookmarks
 	return snapshot, nil
 }
 
-func buildBookmarkSnapshot(body StackInfo, current bool, units []UnitSummary, fileCount int, publishedThrough int64, stored []storage.Change) BookmarkSnapshot {
+func buildBookmarkSnapshot(body StackInfo, current bool, units []UnitSummary, fileCount int) BookmarkSnapshot {
 	changeCount := len(units)
 	approved := 0
 	for _, unit := range units {
@@ -129,12 +97,15 @@ func buildBookmarkSnapshot(body StackInfo, current bool, units []UnitSummary, fi
 			approved++
 		}
 	}
-	if changeCount == 0 && len(stored) > 0 {
-		changeCount = len(stored)
-		approved = CountPublishedChanges(stored, publishedThrough)
+	if changeCount == 0 && body.RevisionCount > 0 {
+		changeCount = body.RevisionCount
+		approved = body.PublishedCount
 	}
 
 	revisions := revisionSnapshots(body, units)
+	if len(revisions) == 0 && len(body.Revisions) > 0 {
+		revisions = revisionSnapshots(body, body.Revisions)
+	}
 	if changeCount == 0 {
 		changeCount = len(revisions)
 	}

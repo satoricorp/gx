@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS change_bookmarks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_change_bookmarks_change ON change_bookmarks(change_id);
+CREATE INDEX IF NOT EXISTS idx_change_bookmarks_name ON change_bookmarks(bookmark_name);
 
 CREATE TABLE IF NOT EXISTS change_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,6 +222,7 @@ CREATE TABLE IF NOT EXISTS pushes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pushes_repo ON pushes(repo_id);
+CREATE INDEX IF NOT EXISTS idx_pushes_repo_branch_created ON pushes(repo_id, branch_name, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS cursor_messages (
     id TEXT PRIMARY KEY,

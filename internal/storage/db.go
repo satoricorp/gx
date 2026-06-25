@@ -321,7 +321,8 @@ func ensureChangeBookmarksTable(ctx context.Context, db *sql.DB) error {
 		SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'change_bookmarks'
 	`).Scan(&name)
 	if err == nil {
-		return nil
+		_, err = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_change_bookmarks_name ON change_bookmarks(bookmark_name)`)
+		return err
 	}
 	if err != sql.ErrNoRows {
 		return err
@@ -337,9 +338,10 @@ func ensureChangeBookmarksTable(ctx context.Context, db *sql.DB) error {
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
 			UNIQUE(change_id, bookmark_name)
-		);
-		CREATE INDEX IF NOT EXISTS idx_change_bookmarks_change ON change_bookmarks(change_id);
-	`)
+			);
+			CREATE INDEX IF NOT EXISTS idx_change_bookmarks_change ON change_bookmarks(change_id);
+			CREATE INDEX IF NOT EXISTS idx_change_bookmarks_name ON change_bookmarks(bookmark_name);
+		`)
 	return err
 }
 

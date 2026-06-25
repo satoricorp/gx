@@ -2150,9 +2150,13 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 }
 
 func (s *Service) stackHasUnpublishedRevisions(ctx context.Context, stack StackInfo) (bool, error) {
-	revisions, err := s.revisionsForStack(ctx, stack)
-	if err != nil {
-		return false, err
+	revisions := stack.Revisions
+	if revisions == nil {
+		var err error
+		revisions, err = s.revisionsForStack(ctx, stack)
+		if err != nil {
+			return false, err
+		}
 	}
 	for _, revision := range revisions {
 		if !revision.Published {
@@ -2198,36 +2202,7 @@ func (s *Service) ListStacks(ctx context.Context) ([]StackInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	targets, err := s.jjBookmarkTargets(ctx, repo.RootPath)
-	if err != nil {
-		return nil, err
-	}
-	bookmarkTargets := make(map[string]string, len(targets))
-	for _, target := range targets {
-		bookmarkTargets[target.Name] = target.ChangeID
-	}
-	stacks := make([]StackInfo, 0, len(stored))
-	for _, stack := range stored {
-		info := stackInfoFromStorage(stack)
-		revisions, err := s.revisionsForStack(ctx, info)
-		if err != nil {
-			return nil, err
-		}
-		info.Revisions = revisions
-		info.RevisionCount = len(revisions)
-		for _, revision := range revisions {
-			if revision.Published {
-				info.PublishedCount++
-			}
-		}
-		mergedIntoBase := s.stackMergedIntoBase(ctx, repo.RootPath, info, bookmarkTargets)
-		info.Status = DeriveStackStatus(info.Status, info.RevisionCount, info.PublishedCount, mergedIntoBase)
-		if !stackVisibleInGX(info) {
-			continue
-		}
-		stacks = append(stacks, info)
-	}
-	return stacks, nil
+	return s.hydrateStoredStacks(ctx, store, repo, repoID, stored)
 }
 
 func (s *Service) stackBySelector(ctx context.Context, repo RepoInfo, selector string) (StackInfo, error) {
@@ -2385,9 +2360,13 @@ func (s *Service) stackHeadCommitID(ctx context.Context, repoRoot string, stack 
 
 func (s *Service) pushRecordedStack(ctx context.Context, repo RepoInfo, remoteName, refName string, stack StackInfo, opts PushOptions) ([]PushedChange, string, []string, error) {
 	gitExported := opts.gitExportEnabled()
-	revisions, err := s.revisionsForStack(ctx, stack)
-	if err != nil {
-		return nil, "", nil, err
+	revisions := stack.Revisions
+	if revisions == nil {
+		var err error
+		revisions, err = s.revisionsForStack(ctx, stack)
+		if err != nil {
+			return nil, "", nil, err
+		}
 	}
 	if len(revisions) == 0 {
 		return nil, "", nil, fmt.Errorf(
@@ -2687,99 +2666,11 @@ func (s *Service) Stack(ctx context.Context) (StackSummary, error) {
 	if err != nil {
 		return StackSummary{}, err
 	}
-	body, stackFound, err := s.resolveCurrentStackForRead(ctx, repo)
+	model, err := s.loadStackReadModel(ctx, repo)
 	if err != nil {
 		return StackSummary{}, err
 	}
-
-	store, err := openStore(ctx)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	defer store.Close()
-
-	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	if repoRow == nil {
-		return stackSummaryForStack(repo, body, stackFound, nil, nil, 0), nil
-	}
-	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoRow.ID); err != nil {
-		return StackSummary{}, err
-	}
-	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
-		return StackSummary{}, err
-	}
-
-	stackContainer := repo.defaultBaseBranch()
-	if stackFound && strings.TrimSpace(body.BaseRef) != "" {
-		stackContainer = body.BaseRef
-	}
-	entries, err := s.jjStackEntries(ctx, repo.RootPath, stackContainer)
-	if err != nil {
-		return StackSummary{}, err
-	}
-
-	changes, err := store.ListChangesByRepoID(ctx, repoRow.ID)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	changeByJJ := make(map[string]storage.Change, len(changes))
-	for _, change := range changes {
-		changeByJJ[change.JJChangeID] = change
-	}
-
-	activeChangeID, err := s.currentWorkChangeID(ctx, repo.RootPath)
-	if err != nil {
-		activeChangeID = ""
-	}
-	latestPush, err := store.LatestPushByRepoID(ctx, repoRow.ID)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	publishedThrough := int64(-1)
-	if latestPush != nil && latestPush.CurrentChangeID != nil {
-		publishedThrough = *latestPush.CurrentChangeID
-	}
-
-	revisions, publishedCount := stackRevisionsFromEntries(entries, activeChangeID, publishedThrough, changeByJJ)
-	stacks, err := store.ListStacksByRepoID(ctx, repoRow.ID)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	targets, err := s.jjBookmarkTargets(ctx, repo.RootPath)
-	if err != nil {
-		return StackSummary{}, err
-	}
-	bookmarkTargets := make(map[string]string, len(targets))
-	for _, target := range targets {
-		bookmarkTargets[target.Name] = target.ChangeID
-	}
-	stackSummaries := make([]StackInfo, 0, len(stacks))
-	for index, storedBody := range stacks {
-		bodyInfo := stackInfoFromStorage(storedBody)
-		bodyInfo.Alias = stackAlias(index)
-		stackRevisions, err := s.revisionsForStack(ctx, bodyInfo)
-		if err != nil {
-			return StackSummary{}, err
-		}
-		bodyInfo.Revisions = stackRevisions
-		bodyInfo.RevisionCount = len(stackRevisions)
-		for _, revision := range stackRevisions {
-			if revision.Published {
-				bodyInfo.PublishedCount++
-			}
-		}
-		mergedIntoBase := s.stackMergedIntoBase(ctx, repo.RootPath, bodyInfo, bookmarkTargets)
-		bodyInfo.Status = DeriveStackStatus(bodyInfo.Status, bodyInfo.RevisionCount, bodyInfo.PublishedCount, mergedIntoBase)
-		if !stackVisibleInGX(bodyInfo) {
-			continue
-		}
-		stackSummaries = append(stackSummaries, bodyInfo)
-	}
-
-	return stackSummaryForStack(repo, body, stackFound, stackSummaries, revisions, publishedCount), nil
+	return stackSummaryForStack(model.repo, model.currentStack, model.currentStackFound, model.stacks, model.currentRevisions, model.currentPublishedCount), nil
 }
 
 func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stack StackInfo, bookmarkTargets map[string]string) bool {
@@ -3794,23 +3685,27 @@ func (s *Service) resolveCurrentStackForRead(ctx context.Context, repo RepoInfo)
 	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
 		return StackInfo{}, false, err
 	}
+	return s.resolveCurrentStackForReadWithStore(ctx, store, repo, repoRow.ID)
+}
+
+func (s *Service) resolveCurrentStackForReadWithStore(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64) (StackInfo, bool, error) {
 	if s.isOnBaseBranch(repo) || s.onAuthoringCheckout(ctx, repo) {
 		return StackInfo{}, false, nil
 	}
-	if current, err := s.stackFromCurrentBookmark(ctx, store, repoRow.ID, repo.RootPath); err == nil && current != nil {
+	if current, err := s.stackFromCurrentBookmark(ctx, store, repoID, repo.RootPath); err == nil && current != nil {
 		return stackInfoFromStorage(*current), true, nil
 	}
 	if headChangeID, err := s.currentWorkChangeID(ctx, repo.RootPath); err == nil && strings.TrimSpace(headChangeID) != "" {
-		if stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, headChangeID); err == nil && stack != nil {
+		if stack, err := store.FindStackByHeadChange(ctx, repoID, headChangeID); err == nil && stack != nil {
 			return stackInfoFromStorage(*stack), true, nil
 		}
 	}
 	if parentChangeID, err := s.changeIDForRev(ctx, repo.RootPath, "@-"); err == nil && strings.TrimSpace(parentChangeID) != "" {
-		if stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, parentChangeID); err == nil && stack != nil {
+		if stack, err := store.FindStackByHeadChange(ctx, repoID, parentChangeID); err == nil && stack != nil {
 			return stackInfoFromStorage(*stack), true, nil
 		}
 	}
-	latest, err := store.LatestStackByRepoID(ctx, repoRow.ID)
+	latest, err := store.LatestStackByRepoID(ctx, repoID)
 	if err != nil {
 		return StackInfo{}, false, err
 	}

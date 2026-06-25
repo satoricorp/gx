@@ -118,3 +118,33 @@ func TestStackMergedIntoBaseFallsBackToStoredHeadWithoutBookmark(t *testing.T) {
 		t.Fatal("expected stored head ancestor of main to be merged when bookmark is gone")
 	}
 }
+
+func TestStackMergeStatesBatchesBookmarkChecks(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/one) & ancestors(main) | (feature/two) & ancestors(main)", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`): {
+				"one-change|one-commit\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	merged := svc.stackMergeStates(context.Background(), repoRoot, []StackInfo{
+		{ID: 1, BookmarkName: "feature/one", BaseRef: "main", Status: "draft"},
+		{ID: 2, BookmarkName: "feature/two", BaseRef: "main", Status: "draft"},
+	}, map[string]string{
+		"feature/one": "one-change",
+		"feature/two": "two-change",
+	})
+
+	if !merged[1] {
+		t.Fatal("expected feature/one to be merged")
+	}
+	if merged[2] {
+		t.Fatal("expected feature/two to remain unmerged")
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("merge checks made %d runner calls, want 1: %v", len(runner.calls), runner.calls)
+	}
+}

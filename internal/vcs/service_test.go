@@ -2629,6 +2629,44 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 	}
 }
 
+func TestPushRecordedStackUsesHydratedRevisions(t *testing.T) {
+	repoRoot := t.TempDir()
+	t.Setenv("GX_HOME", t.TempDir())
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "commit-two", "--no-graph", "-T", "commit_id"): {"commit-two\n"},
+			runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/body", "commit-two"):     {""},
+			runnerKey(repoRoot, "jj", "diff", "-r", "commit-one", "--git"):                        {"diff --git a/one b/one\n"},
+			runnerKey(repoRoot, "jj", "diff", "-r", "commit-two", "--git"):                        {"diff --git a/two b/two\n"},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	pushed, status, warnings, err := svc.pushRecordedStack(context.Background(), RepoInfo{
+		RootPath: repoRoot,
+		Backend:  "jj",
+	}, "origin", "feature/body", StackInfo{
+		ID:      999,
+		BaseRef: "main",
+		Revisions: []RevisionSummary{
+			{ChangeID: "change-one", CommitID: "commit-one", Description: "one"},
+			{ChangeID: "change-two", CommitID: "commit-two", Description: "two"},
+		},
+	}, PushOptions{Mode: PublishModeReviewOnly})
+	if err != nil {
+		t.Fatalf("pushRecordedStack() error = %v", err)
+	}
+	if len(pushed) != 2 {
+		t.Fatalf("pushed revisions = %d, want 2", len(pushed))
+	}
+	if status != "not pushed" {
+		t.Fatalf("git push status = %q, want not pushed", status)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+}
+
 func TestPublishResultRecordsLocalMetadataBeforeHook(t *testing.T) {
 	repoRoot := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())
