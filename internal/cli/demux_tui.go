@@ -501,7 +501,7 @@ func composeLegend(stackMode bool) string {
 	} else {
 		parts = append([]string{"j/k revision", "d diff", "esc stacks", "s accept stack", "Shift+A accept all", "q quit"}, parts...)
 	}
-	return muted(strings.Join(parts, " · "))
+	return mint(strings.Join(parts, " · "))
 }
 
 func demuxRevisionDiff(revision authoring.RevisionProposal) string {

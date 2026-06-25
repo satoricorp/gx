@@ -2672,7 +2672,7 @@ func stacksLegend(stackMode bool) string {
 	} else {
 		parts = append([]string{"j/k revision", "e edit", "d diff", "Shift+D delete", "esc stacks", "q quit"}, parts...)
 	}
-	return muted(strings.Join(parts, " · "))
+	return mint(strings.Join(parts, " · "))
 }
 
 func compactBookmarkRef(ref string) string {

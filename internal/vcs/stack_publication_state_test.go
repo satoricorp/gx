@@ -2,6 +2,7 @@ package vcs
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/storage"
@@ -50,6 +51,9 @@ func TestDeriveStackStatusPreservesTerminalStatus(t *testing.T) {
 	if got := DeriveStackStatus("draft", 2, 0, true); got != "merged" {
 		t.Fatalf("DeriveStackStatus(merged into base) = %q", got)
 	}
+	if got := DeriveStackStatus("published", 2, 2, true); got != "merged" {
+		t.Fatalf("DeriveStackStatus(published, merged into base) = %q", got)
+	}
 }
 
 func TestStackMergedIntoBaseUsesLiveBookmark(t *testing.T) {
@@ -82,6 +86,11 @@ func TestStackMergedIntoBaseIgnoresStoredHeadWhenBookmarkExists(t *testing.T) {
 				"",
 			},
 		},
+		errors: map[string][]error{
+			runnerKey(repoRoot, "jj", "log", "-r", "main@origin", "-n", "1", "--no-graph", "-T", "change_id"): {
+				fmt.Errorf("revision not found"),
+			},
+		},
 	}
 	svc := NewServiceWithRunner(runner)
 
@@ -93,6 +102,33 @@ func TestStackMergedIntoBaseIgnoresStoredHeadWhenBookmarkExists(t *testing.T) {
 	}, map[string]string{"feature/work": "workchange"})
 	if merged {
 		t.Fatal("stored head should not classify a stack as merged while its live bookmark is not merged")
+	}
+}
+
+func TestStackMergedIntoBaseUsesRemoteTrackingBase(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "main@origin", "-n", "1", "--no-graph", "-T", "change_id"): {
+				"basechange\n",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/work) & ancestors(main)", "-n", "1", "--no-graph", "-T", "change_id"): {
+				"",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/work) & ancestors(main@origin)", "-n", "1", "--no-graph", "-T", "change_id"): {
+				"workchange\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
+		BookmarkName: "feature/work",
+		BaseRef:      "main",
+		Status:       "published",
+	}, map[string]string{"feature/work": "workchange"})
+	if !merged {
+		t.Fatal("expected stack merged into remote-tracking base to be merged")
 	}
 }
 
@@ -123,7 +159,10 @@ func TestStackMergeStatesBatchesBookmarkChecks(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "jj", "log", "-r", "(feature/one) & ancestors(main) | (feature/two) & ancestors(main)", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`): {
+			runnerKey(repoRoot, "jj", "log", "-r", "main@origin", "-n", "1", "--no-graph", "-T", "change_id"): {
+				"basechange\n",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/one) & ancestors(main) | (feature/one) & ancestors(main@origin) | (feature/two) & ancestors(main) | (feature/two) & ancestors(main@origin)", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`): {
 				"one-change|one-commit\n",
 			},
 		},
@@ -144,7 +183,7 @@ func TestStackMergeStatesBatchesBookmarkChecks(t *testing.T) {
 	if merged[2] {
 		t.Fatal("expected feature/two to remain unmerged")
 	}
-	if len(runner.calls) != 1 {
-		t.Fatalf("merge checks made %d runner calls, want 1: %v", len(runner.calls), runner.calls)
+	if len(runner.calls) != 2 {
+		t.Fatalf("merge checks made %d runner calls, want 2: %v", len(runner.calls), runner.calls)
 	}
 }

@@ -213,11 +213,12 @@ func matchingHydratedStack(current StackInfo, stacks []StackInfo) (StackInfo, bo
 }
 
 type stackMergeCandidate struct {
-	stackID  int64
-	selector string
-	changeID string
-	commitID string
-	baseRef  string
+	stackID    int64
+	selector   string
+	changeID   string
+	commitID   string
+	baseRef    string
+	remoteName string
 }
 
 func (s *Service) stackMergeStates(ctx context.Context, repoRoot string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
@@ -227,8 +228,20 @@ func (s *Service) stackMergeStates(ctx context.Context, repoRoot string, stacks 
 		return merged
 	}
 	revsets := make([]string, 0, len(candidates))
+	baseSelectors := map[string][]string{}
 	for _, candidate := range candidates {
-		revsets = append(revsets, fmt.Sprintf("(%s) & ancestors(%s)", quoteJJRev(candidate.selector), quoteJJRev(candidate.baseRef)))
+		cacheKey := candidate.baseRef + "\x00" + candidate.remoteName
+		selectors, ok := baseSelectors[cacheKey]
+		if !ok {
+			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName)
+			baseSelectors[cacheKey] = selectors
+		}
+		for _, baseSelector := range selectors {
+			revsets = append(revsets, fmt.Sprintf("(%s) & ancestors(%s)", quoteJJRev(candidate.selector), quoteJJRev(baseSelector)))
+		}
+	}
+	if len(revsets) == 0 {
+		return merged
 	}
 	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", strings.Join(revsets, " | "), "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`)
 	if err != nil {
@@ -270,13 +283,18 @@ func stackMergeCandidates(stacks []StackInfo, bookmarkTargets map[string]string)
 		if baseRef == "" || IsTerminalStackStatus(stack.Status) {
 			continue
 		}
+		remoteName := ""
+		if stack.RemoteName != nil {
+			remoteName = strings.TrimSpace(*stack.RemoteName)
+		}
 		if bookmark := strings.TrimSpace(stack.BookmarkName); bookmark != "" {
 			if changeID, exists := bookmarkTargets[bookmark]; exists {
 				candidates = append(candidates, stackMergeCandidate{
-					stackID:  stack.ID,
-					selector: bookmark,
-					changeID: strings.TrimSpace(changeID),
-					baseRef:  baseRef,
+					stackID:    stack.ID,
+					selector:   bookmark,
+					changeID:   strings.TrimSpace(changeID),
+					baseRef:    baseRef,
+					remoteName: remoteName,
 				})
 				continue
 			}
@@ -284,23 +302,54 @@ func stackMergeCandidates(stacks []StackInfo, bookmarkTargets map[string]string)
 		if stack.HeadCommitID != nil {
 			if head := strings.TrimSpace(*stack.HeadCommitID); head != "" {
 				candidates = append(candidates, stackMergeCandidate{
-					stackID:  stack.ID,
-					selector: head,
-					commitID: head,
-					baseRef:  baseRef,
+					stackID:    stack.ID,
+					selector:   head,
+					commitID:   head,
+					baseRef:    baseRef,
+					remoteName: remoteName,
 				})
 			}
 		}
 		if stack.HeadChangeID != nil {
 			if head := strings.TrimSpace(*stack.HeadChangeID); head != "" {
 				candidates = append(candidates, stackMergeCandidate{
-					stackID:  stack.ID,
-					selector: head,
-					changeID: head,
-					baseRef:  baseRef,
+					stackID:    stack.ID,
+					selector:   head,
+					changeID:   head,
+					baseRef:    baseRef,
+					remoteName: remoteName,
 				})
 			}
 		}
 	}
 	return candidates
+}
+
+func (s *Service) stackMergeBaseSelectors(ctx context.Context, repoRoot, baseRef, remoteName string) []string {
+	baseRef = strings.TrimSpace(baseRef)
+	if baseRef == "" {
+		return nil
+	}
+	selectors := []string{baseRef}
+	if strings.Contains(baseRef, "@") {
+		return selectors
+	}
+	remoteName = strings.TrimSpace(remoteName)
+	if remoteName == "" {
+		remoteName = "origin"
+	}
+	remoteBase := baseRef + "@" + remoteName
+	if s.revExists(ctx, repoRoot, remoteBase) {
+		selectors = append(selectors, remoteBase)
+	}
+	return selectors
+}
+
+func (s *Service) revExists(ctx context.Context, repoRoot, rev string) bool {
+	rev = strings.TrimSpace(rev)
+	if rev == "" {
+		return false
+	}
+	_, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", rev, "-n", "1", "--no-graph", "-T", "change_id")
+	return err == nil
 }

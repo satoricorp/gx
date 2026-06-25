@@ -2664,6 +2664,11 @@ func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stac
 	if baseRef == "" || IsTerminalStackStatus(stack.Status) {
 		return false
 	}
+	remoteName := ""
+	if stack.RemoteName != nil {
+		remoteName = strings.TrimSpace(*stack.RemoteName)
+	}
+	baseSelectors := s.stackMergeBaseSelectors(ctx, repoRoot, baseRef, remoteName)
 	selectors := make([]string, 0, 2)
 	if bookmark := strings.TrimSpace(stack.BookmarkName); bookmark != "" {
 		if _, exists := bookmarkTargets[bookmark]; exists {
@@ -2683,13 +2688,15 @@ func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stac
 		}
 	}
 	for _, selector := range selectors {
-		revset := fmt.Sprintf("(%s) & ancestors(%s)", quoteJJRev(selector), quoteJJRev(baseRef))
-		out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", revset, "-n", "1", "--no-graph", "-T", "change_id")
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(out) != "" {
-			return true
+		for _, baseSelector := range baseSelectors {
+			revset := fmt.Sprintf("(%s) & ancestors(%s)", quoteJJRev(selector), quoteJJRev(baseSelector))
+			out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", revset, "-n", "1", "--no-graph", "-T", "change_id")
+			if err != nil {
+				continue
+			}
+			if strings.TrimSpace(out) != "" {
+				return true
+			}
 		}
 	}
 	return false
