@@ -43,6 +43,16 @@ func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
 	}
 }
 
+func TestUnpromptedDefaultReviewStaysPatchFocused(t *testing.T) {
+	opts := normalizeOptions(Options{})
+	if !opts.PatchFocused {
+		t.Fatalf("PatchFocused = false, want true")
+	}
+	if profile := reviewProfile(opts); profile != "patch_focused" {
+		t.Fatalf("reviewProfile() = %q, want patch_focused", profile)
+	}
+}
+
 func TestReviewEmitsProgress(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# repo\n")
@@ -265,6 +275,33 @@ func TestEngineUsesAIReviewerWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestEnginePassesReviewPromptToAIReviewer(t *testing.T) {
+	reviewer := &capturingReviewer{}
+	engine := NewEngineWithReviewer(
+		fakeScanner{facts: RepoFacts{
+			Docs:             []FilePresence{{Path: "README.md", Present: true}},
+			DependencyFiles:  []string{"go.mod"},
+			TestFileCount:    1,
+			TrackedFileCount: 2,
+		}},
+		fakeCatalog{sources: []Source{{ID: "custom-source", Scopes: []string{"architecture"}}}},
+		[]Rule{fakeRule{}},
+		fakeRetriever{},
+		reviewer,
+	)
+
+	_, err := engine.Review(context.Background(), "/repo", Options{Prompt: "review auth rollback risk"})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if reviewer.brief.ReviewPrompt != "review auth rollback risk" {
+		t.Fatalf("AI brief ReviewPrompt = %q", reviewer.brief.ReviewPrompt)
+	}
+	if reviewer.brief.ReviewProfile != "prompt_directed" {
+		t.Fatalf("AI brief ReviewProfile = %q, want prompt_directed", reviewer.brief.ReviewProfile)
+	}
+}
+
 func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
 	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
@@ -387,6 +424,33 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	}
 }
 
+func TestPromptedReviewBriefUsesPromptDirectedProfile(t *testing.T) {
+	opts := normalizeOptions(Options{Prompt: "review auth rollback risk"})
+	if opts.PatchFocused {
+		t.Fatalf("PatchFocused = true, want false for prompted review")
+	}
+	if profile := reviewProfile(opts); profile != "prompt_directed" {
+		t.Fatalf("reviewProfile() = %q, want prompt_directed", profile)
+	}
+	if got := strings.Join(activeScopeList(opts), ","); got != "architecture,dependencies,testing,maintainability" {
+		t.Fatalf("activeScopeList() = %q", got)
+	}
+
+	brief, err := BuildReviewBrief(context.Background(), t.TempDir(), opts, RepoFacts{}, nil, fakeRetriever{})
+	if err != nil {
+		t.Fatalf("BuildReviewBrief() error = %v", err)
+	}
+	if brief.ReviewPrompt != "review auth rollback risk" {
+		t.Fatalf("ReviewPrompt = %q", brief.ReviewPrompt)
+	}
+	if brief.ReviewProfile != "prompt_directed" {
+		t.Fatalf("ReviewProfile = %q, want prompt_directed", brief.ReviewProfile)
+	}
+	if !strings.Contains(brief.Rubric.Goal, "review_prompt") {
+		t.Fatalf("Rubric goal = %q, want review_prompt guidance", brief.Rubric.Goal)
+	}
+}
+
 func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
 	root := initRepo(t)
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -463,7 +527,9 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 	prompt := reviewDeveloperPrompt()
 	for _, want := range []string{
 		"patch_focused",
+		"prompt_directed",
 		"deep_full_spectrum",
+		"review_prompt",
 		"static.diff_snippets",
 		"security/auth",
 		"race/idempotency",
@@ -614,6 +680,21 @@ type fakeReviewer struct {
 
 func (f fakeReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	return f.findings, nil
+}
+
+type capturingReviewer struct {
+	brief ReviewBrief
+}
+
+func (c *capturingReviewer) Review(_ context.Context, brief ReviewBrief) ([]Finding, error) {
+	c.brief = brief
+	return []Finding{{
+		ID:             "ai.prompt",
+		Title:          "Prompt-directed finding",
+		Summary:        "The prompted concern is represented in the review brief.",
+		Benefit:        "Keeps prompted review behavior testable.",
+		Recommendation: "Keep review_prompt in the AI review brief.",
+	}}, nil
 }
 
 func TestJavaScriptLockfileFinding(t *testing.T) {

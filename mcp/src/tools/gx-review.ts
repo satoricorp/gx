@@ -18,6 +18,7 @@ export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
   scope: reviewScope.optional().describe("Optional focused review scope. Omit for gx review's patch-focused default."),
   focus: z.string().optional().describe("Limit review to files under this path prefix."),
+  prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional gx review prompt."),
   deep: z.boolean().optional().describe("Run full-spectrum review with more local and indexed context."),
   verbose: z.boolean().optional().describe("Include repo facts, docs, and changed files."),
 };
@@ -47,6 +48,10 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
   }
   if (params.verbose) {
     args.push("--verbose");
+  }
+  const prompt = params.prompt?.trim();
+  if (prompt) {
+    args.push(prompt);
   }
   try {
     await ensureGxInitialized(params.cwd);

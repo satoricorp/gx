@@ -45,6 +45,7 @@ type Options struct {
 	Deep         bool
 	Since        string
 	Focus        string
+	Prompt       string
 	Verbose      bool
 	PatchFocused bool
 
@@ -59,6 +60,7 @@ type Report struct {
 	Deep              bool
 	Since             string
 	Focus             string
+	Prompt            string
 	BaselineScopes    []string
 	Docs              []FilePresence
 	DependencyFiles   []string
@@ -173,10 +175,12 @@ func reviewLabel(report Report, text string) string {
 }
 
 func normalizeOptions(opts Options) Options {
+	opts.Prompt = strings.TrimSpace(opts.Prompt)
+	opts.Focus = strings.TrimSpace(opts.Focus)
 	scope := strings.ToLower(strings.TrimSpace(opts.Scope))
 	if scope == "" {
 		opts.Scope = DefaultScope
-		if !opts.Deep {
+		if !opts.Deep && opts.Prompt == "" {
 			opts.PatchFocused = true
 		}
 	} else {
@@ -212,6 +216,9 @@ func reviewProfile(opts Options) string {
 	}
 	if opts.PatchFocused {
 		return "patch_focused"
+	}
+	if strings.TrimSpace(opts.Prompt) != "" {
+		return "prompt_directed"
 	}
 	return "scope_focused"
 }

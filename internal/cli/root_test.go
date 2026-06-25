@@ -1768,6 +1768,19 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	}
 }
 
+func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
+	cmd := NewRoot(context.Background())
+	cmd.SetArgs([]string{"review", "one prompt", "second prompt"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("gx review accepted multiple positional prompts")
+	}
+	if !strings.Contains(err.Error(), "accepts at most 1 arg") {
+		t.Fatalf("gx review error = %v, want maximum arg error", err)
+	}
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

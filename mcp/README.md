@@ -7,7 +7,7 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 1. `gx_sync` before changes, so remote GitHub merges are reflected locally.
 2. `gx_compose` to propose changes. Ready proposals auto-accept by default.
 3. `gx_publish` to publish accepted stacks.
-4. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, and current code changes.
+4. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 
 If a repository is not initialized for GX, MCP runs `gx init` non-interactively
 before repository tools continue. It uses Git identity when available and falls
@@ -21,7 +21,7 @@ back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
 | `gx_compose` | `gx compose --json` | Layer working-copy changes into a pending compose proposal from a session-isolated JJ workspace |
 | `gx_accept` | `gx compose apply <proposal-id> --json` | Manually accept a held ready compose proposal |
 | `gx_publish` | `gx publish [stack]` | Publish accepted stacks |
-| `gx_review` | `gx review` | Gather local review/context with AI reviewers enabled |
+| `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
 | `gx_fix` | `gx compose fix <proposal-id> --json` | Repair compose proposal issues with deterministic repair plus LLM repair |
 | `gx_set_base` | `gx base --set <default> --json` | Return the GX authoring base to the repo default branch only |
 

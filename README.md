@@ -320,7 +320,10 @@ If semantic indexing is misconfigured or unavailable, `gx publish` still uploads
 review bundle and reports the semantic indexing error separately.
 
 `gx review` can also use the same OpenAI and TurboPuffer credentials to retrieve
-general review guidance from the `gx-review-knowledge` namespace:
+general review guidance from the `gx-review-knowledge` namespace. Pass an
+optional prompt to guide a broader review of how current changes affect the
+surrounding codebase, for example
+`gx review "check auth rollback risks across the session flow"`:
 
 ```bash
 export GX_REVIEW_KNOWLEDGE_NAMESPACE="gx-review-knowledge"

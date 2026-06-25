@@ -117,6 +117,30 @@ func TestReviewResourceQueryTextUsesPatchAndDeepReviewIntents(t *testing.T) {
 	}
 }
 
+func TestReviewResourceQueryTextIncludesPromptedReviewIntent(t *testing.T) {
+	opts := normalizeOptions(Options{Prompt: "review auth rollback risk"})
+	signals := reviewResourceSignalSet{
+		Files:      []string{"internal/auth/session.go"},
+		Languages:  []string{"go"},
+		RiskTags:   riskTagsForReview([]string{"internal/auth/session.go"}, nil, opts),
+		Categories: categoriesForReview(opts),
+		Intents:    reviewResourceIntents(opts),
+	}
+	query := reviewResourceQueryText(opts, signals)
+	for _, want := range []string{
+		"profile: prompt_directed",
+		"review prompt: review auth rollback risk",
+		"user review_prompt checks",
+		"broader codebase impact checks for the prompted concern",
+		"security",
+		"observability",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("prompted query missing %q in:\n%s", want, query)
+		}
+	}
+}
+
 func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	var gotPath string
 	var gotAuth string

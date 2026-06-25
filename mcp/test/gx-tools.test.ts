@@ -11,6 +11,7 @@ describe("gx_review metadata and schema", () => {
     expect(reviewMetadata.description).toMatch(/local facts/i);
     expect(reviewMetadata.annotations?.readOnlyHint).toBe(true);
     expect(reviewSchema.scope.parse("architecture")).toBe("architecture");
+    expect(reviewSchema.prompt.parse("review auth rollback risk")).toBe("review auth rollback risk");
     expect(reviewSchema.deep.parse(true)).toBe(true);
   });
 });
@@ -96,11 +97,12 @@ exit 1
     }
   });
 
-  test("gx_review passes scope, focus, deep, and verbose flags", async () => {
+  test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {
     const output = await gxReview({
       cwd: repoRoot,
       scope: "architecture",
       focus: "internal/authoring",
+      prompt: "review auth rollback risk",
       deep: true,
       verbose: true,
     });
@@ -116,12 +118,13 @@ exit 1
       "internal/authoring",
       "--deep",
       "--verbose",
+      "review auth rollback risk",
     ]);
 
     const calls = await readFile(callLog, "utf8");
     expect(calls).toContain("jj|");
     expect(calls).toContain("gx|");
-    expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose");
+    expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
   });
 
   test("gx_publish passes an optional stack name", async () => {

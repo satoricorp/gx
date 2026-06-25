@@ -22,6 +22,7 @@ type ReviewBrief struct {
 	Depth         string             `json:"depth"`
 	ReviewProfile string             `json:"review_profile"`
 	Focus         string             `json:"focus,omitempty"`
+	ReviewPrompt  string             `json:"review_prompt,omitempty"`
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
 	Context       []ContextSnippet   `json:"context"`
@@ -109,6 +110,7 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		Depth:         depthLabel(opts.Deep),
 		ReviewProfile: reviewProfile(opts),
 		Focus:         strings.TrimSpace(opts.Focus),
+		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
 		Static: StaticSnapshot{
 			FileCount:       facts.TrackedFileCount,
 			TestFileCount:   facts.TestFileCount,
@@ -435,6 +437,9 @@ func reviewRubric(opts Options) ArchitectureRubric {
 	if opts.PatchFocused {
 		return patchReviewRubric()
 	}
+	if strings.TrimSpace(opts.Prompt) != "" {
+		return promptDirectedReviewRubric(opts)
+	}
 	return scopedReviewRubric(opts.Scope)
 }
 
@@ -476,6 +481,31 @@ func scopedReviewRubric(scope string) ArchitectureRubric {
 			"Do not produce generic audit facts.",
 		},
 		Output: "Return only concrete scoped recommendations with title, summary, benefit, recommendation, optional evidence, and strength.",
+	}
+}
+
+func promptDirectedReviewRubric(opts Options) ArchitectureRubric {
+	scope := strings.TrimSpace(opts.Scope)
+	if scope == "" {
+		scope = DefaultScope
+	}
+	return ArchitectureRubric{
+		Goal: "Review the user's review_prompt against the current changes and the surrounding codebase, producing concrete findings where the prompt, diff, and repo context intersect.",
+		Questions: []string{
+			"What concern or behavior is the user asking about in review_prompt?",
+			"How do static.diff_snippets and static.changed_files affect that concern?",
+			"Which surrounding Modules, Interfaces, tests, docs, or local policies make the prompted concern safer or riskier?",
+			"Which finding is specific to the requested scope `" + scope + "` while still answering review_prompt?",
+			"Which recommendation has a clear first file to edit and verification command to run?",
+		},
+		Reject: []string{
+			"Do not ignore the current diff; use it as evidence for why the prompted concern matters now.",
+			"Do not limit the review to changed lines when surrounding code explains the risk or correct fix.",
+			"Do not report generic repo-wide advice that does not answer review_prompt.",
+			"Do not expose source URLs or source titles.",
+			"If there is no concrete finding tied to review_prompt and repo evidence, return no recommendations.",
+		},
+		Output: "Return only concrete prompt-directed recommendations with title, summary, benefit, recommendation, optional evidence, and strength.",
 	}
 }
 

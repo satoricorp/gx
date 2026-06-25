@@ -1607,9 +1607,9 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var deep bool
 	var verbose bool
 	cmd := &cobra.Command{
-		Use:   "review",
+		Use:   "review [prompt]",
 		Short: "Review current changes with local facts, indexed context, and configured AI reviewers",
-		Args:  cobra.NoArgs,
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			startedAt := time.Now()
 			reviewScope := ""
@@ -1617,9 +1617,13 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			if scopeExplicit {
 				reviewScope = scope
 			}
+			prompt := ""
+			if len(args) > 0 {
+				prompt = strings.TrimSpace(args[0])
+			}
 			repo, err := vcs.NewService().ResolveGitRepo(ctx)
 			if err != nil {
-				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, deep, verbose, time.Since(startedAt))
+				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
 				return err
 			}
 			report, err := runReviewWithLoader(
@@ -1630,13 +1634,14 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 						Scope:          reviewScope,
 						Deep:           deep,
 						Focus:          focus,
+						Prompt:         prompt,
 						Verbose:        verbose,
 						ProgressWriter: progress,
 						Color:          true,
 					})
 				},
 			)
-			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, deep, verbose, time.Since(startedAt))
+			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -1651,7 +1656,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, deep bool, verbose bool, duration time.Duration) {
+func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, verbose bool, duration time.Duration) {
 	status := "success"
 	if runErr != nil {
 		status = "error"
@@ -1659,6 +1664,8 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	mode := "patch"
 	if deep {
 		mode = "deep"
+	} else if strings.TrimSpace(prompt) != "" {
+		mode = "prompt"
 	} else if scopeExplicit {
 		mode = "scope"
 	}
@@ -1675,6 +1682,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 		"scope":                 effectiveScope,
 		"scope_explicit":        scopeExplicit,
 		"has_focus":             strings.TrimSpace(focus) != "",
+		"has_prompt":            strings.TrimSpace(prompt) != "",
 		"deep":                  deep,
 		"verbose":               verbose,
 		"duration_ms":           duration.Milliseconds(),

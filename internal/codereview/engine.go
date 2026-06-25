@@ -116,6 +116,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Deep:              opts.Deep,
 		Since:             strings.TrimSpace(opts.Since),
 		Focus:             strings.TrimSpace(opts.Focus),
+		Prompt:            strings.TrimSpace(opts.Prompt),
 		BaselineScopes:    baselineFor(opts.Scope),
 		Docs:              facts.Docs,
 		DependencyFiles:   facts.DependencyFiles,

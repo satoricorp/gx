@@ -249,6 +249,7 @@ func reviewResourceQueryText(opts Options, signals reviewResourceSignalSet) stri
 		"scope: " + opts.Scope,
 		"depth: " + depthLabel(opts.Deep),
 		"focus: " + strings.TrimSpace(opts.Focus),
+		"review prompt: " + strings.TrimSpace(opts.Prompt),
 		"primary task: find concrete review rules and failure modes for the current code change",
 		"review intents: " + strings.Join(signals.Intents, "; "),
 		"languages: " + strings.Join(signals.Languages, " "),
@@ -355,6 +356,9 @@ func categoriesForReview(opts Options) []string {
 	if opts.Deep {
 		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain", "performance", "observability"}
 	}
+	if strings.TrimSpace(opts.Prompt) != "" {
+		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain", "performance", "observability"}
+	}
 	if opts.PatchFocused {
 		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain"}
 	}
@@ -394,6 +398,11 @@ func reviewResourceIntents(opts Options) []string {
 			"performance scalability and resource usage checks",
 			"supply-chain dependency CI and deployment checks",
 			"documentation onboarding and REVIEW.md policy checks",
+		)
+	} else if strings.TrimSpace(opts.Prompt) != "" {
+		intents = append(intents,
+			"user review_prompt checks",
+			"broader codebase impact checks for the prompted concern",
 		)
 	} else if !opts.PatchFocused {
 		intents = append(intents, "requested scope "+strings.TrimSpace(opts.Scope)+" checks")
