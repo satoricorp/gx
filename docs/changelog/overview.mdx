@@ -1,0 +1,50 @@
+---
+title: "Changelog"
+description: "Latest updates and improvements to GX."
+---
+
+Follow along with what's shipping in GX. Entries are grouped by week.
+
+<Update label="June 25, 2026" description="Week of June 22 – 25">
+
+## New features
+
+**macOS downloads and installer.** GX is now distributed as signed macOS builds with a hosted `install.sh` script, so you can get the CLI and menubar app onto a Mac without building from source.
+
+**CLI auto-update.** The MCP layer can now check for and apply CLI updates in place, keeping `gx` current without a manual reinstall.
+
+**Codex MCP setup from the menubar.** The menubar app gained a one-click command to wire GX into Codex, joining the existing MCP setup flows.
+
+**Auto-init and API-key setup over MCP.** New MCP entry points handle first-run authentication and repo initialization, so an agent can stand up GX in a fresh workspace without dropping to a terminal.
+
+**Background publish uploads.** `gx publish` now ships review context to the cloud in a detached background worker, retries abandoned uploads, and accepts publish responses that arrive before a review URL is ready. Publishes feel faster and survive flaky networks.
+
+**Expanded review context.** `gx review` pulls in a broader catalog of language and framework references when scoring a change, with the manifest of sources documented in the repo.
+
+**PostHog CLI analytics.** The CLI now reports anonymized product analytics through PostHog to inform future improvements.
+
+## Updates
+
+**Cloud auth unified on GX CLI sessions.** Capture uploads, publish, and the MCP tools all authenticate through the same `gx` CLI session. Legacy API-key cloud auth and stale session tokens have been removed — sign in once with `gx auth` and every surface uses it.
+
+**Sharper MCP auth guidance.** When an MCP tool hits an auth error, GX now surfaces a clear `gx auth login` next step instead of a generic failure.
+
+**Focused `gx review`.** Review now scopes to the current change set by default, cutting noise on large stacks.
+
+**Optional review context docs.** `CONTEXT.md` and ADRs are no longer flagged as missing during review. Guidance for adding them stays in the README, but absent files don't generate findings.
+
+**Menubar polish.** The menubar menu was trimmed and the doctor diagnostics were refined to highlight actionable problems first. The doctor also tracks which repos have GX hooks initialized.
+
+**AGPL license.** The public GX repository is now licensed under AGPL.
+
+## Bug fixes
+
+- Fixed cross-platform CLI packaging so non-macOS builds produce correct archives.
+- Fixed GX branch naming and improved `gx compose` reliability across edge cases.
+- Restored the doctor's repo registry lookup so previously initialized repos are recognized again.
+- Capture push uploads are now best-effort and no longer block the foreground command on transient failures.
+- Menubar packaging now respects explicit environment overrides and cleans any previously installed CLI before bundling.
+
+</Update>
+
+Have a question about a change? See the [GX overview](/) or open an issue on the public repository.
