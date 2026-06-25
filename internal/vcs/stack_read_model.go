@@ -134,7 +134,7 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 	out := make([]StackInfo, 0, len(infos))
 	for _, info := range infos {
 		publishRef := publishRefForStack(info)
-		revisions := revisionsFromStoredChanges(changesByStack[info.ID], stackPublicationState(bookmarksByName[publishRef], latestPushByBranch[publishRef]))
+		revisions := s.storedRevisionsWithDiff(ctx, repo.RootPath, changesByStack[info.ID], stackPublicationState(bookmarksByName[publishRef], latestPushByBranch[publishRef]))
 		info.Revisions = revisions
 		info.RevisionCount = len(revisions)
 		info.PublishedCount = 0
@@ -164,10 +164,13 @@ func stackPublicationState(bookmarks []storage.ChangeBookmark, latestPush storag
 	return NewStackPublicationState(publishedThrough, lastPushedByChangeID)
 }
 
-func revisionsFromStoredChanges(changes []storage.Change, publishedState StackPublicationState) []RevisionSummary {
+func (s *Service) storedRevisionsWithDiff(ctx context.Context, repoRoot string, changes []storage.Change, publishedState StackPublicationState) []RevisionSummary {
 	revisions := make([]RevisionSummary, 0, len(changes))
 	for _, change := range changes {
 		if IsPlaceholderDescription(change.Description) || change.Status == "abandoned" {
+			continue
+		}
+		if !s.storedChangeHasDiff(ctx, repoRoot, change) {
 			continue
 		}
 		revisions = append(revisions, RevisionSummary{
@@ -180,6 +183,21 @@ func revisionsFromStoredChanges(changes []storage.Change, publishedState StackPu
 		})
 	}
 	return revisions
+}
+
+func (s *Service) storedChangeHasDiff(ctx context.Context, repoRoot string, change storage.Change) bool {
+	target := strings.TrimSpace(change.CurrentCommitID)
+	if target == "" {
+		target = strings.TrimSpace(change.JJChangeID)
+	}
+	if strings.TrimSpace(repoRoot) == "" || target == "" {
+		return target != ""
+	}
+	empty, err := s.isRevisionEmpty(ctx, repoRoot, target)
+	if err != nil {
+		return true
+	}
+	return !empty
 }
 
 func matchingHydratedStack(current StackInfo, stacks []StackInfo) (StackInfo, bool) {

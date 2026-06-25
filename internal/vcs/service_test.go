@@ -1537,6 +1537,104 @@ func TestResolveCurrentStackCreatesNewStackFromBaseBranch(t *testing.T) {
 	}
 }
 
+func TestLoadStoredStackInfosHidesEmptyRevisions(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	defer store.Close()
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:  repoRoot,
+		Backend:   "jj",
+		CreatedAt: 1,
+		UpdatedAt: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "empty-change"
+	stackID, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "docs",
+		BookmarkName: "feature/docs",
+		BaseRef:      "",
+		BaseCommitID: "base",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	nonEmptyID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      "non-empty-change",
+		CurrentCommitID: "non-empty-commit",
+		Description:     "real revision",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange(non-empty) error = %v", err)
+	}
+	emptyID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      "empty-change",
+		CurrentCommitID: "empty-commit",
+		Description:     "empty revision",
+		Status:          "draft",
+		FirstSeenAt:     2,
+		UpdatedAt:       2,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange(empty) error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, nonEmptyID, 1); err != nil {
+		t.Fatalf("AddChangeToStack(non-empty) error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, emptyID, 2); err != nil {
+		t.Fatalf("AddChangeToStack(empty) error = %v", err)
+	}
+
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {""},
+			runnerKey(repoRoot, "jj", "log", "-r", "non-empty-commit", "--no-graph", "-T", "empty"): {
+				"false\n",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "empty-commit", "--no-graph", "-T", "empty"): {
+				"true\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+	stacks, err := svc.loadStoredStackInfos(ctx, store, RepoInfo{RootPath: repoRoot, Backend: "jj"}, repoID)
+	if err != nil {
+		t.Fatalf("loadStoredStackInfos() error = %v", err)
+	}
+	if len(stacks) != 1 {
+		t.Fatalf("stored stacks = %d, want 1", len(stacks))
+	}
+	if len(stacks[0].Revisions) != 1 {
+		t.Fatalf("stored revisions = %#v, want only non-empty revision", stacks[0].Revisions)
+	}
+	if stacks[0].Revisions[0].ChangeID != "non-empty-change" {
+		t.Fatalf("revision change = %q, want non-empty-change", stacks[0].Revisions[0].ChangeID)
+	}
+}
+
 func TestResolveCurrentStackIgnoresLatestCursorGXRequest(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
