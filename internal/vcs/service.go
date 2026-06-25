@@ -2530,22 +2530,8 @@ func (s *Service) remoteBranchHead(ctx context.Context, repoRoot, remoteName, br
 	return "", nil
 }
 
-func githubPullRequestBody(pushed []PushedChange) string {
-	var body strings.Builder
-	body.WriteString("Published by GX.\n\nRevisions:")
-	if len(pushed) == 0 {
-		body.WriteString("\n- (none)")
-		return body.String()
-	}
-	for _, change := range pushed {
-		description := strings.TrimSpace(change.Change.Description)
-		if description == "" {
-			description = "(no description set)"
-		}
-		body.WriteString("\n- ")
-		body.WriteString(description)
-	}
-	return body.String()
+func githubPullRequestBody(_ []PushedChange) string {
+	return ""
 }
 
 func (s *Service) revisionsForStack(ctx context.Context, stack StackInfo) ([]RevisionSummary, error) {

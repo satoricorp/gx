@@ -67,7 +67,7 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 		BaseBranch: "main",
 		HeadBranch: "feature/demo",
 		Title:      "Demo",
-		Body:       "Published by GX.",
+		Body:       "",
 	})
 	if err != nil {
 		t.Fatalf("CreatePullRequest() error = %v", err)
