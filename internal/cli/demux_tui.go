@@ -356,6 +356,9 @@ func renderComposeSummary(proposal authoring.DemuxProposal, groups []demuxStackD
 			marker := "○"
 			if stackSelected {
 				marker = "●"
+				if stackMode {
+					marker = "› ●"
+				}
 			}
 			meta := fmt.Sprintf("%d %s", len(group.Revisions), pluralize("revision", len(group.Revisions)))
 			lines = append(lines, composeStackLine(marker, group.Label, meta, stackSelected))

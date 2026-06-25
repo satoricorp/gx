@@ -28,6 +28,7 @@ type stacksAction struct {
 type stacksModel struct {
 	stack       authoring.StackSummary
 	unrecorded  *authoring.ChangeInfo
+	hiddenEmpty int
 	mode        stacksMode
 	stackCursor int
 	revCursor   int
@@ -50,8 +51,8 @@ func useStatusInteractive(in io.Reader, out io.Writer) bool {
 	return term.IsTerminal(output.Fd())
 }
 
-func runStacksInteractive(in io.Reader, out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo) (stacksAction, error) {
-	model := newStacksModel(stack, unrecorded)
+func runStacksInteractive(in io.Reader, out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int) (stacksAction, error) {
+	model := newStacksModelWithHidden(stack, unrecorded, hiddenEmpty)
 	program := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out))
 	final, err := program.Run()
 	if err != nil {
@@ -64,8 +65,12 @@ func runStacksInteractive(in io.Reader, out io.Writer, stack authoring.StackSumm
 }
 
 func newStacksModel(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo) stacksModel {
+	return newStacksModelWithHidden(stack, unrecorded, 0)
+}
+
+func newStacksModelWithHidden(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int) stacksModel {
 	stack = stackSummaryWithDisplayFallback(stack)
-	model := stacksModel{stack: stack, unrecorded: unrecorded, stackCursor: currentStackIndex(stack), mode: stacksModeStacks, diffView: newTUIDiffView()}
+	model := stacksModel{stack: stack, unrecorded: unrecorded, hiddenEmpty: hiddenEmpty, stackCursor: currentStackIndex(stack), mode: stacksModeStacks, diffView: newTUIDiffView()}
 	if model.stackCursor < 0 {
 		model.stackCursor = 0
 	}
@@ -282,7 +287,7 @@ func (m stacksModel) View() tea.View {
 	if m.mode == stacksModeDiff {
 		return tea.NewView(m.diffView.render("gx stacks"))
 	}
-	return tea.NewView(renderStacksSummary(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor))
+	return tea.NewView(renderStacksSummaryWithHidden(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor, m.hiddenEmpty))
 }
 
 func captureJjDiff(rev string) (string, error) {

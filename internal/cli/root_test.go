@@ -17,6 +17,7 @@ import (
 
 	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/publication"
 )
 
 var errTestComposeRepair = errors.New("compose repair unavailable")
@@ -396,9 +397,10 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 			CommitID: "73f3245b3523",
 			Files:    []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
 		},
-		NeedsMessage: true,
-		Files:        []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
-		Next:         []string{"gx compose", "gx stacks"},
+		NeedsMessage:  true,
+		Files:         []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
+		Next:          []string{"gx compose -a", "gx stacks"},
+		GitStatusNote: "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
 
@@ -406,11 +408,12 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"2 files are currently waiting to be assigned.",
-		"Run gx compose to add them to the pending compose proposal.",
-		"●  Currently no message assigned",
-		"   GX base ref: main",
-		"Files (2)",
 		"internal/cli/root.go",
+		"internal/cli/stacks_tui.go",
+		"gx stores new changes in revisions, so `git status` may be clean.",
+		"Next",
+		"gx compose -a",
+		"gx stacks",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
@@ -422,10 +425,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 	out.Reset()
 	printCurrentStatusHuman(&out, status)
 	text = out.String()
-	if !strings.Contains(text, "●  Message: update stack navigation") {
-		t.Fatalf("printCurrentStatusHuman() missing assigned message:\n%s", text)
-	}
-	for _, unwanted := range []string{"Commit ", "Parent ", "Revision "} {
+	for _, unwanted := range []string{"Commit ", "Parent ", "Revision ", "Message:"} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("printCurrentStatusHuman() should not include %q:\n%s", unwanted, text)
 		}
@@ -461,9 +461,8 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 	printCurrentStatusHuman(&out, status)
 	text := out.String()
 	for _, want := range []string{
-		"Run gx add -m \"describe this revision\" to record them onto the active edited stack revision.",
-		"Git checkout ref: feature/change-kxwqpvuo",
 		"gx add -m \"describe this revision\"",
+		"gx stacks",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("dirty edit status missing %q in:\n%s", want, text)
@@ -471,6 +470,30 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 	}
 	if strings.Contains(text, "pending compose proposal") {
 		t.Fatalf("dirty edit status should not point at compose:\n%s", text)
+	}
+}
+
+func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	status := currentStatus{
+		PublishUploads: publication.QueueStatus{LastError: `POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`},
+		Files:          []string{"internal/github/client_test.go"},
+		Next:           []string{"gx compose -a", "gx stacks"},
+		GitStatusNote:  "gx stores new changes in revisions, so `git status` may be clean.",
+	}
+	var out bytes.Buffer
+
+	printCurrentStatusHuman(&out, status)
+	text := out.String()
+	for _, want := range []string{
+		`ERROR: POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`,
+		"Run `gx report` to report this issue.",
+		"internal/github/client_test.go",
+		"gx compose -a",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
+		}
 	}
 }
 
@@ -528,11 +551,12 @@ func TestStacksDisplayHidesMergedAndKeepsPublishedAtBottomByDefault(t *testing.T
 		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
 		Stack: &current,
 		Stacks: []authoring.StackInfo{
-			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published"},
+			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published", RevisionCount: 1, PublishedCount: 1, Revisions: []authoring.RevisionSummary{{ChangeID: "publishedchange", Description: "published"}}},
 			current,
 			{Name: "merged work", Alias: "merged", BookmarkName: "feature/merged", BaseRef: "main", Status: "merged"},
-			{Name: "next work", Alias: "next", BookmarkName: "feature/next", BaseRef: "main", Status: "draft"},
+			{Name: "next work", Alias: "next", BookmarkName: "feature/next", BaseRef: "main", Status: "draft", RevisionCount: 1, Revisions: []authoring.RevisionSummary{{ChangeID: "nextchange", Description: "next"}}},
 		},
+		Revisions: []authoring.RevisionSummary{{ChangeID: "activechange", Description: "active"}},
 	}
 
 	display := stackSummaryForStacksDisplay(stack, stackDisplayOptions{})
@@ -560,9 +584,10 @@ func TestStacksDisplayShowAllStillHidesMerged(t *testing.T) {
 		Stack: &current,
 		Stacks: []authoring.StackInfo{
 			{Name: "merged work", Alias: "merged", BookmarkName: "feature/merged", BaseRef: "main", Status: "merged", RevisionCount: 2, PublishedCount: 2},
-			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published"},
+			{Name: "published work", Alias: "published", BookmarkName: "feature/published", BaseRef: "main", Status: "published", RevisionCount: 1, PublishedCount: 1, Revisions: []authoring.RevisionSummary{{ChangeID: "publishedchange", Description: "published"}}},
 			current,
 		},
+		Revisions: []authoring.RevisionSummary{{ChangeID: "activechange", Description: "active"}},
 	}
 
 	display := stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: true})
@@ -578,6 +603,49 @@ func TestStacksDisplayShowAllStillHidesMerged(t *testing.T) {
 	}
 	if publishedIndex < activeIndex {
 		t.Fatalf("published stack should render after draft stacks:\n%s", text)
+	}
+}
+
+func TestStacksDisplayHidesEmptyStacksAndShowsListNotice(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "feature/active", BaseRef: "main", Status: "draft"}
+	stack := authoring.StackSummary{
+		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
+		Stack: &current,
+		Stacks: []authoring.StackInfo{
+			current,
+			{Name: "empty docs", Alias: "docs", BookmarkName: "feature/docs", BaseRef: "main", Status: "draft"},
+			{Name: "empty cli", Alias: "cli", BookmarkName: "feature/cli", BaseRef: "main", Status: "draft"},
+		},
+		Revisions: []authoring.RevisionSummary{{ChangeID: "activechange", Description: "active"}},
+	}
+
+	display := stackDisplaySummaryForStacksDisplay(stack, stackDisplayOptions{})
+	text := renderStacksSummaryWithHidden(display.Stack, nil, 0, true, 0, display.HiddenEmpty)
+
+	if display.HiddenEmpty != 2 {
+		t.Fatalf("HiddenEmpty = %d, want 2", display.HiddenEmpty)
+	}
+	for _, want := range []string{
+		"2 branches without revisions. Run 'gx stacks list' to see a full list of stacks.",
+		"active work",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("renderStacksSummaryWithHidden() missing %q in:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{"empty docs", "empty cli"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("renderStacksSummaryWithHidden() should hide %q:\n%s", unwanted, text)
+		}
+	}
+
+	full := stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
+	fullText := renderStacksSummary(full, nil, 0, true, 0)
+	for _, want := range []string{"empty docs", "empty cli"} {
+		if !strings.Contains(fullText, want) {
+			t.Fatalf("gx stacks list display missing %q in:\n%s", want, fullText)
+		}
 	}
 }
 
@@ -850,6 +918,33 @@ func TestDemuxErrorHasInteractiveProposalRequiresUsableHumanProposal(t *testing.
 	}
 	if demuxErrorHasInteractiveProposal(authoring.DemuxPlanPacket{}, false, false) {
 		t.Fatalf("missing proposal should not enter interactive compose")
+	}
+}
+
+func TestDemuxAutoAcceptBlockedReasonRequiresCleanReadyProposal(t *testing.T) {
+	ready := authoring.DemuxPlanPacket{
+		State: authoring.DemuxWorkflowReadyToApply,
+		Proposal: authoring.DemuxProposal{
+			ID: "demux-1",
+			Revisions: []authoring.RevisionProposal{
+				{ID: "r1", Intent: "ready"},
+			},
+		},
+	}
+	if reason := demuxAutoAcceptBlockedReason(ready); reason != "" {
+		t.Fatalf("ready proposal blocked: %s", reason)
+	}
+
+	withWarning := ready
+	withWarning.Proposal.FeasibilityWarnings = []authoring.FeasibilityWarning{{Severity: "warning", Message: "blocked"}}
+	if reason := demuxAutoAcceptBlockedReason(withWarning); !strings.Contains(reason, "blocking warnings") {
+		t.Fatalf("warning reason = %q, want blocking warnings", reason)
+	}
+
+	withRepairHint := ready
+	withRepairHint.Review.RepairHints = []authoring.RepairHint{{Kind: "split"}}
+	if reason := demuxAutoAcceptBlockedReason(withRepairHint); !strings.Contains(reason, "repair hints") {
+		t.Fatalf("repair reason = %q, want repair hints", reason)
 	}
 }
 

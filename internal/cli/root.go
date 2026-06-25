@@ -82,6 +82,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newEditCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
 		newStacksCommand(ctx, engine),
+		newReportCommand(ctx, engine),
 		newReviewCommand(ctx),
 		newPublishCommand(ctx, engine, "publish [stack]", false),
 		newSyncCommand(ctx, engine),
@@ -110,7 +111,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "login", "version", "demo", "doctor":
 			cmd.GroupID = groupSetup
-		case "add", "base", "compose", "edit", "review", "status", "stacks":
+		case "add", "base", "compose", "edit", "report", "review", "status", "stacks":
 			cmd.GroupID = groupWork
 		case "publish", "sync":
 			cmd.GroupID = groupShip
@@ -381,6 +382,7 @@ func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 	var intent string
 	var raw bool
 	var planOnly bool
+	var autoAccept bool
 	var model string
 	var maxWarnings int
 	var excludeFilesets []string
@@ -441,6 +443,30 @@ func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 				}
 				return err
 			}
+			if autoAccept {
+				if reason := demuxAutoAcceptBlockedReason(packet); reason != "" {
+					if jsonOut {
+						_ = writeJSON(cmd, map[string]any{
+							"error":  reason,
+							"packet": packet,
+						})
+						return fmt.Errorf("%s", reason)
+					}
+					printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
+					return fmt.Errorf("%s", reason)
+				}
+				result, err := engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
+					ReturnToDefaultBranch: cmd.Name() == "compose",
+				})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeJSON(cmd, result)
+				}
+				printDemuxApplySummary(cmd.OutOrStdout(), result)
+				return nil
+			}
 			if jsonOut {
 				return writeJSON(cmd, packet)
 			}
@@ -463,6 +489,7 @@ func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
+	cmd.Flags().BoolVarP(&autoAccept, "auto-accept", "a", false, "accept a ready compose proposal")
 	cmd.Flags().StringVar(&intent, "intent", "", "optional intent prefix for proposed revisions")
 	cmd.Flags().BoolVar(&raw, "raw", false, "show full compose diagnostics in human output")
 	cmd.Flags().BoolVar(&planOnly, "plan", false, "stop after local deterministic planning; do not call OpenAI")
@@ -1426,6 +1453,29 @@ func demuxProposalDisplayStatus(proposal authoring.DemuxProposal, state authorin
 	return ""
 }
 
+func demuxAutoAcceptBlockedReason(packet authoring.DemuxPlanPacket) string {
+	if packet.State != authoring.DemuxWorkflowReadyToApply {
+		return fmt.Sprintf("compose proposal is not ready to auto-accept: %s", packet.State)
+	}
+	if strings.TrimSpace(packet.Proposal.ID) == "" {
+		return "compose proposal is not ready to auto-accept: missing proposal id"
+	}
+	if len(packet.Review.Errors) > 0 {
+		return "compose proposal is not ready to auto-accept: review errors found"
+	}
+	if len(packet.Review.RepairHints) > 0 {
+		return "compose proposal is not ready to auto-accept: repair hints found"
+	}
+	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
+	if len(blockingWarnings) > 0 {
+		return "compose proposal is not ready to auto-accept: blocking warnings found"
+	}
+	if len(diagnosticWarnings) > 0 || len(packet.Proposal.Warnings) > 0 {
+		return "compose proposal is not ready to auto-accept: diagnostics found"
+	}
+	return ""
+}
+
 func pluralize(word string, count int) string {
 	if count == 1 {
 		return word
@@ -1696,7 +1746,7 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	}
 	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
-	next := []string{"gx compose", "gx stacks"}
+	next := []string{"gx compose -a", "gx stacks"}
 	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
 		next = []string{`gx add -m "describe this revision"`, "gx stacks"}
 	}
@@ -1773,58 +1823,19 @@ func newStackCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 func printCurrentStatusHuman(out io.Writer, status currentStatus) {
 	fmt.Fprintln(out, commandLine("gx status", true))
 	fmt.Fprintln(out)
-	revision := shortID(status.Current.ChangeID, 12)
-	if revision == "" {
-		revision = "(unknown)"
+	if strings.TrimSpace(status.PublishUploads.LastError) != "" {
+		fmt.Fprintln(out, danger("ERROR: "+strings.TrimSpace(status.PublishUploads.LastError)))
+		fmt.Fprintln(out, mint("Run `gx report` to report this issue."))
+		fmt.Fprintln(out)
 	}
 	if len(status.Files) > 0 {
 		fmt.Fprintf(out, "%d files are currently waiting to be assigned.\n", len(status.Files))
-		if status.Stack != nil && status.Stack.BookmarkName != "" && status.Refs.GitCheckoutRef == status.Stack.BookmarkName {
-			fmt.Fprintf(out, "Run %s to record them onto the active edited stack revision.\n", command(`gx add -m "describe this revision"`))
-		} else {
-			fmt.Fprintf(out, "Run %s to add them to the pending compose proposal.\n", command("gx compose"))
-		}
-	} else {
-		fmt.Fprintf(out, "No files are currently assigned to revision %s.\n", valueText(revision))
-	}
-	fmt.Fprintln(out)
-
-	message := strings.TrimSpace(status.Current.Description)
-	if status.NeedsMessage {
-		fmt.Fprintln(out, danger("●")+"  "+danger("Currently no message assigned"))
-	} else {
-		fmt.Fprintln(out, success("●")+"  "+valueText("Message: "+message))
-	}
-	refs := status.Refs
-	if refs.GXBaseRef == "" {
-		refs.GXBaseRef = currentStatusBaseStack(status)
-	}
-	if refs.GXStackRef == "" && status.Stack != nil {
-		refs.GXStackRef = status.Stack.BookmarkName
-	}
-	if refs.GitCheckoutRef == "" {
-		refs.GitCheckoutRef = pointerString(status.Repo.BranchName)
-	}
-	if refs.GitPublishedRef == "" && status.Stack != nil {
-		refs.GitPublishedRef = pointerString(status.Stack.RemoteRef)
-	}
-	fmt.Fprintf(out, "   %s %s\n", muted("GX base ref:"), valueText(refs.GXBaseRef))
-	if refs.GXStackRef != "" {
-		fmt.Fprintf(out, "   %s %s\n", muted("GX stack ref:"), valueText(refs.GXStackRef))
-	}
-	if refs.GitCheckoutRef != "" {
-		fmt.Fprintf(out, "   %s %s\n", muted("Git checkout ref:"), valueText(refs.GitCheckoutRef))
-	}
-	if refs.GitPublishedRef != "" {
-		fmt.Fprintf(out, "   %s %s\n", muted("Git published ref:"), valueText(refs.GitPublishedRef))
-	}
-	printPublishUploadStatus(out, status.PublishUploads)
-	if len(status.Files) > 0 {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, section(fmt.Sprintf("Files (%d)", len(status.Files))))
 		for _, file := range status.Files {
-			fmt.Fprintf(out, "  %s\n", file)
+			fmt.Fprintln(out, danger(file))
 		}
+	} else {
+		fmt.Fprintln(out, "No files are currently waiting to be assigned.")
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, hint(status.GitStatusNote))
@@ -1941,9 +1952,39 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		flag.Hidden = true
 	}
 	cmd.AddCommand(
+		newStacksListCommand(ctx, engine),
 		newStacksEditCommand(ctx, engine),
 		newStacksDiffCommand(),
 	)
+	return cmd
+}
+
+func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+	var jsonOut bool
+	var agentOut bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all non-merged GX stacks",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			stack, err := engine.Status(ctx)
+			if err != nil {
+				return err
+			}
+			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
+			if jsonOut {
+				return writeJSON(cmd, stack)
+			}
+			if agentOut {
+				printStatusAgent(cmd.OutOrStdout(), stack, "")
+				return nil
+			}
+			fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
+	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
 	return cmd
 }
 
@@ -1979,7 +2020,8 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 	if err != nil {
 		return err
 	}
-	stack = stackSummaryForStacksDisplay(stack, opts)
+	display := stackDisplaySummaryForStacksDisplay(stack, opts)
+	stack = display.Stack
 	if agentOut {
 		printStatusAgent(out, stack, selector)
 		return nil
@@ -2000,13 +2042,13 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 		}
 	}
 	if useStatusInteractive(in, out) {
-		action, err := runStacksInteractive(in, out, stack, unrecorded)
+		action, err := runStacksInteractive(in, out, stack, unrecorded, display.HiddenEmpty)
 		if err != nil {
 			return err
 		}
 		return runStacksAction(ctx, engine, out, action)
 	}
-	printStatusSummary(out, stack, unrecorded)
+	printStacksSummary(out, stack, unrecorded, display.HiddenEmpty)
 	return nil
 }
 
@@ -2090,7 +2132,7 @@ func printStatus(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 		}
 	}
 	if useStatusInteractive(in, out) {
-		action, err := runStacksInteractive(in, out, stack, unrecorded)
+		action, err := runStacksInteractive(in, out, stack, unrecorded, 0)
 		if err != nil {
 			return err
 		}
@@ -2106,6 +2148,18 @@ func printStatusSummary(out io.Writer, stack authoring.StackSummary, unrecorded 
 		return
 	}
 	fmt.Fprint(out, renderStacksSummary(stack, unrecorded, currentStackIndex(stack), false, latestRevisionDisplayIndex(stack.Revisions, unrecorded)))
+}
+
+func printStacksSummary(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int) {
+	if len(stack.Revisions) == 0 && len(stack.Stacks) == 0 && stack.Stack == nil {
+		fmt.Fprintln(out, muted("No GX revisions recorded yet."))
+		if hiddenEmpty > 0 {
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, muted(emptyStacksNotice(hiddenEmpty)))
+		}
+		return
+	}
+	fmt.Fprint(out, renderStacksSummaryWithHidden(stack, unrecorded, currentStackIndex(stack), false, latestRevisionDisplayIndex(stack.Revisions, unrecorded), hiddenEmpty))
 }
 
 func printCurrentRevisions(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, indent int) {
@@ -2132,12 +2186,20 @@ func printCurrentRevisions(out io.Writer, stack authoring.StackSummary, unrecord
 }
 
 func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int) string {
+	return renderStacksSummaryWithHidden(stack, unrecorded, stackCursor, stackMode, revCursor, 0)
+}
+
+func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int) string {
 	stack = stackSummaryWithDisplayFallback(stack)
 	stacks := orderedStacks(stack)
 	if len(stacks) == 0 {
 		var out strings.Builder
 		fmt.Fprintln(&out, commandLine("gx stacks", true))
 		fmt.Fprintln(&out)
+		if hiddenEmpty > 0 {
+			fmt.Fprintln(&out, muted(emptyStacksNotice(hiddenEmpty)))
+			fmt.Fprintln(&out)
+		}
 		printCurrentRevisions(&out, stack, unrecorded, 0)
 		fmt.Fprintln(&out)
 		fmt.Fprintln(&out, stacksLegend(stackMode))
@@ -2152,9 +2214,11 @@ func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.Cha
 	lines := []string{
 		commandLine("gx stacks", true),
 		"",
-		stacksHeaderLine(stack, len(stacks), stackMode),
-		"",
 	}
+	if hiddenEmpty > 0 {
+		lines = append(lines, muted(emptyStacksNotice(hiddenEmpty)), "")
+	}
+	lines = append(lines, stacksHeaderLine(stack, len(stacks), stackMode), "")
 	previousBucket := -1
 	for index, entry := range stacks {
 		bucket := stackDisplayBucket(entry)
@@ -2170,7 +2234,11 @@ func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.Cha
 		previousBucket = bucket
 		selected := index == stackCursor
 		if selected {
-			lines = append(lines, statusBookmarkLine("●", entry, stackStatusMeta(stack, entry), true))
+			marker := "●"
+			if stackMode {
+				marker = "› ●"
+			}
+			lines = append(lines, statusBookmarkLine(marker, entry, stackStatusMeta(stack, entry), true))
 			cursor := -1
 			if !stackMode {
 				cursor = revCursor
@@ -2183,6 +2251,14 @@ func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.Cha
 	}
 	lines = append(lines, "", stacksLegend(stackMode))
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func emptyStacksNotice(count int) string {
+	word := "branches"
+	if count == 1 {
+		word = "branch"
+	}
+	return fmt.Sprintf("%d %s without revisions. Run 'gx stacks list' to see a full list of stacks.", count, word)
 }
 
 func renderSelectableRevisionLines(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, cursor int) []string {
@@ -2672,16 +2748,34 @@ func unpublishedCount(stack authoring.StackSummary) int {
 }
 
 type stackDisplayOptions struct {
-	ShowAll bool
+	ShowAll   bool
+	ShowEmpty bool
+}
+
+type stackDisplaySummary struct {
+	Stack       authoring.StackSummary
+	HiddenEmpty int
 }
 
 func stackSummaryForStacksDisplay(stack authoring.StackSummary, opts stackDisplayOptions) authoring.StackSummary {
+	return stackDisplaySummaryForStacksDisplay(stack, opts).Stack
+}
+
+func stackDisplaySummaryForStacksDisplay(stack authoring.StackSummary, opts stackDisplayOptions) stackDisplaySummary {
 	stack = stackSummaryWithDisplayFallback(stack)
 	stacks := orderedStacks(stack)
 	filtered := stacks[:0]
+	hiddenEmpty := 0
 	for _, entry := range stacks {
 		if isMergedStack(entry) {
 			continue
+		}
+		if !opts.ShowEmpty {
+			revisionCount, _ := stackEntryRevisionCounts(stack, entry)
+			if revisionCount == 0 {
+				hiddenEmpty++
+				continue
+			}
 		}
 		filtered = append(filtered, entry)
 	}
@@ -2693,7 +2787,7 @@ func stackSummaryForStacksDisplay(stack authoring.StackSummary, opts stackDispla
 		stack.Units = nil
 		stack.PublishedCount = 0
 	}
-	return stack
+	return stackDisplaySummary{Stack: stack, HiddenEmpty: hiddenEmpty}
 }
 
 func stackListContains(stacks []authoring.StackInfo, bookmark string) bool {

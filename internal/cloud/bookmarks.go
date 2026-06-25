@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -31,7 +32,7 @@ func (c *Client) ListBookmarks(ctx context.Context, opts ListBookmarksOptions) (
 	if c == nil || c.url == "" {
 		return nil, nil
 	}
-	base := CloudBaseURL()
+	base := strings.TrimRight(strings.TrimSpace(c.url), "/")
 	if base == "" {
 		return nil, fmt.Errorf("gx cloud base URL is not configured")
 	}
@@ -84,6 +85,55 @@ func (c *Client) ListBookmarks(ctx context.Context, opts ListBookmarksOptions) (
 		return nil, fmt.Errorf("decode gx cloud bookmarks: %w", err)
 	}
 	return bookmarks, nil
+}
+
+func (c *Client) DeleteBookmark(ctx context.Context, id string) error {
+	if c == nil || c.url == "" {
+		return nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("cloud bookmark id is required")
+	}
+	base := strings.TrimRight(strings.TrimSpace(c.url), "/")
+	if base == "" {
+		return fmt.Errorf("gx cloud base URL is not configured")
+	}
+
+	token, err := CloudAPIToken()
+	if err != nil {
+		return err
+	}
+
+	deleteURL := base + path.Join("/v1/bookmarks", url.PathEscape(id))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL, nil)
+	if err != nil {
+		return fmt.Errorf("create delete bookmark request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete gx cloud bookmark: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("delete gx cloud bookmark: unauthorized (run `gx auth login`)")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		detail := strings.TrimSpace(string(body))
+		if detail != "" {
+			return fmt.Errorf("delete gx cloud bookmark: status %s: %s", resp.Status, detail)
+		}
+		return fmt.Errorf("delete gx cloud bookmark: status %s", resp.Status)
+	}
+	return nil
 }
 
 func RepoFullNameFromRemoteURL(remoteURL string) string {
