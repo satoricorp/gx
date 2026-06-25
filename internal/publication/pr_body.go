@@ -193,6 +193,9 @@ func contextSentence(summaryContext prSummaryContext) string {
 func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding) []prNeedsReviewItem {
 	var items []prNeedsReviewItem
 	for _, finding := range findings {
+		if !actionablePRFinding(finding) {
+			continue
+		}
 		title := strings.TrimSpace(finding.Title)
 		if title == "" {
 			continue
@@ -205,13 +208,45 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 			Link:   link,
 		})
 		if len(items) >= maxPRBodyItems {
-			return items
+			return dedupeNeedsReviewItems(items)
 		}
 	}
-	if len(items) > 0 {
-		return items
+	items = append(items, heuristicNeedsReviewItems(artifact, catalog)...)
+	items = dedupeNeedsReviewItems(items)
+	if len(items) > maxPRBodyItems {
+		return items[:maxPRBodyItems]
 	}
-	return heuristicNeedsReviewItems(artifact, catalog)
+	return items
+}
+
+func actionablePRFinding(finding codereview.Finding) bool {
+	text := strings.ToLower(strings.Join([]string{
+		finding.Title,
+		finding.Summary,
+		finding.Recommendation,
+		evidenceText(finding.Evidence),
+	}, " "))
+	if strings.Contains(text, "test coverage") && (strings.Contains(text, "_test.go") || strings.Contains(text, "test exists") || strings.Contains(text, "corresponding test")) {
+		return false
+	}
+	for _, keyword := range []string{
+		"auth",
+		"error",
+		"fail",
+		"fallback",
+		"missing",
+		"nil",
+		"overwrite",
+		"preserve",
+		"stale",
+		"upload",
+		"wrong",
+	} {
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func heuristicNeedsReviewItems(_ reviewbundle.Artifact, catalog prBodyCatalog) []prNeedsReviewItem {
