@@ -2253,6 +2253,144 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 	return strings.Join(lines, "\n") + "\n"
 }
 
+func renderStacksSummaryViewport(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int, height int) string {
+	if height <= 0 {
+		return renderStacksSummaryWithHidden(stack, unrecorded, stackCursor, stackMode, revCursor, hiddenEmpty)
+	}
+	stack = stackSummaryWithDisplayFallback(stack)
+	stacks := orderedStacks(stack)
+	top := []string{commandLine("gx stacks", true), ""}
+	if hiddenEmpty > 0 {
+		top = append(top, muted(emptyStacksNotice(hiddenEmpty)), "")
+	}
+	if len(stacks) > 0 {
+		top = append(top, stacksHeaderLine(stack, len(stacks), stackMode), "")
+	}
+	body, selectedLine := stackSummaryBodyLines(stack, unrecorded, stackCursor, stackMode, revCursor)
+	return renderScrollableView(top, body, stacksLegend(stackMode), selectedLine, height)
+}
+
+func stackSummaryBodyLines(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int) ([]string, int) {
+	stacks := orderedStacks(stack)
+	if len(stacks) == 0 {
+		var out strings.Builder
+		printCurrentRevisions(&out, stack, unrecorded, 0)
+		return strings.Split(strings.TrimRight(out.String(), "\n"), "\n"), 0
+	}
+	if stackCursor < 0 {
+		stackCursor = 0
+	}
+	if stackCursor >= len(stacks) {
+		stackCursor = len(stacks) - 1
+	}
+	lines := []string{}
+	selectedLine := 0
+	previousBucket := -1
+	for index, entry := range stacks {
+		bucket := stackDisplayBucket(entry)
+		if bucket == 1 && previousBucket != 1 {
+			if index > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, section("Published"))
+			lines = append(lines, "")
+		} else if index > 0 {
+			lines = append(lines, muted(strings.Repeat("─", 52)))
+		}
+		previousBucket = bucket
+		selected := index == stackCursor
+		if selected {
+			marker := "●"
+			if stackMode {
+				marker = "› ●"
+			}
+			selectedLine = len(lines)
+			lines = append(lines, statusBookmarkLine(marker, entry, stackStatusMeta(stack, entry), true))
+			cursor := -1
+			if !stackMode {
+				cursor = revCursor
+			}
+			revisionLines := renderStackRevisionLines(stack, entry, unrecorded, cursor)
+			if !stackMode && cursor >= 0 && cursor < len(revisionLines) {
+				selectedLine = len(lines) + cursor
+			}
+			lines = append(lines, revisionLines...)
+			continue
+		}
+		lines = append(lines, statusBookmarkLine("○", entry, stackStatusMeta(stack, entry), false))
+		lines = append(lines, renderStackRevisionLines(stack, entry, unrecorded, -1)...)
+	}
+	return lines, selectedLine
+}
+
+func renderScrollableView(top []string, body []string, footer string, selectedLine int, height int) string {
+	if height <= 0 {
+		lines := append([]string{}, top...)
+		lines = append(lines, body...)
+		lines = append(lines, "", footer)
+		return strings.Join(lines, "\n") + "\n"
+	}
+	if height == 1 {
+		return footer
+	}
+	if len(top) > height-1 {
+		top = top[:height-1]
+	}
+	bodyHeight := height - len(top) - 1
+	if bodyHeight < 0 {
+		bodyHeight = 0
+	}
+	lines := append([]string{}, top...)
+	lines = append(lines, scrollBodyLines(body, selectedLine, bodyHeight)...)
+	for len(lines) < height-1 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, footer)
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func scrollBodyLines(body []string, selectedLine int, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	if len(body) == 0 {
+		return padLines(nil, height)
+	}
+	if len(body) <= height {
+		return padLines(body, height)
+	}
+	if selectedLine < 0 {
+		selectedLine = 0
+	}
+	if selectedLine >= len(body) {
+		selectedLine = len(body) - 1
+	}
+	start := selectedLine - height/2
+	if start < 0 {
+		start = 0
+	}
+	if maxStart := len(body) - height; start > maxStart {
+		start = maxStart
+	}
+	end := start + height
+	visible := append([]string{}, body[start:end]...)
+	if start > 0 {
+		visible[0] = muted("... more above")
+	}
+	if end < len(body) {
+		visible[len(visible)-1] = muted("... more below")
+	}
+	return visible
+}
+
+func padLines(lines []string, height int) []string {
+	out := append([]string{}, lines...)
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return out
+}
+
 func emptyStacksNotice(count int) string {
 	word := "branches"
 	if count == 1 {

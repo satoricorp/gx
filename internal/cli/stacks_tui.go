@@ -30,6 +30,7 @@ type stacksModel struct {
 	unrecorded  *authoring.ChangeInfo
 	hiddenEmpty int
 	mode        stacksMode
+	height      int
 	stackCursor int
 	revCursor   int
 	diffView    tuiDiffView
@@ -104,6 +105,7 @@ func (m stacksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.height = msg.Height
 		m.diffView.resize(msg.Width, msg.Height)
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -286,6 +288,9 @@ func (m stacksModel) selectedRevision() string {
 func (m stacksModel) View() tea.View {
 	if m.mode == stacksModeDiff {
 		return tea.NewView(m.diffView.render("gx stacks"))
+	}
+	if m.height > 0 {
+		return tea.NewView(renderStacksSummaryViewport(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor, m.hiddenEmpty, m.height))
 	}
 	return tea.NewView(renderStacksSummaryWithHidden(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor, m.hiddenEmpty))
 }

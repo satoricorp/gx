@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -90,6 +91,49 @@ func TestDemuxInteractiveViewShowsAllStacksAndAcceptCallout(t *testing.T) {
 	}
 	if strings.Contains(text, "Action required") || strings.Contains(text, "Apply all stacks") || strings.Contains(text, "apply selected") {
 		t.Fatalf("View() contains old compose copy:\n%s", text)
+	}
+}
+
+func TestDemuxViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	proposal := authoring.DemuxProposal{ID: "demux-scroll"}
+	for i := 0; i < 8; i++ {
+		proposal.Revisions = append(proposal.Revisions, authoring.RevisionProposal{
+			ID:          fmt.Sprintf("r%d", i),
+			Intent:      fmt.Sprintf("revision %d", i),
+			TargetStack: fmt.Sprintf("feature/stack-%d", i),
+		})
+	}
+	model := newDemuxInteractiveModel(proposal)
+	next, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	model = next.(demuxInteractiveModel)
+
+	text := model.View().Content
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if lines[0] != "$ gx compose" {
+		t.Fatalf("top line = %q, want gx compose header in:\n%s", lines[0], text)
+	}
+	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+		t.Fatalf("last line should be legend, got %q in:\n%s", lines[len(lines)-1], text)
+	}
+	if !strings.Contains(text, "... more below") {
+		t.Fatalf("viewport missing lower scroll indicator:\n%s", text)
+	}
+
+	for i := 0; i < 6; i++ {
+		next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+		model = next.(demuxInteractiveModel)
+	}
+	text = model.View().Content
+	if !strings.Contains(text, "... more above") {
+		t.Fatalf("viewport missing upper scroll indicator after moving down:\n%s", text)
+	}
+	if !strings.Contains(text, "feature/stack-6") {
+		t.Fatalf("viewport should keep selected stack visible:\n%s", text)
+	}
+	lines = strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+		t.Fatalf("last line should remain legend after scroll, got %q in:\n%s", lines[len(lines)-1], text)
 	}
 }
 

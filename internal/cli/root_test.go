@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -541,6 +542,64 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 		if !strings.Contains(third, want) {
 			t.Fatalf("renderStacksSummary(non-current revision mode) missing %q in:\n%s", want, third)
 		}
+	}
+}
+
+func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	current := authoring.StackInfo{
+		Name:         "stack 0",
+		Alias:        "s0",
+		BookmarkName: "feature/stack-0",
+		BaseRef:      "main",
+		Status:       "draft",
+	}
+	summary := authoring.StackSummary{
+		Repo:      authoring.RepoInfo{RootPath: "/tmp/console"},
+		Stack:     &current,
+		Stacks:    []authoring.StackInfo{current},
+		Revisions: []authoring.RevisionSummary{{ChangeID: "change0", Description: "revision 0"}},
+	}
+	for i := 1; i < 8; i++ {
+		summary.Stacks = append(summary.Stacks, authoring.StackInfo{
+			Name:         fmt.Sprintf("stack %d", i),
+			Alias:        fmt.Sprintf("s%d", i),
+			BookmarkName: fmt.Sprintf("feature/stack-%d", i),
+			BaseRef:      "main",
+			Status:       "draft",
+			Revisions:    []authoring.RevisionSummary{{ChangeID: fmt.Sprintf("change%d", i), Description: fmt.Sprintf("revision %d", i)}},
+		})
+	}
+	model := newStacksModel(summary, nil)
+	next, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	model = next.(stacksModel)
+
+	text := model.View().Content
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if lines[0] != "$ gx stacks" {
+		t.Fatalf("top line = %q, want gx stacks header in:\n%s", lines[0], text)
+	}
+	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+		t.Fatalf("last line should be legend, got %q in:\n%s", lines[len(lines)-1], text)
+	}
+	if !strings.Contains(text, "... more below") {
+		t.Fatalf("viewport missing lower scroll indicator:\n%s", text)
+	}
+
+	for i := 0; i < 6; i++ {
+		next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+		model = next.(stacksModel)
+	}
+	text = model.View().Content
+	if !strings.Contains(text, "... more above") {
+		t.Fatalf("viewport missing upper scroll indicator after moving down:\n%s", text)
+	}
+	if !strings.Contains(text, "stack 6") {
+		t.Fatalf("viewport should keep selected stack visible:\n%s", text)
+	}
+	lines = strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+		t.Fatalf("last line should remain legend after scroll, got %q in:\n%s", lines[len(lines)-1], text)
 	}
 }
 

@@ -30,6 +30,7 @@ type demuxInteractiveModel struct {
 	proposal  authoring.DemuxProposal
 	groups    []demuxStackDisplayGroup
 	mode      demuxInteractiveMode
+	height    int
 	stack     int
 	revision  int
 	selected  map[string]struct{}
@@ -72,6 +73,7 @@ func (m demuxInteractiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.mode == demuxInteractiveDiff {
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
+			m.height = msg.Height
 			m.diffView.resize(msg.Width, msg.Height)
 			return m, nil
 		case tea.KeyPressMsg:
@@ -90,6 +92,7 @@ func (m demuxInteractiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.height = msg.Height
 		m.diffView.resize(msg.Width, msg.Height)
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -321,6 +324,9 @@ func (m demuxInteractiveModel) View() tea.View {
 	if m.mode == demuxInteractiveDiff {
 		return tea.NewView(m.diffView.render("gx compose"))
 	}
+	if m.height > 0 {
+		return tea.NewView(renderComposeSummaryViewport(m.proposal, m.groups, m.stack, m.mode == demuxInteractiveStacks, m.revision, m.selected, m.notice, m.height))
+	}
 	return tea.NewView(renderComposeSummary(m.proposal, m.groups, m.stack, m.mode == demuxInteractiveStacks, m.revision, m.selected, m.notice))
 }
 
@@ -373,6 +379,69 @@ func renderComposeSummary(proposal authoring.DemuxProposal, groups []demuxStackD
 	return strings.Join(lines, "\n") + "\n"
 }
 
+func renderComposeSummaryViewport(proposal authoring.DemuxProposal, groups []demuxStackDisplayGroup, stackCursor int, stackMode bool, revCursor int, selected map[string]struct{}, notice string, height int) string {
+	if height <= 0 {
+		return renderComposeSummary(proposal, groups, stackCursor, stackMode, revCursor, selected, notice)
+	}
+	top := []string{commandLine("gx compose", true), ""}
+	if demuxProposalIsPartial(proposal) {
+		top = append(top, section("Partial proposal"))
+		top = append(top, muted(demuxPartialComposeWarning), "")
+	}
+	if notice != "" {
+		top = append(top, muted(notice), "")
+	}
+	header := fmt.Sprintf("%d %s", len(proposal.Revisions), pluralize("revision", len(proposal.Revisions)))
+	if len(groups) > 0 {
+		header = fmt.Sprintf("%d %s · %d %s", len(groups), pluralize("stack", len(groups)), len(proposal.Revisions), pluralize("revision", len(proposal.Revisions)))
+	}
+	top = append(top, section("Stacks"), muted(header), "")
+	body, selectedLine := composeSummaryBodyLines(groups, stackCursor, stackMode, revCursor, selected)
+	return renderScrollableView(top, body, composeLegend(stackMode), selectedLine, height)
+}
+
+func composeSummaryBodyLines(groups []demuxStackDisplayGroup, stackCursor int, stackMode bool, revCursor int, selected map[string]struct{}) ([]string, int) {
+	if len(groups) == 0 {
+		return []string{"    " + muted("(no proposed stacks)")}, 0
+	}
+	if stackCursor < 0 {
+		stackCursor = 0
+	}
+	if stackCursor >= len(groups) {
+		stackCursor = len(groups) - 1
+	}
+	lines := []string{}
+	selectedLine := 0
+	for index, group := range groups {
+		if index > 0 {
+			lines = append(lines, muted(strings.Repeat("─", 52)))
+		}
+		stackSelected := index == stackCursor
+		marker := "○"
+		if stackSelected {
+			marker = "●"
+			if stackMode {
+				marker = "› ●"
+			}
+		}
+		if stackSelected && stackMode {
+			selectedLine = len(lines)
+		}
+		meta := fmt.Sprintf("%d %s", len(group.Revisions), pluralize("revision", len(group.Revisions)))
+		lines = append(lines, composeStackLine(marker, group.Label, meta, stackSelected))
+		cursor := -1
+		if stackSelected && !stackMode {
+			cursor = revCursor
+		}
+		revisionLines, revisionSelectedLine := renderComposeRevisionLinesWithCursor(group.Revisions, cursor, selected)
+		if stackSelected && !stackMode && revisionSelectedLine >= 0 {
+			selectedLine = len(lines) + revisionSelectedLine
+		}
+		lines = append(lines, revisionLines...)
+	}
+	return lines, selectedLine
+}
+
 func composeStackLine(marker, label, meta string, selected bool) string {
 	renderedMarker := muted(marker)
 	name := muted(label)
@@ -388,19 +457,26 @@ func composeStackLine(marker, label, meta string, selected bool) string {
 }
 
 func renderComposeRevisionLines(revisions []authoring.RevisionProposal, cursor int, selected map[string]struct{}) []string {
+	lines, _ := renderComposeRevisionLinesWithCursor(revisions, cursor, selected)
+	return lines
+}
+
+func renderComposeRevisionLinesWithCursor(revisions []authoring.RevisionProposal, cursor int, selected map[string]struct{}) ([]string, int) {
 	if len(revisions) == 0 {
-		return []string{"    " + muted("(no revisions)")}
+		return []string{"    " + muted("(no revisions)")}, -1
 	}
 	if cursor >= len(revisions) {
 		cursor = len(revisions) - 1
 	}
 	lines := make([]string, 0, len(revisions))
+	selectedLine := -1
 	for index, revision := range revisions {
 		marker := " "
 		id := command(revision.ID)
 		if index == cursor {
 			marker = logoText("›")
 			id = accent(revision.ID)
+			selectedLine = len(lines)
 		} else if _, ok := selected[revision.ID]; ok {
 			marker = success("✓")
 		}
@@ -415,7 +491,7 @@ func renderComposeRevisionLines(revisions []authoring.RevisionProposal, cursor i
 			}
 		}
 	}
-	return lines
+	return lines, selectedLine
 }
 
 func composeLegend(stackMode bool) string {
