@@ -203,8 +203,8 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 		detail := firstNonEmpty(strings.TrimSpace(finding.Summary), strings.TrimSpace(finding.Recommendation))
 		link := hunkLinkForFinding(catalog.Hunks, finding)
 		items = append(items, prNeedsReviewItem{
-			Title:  title,
-			Detail: trimSentence(detail, 220),
+			Title:  sanitizePRVisibleText(title),
+			Detail: trimSentence(sanitizePRVisibleText(detail), 220),
 			Link:   link,
 		})
 		if len(items) >= maxPRBodyItems {
@@ -229,6 +229,9 @@ func actionablePRFinding(finding codereview.Finding) bool {
 	if strings.Contains(text, "test coverage") && (strings.Contains(text, "_test.go") || strings.Contains(text, "test exists") || strings.Contains(text, "corresponding test")) {
 		return false
 	}
+	if strings.Contains(text, "this is good") || strings.Contains(text, "this is correct") {
+		return false
+	}
 	for _, keyword := range []string{
 		"auth",
 		"error",
@@ -247,6 +250,26 @@ func actionablePRFinding(finding codereview.Finding) bool {
 		}
 	}
 	return false
+}
+
+func sanitizePRVisibleText(value string) string {
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{old: "Published by GX.", new: "the legacy GX marker"},
+		{old: "Published by GX", new: "legacy GX marker"},
+		{old: "## Summary", new: "summary section"},
+		{old: "## Review signals", new: "review-signal section"},
+		{old: "Structural context", new: "structural context"},
+		{old: "Feasibility", new: "feasibility"},
+		{old: "## Links", new: "links section"},
+		{old: "Files changed", new: "changed files"},
+	}
+	for _, replacement := range replacements {
+		value = strings.ReplaceAll(value, replacement.old, replacement.new)
+	}
+	return strings.TrimSpace(value)
 }
 
 func heuristicNeedsReviewItems(_ reviewbundle.Artifact, catalog prBodyCatalog) []prNeedsReviewItem {

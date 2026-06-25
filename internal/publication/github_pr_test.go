@@ -153,6 +153,7 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		"## Needs Review",
 		"Move PR body refresh before upload",
 		"publication currently updated the body after artifact upload",
+		"the legacy GX marker placeholder",
 		githubHunkLink(prURL, "internal/publication/publication.go", 180, 180, 9),
 	} {
 		if !strings.Contains(patchedBody, want) {
@@ -182,7 +183,7 @@ func (fakePRSummaryReviewer) Review(_ context.Context, brief codereview.ReviewBr
 	}
 	return []codereview.Finding{{
 		Title:          "Move PR body refresh before upload",
-		Summary:        "internal/publication/publication.go publication currently updated the body after artifact upload, so upload failures could leave the old placeholder visible.",
+		Summary:        "internal/publication/publication.go publication currently updated the body after artifact upload, so upload failures could leave the Published by GX. placeholder visible.",
 		Recommendation: "Update the PR body immediately after building the review bundle and before uploading the artifact.",
 		Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
 		Strength:       "Strong",
