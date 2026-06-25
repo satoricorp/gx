@@ -381,7 +381,12 @@ func fileArea(file string) string {
 }
 
 func linkedFileList(artifact reviewbundle.Artifact, commitID string, files []string) string {
-	files = limitStrings(sortedUnique(files), maxBodyListItems)
+	files = sortedUnique(files)
+	remaining := 0
+	if len(files) > maxBodyListItems {
+		remaining = len(files) - maxBodyListItems
+		files = files[:maxBodyListItems]
+	}
 	out := make([]string, 0, len(files))
 	for _, file := range files {
 		label := "`" + file + "`"
@@ -389,6 +394,9 @@ func linkedFileList(artifact reviewbundle.Artifact, commitID string, files []str
 			label = fmt.Sprintf("[`%s`](%s)", file, link)
 		}
 		out = append(out, label)
+	}
+	if remaining > 0 {
+		out = append(out, "and "+strconv.Itoa(remaining)+" more")
 	}
 	return strings.Join(out, ", ")
 }
@@ -448,11 +456,11 @@ func pullRequestURL(artifact reviewbundle.Artifact) string {
 }
 
 func stackName(artifact reviewbundle.Artifact) string {
-	if artifact.Push.BranchName != nil && strings.TrimSpace(*artifact.Push.BranchName) != "" {
-		return strings.TrimSpace(*artifact.Push.BranchName)
-	}
 	if len(artifact.Stack) > 0 && strings.TrimSpace(artifact.Stack[0].BranchName) != "" {
 		return strings.TrimSpace(artifact.Stack[0].BranchName)
+	}
+	if artifact.Push.BranchName != nil && strings.TrimSpace(*artifact.Push.BranchName) != "" {
+		return strings.TrimSpace(*artifact.Push.BranchName)
 	}
 	return ""
 }

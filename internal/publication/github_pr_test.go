@@ -54,7 +54,7 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push: reviewbundle.PushPayload{
-			BranchName:           &branchName,
+			BranchName:           stringPtr("main"),
 			HeadCommitID:         "commit-head",
 			GitHubPullRequestURL: &prURL,
 		},
@@ -66,7 +66,15 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 				JJChangeID:      "change-one",
 				CurrentCommitID: "abcdef123456",
 				Description:     "render rich PR bodies from review bundles",
-				Files:           []string{"internal/publication/github_pr.go", "internal/publication/pr_body.go"},
+				Files: []string{
+					"internal/github/client.go",
+					"internal/github/client_test.go",
+					"internal/publication/github_pr.go",
+					"internal/publication/github_pr_test.go",
+					"internal/publication/outbox.go",
+					"internal/publication/pr_body.go",
+					"internal/publication/publication.go",
+				},
 				ReviewContext: &reviewbundle.ReviewContextPayload{
 					ProvenanceStatus:   "explicit",
 					LinkedSessionCount: 1,
@@ -107,6 +115,7 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
 	for _, want := range []string{
+		"Publishes 1 GX revision(s) for `bug/fix-github-pr-summary` with high blast radius.",
 		"## Review signals",
 		"Blast radius: high",
 		"Risk: high (80/100; structural dependencies, warning:structural dependency)",
@@ -115,12 +124,16 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		"Feasibility: 1 warning(s), 0 info item(s)",
 		"[render rich PR bodies from review bundles](https://github.com/satoricorp/gx/commit/abcdef123456)",
 		"`internal/publication/github_pr.go`",
+		"and 1 more",
 		"`internal/publication/github_pr.go:UpdateGitHubPullRequestBody`",
 		"[Files changed](https://github.com/satoricorp/gx/pull/11/files)",
 	} {
 		if !strings.Contains(patchedBody, want) {
 			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
 		}
+	}
+	if strings.Contains(patchedBody, "and%201%20more") {
+		t.Fatalf("patched body linked truncated file count as a path:\n%s", patchedBody)
 	}
 }
 
@@ -163,4 +176,8 @@ func TestUpdateGitHubPullRequestBodyPreservesNonGXBody(t *testing.T) {
 	if updated || patchCalled {
 		t.Fatalf("updated=%t patchCalled=%t, want no update", updated, patchCalled)
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
