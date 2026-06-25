@@ -2,19 +2,14 @@ package publication
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/satoricorp/gx/internal/cloud"
-	githubapi "github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 	"github.com/satoricorp/gx/internal/semantic"
 	"github.com/satoricorp/gx/internal/storage"

@@ -270,8 +270,11 @@ func TestEngineUsesAIReviewerWhenAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if len(report.Findings) != 1 || report.Findings[0].ID != "ai.review.1" {
-		t.Fatalf("Findings = %#v, want AI findings to replace fallback rules", report.Findings)
+	if len(report.Findings) != 2 {
+		t.Fatalf("Findings = %#v, want merged AI + rule findings", report.Findings)
+	}
+	if !hasFinding(report.Findings, "ai.review.1") || !hasFinding(report.Findings, "custom.rule") {
+		t.Fatalf("Findings = %#v, want both ai.review.1 and custom.rule", report.Findings)
 	}
 }
 
