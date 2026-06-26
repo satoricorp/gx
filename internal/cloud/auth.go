@@ -55,10 +55,13 @@ type deviceCodeResponse struct {
 }
 
 type accessTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
-	Error       string `json:"error"`
+	AccessToken           string `json:"access_token"`
+	TokenType             string `json:"token_type"`
+	Scope                 string `json:"scope"`
+	ExpiresIn             int    `json:"expires_in"`
+	RefreshToken          string `json:"refresh_token"`
+	RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
+	Error                 string `json:"error"`
 }
 
 // GitHubTokenValidation reports whether GitHub accepts a bearer token.
@@ -153,7 +156,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	}
 
 	complete, err := completeConvexAuth(ctx, httpClient, convexURL, completeAuthRequest{
-		GitHubAccessToken: githubToken,
+		GitHubAccessToken: githubToken.AccessToken,
 		MachineID:         machineID,
 		MachineName:       machineName,
 		GXVersion:         version.Current(),
@@ -164,14 +167,21 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 
 	now := time.Now().UTC()
 	creds := CloudCredentials{
-		GitHubAccessToken: githubToken,
-		CLISessionToken:   complete.CLISessionToken,
-		UserID:            complete.UserID,
-		Login:             complete.Login,
-		AvatarURL:         complete.AvatarURL,
-		MachineID:         machineID,
-		MachineName:       machineName,
-		ObtainedAt:        now,
+		GitHubAccessToken:  githubToken.AccessToken,
+		GitHubRefreshToken: githubToken.RefreshToken,
+		CLISessionToken:    complete.CLISessionToken,
+		UserID:             complete.UserID,
+		Login:              complete.Login,
+		AvatarURL:          complete.AvatarURL,
+		MachineID:          machineID,
+		MachineName:        machineName,
+		ObtainedAt:         now,
+	}
+	if githubToken.ExpiresIn > 0 {
+		creds.GitHubAccessTokenExpiresAt = now.Add(time.Duration(githubToken.ExpiresIn) * time.Second)
+	}
+	if githubToken.RefreshTokenExpiresIn > 0 {
+		creds.GitHubRefreshTokenExpiresAt = now.Add(time.Duration(githubToken.RefreshTokenExpiresIn) * time.Second)
 	}
 	if complete.CLISessionExpiresAt > 0 {
 		creds.CLISessionExpiresAt = time.UnixMilli(complete.CLISessionExpiresAt).UTC()
@@ -224,7 +234,7 @@ func requestGitHubDeviceCode(ctx context.Context, client *http.Client, deviceURL
 	return device, nil
 }
 
-func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, clientID string, device deviceCodeResponse) (string, error) {
+func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, clientID string, device deviceCodeResponse) (accessTokenResponse, error) {
 	interval := device.Interval
 	if interval <= 0 {
 		interval = 5
@@ -236,7 +246,7 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 
 	for {
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("github device authorization timed out")
+			return accessTokenResponse{}, fmt.Errorf("github device authorization timed out")
 		}
 
 		form := url.Values{}
@@ -246,25 +256,25 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 		if err != nil {
-			return "", fmt.Errorf("create github access token request: %w", err)
+			return accessTokenResponse{}, fmt.Errorf("create github access token request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "application/json")
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return "", fmt.Errorf("poll github access token: %w", err)
+			return accessTokenResponse{}, fmt.Errorf("poll github access token: %w", err)
 		}
 
 		var tokenResp accessTokenResponse
 		decodeErr := json.NewDecoder(resp.Body).Decode(&tokenResp)
 		resp.Body.Close()
 		if decodeErr != nil {
-			return "", fmt.Errorf("decode github access token response: %w", decodeErr)
+			return accessTokenResponse{}, fmt.Errorf("decode github access token response: %w", decodeErr)
 		}
 
 		if tokenResp.AccessToken != "" {
-			return tokenResp.AccessToken, nil
+			return tokenResp, nil
 		}
 
 		switch tokenResp.Error {
@@ -273,14 +283,14 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		case "slow_down":
 			interval++
 		case "":
-			return "", fmt.Errorf("github access token response missing access_token")
+			return accessTokenResponse{}, fmt.Errorf("github access token response missing access_token")
 		default:
-			return "", fmt.Errorf("github access token: %s", tokenResp.Error)
+			return accessTokenResponse{}, fmt.Errorf("github access token: %s", tokenResp.Error)
 		}
 
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return accessTokenResponse{}, ctx.Err()
 		case <-time.After(time.Duration(interval) * time.Second):
 		}
 	}

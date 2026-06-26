@@ -24,15 +24,18 @@ type credentialsFile struct {
 
 // CloudCredentials holds gx cloud auth state.
 type CloudCredentials struct {
-	GitHubAccessToken   string    `json:"github_access_token,omitempty"`
-	CLISessionToken     string    `json:"cli_session_token,omitempty"`
-	CLISessionExpiresAt time.Time `json:"cli_session_expires_at,omitempty"`
-	UserID              string    `json:"user_id"`
-	Login               string    `json:"login"`
-	AvatarURL           string    `json:"avatar_url,omitempty"`
-	MachineID           string    `json:"machine_id"`
-	MachineName         string    `json:"machine_name"`
-	ObtainedAt          time.Time `json:"obtained_at"`
+	GitHubAccessToken           string    `json:"github_access_token,omitempty"`
+	GitHubAccessTokenExpiresAt  time.Time `json:"github_access_token_expires_at,omitempty"`
+	GitHubRefreshToken          string    `json:"github_refresh_token,omitempty"`
+	GitHubRefreshTokenExpiresAt time.Time `json:"github_refresh_token_expires_at,omitempty"`
+	CLISessionToken             string    `json:"cli_session_token,omitempty"`
+	CLISessionExpiresAt         time.Time `json:"cli_session_expires_at,omitempty"`
+	UserID                      string    `json:"user_id"`
+	Login                       string    `json:"login"`
+	AvatarURL                   string    `json:"avatar_url,omitempty"`
+	MachineID                   string    `json:"machine_id"`
+	MachineName                 string    `json:"machine_name"`
+	ObtainedAt                  time.Time `json:"obtained_at"`
 }
 
 func machineIDPath() (string, error) {

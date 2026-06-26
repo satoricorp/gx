@@ -264,7 +264,17 @@ func (c *Client) do(req *http.Request, out any) error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("github auth failed: status %s", resp.Status)
+		detail := strings.TrimSpace(string(body))
+		if detail != "" {
+			var payload struct {
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(body, &payload); err == nil && strings.TrimSpace(payload.Message) != "" {
+				detail = strings.TrimSpace(payload.Message)
+			}
+			return fmt.Errorf("github auth failed: status %s: %s. Run `gx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status, detail)
+		}
+		return fmt.Errorf("github auth failed: status %s. Run `gx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(body))

@@ -55,7 +55,12 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("access token method = %s", r.Method)
 			}
-			_ = json.NewEncoder(w).Encode(accessTokenResponse{AccessToken: "gho_test"})
+			_ = json.NewEncoder(w).Encode(accessTokenResponse{
+				AccessToken:           "ghu_test",
+				ExpiresIn:             8 * 60 * 60,
+				RefreshToken:          "ghr_test",
+				RefreshTokenExpiresIn: 6 * 30 * 24 * 60 * 60,
+			})
 		default:
 			t.Fatalf("unexpected github path: %s", r.URL.Path)
 		}
@@ -76,11 +81,14 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if creds.Login != "joe" || creds.GitHubAccessToken != "gho_test" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
+	if creds.Login != "joe" || creds.GitHubAccessToken != "ghu_test" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
-	if gotComplete.GitHubAccessToken != "gho_test" {
+	if gotComplete.GitHubAccessToken != "ghu_test" {
 		t.Fatalf("github token = %q", gotComplete.GitHubAccessToken)
+	}
+	if creds.GitHubAccessTokenExpiresAt.IsZero() || creds.GitHubRefreshToken != "ghr_test" || creds.GitHubRefreshTokenExpiresAt.IsZero() {
+		t.Fatalf("missing github token refresh metadata: %+v", creds)
 	}
 	if gotComplete.MachineName != "work-laptop" {
 		t.Fatalf("machine name = %q", gotComplete.MachineName)
@@ -96,7 +104,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCloudCredentials() error = %v", err)
 	}
-	if loaded == nil || loaded.GitHubAccessToken != "gho_test" || loaded.CLISessionToken != "gxcs_login" {
+	if loaded == nil || loaded.GitHubAccessToken != "ghu_test" || loaded.GitHubRefreshToken != "ghr_test" || loaded.CLISessionToken != "gxcs_login" {
 		t.Fatalf("saved credentials = %+v", loaded)
 	}
 }

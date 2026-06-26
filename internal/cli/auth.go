@@ -222,7 +222,14 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 	}
 
 	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
-		validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, creds.GitHubAccessToken)
+		token, err := cloud.GitHubAccessToken()
+		if err != nil {
+			valid := false
+			status.AuthValid = &valid
+			status.AuthError = err.Error()
+			return status
+		}
+		validation, err := cloud.ValidateGitHubAccessToken(verifyCtx, nil, token)
 		if err != nil {
 			status.AuthError = "could not verify GitHub token: " + err.Error()
 			return status
