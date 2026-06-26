@@ -1,0 +1,52 @@
+---
+title: "Week of June 26, 2026"
+description: "macOS menubar app, gx review with project context, faster stacks, and authentication improvements."
+---
+
+The first public release of GX is live. This week's highlights: a packaged macOS menubar app, `gx review` with indexed project context and history, smoother stack management, and a cleaner cloud-auth flow.
+
+## New
+
+**macOS menubar app.** GX now ships as a packaged macOS menubar app with cross-platform CLI builds. Downloads are hosted on S3, so install and update flows are smoother.
+
+**`gx review` with indexed context.** The new `gx review` command grounds AI reviews in your project's docs, ADRs, and prior review history, then posts findings as GitHub PR comments. Use `gx review --prompt` to steer the review with a custom instruction.
+
+**`gx report`.** A new top-level command for sharing a snapshot of your current stacks and revisions. See [the core workflow](/) for where it fits.
+
+**Codex MCP setup from the menubar.** A new menubar action wires up the Codex MCP server with API-key based setup and auto-init, so you can connect Codex without hand-editing config.
+
+**Background publish uploads.** `gx publish` now uploads review context in the background via a detached worker, retries abandoned uploads, and accepts publish responses even before a review URL is ready — so the command returns faster and recovers from interruptions.
+
+**AGPL license.** Public GX is now licensed under AGPL.
+
+## Improvements
+
+**Stack UX.**
+- Scroll viewports in the stack TUIs so long stacks stay navigable.
+- Merged published stacks are hidden by default and pruned automatically.
+- Empty stored revisions are no longer shown.
+- Faster stack reads via a refined read model.
+
+**Reviews.**
+- Better attribution and reporting in `gx review` output.
+- Review context documents (CONTEXT.md, ADRs) are now optional — missing files no longer generate noise.
+- Expanded review-resource coverage across more languages.
+
+**Authentication.**
+- Cloud API auth now uses your GX CLI session — no more managing API keys for capture and publish uploads.
+- GitHub auth tokens refresh automatically before they expire.
+- Login now verifies your console API session up front, surfacing errors earlier.
+- Clearer MCP login guidance when auth is missing.
+
+**Menubar diagnostics.** The doctor view has refined diagnostics, tracks initialized repo hooks, and respects explicit environment settings during packaging.
+
+**Product analytics.** GX CLI now reports anonymous usage telemetry via PostHog to help us prioritize what to improve.
+
+## Fixes
+
+- Fixed cross-platform CLI packaging.
+- Fixed GX branch naming and `gx compose` reliability on edge cases.
+- Fixed PostHog config for macOS releases.
+- Restored the doctor repo registry lookup.
+- `gx review` now focuses on current changes instead of the full history.
+- `gx capture` push uploads are best-effort, so a transient upload failure won't block your session.
