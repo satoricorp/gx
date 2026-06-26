@@ -25,6 +25,7 @@ type AuthEndpoints struct {
 	GitHubDeviceCodeURL  string
 	GitHubAccessTokenURL string
 	ConvexSiteURL        string
+	CloudURL             string
 }
 
 func (e AuthEndpoints) deviceCodeURL() string {
@@ -43,6 +44,10 @@ func (e AuthEndpoints) accessTokenURL() string {
 
 func (e AuthEndpoints) convexSiteURL() string {
 	return strings.TrimRight(strings.TrimSpace(e.ConvexSiteURL), "/")
+}
+
+func (e AuthEndpoints) cloudURL() string {
+	return strings.TrimRight(strings.TrimSpace(e.CloudURL), "/")
 }
 
 type deviceCodeResponse struct {
@@ -185,6 +190,25 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	}
 	if complete.CLISessionExpiresAt > 0 {
 		creds.CLISessionExpiresAt = time.UnixMilli(complete.CLISessionExpiresAt).UTC()
+	}
+	if strings.TrimSpace(creds.CLISessionToken) != "" {
+		cloudURL := opts.Endpoints.cloudURL()
+		if cloudURL == "" {
+			cloudURL = CloudURL()
+		}
+		if cloudURL != "" {
+			validation, err := validateCloudAPISessionAtURL(ctx, httpClient, cloudURL, creds.CLISessionToken)
+			if err != nil {
+				return CloudCredentials{}, err
+			}
+			if !validation.Valid {
+				detail := strings.TrimSpace(validation.Error)
+				if detail == "" {
+					detail = "console API rejected CLI session"
+				}
+				return CloudCredentials{}, fmt.Errorf("verify gx console session: %s", detail)
+			}
+		}
 	}
 	if err := SaveCloudCredentials(creds); err != nil {
 		return CloudCredentials{}, err
@@ -358,11 +382,15 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 
 // ValidateCloudAPISession checks the token against gx-cloud's auth endpoint.
 func ValidateCloudAPISession(ctx context.Context, client *http.Client, token string) (CloudAPISessionValidation, error) {
+	return validateCloudAPISessionAtURL(ctx, client, CloudURL(), token)
+}
+
+func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, cloudURL string, token string) (CloudAPISessionValidation, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return CloudAPISessionValidation{Valid: false, Error: "missing token"}, nil
 	}
-	meURL := CloudURLWithPath("/v1/auth/me")
+	meURL := cloudURLWithPath(cloudURL, "/v1/auth/me")
 	if meURL == "" {
 		return CloudAPISessionValidation{Valid: false, Error: "gx cloud URL is not configured"}, nil
 	}

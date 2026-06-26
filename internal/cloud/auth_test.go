@@ -38,6 +38,20 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	}))
 	defer convex.Close()
 
+	console := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/auth/me" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected console request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer gxcs_login" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"user_id":           "user_1",
+			"github_user_login": "joe",
+		})
+	}))
+	defer console.Close()
+
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/login/device/code":
@@ -74,6 +88,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 			GitHubDeviceCodeURL:  github.URL + "/login/device/code",
 			GitHubAccessTokenURL: github.URL + "/login/oauth/access_token",
 			ConvexSiteURL:        convex.URL,
+			CloudURL:             console.URL,
 		},
 		HTTPClient: github.Client(),
 		Out:        &out,
@@ -106,6 +121,63 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	}
 	if loaded == nil || loaded.GitHubAccessToken != "ghu_test" || loaded.GitHubRefreshToken != "ghr_test" || loaded.CLISessionToken != "gxcs_login" {
 		t.Fatalf("saved credentials = %+v", loaded)
+	}
+}
+
+func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GITHUB_CLIENT_ID", "test-client")
+	t.Setenv("CONVEX_SITE_URL", "")
+
+	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
+			UserID:          "user_1",
+			Login:           "joe",
+			CLISessionToken: "gxcs_bad",
+		})
+	}))
+	defer convex.Close()
+
+	console := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "wrong environment"})
+	}))
+	defer console.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/device/code":
+			_ = json.NewEncoder(w).Encode(deviceCodeResponse{
+				DeviceCode: "device-code-1",
+				UserCode:   "ABCD-1234",
+				ExpiresIn:  60,
+			})
+		case "/login/oauth/access_token":
+			_ = json.NewEncoder(w).Encode(accessTokenResponse{AccessToken: "ghu_test"})
+		default:
+			t.Fatalf("unexpected github path: %s", r.URL.Path)
+		}
+	}))
+	defer github.Close()
+
+	_, err := Login(context.Background(), LoginOptions{
+		Endpoints: AuthEndpoints{
+			GitHubDeviceCodeURL:  github.URL + "/login/device/code",
+			GitHubAccessTokenURL: github.URL + "/login/oauth/access_token",
+			ConvexSiteURL:        convex.URL,
+			CloudURL:             console.URL,
+		},
+		HTTPClient: github.Client(),
+	})
+	if err == nil {
+		t.Fatal("expected login to reject unverified console session")
+	}
+	if !strings.Contains(err.Error(), "verify gx console session") || !strings.Contains(err.Error(), "wrong environment") {
+		t.Fatalf("error = %v, want console verification failure", err)
+	}
+	if creds, loadErr := LoadCloudCredentials(); loadErr != nil || creds != nil {
+		t.Fatalf("credentials should not be saved after failed console verification: creds=%+v err=%v", creds, loadErr)
 	}
 }
 
