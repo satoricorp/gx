@@ -11,6 +11,9 @@ func contextRetrieverFromEnv() ContextRetriever {
 	if retriever := indexedContextRetrieverFromEnv(); retriever != nil {
 		retrievers = append(retrievers, retriever)
 	}
+	if retriever := reviewHistoryRetrieverFromEnv(); retriever != nil {
+		retrievers = append(retrievers, retriever)
+	}
 	if retriever := reviewResourceRetrieverFromEnv(); retriever != nil {
 		retrievers = append(retrievers, retriever)
 	}

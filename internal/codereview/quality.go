@@ -12,7 +12,7 @@ const maxCodeQualityHints = 40
 func collectCodeQualityHints(repoRoot string, facts RepoFacts, opts Options) []CodeQualityHint {
 	var hints []CodeQualityHint
 	for _, file := range facts.Files {
-		if !strings.HasSuffix(file, ".go") || isTestFile(file) || ignorableQualityFile(file) {
+		if !qualityFileSupported(file) || isTestFile(file) || ignorableQualityFile(file) {
 			continue
 		}
 		if opts.Focus != "" && !inFocus(file, opts.Focus) {
@@ -40,49 +40,158 @@ func qualityHintsForFile(repoRoot, rel string) []CodeQualityHint {
 	if err != nil {
 		return nil
 	}
+	language := qualityLanguage(rel)
+	content := string(data)
+	hasAsyncDef := strings.Contains(content, "async def ")
 	var hints []CodeQualityHint
-	for i, line := range strings.Split(string(data), "\n") {
+	for i, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+		if qualityLineIgnored(trimmed) {
 			continue
 		}
 		lineNo := i + 1
 		switch {
-		case ignoredNonCleanupResult(trimmed):
-			hints = append(hints, CodeQualityHint{
-				Kind:   "ignored_result",
-				File:   rel,
-				Line:   lineNo,
-				Text:   trimmed,
-				Reason: "A discarded result or error in production code can hide malformed input, failed cleanup, or failed recovery paths.",
-			})
-		case strings.Contains(trimmed, "time.Sleep("):
-			hints = append(hints, CodeQualityHint{
-				Kind:   "sleep_polling",
-				File:   rel,
-				Line:   lineNo,
-				Text:   trimmed,
-				Reason: "Sleeping in production code is often a brittle readiness or polling seam unless bounded and tested.",
-			})
-		case strings.Contains(trimmed, "log.Println(") || strings.Contains(trimmed, "log.Printf("):
-			hints = append(hints, CodeQualityHint{
-				Kind:   "direct_logging",
-				File:   rel,
-				Line:   lineNo,
-				Text:   trimmed,
-				Reason: "Direct logging from a Module can make error handling and tests less observable than returning classified errors.",
-			})
-		case strings.Contains(trimmed, "panic("):
-			hints = append(hints, CodeQualityHint{
-				Kind:   "panic",
-				File:   rel,
-				Line:   lineNo,
-				Text:   trimmed,
-				Reason: "Panic in production code should be justified by an invariant that callers cannot recover from.",
-			})
+		case language == "go" && ignoredNonCleanupResult(trimmed):
+			hints = append(hints, qualityHint("ignored_result", rel, lineNo, trimmed, "A discarded result or error in production code can hide malformed input, failed cleanup, or failed recovery paths."))
+		case language == "go" && strings.Contains(trimmed, "time.Sleep("):
+			hints = append(hints, qualityHint("sleep_polling", rel, lineNo, trimmed, "Sleeping in production code is often a brittle readiness or polling seam unless bounded and tested."))
+		case language == "go" && (strings.Contains(trimmed, "log.Println(") || strings.Contains(trimmed, "log.Printf(")):
+			hints = append(hints, qualityHint("direct_logging", rel, lineNo, trimmed, "Direct logging from a Module can make error handling and tests less observable than returning classified errors."))
+		case language == "go" && strings.Contains(trimmed, "panic("):
+			hints = append(hints, qualityHint("panic", rel, lineNo, trimmed, "Panic in production code should be justified by an invariant that callers cannot recover from."))
+		case shellInjectionPattern(language, trimmed):
+			hints = append(hints, qualityHint("shell_injection", rel, lineNo, trimmed, "Command execution with shell parsing or string-built commands can turn input into shell syntax; prefer argv arrays and strict allowlists."))
+		case unsafeHTMLPattern(language, trimmed):
+			hints = append(hints, qualityHint("unsafe_html", rel, lineNo, trimmed, "Direct HTML injection bypasses framework escaping and needs a trusted sanitization boundary."))
+		case sqlInterpolationPattern(language, trimmed):
+			hints = append(hints, qualityHint("sql_interpolation", rel, lineNo, trimmed, "SQL assembled with interpolation or concatenation is easy to turn into injection or quoting bugs; prefer parameterized queries."))
+		case rustPanicPattern(language, trimmed):
+			hints = append(hints, qualityHint("panic", rel, lineNo, trimmed, "Unwrap or expect in production Rust should be justified by an invariant that callers cannot recover from."))
+		case unsafeBufferPattern(language, trimmed):
+			hints = append(hints, qualityHint("unsafe_buffer", rel, lineNo, trimmed, "Unbounded C/C++ string copy/format APIs are memory-safety hazards; prefer bounded alternatives with explicit lengths."))
+		case asyncBlockingPattern(language, trimmed, hasAsyncDef):
+			hints = append(hints, qualityHint("async_blocking", rel, lineNo, trimmed, "Blocking calls inside async code can stall unrelated work; use async-aware sleep or IO primitives."))
 		}
 	}
 	return hints
+}
+
+func qualityHint(kind, file string, line int, text, reason string) CodeQualityHint {
+	return CodeQualityHint{Kind: kind, File: file, Line: line, Text: text, Reason: reason}
+}
+
+func qualityFileSupported(path string) bool {
+	return qualityLanguage(path) != ""
+}
+
+func qualityLanguage(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return "javascript"
+	case ".rs":
+		return "rust"
+	case ".sql":
+		return "sql"
+	case ".java":
+		return "java"
+	case ".c", ".h":
+		return "c"
+	case ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
+		return "cpp"
+	default:
+		return ""
+	}
+}
+
+func qualityLineIgnored(line string) bool {
+	if line == "" {
+		return true
+	}
+	for _, prefix := range []string{"//", "#", "--", "/*", "*"} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func shellInjectionPattern(language, line string) bool {
+	lower := strings.ToLower(line)
+	switch language {
+	case "python":
+		return strings.Contains(lower, "shell=true") || strings.Contains(line, "os.system(") || strings.Contains(line, "os.popen(")
+	case "javascript", "typescript":
+		return strings.Contains(line, "exec(") || strings.Contains(line, "execSync(") || strings.Contains(lower, "shell: true")
+	case "rust", "c", "cpp":
+		return strings.Contains(line, "system(")
+	case "java":
+		return strings.Contains(line, "Runtime.getRuntime().exec(") || strings.Contains(line, "ProcessBuilder(") && strings.Contains(line, "+")
+	default:
+		return false
+	}
+}
+
+func unsafeHTMLPattern(language, line string) bool {
+	switch language {
+	case "javascript", "typescript":
+		return strings.Contains(line, "dangerouslySetInnerHTML") || strings.Contains(line, ".innerHTML") || strings.Contains(line, "v-html=")
+	case "python":
+		return strings.Contains(line, "Markup(") || strings.Contains(line, "|safe")
+	case "java":
+		return strings.Contains(line, "setEscapeModelStrings(false)")
+	default:
+		return false
+	}
+}
+
+func sqlInterpolationPattern(language, line string) bool {
+	lower := strings.ToLower(line)
+	hasSQL := strings.Contains(lower, "select ") || strings.Contains(lower, "insert ") || strings.Contains(lower, "update ") || strings.Contains(lower, "delete ")
+	if !hasSQL {
+		return false
+	}
+	switch language {
+	case "python":
+		return strings.Contains(line, "f\"") || strings.Contains(line, "f'") || strings.Contains(line, ".format(") || strings.Contains(line, "% ")
+	case "javascript", "typescript":
+		return strings.Contains(line, "`${") || strings.Contains(line, "${") || strings.Contains(line, " + ")
+	case "go":
+		return strings.Contains(line, "fmt.Sprintf(") || strings.Contains(line, " + ")
+	case "java":
+		return strings.Contains(line, " + ") && (strings.Contains(line, "executeQuery(") || strings.Contains(line, "executeUpdate(") || strings.Contains(line, "createStatement("))
+	case "rust", "c", "cpp":
+		return strings.Contains(line, "format!(") || strings.Contains(line, "sprintf(") || strings.Contains(line, "snprintf(")
+	default:
+		return false
+	}
+}
+
+func rustPanicPattern(language, line string) bool {
+	return language == "rust" && (strings.Contains(line, ".unwrap()") || strings.Contains(line, ".expect("))
+}
+
+func unsafeBufferPattern(language, line string) bool {
+	if language != "c" && language != "cpp" {
+		return false
+	}
+	return strings.Contains(line, "strcpy(") || strings.Contains(line, "strcat(") || strings.Contains(line, "sprintf(") || strings.Contains(line, "gets(")
+}
+
+func asyncBlockingPattern(language, line string, hasAsyncDef bool) bool {
+	switch language {
+	case "python":
+		return hasAsyncDef && (strings.Contains(line, "time.sleep(") || strings.Contains(line, "requests.get(") || strings.Contains(line, "requests.post("))
+	case "javascript", "typescript":
+		return strings.Contains(line, "execSync(") || strings.Contains(line, "readFileSync(")
+	default:
+		return false
+	}
 }
 
 func ignoredNonCleanupResult(line string) bool {
@@ -120,15 +229,17 @@ func ignorableQualityFile(path string) bool {
 
 func qualityRank(kind string) int {
 	switch kind {
-	case "panic":
+	case "shell_injection", "sql_interpolation", "unsafe_buffer", "unsafe_html":
 		return 0
-	case "ignored_result":
+	case "panic":
 		return 1
-	case "sleep_polling":
+	case "ignored_result":
 		return 2
-	case "direct_logging":
+	case "async_blocking", "sleep_polling":
 		return 3
-	default:
+	case "direct_logging":
 		return 4
+	default:
+		return 5
 	}
 }

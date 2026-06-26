@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1657,6 +1658,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			}
 			fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
 			postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
+			recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -1750,6 +1752,184 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if err != nil {
 		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX review comment: %v", err)))
 	}
+}
+
+func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, prompt string, scopeExplicit bool, deep bool, stderr io.Writer) {
+	remoteURL := pointerString(repo.RemoteURL)
+	repoFullName := cloud.RepoFullNameFromRemoteURL(remoteURL)
+	if strings.TrimSpace(repoFullName) == "" {
+		return
+	}
+	client := cloud.NewClient()
+	if client == nil {
+		return
+	}
+	mode := "patch"
+	if deep {
+		mode = "deep"
+	} else if strings.TrimSpace(prompt) != "" {
+		mode = "prompt"
+	} else if scopeExplicit {
+		mode = "scope"
+	}
+	req := cloud.CodeReviewHistoryRecordRequest{
+		RepoRootPath: report.RepoRoot,
+		RepoFullName: repoFullName,
+		BranchName:   pointerString(repo.BranchName),
+		HeadCommitID: currentHeadCommit(ctx, repo.RootPath),
+		SourceKind:   "session_intent",
+		Prompt:       prompt,
+		Scope:        firstNonEmptyString(report.Scope, codereview.DefaultScope),
+		Mode:         mode,
+		Reviewer:     report.Reviewer,
+		SummaryKind:  "pr",
+		SummaryText:  codereview.RenderMarkdown(report),
+		Findings:     reviewHistoryFindings(repoFullName, report),
+		Payload: map[string]any{
+			"changed_files":  len(report.ChangedFiles),
+			"deep":           deep,
+			"scope_explicit": scopeExplicit,
+		},
+	}
+	if _, err := client.RecordCodeReviewHistory(ctx, req); err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not record code review history: %v", err)))
+	}
+}
+
+func reviewHistoryFindings(repoFullName string, report codereview.Report) []cloud.CodeReviewFindingRecord {
+	findings := make([]cloud.CodeReviewFindingRecord, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		file, line := primaryFindingLocation(finding, report.ChangedFiles)
+		category := "general"
+		if len(finding.Scopes) > 0 && strings.TrimSpace(finding.Scopes[0]) != "" {
+			category = strings.TrimSpace(finding.Scopes[0])
+		} else if before, _, ok := strings.Cut(finding.ID, "."); ok && strings.TrimSpace(before) != "" {
+			category = strings.TrimSpace(before)
+		}
+		record := cloud.CodeReviewFindingRecord{
+			Fingerprint:    reviewFindingFingerprint(repoFullName, finding, file, line, category),
+			Outcome:        "valid",
+			Category:       category,
+			Language:       reviewHistoryLanguageForFile(file),
+			FilePath:       file,
+			LineStart:      line,
+			LineEnd:        line,
+			Title:          finding.Title,
+			Summary:        finding.Summary,
+			Recommendation: finding.Recommendation,
+			Confidence:     reviewFindingConfidence(finding.Strength),
+			Severity:       finding.Strength,
+			Payload: map[string]any{
+				"id":       finding.ID,
+				"scopes":   finding.Scopes,
+				"benefit":  finding.Benefit,
+				"sources":  finding.SourceIDs,
+				"evidence": finding.Evidence,
+			},
+		}
+		findings = append(findings, record)
+	}
+	return findings
+}
+
+func primaryFindingLocation(finding codereview.Finding, changedFiles []string) (string, int) {
+	for _, evidence := range finding.Evidence {
+		for _, text := range []string{evidence.Label, evidence.Value} {
+			file, line := parseReviewLocation(text)
+			if file != "" {
+				return file, line
+			}
+		}
+	}
+	if len(changedFiles) > 0 {
+		return strings.TrimSpace(changedFiles[0]), 0
+	}
+	return "", 0
+}
+
+func parseReviewLocation(text string) (string, int) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", 0
+	}
+	fields := strings.Fields(text)
+	if len(fields) > 0 {
+		text = fields[0]
+	}
+	file := text
+	line := 0
+	if before, after, ok := strings.Cut(text, ":"); ok {
+		if parsed, err := strconv.Atoi(strings.Trim(strings.TrimSpace(after), ":,.")); err == nil {
+			file = before
+			line = parsed
+		}
+	}
+	if strings.Contains(file, "/") || strings.Contains(file, ".") {
+		return strings.TrimSpace(file), line
+	}
+	return "", 0
+}
+
+func reviewFindingFingerprint(repoFullName string, finding codereview.Finding, file string, line int, category string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		repoFullName,
+		finding.ID,
+		category,
+		file,
+		strconv.Itoa(line),
+		finding.Title,
+		finding.Summary,
+	}, "\x00")))
+	return fmt.Sprintf("%x", sum[:16])
+}
+
+func reviewFindingConfidence(strength string) int {
+	switch strings.ToLower(strings.TrimSpace(strength)) {
+	case "high", "strong":
+		return 8
+	case "low", "weak":
+		return 4
+	case "medium", "moderate":
+		return 6
+	default:
+		return 6
+	}
+}
+
+func reviewHistoryLanguageForFile(file string) string {
+	switch strings.ToLower(filepath.Ext(file)) {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return "javascript"
+	case ".rs":
+		return "rust"
+	case ".sql":
+		return "sql"
+	case ".java":
+		return "java"
+	case ".c", ".h":
+		return "c"
+	case ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
+		return "cpp"
+	default:
+		return ""
+	}
+}
+
+func currentHeadCommit(ctx context.Context, repoRoot string) string {
+	if strings.TrimSpace(repoRoot) == "" {
+		return ""
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func githubRemoteTarget(remoteURL string) (host, owner, repo string, ok bool) {
