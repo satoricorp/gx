@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +20,9 @@ import (
 
 	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/publication"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 var errTestComposeRepair = errors.New("compose repair unavailable")
@@ -1722,6 +1726,10 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GX_API_URL", "")
 	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_REVIEW_AI", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_REVIEW_RESOURCES", "0")
+	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
 
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -1754,6 +1762,10 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GX_API_URL", "")
 	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_REVIEW_AI", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_REVIEW_RESOURCES", "0")
+	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
 
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -1765,6 +1777,100 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "## Recommendations") {
 		t.Fatalf("gx review --scope output missing recommendations:\n%s", out.String())
+	}
+}
+
+func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
+	remote := "https://github.com/acme/gx.git"
+	branch := "feature/demo"
+	var gotCommentBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
+			if r.URL.Query().Get("head") != "acme:"+branch {
+				t.Fatalf("head query = %q", r.URL.Query().Get("head"))
+			}
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode comment body: %v", err)
+			}
+			gotCommentBody = payload["body"]
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+	t.Setenv("GX_REVIEW_AI", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_REVIEW_RESOURCES", "0")
+	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
+
+	report := codereview.Report{
+		Findings: []codereview.Finding{{
+			ID:             "docs.missing-readme",
+			Title:          "Missing README",
+			Summary:        "The repo lacks the standard entrypoint document new maintainers expect first.",
+			Benefit:        "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
+			Recommendation: "Add a concise README.",
+			Strength:       "Strong",
+			SourceIDs:      []string{"go-code-review-comments"},
+		}},
+		Sources: []codereview.Source{{
+			ID:    "go-code-review-comments",
+			Title: "Go Code Review Comments",
+			URL:   "https://go.dev/wiki/CodeReviewComments",
+		}},
+	}
+	var stderr bytes.Buffer
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+		RemoteURL:  &remote,
+		BranchName: &branch,
+	}, report, &stderr)
+
+	if gotCommentBody == "" {
+		t.Fatal("postReviewSummaryComment() did not send a comment")
+	}
+	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "## Sources", "Go Code Review Comments"} {
+		if !strings.Contains(gotCommentBody, want) {
+			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+	}
+}
+
+func TestAutoReportFailurePostsCommandError(t *testing.T) {
+	root := initGitRepo(t)
+	t.Chdir(root)
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+	var gotReport cloud.ReportLogRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/reported-logs" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotReport); err != nil {
+			t.Fatalf("decode report body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":"report-1","url":"https://gx.run/reports/report-1"}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_CLOUD_URL", server.URL)
+
+	autoReportFailure(context.Background(), authoring.NewEngine(), fmt.Errorf("publish exploded"), "gx publish")
+	if !strings.Contains(gotReport.Error, "gx publish: publish exploded") {
+		t.Fatalf("report error = %q, want command error", gotReport.Error)
+	}
+	if gotReport.GXVersion == "" || gotReport.OS == "" || gotReport.Arch == "" {
+		t.Fatalf("report metadata incomplete: %#v", gotReport)
 	}
 }
 

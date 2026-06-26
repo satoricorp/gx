@@ -169,14 +169,52 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 		"**Why:** No test surface was detected.",
 		"**Benefit:** Improves regression safety.",
 		"**Do next:** Add tests.",
+		"**Attribution:** `fowler-test-pyramid`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Since: `30d`", "Strength:", "Test files: 0"} {
+	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Since: `30d`", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("RenderMarkdown() should not include %q by default:\n%s", unwanted, text)
+		}
+	}
+}
+
+func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
+	report := Report{
+		Findings: []Finding{{
+			ID:             "architecture.generic-package-name",
+			Title:          "Generic package names reduce Interface clarity",
+			Summary:        "Generic package names make it harder to infer what Module Interface callers should rely on.",
+			Benefit:        "Improves readability and navigation by making package names describe domain concepts instead of storage buckets for shared code.",
+			Recommendation: "Rename or split the package.",
+			Strength:       "Worth exploring",
+			SourceIDs:      []string{"go-code-review-comments", "custom-source"},
+		}},
+		Sources: []Source{
+			{ID: "go-code-review-comments", Title: "Go Code Review Comments", URL: "https://go.dev/wiki/CodeReviewComments"},
+			{ID: "custom-source", Title: "Custom Reference"},
+		},
+		SourceRefs: []SourceRef{
+			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:gx"},
+			{ID: "L1", Kind: "local", File: "CONTEXT.md", StartLine: 12, Source: "local"},
+		},
+	}
+
+	text := RenderMarkdown(report)
+	for _, want := range []string{
+		"**Attribution:** [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) · Custom Reference (`custom-source`)",
+		"## Sources",
+		"- [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)",
+		"- Custom Reference (`custom-source`)",
+		"## Context Sources",
+		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:gx",
+		"`L1` `CONTEXT.md:12`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
 		}
 	}
 }
@@ -203,7 +241,7 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 	}
 }
 
-func TestSourcesAreCollectedButNotRendered(t *testing.T) {
+func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	root := t.TempDir()
 	report, err := Review(context.Background(), root, Options{Scope: "security"})
 	if err != nil {
@@ -213,10 +251,40 @@ func TestSourcesAreCollectedButNotRendered(t *testing.T) {
 		t.Fatal("Review() did not collect internal sources")
 	}
 	text := RenderMarkdown(report)
-	for _, source := range report.Sources {
-		if strings.Contains(text, source.URL) || strings.Contains(text, source.Title) || strings.Contains(text, source.ID) {
-			t.Fatalf("RenderMarkdown() exposed source %q in:\n%s", source.ID, text)
-		}
+	if !strings.Contains(text, "## Sources") {
+		t.Fatalf("RenderMarkdown() missing sources section:\n%s", text)
+	}
+}
+
+func TestStaticToolFailuresRankAboveArchitectureHints(t *testing.T) {
+	ctx := ReviewContext{
+		Options: Options{Scope: "architecture"},
+		Facts: RepoFacts{
+			DependencyFiles: []string{"go.mod"},
+			GoPackages:      []PackageFact{{Path: "shared", GoFiles: 8, TestFiles: 0}},
+		},
+		Sources: []Source{
+			{ID: "google-eng-practices", Title: "Google Engineering Practices", URL: "https://google.github.io/eng-practices/"},
+			{ID: "fowler-architecture", Title: "Martin Fowler Architecture Guide", URL: "https://www.martinfowler.com/architecture/"},
+		},
+		Brief: ReviewBrief{
+			Static: StaticSnapshot{
+				ToolResults: []StaticToolResult{{
+					Name:     "go test",
+					Command:  "go test ./...",
+					ExitCode: 1,
+					Output:   "FAIL",
+				}},
+			},
+		},
+		ActiveScopes: []string{"architecture", "maintainability", "testing", "dependencies", "security"},
+	}
+	findings := evaluateFindings(ctx, defaultRules())
+	if len(findings) == 0 {
+		t.Fatal("evaluateFindings() returned no findings")
+	}
+	if findings[0].ID != "tools.static-failure" {
+		t.Fatalf("first finding = %q, want tools.static-failure", findings[0].ID)
 	}
 }
 

@@ -111,6 +111,10 @@ func RenderMarkdown(report Report) string {
 			}
 			fmt.Fprintln(&b)
 			fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Do next:**"), finding.Recommendation)
+			if attributions := renderFindingAttributions(report, finding); len(attributions) > 0 {
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Attribution:**"), strings.Join(attributions, " · "))
+			}
 			if report.Verbose && len(finding.Evidence) > 0 {
 				fmt.Fprintln(&b)
 				fmt.Fprintln(&b, reviewLabel(report, "**Evidence:**"))
@@ -122,6 +126,22 @@ func RenderMarkdown(report Report) string {
 		}
 	}
 	fmt.Fprintln(&b)
+
+	if len(report.Sources) > 0 {
+		fmt.Fprintln(&b, reviewTitle(report, "## Sources"))
+		for _, source := range report.Sources {
+			fmt.Fprintf(&b, "- %s\n", renderSourceCatalogEntry(source))
+		}
+		fmt.Fprintln(&b)
+	}
+
+	if len(report.SourceRefs) > 0 {
+		fmt.Fprintln(&b, reviewTitle(report, "## Context Sources"))
+		for _, sourceRef := range report.SourceRefs {
+			fmt.Fprintf(&b, "- %s\n", renderSourceRef(sourceRef))
+		}
+		fmt.Fprintln(&b)
+	}
 
 	if report.Verbose {
 		fmt.Fprintln(&b, reviewTitle(report, "## Repo Facts"))
@@ -161,6 +181,87 @@ func RenderMarkdown(report Report) string {
 		fmt.Fprintln(&b)
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func renderFindingAttributions(report Report, finding Finding) []string {
+	if len(finding.SourceIDs) == 0 {
+		return nil
+	}
+	sources := sourceMap(report.Sources)
+	var out []string
+	for _, id := range finding.SourceIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if source, ok := sources[id]; ok {
+			out = append(out, renderSourceCatalogEntry(source))
+			continue
+		}
+		out = append(out, fmt.Sprintf("`%s`", id))
+	}
+	return out
+}
+
+func sourceMap(sources []Source) map[string]Source {
+	out := make(map[string]Source, len(sources))
+	for _, source := range sources {
+		if strings.TrimSpace(source.ID) == "" {
+			continue
+		}
+		out[source.ID] = source
+	}
+	return out
+}
+
+func renderSourceCatalogEntry(source Source) string {
+	title := strings.TrimSpace(source.Title)
+	if title == "" {
+		title = strings.TrimSpace(source.ID)
+	}
+	if title == "" {
+		return "unknown source"
+	}
+	if url := strings.TrimSpace(source.URL); url != "" {
+		return fmt.Sprintf("[%s](%s)", title, url)
+	}
+	if id := strings.TrimSpace(source.ID); id != "" {
+		return fmt.Sprintf("%s (`%s`)", title, id)
+	}
+	return title
+}
+
+func renderSourceRef(ref SourceRef) string {
+	label := strings.TrimSpace(ref.ID)
+	if label == "" {
+		label = strings.TrimSpace(ref.Kind)
+	}
+	if label == "" {
+		label = "context"
+	}
+	title := strings.TrimSpace(ref.Title)
+	if title == "" {
+		title = strings.TrimSpace(ref.File)
+	}
+	if title == "" {
+		title = label
+	}
+	var details []string
+	if url := strings.TrimSpace(ref.URL); url != "" {
+		details = append(details, fmt.Sprintf("[%s](%s)", title, url))
+	} else if ref.File != "" {
+		if ref.StartLine > 0 {
+			details = append(details, fmt.Sprintf("`%s:%d`", ref.File, ref.StartLine))
+		} else {
+			details = append(details, fmt.Sprintf("`%s`", ref.File))
+		}
+	} else {
+		details = append(details, fmt.Sprintf("`%s`", title))
+	}
+	if ref.Source != "" && ref.Source != "local" {
+		details = append(details, fmt.Sprintf("source=%s", ref.Source))
+	}
+	return fmt.Sprintf("`%s` %s", label, strings.Join(details, " · "))
 }
 
 func reviewTitle(report Report, text string) string {

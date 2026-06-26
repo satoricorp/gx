@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,7 +30,7 @@ func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		Short: "Send recent GX logs to support",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			report := buildReportLogRequest(ctx, engine)
+			report := buildReportLogRequest(ctx, engine, "")
 			client := cloud.NewClient()
 			if client == nil {
 				return fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
@@ -56,7 +57,43 @@ func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	return cmd
 }
 
-func buildReportLogRequest(ctx context.Context, engine *authoring.Engine) cloud.ReportLogRequest {
+func autoReportFailure(ctx context.Context, engine *authoring.Engine, err error, commandName string) {
+	if !shouldAutoReportFailure(err) {
+		return
+	}
+	client := cloud.NewClient()
+	if client == nil {
+		return
+	}
+	report := buildReportLogRequest(ctx, engine, fmt.Sprintf("%s: %s", strings.TrimSpace(commandName), redactSensitive(err.Error())))
+	if _, reportErr := client.ReportLogs(ctx, report); reportErr != nil {
+		fmt.Fprintln(os.Stderr, labelWarningValue("Warning", fmt.Sprintf("Could not report %s failure: %v", strings.TrimSpace(commandName), reportErr)))
+	}
+}
+
+func shouldAutoReportFailure(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	if message == "" {
+		return false
+	}
+	switch {
+	case strings.Contains(message, "does not accept"),
+		strings.Contains(message, "accepts at most"),
+		strings.Contains(message, "flag provided but not defined"),
+		strings.HasPrefix(message, "usage:"),
+		strings.Contains(message, "unknown command"),
+		strings.Contains(message, "unsupported review"),
+		strings.Contains(message, "unsupported format"):
+		return false
+	default:
+		return true
+	}
+}
+
+func buildReportLogRequest(ctx context.Context, engine *authoring.Engine, overrideError string) cloud.ReportLogRequest {
 	report := cloud.ReportLogRequest{
 		GXVersion: version.Current(),
 		OS:        runtime.GOOS,
@@ -67,11 +104,17 @@ func buildReportLogRequest(ctx context.Context, engine *authoring.Engine) cloud.
 	status, err := currentStatusForEngine(ctx, engine)
 	if err != nil {
 		report.StatusError = redactSensitive(err.Error())
+		if strings.TrimSpace(overrideError) != "" {
+			report.Error = redactSensitive(overrideError)
+		}
 		return report
 	}
 	report.RepoRoot = status.Repo.RootPath
 	report.RepoFullName = cloud.RepoFullNameFromRemoteURL(pointerString(status.Repo.RemoteURL))
 	report.Error = redactSensitive(status.PublishUploads.LastError)
+	if strings.TrimSpace(overrideError) != "" {
+		report.Error = redactSensitive(overrideError)
+	}
 	return report
 }
 

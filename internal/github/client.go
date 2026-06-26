@@ -22,7 +22,8 @@ type Client struct {
 }
 
 type PullRequest struct {
-	URL string
+	Number int
+	URL    string
 }
 
 type IssueComment struct {
@@ -103,6 +104,7 @@ func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOpti
 		return nil, err
 	}
 	var payload []struct {
+		Number  int    `json:"number"`
 		HTMLURL string `json:"html_url"`
 	}
 	if err := c.do(req, &payload); err != nil {
@@ -111,7 +113,7 @@ func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOpti
 	if len(payload) == 0 || strings.TrimSpace(payload[0].HTMLURL) == "" {
 		return nil, nil
 	}
-	return &PullRequest{URL: strings.TrimSpace(payload[0].HTMLURL)}, nil
+	return &PullRequest{Number: payload[0].Number, URL: strings.TrimSpace(payload[0].HTMLURL)}, nil
 }
 
 func (c *Client) CreatePullRequest(ctx context.Context, opts CreatePullRequestOptions) (*PullRequest, error) {

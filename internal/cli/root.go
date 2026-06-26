@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/daemon"
+	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/launcher"
 	"github.com/satoricorp/gx/internal/postlist"
@@ -83,7 +85,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newStatusCommand(ctx, engine, "status", "status", false),
 		newStacksCommand(ctx, engine),
 		newReportCommand(ctx, engine),
-		newReviewCommand(ctx),
+		newReviewCommand(ctx, engine),
 		newPublishCommand(ctx, engine, "publish [stack]", false),
 		newSyncCommand(ctx, engine),
 		newOpsCommand(ctx),
@@ -1601,7 +1603,7 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	return cmd
 }
 
-func newReviewCommand(ctx context.Context) *cobra.Command {
+func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var scope string
 	var focus string
 	var deep bool
@@ -1612,6 +1614,12 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			startedAt := time.Now()
+			var runErr error
+			defer func() {
+				if runErr != nil {
+					autoReportFailure(ctx, engine, runErr, "gx review")
+				}
+			}()
 			reviewScope := ""
 			scopeExplicit := cmd.Flags().Changed("scope")
 			if scopeExplicit {
@@ -1623,8 +1631,9 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			}
 			repo, err := vcs.NewService().ResolveGitRepo(ctx)
 			if err != nil {
+				runErr = err
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
-				return err
+				return runErr
 			}
 			report, err := runReviewWithLoader(
 				cmd.InOrStdin(),
@@ -1643,9 +1652,11 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			)
 			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
 			if err != nil {
-				return err
+				runErr = err
+				return runErr
 			}
 			fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
+			postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -1696,6 +1707,93 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 		props["reviewer"] = report.Reviewer
 	}
 	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
+}
+
+const reviewCommentMarker = "<!-- gx review summary -->"
+
+func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
+	remoteURL := pointerString(repo.RemoteURL)
+	branchName := pointerString(repo.BranchName)
+	if strings.TrimSpace(remoteURL) == "" || strings.TrimSpace(branchName) == "" {
+		return
+	}
+	host, owner, repoName, ok := githubRemoteTarget(remoteURL)
+	if !ok {
+		return
+	}
+	client, err := github.NewClient(host)
+	if err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX review comment: %v", err)))
+		return
+	}
+	pr, err := client.FindPullRequest(ctx, github.CreatePullRequestOptions{
+		Host:       host,
+		Owner:      owner,
+		Repo:       repoName,
+		HeadBranch: branchName,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not find pull request for %s: %v", branchName, err)))
+		return
+	}
+	if pr == nil || pr.Number == 0 {
+		return
+	}
+	commentBody := reviewCommentMarker + "\n" + codereview.RenderMarkdown(report)
+	_, err = client.UpsertIssueComment(ctx, github.IssueCommentOptions{
+		Owner:  owner,
+		Repo:   repoName,
+		Number: pr.Number,
+		Body:   commentBody,
+		Marker: reviewCommentMarker,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX review comment: %v", err)))
+	}
+}
+
+func githubRemoteTarget(remoteURL string) (host, owner, repo string, ok bool) {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return "", "", "", false
+	}
+	if idx := strings.Index(remoteURL, "github.com/"); idx >= 0 {
+		host = "github.com"
+		path := strings.TrimSuffix(remoteURL[idx+len("github.com/"):], ".git")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return host, parts[0], parts[1], true
+		}
+	}
+	if strings.Contains(remoteURL, "://") {
+		parsed, err := url.Parse(remoteURL)
+		if err != nil {
+			return "", "", "", false
+		}
+		host = parsed.Hostname()
+		if port := parsed.Port(); port != "" {
+			host = parsed.Host
+		}
+		path := strings.TrimPrefix(parsed.Path, "/")
+		path = strings.TrimSuffix(path, ".git")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return host, parts[0], parts[1], true
+		}
+		return "", "", "", false
+	}
+	if at := strings.LastIndex(remoteURL, "@"); at >= 0 {
+		remoteURL = remoteURL[at+1:]
+	}
+	if colon := strings.Index(remoteURL, ":"); colon >= 0 {
+		host = remoteURL[:colon]
+		path := strings.TrimSuffix(remoteURL[colon+1:], ".git")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return host, parts[0], parts[1], true
+		}
+	}
+	return "", "", "", false
 }
 
 type currentStatus struct {
@@ -3017,6 +3115,12 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 		Hidden: hidden,
 		Args:   cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var runErr error
+			defer func() {
+				if runErr != nil {
+					autoReportFailure(ctx, engine, runErr, "gx publish")
+				}
+			}()
 			out := cmd.OutOrStdout()
 			invocation := "gx publish"
 			if hidden {
@@ -3033,7 +3137,8 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 			engine.SetProgressWriter(out)
 
 			if !pushToGitHub {
-				return fmt.Errorf("--github=false is no longer supported; gx publish always pushes stack refs")
+				runErr = fmt.Errorf("--github=false is no longer supported; gx publish always pushes stack refs")
+				return runErr
 			}
 			mode := authoring.PublishModeReviewAndGit
 
@@ -3048,11 +3153,13 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 
 				if publishAllRequested {
 					if len(args) > 0 {
-						return fmt.Errorf("gx publish --all does not accept a stack name")
+						runErr = fmt.Errorf("gx publish --all does not accept a stack name")
+						return runErr
 					}
 					results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
 					if err != nil {
-						return err
+						runErr = err
+						return runErr
 					}
 					fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results))))
 					emitPublishRunTelemetry(ctx, results, false, false, publishAllRequested, len(args) > 0)
@@ -3069,7 +3176,8 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 					push, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
 				}
 				if err != nil {
-					return err
+					runErr = err
+					return runErr
 				}
 				emitPublishRunTelemetry(ctx, []authoring.PushResult{push}, false, false, publishAllRequested, len(args) > 0)
 				return nil
@@ -3077,20 +3185,24 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 
 			if publishAllRequested {
 				if len(args) > 0 {
-					return fmt.Errorf("gx publish --all does not accept a stack name")
+					runErr = fmt.Errorf("gx publish --all does not accept a stack name")
+					return runErr
 				}
 				prepared, err := engine.PrepareAllPublishes(ctx, nil, authoring.PushOptions{Mode: mode})
 				if err != nil {
-					return err
+					runErr = err
+					return runErr
 				}
 				published := 0
 				for _, push := range prepared {
 					review, err := publication.EnqueuePush(ctx, push)
 					if err != nil {
-						return err
+						runErr = err
+						return runErr
 					}
 					if err := engine.RecordPublish(ctx, push); err != nil {
-						return err
+						runErr = err
+						return runErr
 					}
 					printPublishPush(out, push)
 					printPublishReview(out, review)
@@ -3112,14 +3224,17 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 				push, err = engine.PreparePublish(ctx, nil, authoring.PushOptions{Mode: mode})
 			}
 			if err != nil {
-				return err
+				runErr = err
+				return runErr
 			}
 			review, err := publication.EnqueuePush(ctx, push)
 			if err != nil {
-				return err
+				runErr = err
+				return runErr
 			}
 			if err := engine.RecordPublish(ctx, push); err != nil {
-				return err
+				runErr = err
+				return runErr
 			}
 			printPublishPush(out, push)
 			printPublishReview(out, review)
