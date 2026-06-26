@@ -11,6 +11,8 @@ cd "$repo_root"
 env_github_client_id="${GITHUB_CLIENT_ID-}"
 env_convex_site_url="${CONVEX_SITE_URL-}"
 env_gx_cloud_url="${GX_CLOUD_URL-}"
+env_gx_posthog_key="${GX_POSTHOG_KEY-}"
+env_gx_posthog_host="${GX_POSTHOG_HOST-}"
 set -a
 if [[ -f .env ]]; then
   # shellcheck disable=SC1091
@@ -20,6 +22,8 @@ set +a
 [[ -n "$env_github_client_id" ]] && export GITHUB_CLIENT_ID="$env_github_client_id"
 [[ -n "$env_convex_site_url" ]] && export CONVEX_SITE_URL="$env_convex_site_url"
 [[ -n "$env_gx_cloud_url" ]] && export GX_CLOUD_URL="$env_gx_cloud_url"
+[[ -n "$env_gx_posthog_key" ]] && export GX_POSTHOG_KEY="$env_gx_posthog_key"
+[[ -n "$env_gx_posthog_host" ]] && export GX_POSTHOG_HOST="$env_gx_posthog_host"
 export GX_LDFLAGS_PROFILE="${GX_LDFLAGS_PROFILE:-release}"
 eval "$(zsh scripts/ldflags.sh)"
 
