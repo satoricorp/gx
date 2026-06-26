@@ -1,0 +1,96 @@
+---
+title: "Week of June 26, 2026"
+description: "Smarter gx review, faster publishing, and a more polished menubar experience."
+---
+
+This week's release sharpens code review quality, makes publishing feel instant, and gives the macOS menubar a thorough cleanup. We also shipped first-class CLI release packaging so installs and updates are now a one-liner.
+
+## New features
+
+<Update label="gx report" tags={["cli"]}>
+  **A new `gx report` command summarizes your in-progress and published work.** Run it to see active stacks, recent revisions, and where they stand in review — all in one place.
+</Update>
+
+<Update label="Indexed review context with inline GitHub comments" tags={["review", "github"]}>
+  **`gx review` now publishes findings as inline comments on the matching pull request.** Reviews land in the GitHub review thread your team already uses, with line-level context attached to the right file and revision.
+</Update>
+
+<Update label="Review history memory" tags={["review"]}>
+  **`gx review` remembers prior reviews and avoids re-flagging the same issues.** History is scoped per repository and per author, so feedback stays fresh as a change evolves through revisions.
+</Update>
+
+<Update label="Prompted gx review" tags={["review", "mcp"]}>
+  **You can now ask `gx review` a question alongside the code.** Pass a prompt to focus the review on a specific concern (security, performance, a particular subsystem). Also available through the MCP `gx-review` tool.
+</Update>
+
+<Update label="Codex MCP setup from the menubar" tags={["menubar", "mcp"]}>
+  **One-click setup for the Codex MCP server is now available from the GX menubar.** No more hand-editing config files to wire Codex to your GX tools.
+</Update>
+
+<Update label="CLI release packaging and installer" tags={["cli"]}>
+  **The GX CLI now ships as signed macOS release artifacts with a hosted install script.** Cross-platform packaging is in place, and the MCP server picks up CLI updates automatically.
+</Update>
+
+<Update label="PostHog product analytics in the CLI" tags={["cli"]}>
+  **The CLI now reports anonymized product analytics through PostHog** so we can see which workflows people rely on and prioritize accordingly. Analytics respect the existing telemetry opt-out.
+</Update>
+
+## Updates
+
+<Update label="Focused `gx review` on current changes" tags={["review"]}>
+  Reviews now scope to the revision you're working on instead of the entire stack, producing tighter, more actionable feedback.
+</Update>
+
+<Update label="Better attribution in `gx review` output" tags={["review"]}>
+  Findings now identify the author, revision, and file they came from, so it's clear who needs to act on each comment.
+</Update>
+
+<Update label="Broader review knowledge coverage" tags={["review"]}>
+  Review context now pulls from a wider set of language and framework references, improving suggestions across Python, TypeScript, Go, Rust, Swift, and more.
+</Update>
+
+<Update label="Background publish uploads" tags={["publish"]}>
+  `gx publish` returns as soon as the remote PR is created. Review artifacts upload in the background and retry automatically if interrupted, so flaky networks no longer block your flow.
+</Update>
+
+<Update label="Cleaner stack views" tags={["stacks", "cli"]}>
+  Merged published stacks are now hidden from `gx stacks` and pruned from local storage. Empty stored revisions are filtered out, and the stack read model is significantly faster on large repos.
+</Update>
+
+<Update label="Scrollable stack TUIs" tags={["cli"]}>
+  Long stacks now scroll in the terminal UI instead of clipping, so you can navigate large change sets without resizing your window.
+</Update>
+
+<Update label="Refined menubar doctor diagnostics" tags={["menubar"]}>
+  The menubar's doctor checks surface clearer signals about repo hooks, CLI install state, and cloud auth — and the menu itself has been trimmed and reorganized.
+</Update>
+
+<Update label="MCP login guidance" tags={["mcp"]}>
+  When MCP tools hit an auth error, they now point you at the exact `gx` login command to run.
+</Update>
+
+<Update label="Unified cloud auth" tags={["cli", "mcp"]}>
+  Capture uploads, publish uploads, and MCP requests all share a single CLI session. Signing in once is enough.
+</Update>
+
+## Fixes
+
+<Update label="Reliable compose and branch naming" tags={["cli"]}>
+  Fixed several edge cases in `gx compose` and stack branch naming that could produce duplicate or malformed branch names on republish.
+</Update>
+
+<Update label="Doctor repo registry lookup" tags={["cli"]}>
+  `gx doctor` once again finds repos registered through the menubar instead of reporting them as missing.
+</Update>
+
+<Update label="Cross-platform CLI packaging" tags={["cli"]}>
+  Fixed a packaging error that broke the CLI bundle on non-macOS hosts.
+</Update>
+
+<Update label="Best-effort capture uploads" tags={["capture"]}>
+  Capture pushes no longer fail the surrounding command when the upload itself errors — the local session is preserved and retried.
+</Update>
+
+<Update label="Tolerant publish responses" tags={["publish"]}>
+  `gx publish` no longer errors out when the remote response is missing an optional review URL.
+</Update>
