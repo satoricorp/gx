@@ -68,7 +68,7 @@ jobs:
           GX_POSTHOG_KEY: ${{ vars.GX_POSTHOG_KEY }}
           GX_POSTHOG_HOST: ${{ vars.GX_POSTHOG_HOST || 'https://us.i.posthog.com' }}
         run: |
-          test -n "$GX_POSTHOG_KEY" || {
+          [[ "$GITHUB_REF_TYPE" != "tag" || -n "$GX_POSTHOG_KEY" ]] || {
             echo "GX_POSTHOG_KEY repository variable is required for macOS releases" >&2
             exit 1
           }
@@ -96,7 +96,7 @@ jobs:
         run: |
           test -f apps/menubar/dist/GX-macOS.zip
           test -f apps/menubar/dist/GX-macOS.dmg
-          strings apps/menubar/dist/GX.app/Contents/Resources/bin/gx | grep -q 'github.com/satoricorp/gx/internal/buildconfig.PostHogKey=' || {
+          [[ "$GITHUB_REF_TYPE" != "tag" ]] || strings apps/menubar/dist/GX.app/Contents/Resources/bin/gx | grep -q 'github.com/satoricorp/gx/internal/buildconfig.PostHogKey=' || {
             echo "missing baked GX_POSTHOG_KEY in macOS app CLI" >&2
             exit 1
           }
