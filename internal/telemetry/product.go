@@ -17,7 +17,7 @@ func EmitProductEvent(ctx context.Context, event string, properties map[string]a
 	if !Configured() {
 		return
 	}
-	NewFromEnv().EmitEvent(ctx, event, ProductProperties(properties))
+	NewFromEnv().EmitEvent(ctx, event, properties)
 }
 
 func EmitInstallOnce(ctx context.Context) {
@@ -68,9 +68,9 @@ func ProductProperties(properties map[string]any) map[string]any {
 				out["distinct_id"] = machineID
 			}
 		}
-	} else if machineID, err := cloud.DefaultMachineID(); err == nil && strings.TrimSpace(machineID) != "" {
-		out["machine_id"] = strings.TrimSpace(machineID)
-		if _, ok := out["distinct_id"]; !ok {
+	} else if _, ok := out["distinct_id"]; !ok {
+		if machineID, err := cloud.DefaultMachineID(); err == nil && strings.TrimSpace(machineID) != "" {
+			out["machine_id"] = strings.TrimSpace(machineID)
 			out["distinct_id"] = strings.TrimSpace(machineID)
 		}
 	}

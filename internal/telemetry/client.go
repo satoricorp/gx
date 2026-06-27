@@ -102,10 +102,11 @@ func (c *ClientImpl) EmitComposeRun(ctx context.Context, props ComposeRunProps) 
 }
 
 func (c *ClientImpl) capture(ctx context.Context, event string, properties map[string]any) {
+	captureProperties := ProductProperties(properties)
 	body, err := json.Marshal(map[string]any{
 		"api_key":    c.apiKey,
 		"event":      event,
-		"properties": properties,
+		"properties": captureProperties,
 	})
 	if err != nil {
 		return
