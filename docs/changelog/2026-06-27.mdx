@@ -1,0 +1,37 @@
+---
+title: "Week of June 27, 2026"
+description: "New gx report, prompted reviews, indexed review context, GitHub comments, and a smoother stack experience."
+---
+
+## New features
+
+- **`gx report` command** — Summarize accepted stacks and recent activity from the CLI for quick status checks.
+- **Prompted `gx review`** — Pass a prompt to focus the review on a specific concern or area of the change.
+- **Indexed review context with GitHub comments** — Reviews now pull from an indexed knowledge base and post findings directly as GitHub PR comments.
+- **Code review history memory** — Reviews remember prior feedback on a change so repeated nits and stale suggestions get filtered out.
+- **Codex MCP setup from the menubar** — One-click command in the menubar app to wire up Codex as an MCP client.
+- **MCP auth login guidance** — Clear next-step prompts when an MCP client needs to authenticate.
+
+## Updates
+
+- **Improved `gx review` attribution and reporting** — Findings include better authorship signals and clearer report output.
+- **Focused review on current changes** — `gx review` scopes to the working revision instead of the entire branch by default.
+- **Merged stacks are hidden and pruned** — Published stacks that have been merged drop out of the stack list automatically, and stored revisions are cleaned up.
+- **Faster stack views** — Stack list and detail views render noticeably quicker on large repos.
+- **Scrollable stack TUIs** — Long stack lists and revision views now support viewport scrolling.
+- **Background publish uploads** — `gx publish` returns immediately and uploads review artifacts in the background, with automatic retry for abandoned uploads.
+- **Best-effort capture uploads** — Session capture pushes no longer block the CLI when the upload surface is unavailable.
+- **GitHub auth token refresh** — Expiring GitHub tokens are refreshed automatically during CLI and menubar operations.
+- **Session-verified login** — Login verifies the console API session end-to-end before reporting success.
+- **CLI sessions for cloud API auth** — Cloud API calls reuse the GX CLI session, removing a second auth step.
+- **Product analytics** — Anonymous PostHog telemetry in the CLI and console helps prioritize what to improve next. Builds without a PostHog key continue to work normally.
+- **Menubar cleanup** — Trimmed and reorganized menubar items for a clearer set of actions.
+
+## Bug fixes
+
+- **Branch naming and `gx compose` reliability** — Fixed cases where compose produced invalid branch names or failed to apply revisions cleanly.
+- **Hidden empty stack revisions** — Revisions with no remaining changes no longer appear in stack views.
+- **PostHog events include identity** — Analytics events now consistently carry the signed-in user identity.
+- **PostHog config on macOS releases** — Fixed a packaging issue that broke analytics in signed macOS builds.
+- **Doctor repo registry lookup** — `gx doctor` once again resolves repo registry entries correctly.
+- **Publish responses without a review URL** — `gx publish` no longer errors when the remote review surface omits a URL.
