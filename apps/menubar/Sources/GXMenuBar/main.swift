@@ -391,7 +391,8 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        menu.addItem(disabled("GX \(appVersion())"))
+        menu.addItem(disabled("GX tag \(gitTagVersion())"))
+        menu.addItem(disabled("CLI \(cliVersion())"))
         if let updated = lastUpdated {
             menu.addItem(disabled("Updated \(Self.timeFormatter.string(from: updated))"))
         } else if refreshing {
@@ -657,8 +658,20 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         return DoctorClient.state(for: doctor)
     }
 
-    private func appVersion() -> String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+    private func gitTagVersion() -> String {
+        plistString("GXGitTagVersion") ?? plistString("CFBundleShortVersionString") ?? "dev"
+    }
+
+    private func cliVersion() -> String {
+        plistString("GXCLIVersion") ?? "dev"
+    }
+
+    private func plistString(_ key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func consoleURL() -> URL {

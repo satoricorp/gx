@@ -29,6 +29,9 @@ eval "$(zsh scripts/ldflags.sh)"
 
 mkdir -p "$menubar_dir/bin" "$dist_dir"
 go build -ldflags "$GX_LDFLAGS" -o "$menubar_dir/bin/gx" ./cmd/gx
+git_tag_version="${VERSION:-dev}"
+cli_version_json="$("$menubar_dir/bin/gx" version --json)"
+cli_version="$(printf '%s' "$cli_version_json" | plutil -extract version raw -o - -)"
 
 if [[ -f "$repo_root/mcp/package.json" ]]; then
   (
@@ -46,6 +49,15 @@ test -x "$swift_exe" || { echo "missing Swift executable: $swift_exe" >&2; exit 
 rm -rf "$app_path"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$menubar_dir/Resources/Info.plist" "$app_path/Contents/Info.plist"
+set_plist_string() {
+  local key="$1"
+  local value="$2"
+  local plist="$app_path/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist" 2>/dev/null ||
+    /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist"
+}
+set_plist_string "GXGitTagVersion" "$git_tag_version"
+set_plist_string "GXCLIVersion" "$cli_version"
 cp "$swift_exe" "$app_path/Contents/MacOS/GX"
 chmod 755 "$app_path/Contents/MacOS/GX"
 cp "$menubar_dir/assets/trayTemplate.png" "$app_path/Contents/Resources/trayTemplate.png"
