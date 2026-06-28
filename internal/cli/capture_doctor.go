@@ -106,30 +106,15 @@ func captureDoctorOK(status captureDoctorJSON) bool {
 }
 
 func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
-	fmt.Fprintln(out, section("Capture"))
-	if !status.HookApplicable {
-		fmt.Fprintln(out, labelValue("Pre-push hook", "not checked: run `gx doctor` inside a git repo"))
-	} else if status.HookInstalled {
-		fmt.Fprintln(out, labelValue("Pre-push hook", success("ok")))
-	} else {
-		fmt.Fprintln(out, labelValue("Pre-push hook", danger("warn")+": run `gx init` in this repo"))
-	}
-	switch {
-	case status.RepoHooksTotal == 0:
-		fmt.Fprintln(out, labelValue("Registered repo hooks", "none recorded"))
-	case status.RepoHooksOK:
-		fmt.Fprintln(out, labelValue("Registered repo hooks", success("ok")+fmt.Sprintf(": %d repos", status.RepoHooksTotal)))
-	default:
-		fmt.Fprintln(out, labelValue("Registered repo hooks", danger("warn")+fmt.Sprintf(": %d missing, %d unreachable of %d repos", status.RepoHooksMissing, status.RepoHooksUnreachable, status.RepoHooksTotal)))
-	}
+	fmt.Fprintln(out, labelValue("Hooks installed", captureHooksDoctorValue(status)))
 	if status.UploadAuthed {
-		fmt.Fprintln(out, labelValue("Upload credentials", success("ok")+": "+status.UploadAPI))
+		fmt.Fprintln(out, labelValue("Upload", success("ok")+": "+status.UploadAPI))
 	} else {
 		hint := "run `gx auth login`"
 		if strings.TrimSpace(status.UploadAuthError) != "" {
 			hint = status.UploadAuthError
 		}
-		fmt.Fprintln(out, labelValue("Upload credentials", danger("warn")+": "+hint))
+		fmt.Fprintln(out, labelValue("Upload", danger("warn")+": "+hint))
 	}
 	backlog := status.PendingExtracts + status.PendingSessions
 	if backlog == 0 {
@@ -137,22 +122,27 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	} else {
 		fmt.Fprintln(out, labelValue("Staging backlog", fmt.Sprintf("%d pending", backlog)))
 	}
-	if status.CursorReachable {
-		fmt.Fprintln(out, labelValue("Cursor vscdb", success("ok")))
-	} else {
-		msg := "not found"
-		if status.CursorPath != "" {
-			msg = status.CursorPath
-		}
-		fmt.Fprintln(out, labelValue("Cursor vscdb", danger("warn")+": "+msg))
+	fmt.Fprintln(out, labelValue("Disk used", formatDiskUsedGB(gxStorageDiskUsedBytes())))
+}
+
+func captureHooksDoctorValue(status captureDoctorJSON) string {
+	if status.HookApplicable && !status.HookInstalled {
+		return danger("warn") + ": run `gx init` in this repo"
 	}
-	if status.DiskFreeGB >= 0 {
-		label := success("ok")
-		if status.DiskWarn {
-			label = danger("warn")
-		}
-		fmt.Fprintln(out, labelValue("Disk free", label+fmt.Sprintf(": %d GB", status.DiskFreeGB)))
+	if !status.RepoHooksOK {
+		return danger("warn") + fmt.Sprintf(": %d missing, %d unreachable of %d repos", status.RepoHooksMissing, status.RepoHooksUnreachable, status.RepoHooksTotal)
 	}
+	if status.HookApplicable || status.RepoHooksTotal > 0 {
+		return success("ok")
+	}
+	return "not checked: run `gx doctor` inside a git repo"
+}
+
+func formatDiskUsedGB(bytes int64) string {
+	if bytes <= 0 {
+		return "0GB"
+	}
+	return fmt.Sprintf("%dGB", bytes/(1024*1024*1024))
 }
 
 func captureRegisteredRepoHooks(ctx context.Context) []repoHookDoctorJSON {

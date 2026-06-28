@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -11,6 +12,54 @@ import (
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
 )
+
+func TestPrintCaptureDoctorHumanOutputUsesCompactRows(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	status := captureDoctorJSON{
+		HookApplicable:  true,
+		HookInstalled:   true,
+		RepoHooksOK:     true,
+		RepoHooksTotal:  1,
+		UploadAuthed:    true,
+		UploadAPI:       "https://api.gx.run",
+		PendingExtracts: 300,
+		PendingSessions: 176,
+		CursorReachable: true,
+		DiskFreeGB:      153,
+	}
+
+	var out bytes.Buffer
+	printCaptureDoctor(&out, status)
+	text := out.String()
+	for _, want := range []string{
+		"Hooks installed",
+		"ok",
+		"Upload",
+		"ok: https://api.gx.run",
+		"Staging backlog",
+		"476 pending",
+		"Disk used",
+		"0GB",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("doctor output missing %q in:\n%s", want, text)
+		}
+	}
+	for _, old := range []string{
+		"Capture",
+		"Pre-push hook",
+		"Registered repo hooks",
+		"Upload credentials",
+		"Cursor",
+		"Cursor vscdb",
+		"Disk free",
+	} {
+		if strings.Contains(text, old) {
+			t.Fatalf("doctor output should not contain %q in:\n%s", old, text)
+		}
+	}
+}
 
 func TestCaptureHookStatusNotApplicableOutsideGitRepo(t *testing.T) {
 	installed, applicable, resolvedRoot := captureHookStatus(context.Background(), t.TempDir())

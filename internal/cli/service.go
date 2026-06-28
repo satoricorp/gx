@@ -206,14 +206,6 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			}
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
-			fmt.Fprintln(cmd.OutOrStdout())
-			cursor := cursorStatus(ctx)
-			switch {
-			case !cursor.Found:
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Cursor", danger("warn")+": state.vscdb not found"))
-			default:
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Cursor", fmt.Sprintf("%s: %d sessions, %d messages", success("ok"), cursor.Sessions, cursor.Messages)))
-			}
 			if fix {
 				if len(repair.Actions) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Workflow repair", success("ok")+": no changes needed"))
