@@ -286,9 +286,6 @@ func authKindForCredentials(creds *cloud.CloudCredentials) string {
 }
 
 func printEffectiveCloudURLs(cmd *cobra.Command) {
-	if url := cloud.ConvexSiteURL(); url != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Convex site", url))
-	}
 	if url := cloud.CloudURL(); url != "" {
 		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Cloud URL", url))
 	}
