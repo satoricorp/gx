@@ -101,6 +101,10 @@ private enum CLIInstaller {
             .appendingPathComponent("gx")
     }
 
+    private static var installDirectory: URL {
+        installPath.deletingLastPathComponent()
+    }
+
     static func bundledGXURL() -> URL? {
         guard let resourceURL = Bundle.main.resourceURL else { return nil }
         let candidate = resourceURL.appendingPathComponent("bin", isDirectory: true).appendingPathComponent("gx")
@@ -125,13 +129,18 @@ private enum CLIInstaller {
     static func installBundledCLI() -> String {
         guard let source = bundledGXURL() else {
             if FileManager.default.isExecutableFile(atPath: installPath.path) {
+                do {
+                    try installShortcutSymlinks()
+                } catch {
+                    return "CLI shortcuts failed: \(error.localizedDescription)"
+                }
                 return "CLI installed at \(installPath.path)"
             }
             return "Bundled gx CLI not found"
         }
 
         do {
-            try FileManager.default.createDirectory(at: installPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: installDirectory, withIntermediateDirectories: true)
             if source.standardizedFileURL.path != installPath.standardizedFileURL.path {
                 if FileManager.default.fileExists(atPath: installPath.path) {
                     try FileManager.default.removeItem(at: installPath)
@@ -139,9 +148,18 @@ private enum CLIInstaller {
                 try FileManager.default.copyItem(at: source, to: installPath)
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installPath.path)
-            return "CLI installed at \(installPath.path)"
+            try installShortcutSymlinks()
+            return "CLI installed at \(installPath.path) with gxg, gxr, and gxs shortcuts"
         } catch {
             return "CLI install failed: \(error.localizedDescription)"
+        }
+    }
+
+    private static func installShortcutSymlinks() throws {
+        for name in ["gxg", "gxr", "gxs"] {
+            let shortcut = installDirectory.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: shortcut)
+            try FileManager.default.createSymbolicLink(atPath: shortcut.path, withDestinationPath: "gx")
         }
     }
 }

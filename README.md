@@ -174,6 +174,8 @@ gx add --hunk --patch-file /tmp/selected.patch -m "describe selected hunks"
 gx generate
 gx generate --json
 gxg
+gx review
+gxr
 gx edit
 gx status
 gxs
