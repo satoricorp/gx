@@ -2618,35 +2618,9 @@ func runStacksAction(ctx context.Context, engine *authoring.Engine, out io.Write
 		return nil
 	case "diff":
 		return runJjDiff(out, action.Target)
-	case "delete-revision":
-		result, err := engine.DeleteRevision(ctx, action.Target)
-		if err != nil {
-			return err
-		}
-		printDeleteRevisionSummary(out, result)
-		return nil
-	case "delete-stack":
-		result, err := engine.DeleteStack(ctx, action.Target)
-		if err != nil {
-			return err
-		}
-		printDeleteStackSummary(out, result)
-		return nil
 	default:
 		return fmt.Errorf("unknown stacks action %q", action.Kind)
 	}
-}
-
-func printDeleteRevisionSummary(out io.Writer, result authoring.DeleteRevisionResult) {
-	fmt.Fprintln(out, success("Revision deleted"))
-	fmt.Fprintln(out, labelValue("Revision", shortID(result.Change.ChangeID, 12)))
-	fmt.Fprintln(out, labelValue("Description", firstNonEmptyString(result.Change.Description, "(no description set)")))
-}
-
-func printDeleteStackSummary(out io.Writer, result authoring.DeleteStackResult) {
-	fmt.Fprintln(out, success("Stack deleted"))
-	fmt.Fprintln(out, labelValue("Stack", firstNonEmptyString(result.Stack.Name, result.Stack.BookmarkName)))
-	fmt.Fprintln(out, labelValue("Revisions", fmt.Sprintf("%d", len(result.Revisions))))
 }
 
 func runJjDiff(out io.Writer, rev string) error {
@@ -3250,9 +3224,9 @@ func statusBookmarkLine(marker string, stack authoring.StackInfo, meta string, s
 func stacksLegend(stackMode bool) string {
 	parts := []string{"● selected", "○ other", "↑ local", "↓ cloud", "* active"}
 	if stackMode {
-		parts = append([]string{"j/k stack", "enter revisions", "d diff", "Shift+D delete", "q quit"}, parts...)
+		parts = append([]string{"j/k stack", "enter revisions", "d diff", "q quit"}, parts...)
 	} else {
-		parts = append([]string{"j/k revision", "e edit", "d diff", "Shift+D delete", "esc stacks", "q quit"}, parts...)
+		parts = append([]string{"j/k revision", "e edit", "d diff", "esc stacks", "q quit"}, parts...)
 	}
 	return mint(strings.Join(parts, " · "))
 }

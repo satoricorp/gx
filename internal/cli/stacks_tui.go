@@ -141,16 +141,6 @@ func (m stacksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if target := m.selectedStackDiffTarget(); target != "" {
 				m.openDiff(target)
 			}
-		case "D":
-			if m.mode == stacksModeRevisions {
-				if target := m.selectedRevision(); target != "" {
-					m.action = stacksAction{Kind: "delete-revision", Target: target}
-					return m, tea.Quit
-				}
-			} else if target := m.selectedStackBookmark(); target != "" {
-				m.action = stacksAction{Kind: "delete-stack", Target: target}
-				return m, tea.Quit
-			}
 		case "ctrl+c", "q":
 			m.action = stacksAction{Kind: "quit"}
 			return m, tea.Quit

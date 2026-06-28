@@ -108,7 +108,7 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 		"onboarding repo picker",
 		"onboarding · feature/onboarding · main · remote · ✓1",
 		"onboarding empty state",
-		"j/k revision · e edit · d diff · Shift+D delete · esc stacks · q quit",
+		"j/k revision · e edit · d diff · esc stacks · q quit",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printStatusSummary() missing %q in:\n%s", want, text)
@@ -152,7 +152,7 @@ func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *test
 		"● feature/change-kxwqpvuo",
 		"feature/change-kxwqpvuo  main · draft · ↑1",
 		"gx-pr payload sync",
-		"j/k revision · e edit · d diff · Shift+D delete · esc stacks · q quit",
+		"j/k revision · e edit · d diff · esc stacks · q quit",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("renderStacksSummary() missing %q in:\n%s", want, text)
@@ -308,7 +308,7 @@ func TestColorizeDiffLeavesAnsiColoredOutputUntouched(t *testing.T) {
 	}
 }
 
-func TestStacksModelShiftDDeletesActiveRevision(t *testing.T) {
+func TestStacksModelShiftDDoesNotDeleteActiveRevision(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
 		BookmarkName: "feature/waitlist",
@@ -330,12 +330,12 @@ func TestStacksModelShiftDDeletesActiveRevision(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update() = %T, want stacksModel", next)
 	}
-	if updated.action != (stacksAction{Kind: "delete-revision", Target: "activechange"}) {
-		t.Fatalf("Update(D).action = %#v, want active revision delete", updated.action)
+	if updated.action != (stacksAction{}) {
+		t.Fatalf("Update(D).action = %#v, want no action", updated.action)
 	}
 }
 
-func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
+func TestStacksModelShiftDDoesNotDeleteSelectedStack(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
 		BookmarkName: "feature/waitlist",
@@ -357,8 +357,8 @@ func TestStacksModelShiftDDeletesSelectedStack(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update() = %T, want stacksModel", next)
 	}
-	if updated.action != (stacksAction{Kind: "delete-stack", Target: "feature/docs"}) {
-		t.Fatalf("Update(D).action = %#v, want selected stack delete", updated.action)
+	if updated.action != (stacksAction{}) {
+		t.Fatalf("Update(D).action = %#v, want no action", updated.action)
 	}
 }
 
@@ -528,7 +528,7 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 	}
 
 	first := renderStacksSummary(stack, nil, 0, false, 0)
-	for _, want := range []string{"j/k revision · e edit · d diff · Shift+D delete · esc stacks · q quit", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
+	for _, want := range []string{"j/k revision · e edit · d diff · esc stacks · q quit", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("renderStacksSummary(cursor 0) missing %q in:\n%s", want, first)
 		}
