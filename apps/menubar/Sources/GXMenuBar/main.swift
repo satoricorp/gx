@@ -3,7 +3,7 @@ import Foundation
 
 private let pollInterval: TimeInterval = 60
 private let defaultConsoleURL = "https://gx.run"
-private let documentationURL = "https://gx.run/documentation"
+private let documentationURL = "https://docs.gx.run"
 
 private struct CommandResult {
     let ok: Bool
@@ -233,13 +233,6 @@ private struct AgentStats: Decodable {
     let sessions: Int?
 }
 
-private struct AuthStatus: Decodable {
-    let loggedIn: Bool?
-    let login: String?
-    let authKind: String?
-    let cloudURL: String?
-}
-
 private struct DoctorLoad {
     let envelope: DoctorEnvelope?
     let rawJSON: String
@@ -268,12 +261,6 @@ private enum DoctorClient {
         }
     }
 
-    static func authStatus() -> AuthStatus? {
-        let result = CommandRunner.run(CLIInstaller.gxExecutable(), ["auth", "status", "--json"], timeout: 30)
-        guard result.ok else { return nil }
-        return try? JSONDecoder().decode(AuthStatus.self, from: Data(result.stdout.utf8))
-    }
-
     static func state(for doctor: DoctorStatus?) -> HealthState {
         guard let doctor else { return .unknown }
         guard let capture = doctor.capture else {
@@ -298,52 +285,6 @@ private enum DoctorClient {
     }
 }
 
-private enum MCPInstructions {
-    private static var localMCPPath: String {
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let direct = cwd.appendingPathComponent("mcp/dist/gx-mcp").path
-        let parent = cwd.deletingLastPathComponent().appendingPathComponent("mcp/dist/gx-mcp").path
-        return firstExecutable([direct, parent]) ?? direct
-    }
-
-    private static let applicationMCPPath = "/Applications/GX.app/Contents/Resources/bin/gx-mcp"
-
-    static func mcpExecutablePath() -> String {
-        let candidates = [
-            bundledMCPPath(),
-            localMCPPath,
-            applicationMCPPath
-        ].compactMap { $0 }
-        return firstExecutable(candidates) ?? candidates.first ?? applicationMCPPath
-    }
-
-    static func cursorCommand() -> String {
-        "cursor mcp add gx -- env GX_BINARY=\(shellQuote(CLIInstaller.gxExecutable())) \(shellQuote(mcpExecutablePath()))"
-    }
-
-    static func codexCommand() -> String {
-        "codex mcp add gx --env \(shellQuote("GX_BINARY=\(CLIInstaller.gxExecutable())")) -- \(shellQuote(mcpExecutablePath()))"
-    }
-
-    static func claudeCodeCommand() -> String {
-        "claude mcp add gx -- env GX_BINARY=\(shellQuote(CLIInstaller.gxExecutable())) \(shellQuote(mcpExecutablePath()))"
-    }
-
-    private static func bundledMCPPath() -> String? {
-        guard let resourceURL = Bundle.main.resourceURL else { return nil }
-        return resourceURL.appendingPathComponent("bin", isDirectory: true)
-            .appendingPathComponent("gx-mcp").path
-    }
-
-    private static func firstExecutable(_ paths: [String]) -> String? {
-        paths.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
-    private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-}
-
 private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let worker = DispatchQueue(label: "dev.gx.menubar.worker", qos: .utility)
@@ -353,7 +294,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private var doctor: DoctorStatus?
     private var doctorRawJSON = ""
     private var doctorError: String?
-    private var authStatus: AuthStatus?
     private var lastUpdated: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -392,14 +332,12 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
                 _ = CLIInstaller.installBundledCLI()
             }
             let doctorLoad = DoctorClient.fetch()
-            let auth = DoctorClient.authStatus()
 
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.doctor = doctorLoad.envelope?.doctor
                 self.doctorRawJSON = doctorLoad.rawJSON
                 self.doctorError = doctorLoad.error
-                self.authStatus = auth
                 self.lastUpdated = Date()
                 self.refreshing = false
                 self.rebuildMenu()
@@ -409,8 +347,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        menu.addItem(disabled("GX tag \(gitTagVersion())"))
-        menu.addItem(disabled("CLI \(cliVersion())"))
+        menu.addItem(disabled(versionSummary()))
         if let updated = lastUpdated {
             menu.addItem(disabled("Updated \(Self.timeFormatter.string(from: updated))"))
         } else if refreshing {
@@ -473,31 +410,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private func mcpMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(actionItem("Show Instructions", #selector(openMCPDocumentation)))
-        menu.addItem(.separator())
-        menu.addItem(mcpActionItem(
-            "Copy Cursor Install Command",
-            #selector(copyCursorMCPCommand),
-            icon: appIcon(
-                bundleIdentifiers: ["com.todesktop.230313mzl4w4u92", "com.cursor.Cursor"],
-                appNames: ["Cursor"]
-            )
-        ))
-        menu.addItem(mcpActionItem(
-            "Copy Codex Install Command",
-            #selector(copyCodexMCPCommand),
-            icon: appIcon(
-                bundleIdentifiers: ["com.openai.chat", "com.openai.chatgpt", "com.openai.ChatGPT"],
-                appNames: ["Codex", "ChatGPT"]
-            )
-        ))
-        menu.addItem(mcpActionItem(
-            "Copy Claude Code Install Command",
-            #selector(copyClaudeCodeMCPCommand),
-            icon: appIcon(
-                bundleIdentifiers: ["com.anthropic.claudefordesktop", "com.anthropic.Claude"],
-                appNames: ["Claude Code", "Claude"]
-            )
-        ))
         return menu
     }
 
@@ -582,7 +494,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func doctorSubmenuItem() -> NSMenuItem {
-        let item = submenuItem(title: "Doctor", submenu: doctorMenu())
+        let item = submenuItem(title: "Status", submenu: doctorMenu())
         item.attributedTitle = doctorAttributedTitle()
         return item
     }
@@ -596,7 +508,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
             ]
         )
         title.append(NSAttributedString(
-            string: "Doctor",
+            string: "Status",
             attributes: [.font: NSFont.menuFont(ofSize: 0)]
         ))
         return title
@@ -676,12 +588,30 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         return DoctorClient.state(for: doctor)
     }
 
-    private func gitTagVersion() -> String {
-        plistString("GXGitTagVersion") ?? plistString("CFBundleShortVersionString") ?? "dev"
+    private func versionSummary() -> String {
+        "\(displayVersion()), \(cliVersion())"
+    }
+
+    private func displayVersion() -> String {
+        let tag = plistString("GXGitTagVersion")
+        let raw = tag == nil || tag == "dev"
+            ? plistString("CFBundleShortVersionString") ?? "dev"
+            : tag!
+        if raw == "dev" || raw.hasPrefix("v") {
+            return raw
+        }
+        return "v\(raw)"
     }
 
     private func cliVersion() -> String {
-        plistString("GXCLIVersion") ?? "dev"
+        abbreviateVersion(plistString("GXCLIVersion") ?? "dev", maxLength: 7)
+    }
+
+    private func abbreviateVersion(_ value: String, maxLength: Int) -> String {
+        if value == "dev" || value.count <= maxLength {
+            return value
+        }
+        return String(value.prefix(maxLength))
     }
 
     private func plistString(_ key: String) -> String? {
@@ -690,21 +620,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func consoleURL() -> URL {
-        let envConsole = GXConfig.cleanURL(ProcessInfo.processInfo.environment["GX_CONSOLE_URL"] ?? "")
-        if !envConsole.isEmpty, let url = URL(string: envConsole) {
-            return url
-        }
-        let rawCloudURL = GXConfig.cleanURL(authStatus?.cloudURL ?? ProcessInfo.processInfo.environment["GX_CLOUD_URL"] ?? "")
-        if !rawCloudURL.isEmpty {
-            let base = rawCloudURL.replacingOccurrences(of: #"/gx/pr$"#, with: "", options: .regularExpression)
-            if let url = URL(string: base) {
-                return url
-            }
-        }
-        return URL(string: defaultConsoleURL)!
     }
 
     private func disabled(_ title: String) -> NSMenuItem {
@@ -718,42 +633,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         item.target = self
         item.state = state
         return item
-    }
-
-    private func mcpActionItem(_ title: String, _ selector: Selector, icon: NSImage?) -> NSMenuItem {
-        let item = actionItem(title, selector)
-        item.image = icon
-        return item
-    }
-
-    private func appIcon(bundleIdentifiers: [String], appNames: [String]) -> NSImage? {
-        for bundleIdentifier in bundleIdentifiers {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
-                return menuIcon(for: url)
-            }
-        }
-        for appName in appNames {
-            for directory in applicationDirectories() {
-                let url = directory.appendingPathComponent("\(appName).app")
-                if FileManager.default.fileExists(atPath: url.path) {
-                    return menuIcon(for: url)
-                }
-            }
-        }
-        return nil
-    }
-
-    private func applicationDirectories() -> [URL] {
-        [
-            URL(fileURLWithPath: "/Applications", isDirectory: true),
-            URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Applications", isDirectory: true)
-        ]
-    }
-
-    private func menuIcon(for appURL: URL) -> NSImage {
-        let image = NSWorkspace.shared.icon(forFile: appURL.path)
-        image.size = NSSize(width: 16, height: 16)
-        return image
     }
 
     private func submenuItem(title: String, submenu: NSMenu) -> NSMenuItem {
@@ -771,7 +650,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openConsole() {
-        NSWorkspace.shared.open(consoleURL())
+        NSWorkspace.shared.open(URL(string: defaultConsoleURL)!)
     }
 
     @objc private func copyDoctorJSON() {
@@ -780,18 +659,6 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
 
     @objc private func openMCPDocumentation() {
         NSWorkspace.shared.open(URL(string: documentationURL)!)
-    }
-
-    @objc private func copyCursorMCPCommand() {
-        copyToPasteboard(MCPInstructions.cursorCommand())
-    }
-
-    @objc private func copyCodexMCPCommand() {
-        copyToPasteboard(MCPInstructions.codexCommand())
-    }
-
-    @objc private func copyClaudeCodeMCPCommand() {
-        copyToPasteboard(MCPInstructions.claudeCodeCommand())
     }
 
     @objc private func quit() {

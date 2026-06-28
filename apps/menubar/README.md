@@ -1,8 +1,9 @@
 # GX Menu-Bar App
 
-Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it to
-`~/.local/bin/gx` on launch, shows `gx doctor --json` status and stats, links
-to gx.run, and provides MCP setup snippets.
+Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it plus
+the `gxg`, `gxr`, and `gxs` shortcuts to `~/.local/bin` on launch, shows
+`gx doctor --json` status and stats, links to gx.run, and provides MCP setup
+snippets.
 
 ## Quick start
 
@@ -22,11 +23,11 @@ Open the DMG to get the standard drag-to-Applications install window.
 
 | Item | Behavior |
 |------|----------|
-| **Doctor** | Parsed from `gx doctor --json`; green/yellow/red status dot plus hook, auth, Cursor, disk, and backlog checks |
+| **Status** | Parsed from `gx doctor --json`; green/yellow/red status dot plus hook, auth, Cursor, disk, and backlog checks |
 | **Stats** | Capture backlog, disk, and ledger summary from doctor JSON |
-| **Update CLI** | Installs or updates `~/.local/bin/gx` from the bundled CLI |
-| **open gx.run** | Opens `GX_CONSOLE_URL`, the base of `GX_CLOUD_URL`, or `https://gx.run` |
-| **MCP** | Opens setup documentation and copies Cursor, Codex, and Claude Code install commands for the bundled MCP server |
+| **Update CLI** | Installs or updates `~/.local/bin/gx`, `gxg`, `gxr`, and `gxs` from the bundled CLI |
+| **Open https://gx.run** | Opens `https://gx.run` |
+| **MCP** | Shows setup instructions at `https://docs.gx.run` |
 | **Quit** | Exits the app |
 
 ## Finding the `gx` binary
@@ -38,17 +39,17 @@ Resolution order:
 3. Packaged app: `Contents/Resources/bin/gx`
 4. Fallback: `gx` on `PATH`
 
-The app installs or updates `~/.local/bin/gx` from the bundled CLI on launch
-and through the **Update CLI** menu item.
+The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxg`,
+`~/.local/bin/gxr`, and `~/.local/bin/gxs` from the bundled CLI on launch and
+through the **Update CLI** menu item.
 
 ## MCP setup
 
 The package includes a standalone `gx-mcp` stdio binary. After
-dragging `GX.app` to Applications, use the menu's **MCP** items to copy a
-Cursor, Codex, or Claude Code install command. The snippets point MCP at:
+dragging `GX.app` to Applications, use **MCP > Show Instructions** to open
+the current setup instructions:
 
-- `GX_BINARY=~/.local/bin/gx`
-- `/Applications/GX.app/Contents/Resources/bin/gx-mcp`
+- `https://docs.gx.run`
 
 MCP is stdio-only. Cursor, Codex, or Claude launches the server when it needs a
 tool call; the menu-bar app does not run a local HTTP MCP daemon. Cloud review
@@ -58,8 +59,8 @@ context uses `gx auth login` credentials:
 gx auth login
 ```
 
-The MCP snippets do not embed a token. The local `gx` CLI resolves saved
-GitHub auth from disk when MCP tools call cloud endpoints.
+The local `gx` CLI resolves saved GitHub auth from disk when MCP tools call
+cloud endpoints.
 
 For local menu-bar testing from the repo:
 
@@ -70,10 +71,9 @@ export GX_BINARY="$PWD/apps/menubar/bin/gx"
 swift run --package-path apps/menubar
 ```
 
-Then open **MCP** from the tray menu. Copied commands will point at the
-local `$PWD/mcp/dist/gx-mcp` build. For the installed app, run
-`apps/menubar/scripts/package.sh`, move `apps/menubar/dist/GX.app` to
-Applications, and use the same **MCP** menu.
+Then open **MCP > Show Instructions** from the tray menu. For the installed
+app, run `apps/menubar/scripts/package.sh`, move `apps/menubar/dist/GX.app`
+to Applications, and use the same **MCP** menu.
 
 ## Doctor integration
 
