@@ -130,7 +130,7 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	}
 
 	text := out.String()
-	for _, want := range []string{"compose", "publish", "review", "stacks", "status", "sync"} {
+	for _, want := range []string{"generate", "push", "review", "status", "sync"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, text)
 		}
@@ -152,7 +152,7 @@ func TestRootRemovesHiddenDemuxCompatibilityCommand(t *testing.T) {
 
 func TestRootDoesNotExposeRemovedLegacyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"commit", "push", "codex", "claude"} {
+	for _, name := range []string{"commit", "compose", "publish", "stacks", "codex", "claude"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != root {
 			t.Fatalf("unexpected legacy command exposed: %s", cmd.Name())
 		}

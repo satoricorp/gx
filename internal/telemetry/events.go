@@ -6,16 +6,19 @@ import (
 
 // Event names for PostHog capture pipeline telemetry.
 const (
-	EventCaptureCoverage = "capture.coverage"
-	EventMatchRate       = "match.rate"
-	EventSessionUploaded = "session.uploaded"
-	EventComposeRun      = "compose.run"
-	EventCLIInstall      = "cli.install"
-	EventCLIComposeRun   = "cli.compose.run"
-	EventCLIPublishRun   = "cli.publish.run"
-	EventCLIReviewRun    = "cli.review.run"
-	EventCLIAuthLogin    = "cli.auth.login"
-	EventCLIAuthLogout   = "cli.auth.logout"
+	EventCaptureCoverage   = "capture.coverage"
+	EventMatchRate         = "match.rate"
+	EventSessionUploaded   = "session.uploaded"
+	EventComposeRun        = "compose.run"
+	EventCLIInstall        = "cli.install"
+	EventCLIGenerateRun    = "cli.generate.run"
+	EventCLIGeneratePrompt = "cli.generate.prompt"
+	EventCLIPushRun        = "cli.push.run"
+	EventCLISyncRun        = "cli.sync.run"
+	EventCLIReportSent     = "cli.report.sent"
+	EventCLIReviewRun      = "cli.review.run"
+	EventCLIAuthLogin      = "cli.auth.login"
+	EventCLIAuthLogout     = "cli.auth.logout"
 )
 
 // CaptureCoverageProps are properties for capture.coverage.

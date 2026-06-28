@@ -144,13 +144,14 @@ type ListDemuxProposalsOptions struct {
 }
 
 type ProposeDemuxOptions struct {
-	Intent          string
-	Filesets        []string
-	ExcludeFilesets []string
-	PlanOnly        bool
-	Model           string
-	MaxWarnings     int
-	ProgressWriter  io.Writer
+	Intent                 string
+	Filesets               []string
+	ExcludeFilesets        []string
+	PlanOnly               bool
+	Model                  string
+	MaxWarnings            int
+	ApplyPreflightAttempts int
+	ProgressWriter         io.Writer
 }
 
 type ApplyDemuxResult struct {

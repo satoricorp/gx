@@ -100,3 +100,18 @@ func promptSwitchSelection(in io.Reader, out io.Writer, stack authoring.StackSum
 	}
 	return "", fmt.Errorf("unknown selection %q", choice)
 }
+
+func promptContinueGenerate(in io.Reader, out io.Writer) bool {
+	fmt.Fprintf(out, "%s ", muted("Should we continue working to resolve these issues? [y/N]"))
+	reader := bufio.NewReader(in)
+	raw, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}

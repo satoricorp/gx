@@ -51,7 +51,7 @@ export async function resolveSessionWorkspace(
   const primarySessionID = sessionIds[0];
   if (!primarySessionID) {
     throw new Error(
-      "gx_compose requires a session id so MCP work can run in an isolated session workspace; pass session_id or set GX_SESSION_ID",
+      "gx_generate requires a session id so MCP work can run in an isolated session workspace; pass session_id or set GX_SESSION_ID",
     );
   }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/version"
 )
 
@@ -39,6 +40,12 @@ func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if err != nil {
 				return err
 			}
+			telemetry.EmitProductEvent(ctx, telemetry.EventCLIReportSent, map[string]any{
+				"log_count":      len(report.Logs),
+				"has_report_id":  strings.TrimSpace(result.ID) != "",
+				"has_user_id":    strings.TrimSpace(report.UserID) != "",
+				"has_machine_id": strings.TrimSpace(report.MachineID) != "",
+			})
 			if jsonOut {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
@@ -100,6 +107,16 @@ func buildReportLogRequest(ctx context.Context, engine *authoring.Engine, overri
 		Arch:      runtime.GOARCH,
 		CloudURL:  cloud.CloudBaseURL(),
 		Logs:      recentGXLogs(),
+	}
+	if creds, err := cloud.LoadCloudCredentials(); err == nil && creds != nil {
+		report.UserID = strings.TrimSpace(creds.UserID)
+		report.Login = strings.TrimSpace(creds.Login)
+		report.MachineID = strings.TrimSpace(creds.MachineID)
+	}
+	if report.MachineID == "" {
+		if machineID, err := cloud.DefaultMachineID(); err == nil {
+			report.MachineID = strings.TrimSpace(machineID)
+		}
 	}
 	status, err := currentStatusForEngine(ctx, engine)
 	if err != nil {

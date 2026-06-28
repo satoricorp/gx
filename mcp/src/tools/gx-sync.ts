@@ -12,7 +12,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_sync",
   description:
-    "Run gx sync before compose or publish work so remote GitHub merges are reflected locally. Use capture=true only to drain capture uploads.",
+    "Run gx sync before generate or push work so remote GitHub merges and GX remote state are reflected locally. Use capture=true only to drain capture uploads.",
   annotations: {
     title: "GX Sync",
     readOnlyHint: false,
@@ -35,7 +35,7 @@ export default async function gxSync(params: InferSchema<typeof schema>) {
     }
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: params.capture ? "sync.capture" : "sync",
-      nextActions: params.capture ? undefined : ["After sync succeeds, run gx_compose for changes or gx_publish for accepted stacks."],
+      nextActions: params.capture ? undefined : ["After sync succeeds, run gx_generate for changes or gx_push for generated features."],
     });
   } catch (error) {
     return formatError(error, { action: params.capture ? "sync.capture" : "sync" });

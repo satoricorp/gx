@@ -2,12 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import gxAccept, { metadata as acceptMetadata, schema as acceptSchema } from "./tools/gx-accept";
-import gxCompose, { metadata as composeMetadata, schema as composeSchema } from "./tools/gx-compose-changes";
-import gxFix, { metadata as fixMetadata, schema as fixSchema } from "./tools/gx-fix";
-import gxPublish, { metadata as publishMetadata, schema as publishSchema } from "./tools/gx-publish";
+import gxGenerate, { metadata as generateMetadata, schema as generateSchema } from "./tools/gx-generate";
+import gxPush, { metadata as pushMetadata, schema as pushSchema } from "./tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/gx-review";
 import gxSetBase, { metadata as setBaseMetadata, schema as setBaseSchema } from "./tools/gx-set-base";
+import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "./tools/gx-status";
 import gxSync, { metadata as syncMetadata, schema as syncSchema } from "./tools/gx-sync";
 import { withUpdateNotice } from "./update";
 
@@ -22,25 +21,22 @@ type ToolModule = {
 };
 
 const instructions = [
-  "GX MCP exposes gx_sync, gx_compose, gx_accept, gx_publish, gx_review, gx_fix, and gx_set_base.",
+  "GX MCP exposes gx_sync, gx_generate, gx_status, gx_push, gx_review, and gx_set_base.",
   "If a repo is not initialized for GX, MCP runs gx init non-interactively before repository tools continue.",
-  "Run gx_sync before gx_compose when remote GitHub merges may have landed.",
-  "Use gx_compose with action propose to run gx compose --json in a session-isolated workspace; ready proposals are accepted automatically by default.",
-  "When compose returns warnings, repair hints, or proposal issues, revise the proposal with your LLM context and call gx_compose with action review-plan until ready.",
-  "Accept held ready revisions with gx_accept or gx_compose action apply; it appends to existing target bookmarks by default and returns the checkout to the repo default branch.",
-  "Run gx_publish after accepted stacks are ready to push for review.",
+  "Run gx_sync before gx_generate when remote GitHub merges may have landed.",
+  "Use gx_generate to create local features and revisions; GX applies safe generated revisions automatically and may append to semantically similar stacks.",
+  "Run gx_status after generation to inspect local/remote stack state, then gx_push when features are ready.",
+  "If gx_push reports remote divergence, run gx_sync before retrying that stack.",
   "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
-  "Use gx_fix for compose proposal repair. Do not use a revision move tool; it is intentionally not exposed yet.",
   "Use gx_set_base only to return to the repository default branch.",
-  "After propose, summarize the output for the user: state, stacks, revision intents, notable files, warnings, and hunk link evidence when present.",
+  "After generate, summarize the output for the user: features, revision intents, notable files, and warnings when present.",
   "Do not use git commit or git push for normal GX save flows unless the user explicitly asks for raw Git.",
 ].join(" ");
 
 const tools: ToolModule[] = [
-  defineTool(acceptMetadata, acceptSchema, gxAccept),
-  defineTool(composeMetadata, composeSchema, gxCompose),
-  defineTool(fixMetadata, fixSchema, gxFix),
-  defineTool(publishMetadata, publishSchema, gxPublish),
+  defineTool(generateMetadata, generateSchema, gxGenerate),
+  defineTool(statusMetadata, statusSchema, gxStatus),
+  defineTool(pushMetadata, pushSchema, gxPush),
   defineTool(reviewMetadata, reviewSchema, gxReview),
   defineTool(setBaseMetadata, setBaseSchema, gxSetBase),
   defineTool(syncMetadata, syncSchema, gxSync),

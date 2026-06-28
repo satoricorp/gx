@@ -21,13 +21,13 @@ func (e *Engine) demuxPipeline() demuxPipeline {
 }
 
 func (p demuxPipeline) proposeChanges(ctx context.Context, opts ProposeDemuxOptions) (DemuxPlanPacket, error) {
-	demuxProgress(opts.ProgressWriter, "Planning compose proposal...")
+	demuxProgress(opts.ProgressWriter, "Planning generated revisions...")
 	proposal, err := p.engine.ProposeDemux(ctx, opts)
 	if err != nil {
 		return DemuxPlanPacket{}, err
 	}
 	if !opts.PlanOnly {
-		demuxProgress(opts.ProgressWriter, "Fixing compose proposal %s...", proposal.ID)
+		demuxProgress(opts.ProgressWriter, "Fixing generated revisions %s...", proposal.ID)
 		result, err := p.repairProposal(ctx, proposal, DemuxAIReviewOptions{
 			Model:       opts.Model,
 			MaxWarnings: opts.MaxWarnings,
@@ -57,7 +57,7 @@ func (p demuxPipeline) proposeChanges(ctx context.Context, opts ProposeDemuxOpti
 			return DemuxPlanPacket{}, err
 		}
 	} else {
-		demuxProgress(opts.ProgressWriter, "Skipping compose fix because --plan was set.")
+		demuxProgress(opts.ProgressWriter, "Skipping generate fix because --plan was set.")
 	}
 	return p.packetForProposal(ctx, proposal)
 }
@@ -99,13 +99,19 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 	if demuxWorkflowState(ReviewDemuxResult{Valid: true, Proposal: proposal}, proposal) != DemuxWorkflowReadyToApply {
 		return proposal, nil
 	}
-	attempts := envInt("GX_COMPOSE_APPLY_PREFLIGHT_ATTEMPTS", defaultDemuxApplyPreflightAttempts)
+	attempts := opts.ApplyPreflightAttempts
+	if attempts <= 0 {
+		attempts = envInt("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS", 0)
+	}
+	if attempts <= 0 {
+		attempts = envInt("GX_COMPOSE_APPLY_PREFLIGHT_ATTEMPTS", defaultDemuxApplyPreflightAttempts)
+	}
 	if attempts <= 0 {
 		attempts = 1
 	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		demuxProgress(opts.ProgressWriter, "Checking compose apply in disposable attempt %d/%d...", attempt, attempts)
+		demuxProgress(opts.ProgressWriter, "Checking generated revisions in disposable attempt %d/%d...", attempt, attempts)
 		if err := p.engine.PreflightDemuxApply(ctx, proposal); err == nil {
 			return proposal, nil
 		} else {
@@ -119,7 +125,7 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 			}
 			return proposal, nil
 		}
-		demuxProgress(opts.ProgressWriter, "Repairing compose proposal after apply preflight failure...")
+		demuxProgress(opts.ProgressWriter, "Repairing generated revisions after apply preflight failure...")
 		result, err := p.engine.demuxRepair().repairApplyPreflightFailure(ctx, proposal, lastErr, DemuxAIReviewOptions{
 			Model:       opts.Model,
 			MaxWarnings: opts.MaxWarnings,

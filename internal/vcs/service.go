@@ -224,6 +224,11 @@ type DeleteStackResult struct {
 	Output    string
 }
 
+type PruneEmptyStacksResult struct {
+	Repo    RepoInfo
+	Deleted []DeleteStackResult
+}
+
 type RepairResult struct {
 	Repo     RepoInfo `json:"repo"`
 	Actions  []string `json:"actions"`
@@ -1133,61 +1138,119 @@ func (s *Service) DeleteStack(ctx context.Context, bookmarkName string) (DeleteS
 	}
 	var result DeleteStackResult
 	err = withRepoLock(repo.RootPath, func() error {
-		store, err := openStore(ctx)
+		var err error
+		result, err = s.deleteStackUnlocked(ctx, repo, bookmarkName, true)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) PruneEmptyStacks(ctx context.Context) (PruneEmptyStacksResult, error) {
+	repo, err := s.ResolveJJRepo(ctx)
+	if err != nil {
+		return PruneEmptyStacksResult{}, err
+	}
+	result := PruneEmptyStacksResult{Repo: repo}
+	err = withRepoLock(repo.RootPath, func() error {
+		model, err := s.loadStackReadModel(ctx, repo)
 		if err != nil {
 			return err
 		}
-		defer store.Close()
-		repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
-		if err != nil {
-			return err
-		}
-		if repoRow == nil {
-			return fmt.Errorf("unknown repo %s", repo.RootPath)
-		}
-		storedStack, err := store.FindStackByBookmark(ctx, repoRow.ID, bookmarkName)
-		if err != nil {
-			return err
-		}
-		if storedStack == nil {
-			return fmt.Errorf("unknown stack %q", bookmarkName)
-		}
-		changes, err := store.ListChangesByStackID(ctx, storedStack.ID)
-		if err != nil {
-			return err
-		}
-		var output strings.Builder
-		for _, change := range changes {
-			changeID := strings.TrimSpace(change.JJChangeID)
-			if changeID == "" {
+		for _, stack := range model.stacks {
+			if !emptyStackForPrune(stack) {
 				continue
 			}
-			out, err := s.runner.Run(ctx, repo.RootPath, "jj", "abandon", changeID)
+			deleted, err := s.deleteStackUnlocked(ctx, repo, stack.BookmarkName, false)
 			if err != nil {
 				return err
 			}
-			output.WriteString(out)
-			if err := store.MarkChangeStatus(ctx, change.ID, "abandoned", time.Now().UnixMilli()); err != nil {
-				return err
-			}
-		}
-		out, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "delete", storedStack.BookmarkName)
-		if err != nil {
-			return err
-		}
-		output.WriteString(out)
-		if err := store.DeleteStack(ctx, storedStack.ID); err != nil {
-			return err
-		}
-		result = DeleteStackResult{
-			Repo:      repo,
-			Stack:     stackInfoFromStorage(*storedStack),
-			Revisions: changesToChangeInfo(changes),
-			Output:    output.String(),
+			result.Deleted = append(result.Deleted, deleted)
 		}
 		return nil
 	})
 	return result, err
+}
+
+func emptyStackForPrune(stack StackInfo) bool {
+	if IsTerminalStackStatus(stack.Status) {
+		return false
+	}
+	if len(stack.Revisions) > 0 {
+		return false
+	}
+	return stack.RevisionCount == 0
+}
+
+func (s *Service) deleteStackUnlocked(ctx context.Context, repo RepoInfo, bookmarkName string, abandonChanges bool) (DeleteStackResult, error) {
+	store, err := openStore(ctx)
+	if err != nil {
+		return DeleteStackResult{}, err
+	}
+	defer store.Close()
+	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return DeleteStackResult{}, err
+	}
+	if repoRow == nil {
+		return DeleteStackResult{}, fmt.Errorf("unknown repo %s", repo.RootPath)
+	}
+	storedStack, err := store.FindStackByBookmark(ctx, repoRow.ID, bookmarkName)
+	if err != nil {
+		return DeleteStackResult{}, err
+	}
+	if storedStack == nil {
+		return DeleteStackResult{}, fmt.Errorf("unknown stack %q", bookmarkName)
+	}
+	changes, err := store.ListChangesByStackID(ctx, storedStack.ID)
+	if err != nil {
+		return DeleteStackResult{}, err
+	}
+	var output strings.Builder
+	if abandonChanges {
+		for _, change := range changes {
+			targetRev := firstNonEmpty(strings.TrimSpace(change.CurrentCommitID), strings.TrimSpace(change.JJChangeID))
+			if targetRev == "" {
+				continue
+			}
+			out, err := s.runner.Run(ctx, repo.RootPath, "jj", "abandon", targetRev)
+			if err != nil {
+				return DeleteStackResult{}, err
+			}
+			output.WriteString(out)
+			if err := store.MarkChangeStatus(ctx, change.ID, "abandoned", time.Now().UnixMilli()); err != nil {
+				return DeleteStackResult{}, err
+			}
+		}
+	}
+	out, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "delete", storedStack.BookmarkName)
+	if err != nil {
+		if !jjBookmarkDeleteMissing(err) {
+			return DeleteStackResult{}, err
+		}
+	} else {
+		output.WriteString(out)
+	}
+	if err := store.DeleteStack(ctx, storedStack.ID); err != nil {
+		return DeleteStackResult{}, err
+	}
+	return DeleteStackResult{
+		Repo:      repo,
+		Stack:     stackInfoFromStorage(*storedStack),
+		Revisions: changesToChangeInfo(changes),
+		Output:    output.String(),
+	}, nil
+}
+
+func jjBookmarkDeleteMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such bookmark") ||
+		strings.Contains(message, "unknown bookmark") ||
+		strings.Contains(message, "bookmark not found") ||
+		strings.Contains(message, "bookmark doesn't exist") ||
+		strings.Contains(message, "bookmark does not exist")
 }
 
 func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
@@ -2370,7 +2433,7 @@ func (s *Service) pushRecordedStack(ctx context.Context, repo RepoInfo, remoteNa
 	}
 	if len(revisions) == 0 {
 		return nil, "", nil, fmt.Errorf(
-			"no revisions on stack to publish; run `gx add -m \"...\"` on the stack before `gx publish`",
+			"no revisions on stack to push; run `gx generate` to create revisions before `gx push`",
 		)
 	}
 	headRev := strings.TrimSpace(stack.BookmarkName)
@@ -2397,16 +2460,36 @@ func (s *Service) pushRecordedStack(ctx context.Context, repo RepoInfo, remoteNa
 			gitPushStatus = "already up to date"
 			s.progressf("GitHub branch %s already up to date on %s.", refName, remoteName)
 		} else {
+			pushArgs := []string{"push", remoteName, refName}
 			if remoteErr != nil {
 				warnings = append(warnings, fmt.Sprintf("Could not check whether %s/%s already exists before pushing: %v", remoteName, refName, remoteErr))
+			} else if remoteHead != "" {
+				fastForward, ffErr := s.gitCommitIsAncestor(ctx, repo.RootPath, remoteHead, headCommitID)
+				if ffErr != nil {
+					warnings = append(warnings, fmt.Sprintf("Could not verify whether %s/%s can fast-forward: %v", remoteName, refName, ffErr))
+				}
+				if !fastForward {
+					lastPushedHead, err := s.lastPushedHeadForBranch(ctx, repo.RootPath, refName)
+					if err != nil {
+						return nil, "", nil, err
+					}
+					if lastPushedHead == "" || lastPushedHead != remoteHead {
+						return nil, "", nil, fmt.Errorf("remote branch %s/%s changed outside GX; run `gx sync` before pushing this stack", remoteName, refName)
+					}
+					lease := "refs/heads/" + refName + ":" + lastPushedHead
+					pushArgs = []string{"push", "--force-with-lease=" + lease, remoteName, refName}
+					gitPushStatus = "force pushed"
+				}
 			}
 			if err := s.runGitLocked(ctx, repo.RootPath, "push stack ref", func() error {
 				s.progressf("Pushing %s to %s...", refName, remoteName)
-				return s.runner.RunStream(ctx, repo.RootPath, "git", "push", remoteName, refName)
+				return s.runner.RunStream(ctx, repo.RootPath, "git", pushArgs...)
 			}); err != nil {
 				return nil, "", nil, err
 			}
-			gitPushStatus = "pushed"
+			if gitPushStatus == "not pushed" {
+				gitPushStatus = "pushed"
+			}
 		}
 	}
 
@@ -2436,6 +2519,41 @@ func (s *Service) pushRecordedStack(ctx context.Context, repo RepoInfo, remoteNa
 	return pushed, gitPushStatus, warnings, nil
 }
 
+func (s *Service) lastPushedHeadForBranch(ctx context.Context, repoRoot, branchName string) (string, error) {
+	store, err := openStore(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer store.Close()
+	repo, err := store.FindRepoByRoot(ctx, repoRoot)
+	if err != nil {
+		return "", err
+	}
+	if repo == nil {
+		return "", nil
+	}
+	push, err := store.LatestPushByBranchName(ctx, repo.ID, branchName)
+	if err != nil {
+		return "", err
+	}
+	if push == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(push.HeadCommitID), nil
+}
+
+func (s *Service) gitCommitIsAncestor(ctx context.Context, repoRoot, ancestor, descendant string) (bool, error) {
+	ancestor = strings.TrimSpace(ancestor)
+	descendant = strings.TrimSpace(descendant)
+	if ancestor == "" || descendant == "" {
+		return false, nil
+	}
+	if _, err := s.runner.Run(ctx, repoRoot, "git", "merge-base", "--is-ancestor", ancestor, descendant); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
 func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, stack StackInfo, refName string, pushed []PushedChange) (*string, string, []string) {
 	if stack.GitHubPRURL != nil && strings.TrimSpace(*stack.GitHubPRURL) != "" {
 		return ptr(strings.TrimSpace(*stack.GitHubPRURL)), "stored", nil
@@ -2453,7 +2571,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 
 	client, err := githubapi.NewClient(host)
 	if err != nil {
-		return nil, "warning", []string{fmt.Sprintf("Could not prepare GitHub PR for branch %s: %v. Re-run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN, then retry `gx publish %s`.", refName, err, refName)}
+		return nil, "warning", []string{fmt.Sprintf("Could not prepare GitHub PR for branch %s: %v. Re-run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN, then retry `gx push %s`.", refName, err, refName)}
 	}
 	opts := githubapi.CreatePullRequestOptions{
 		Host:       host,
@@ -2466,7 +2584,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 	}
 	existing, err := client.FindPullRequest(ctx, opts)
 	if err != nil {
-		return nil, "warning", []string{fmt.Sprintf("Could not check for an existing GitHub PR for target branch %s (the published branch): %v. Retry `gx publish %s` after GitHub access is fixed.", refName, err, refName)}
+		return nil, "warning", []string{fmt.Sprintf("Could not check for an existing GitHub PR for target branch %s (the pushed branch): %v. Retry `gx push %s` after GitHub access is fixed.", refName, err, refName)}
 	}
 	if existing != nil && strings.TrimSpace(existing.URL) != "" {
 		return ptr(strings.TrimSpace(existing.URL)), "existing", nil
@@ -2480,9 +2598,9 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 		compare := githubPullRequestURL(*repo.RemoteURL, baseRef, refName)
 		hint := fmt.Sprintf("Could not create GitHub PR for target branch %s because its base branch %q is not on %s. ", refName, baseRef, remoteName)
 		if isGXStackBookmark(baseRef) {
-			hint += fmt.Sprintf("Run `gx publish %s` first, then retry `gx publish %s`.", baseRef, refName)
+			hint += fmt.Sprintf("Run `gx push %s` first, then retry `gx push %s`.", baseRef, refName)
 		} else {
-			hint += fmt.Sprintf("Set a valid base with `gx base --set %s` or run `gx repair`, then retry `gx publish %s`.", baseRef, refName)
+			hint += fmt.Sprintf("Set a valid base with `gx base --set %s` or run `gx repair`, then retry `gx push %s`.", baseRef, refName)
 		}
 		if compare != nil {
 			hint += " You can also inspect " + *compare + "."
@@ -2498,7 +2616,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 		return nil, "warning", append(warnings, fmt.Sprintf("Could not create GitHub PR for target branch %s against base %s: %v. Fix the base with `gx base --set <github-base-branch>` or create the PR manually.", refName, baseRef, err))
 	}
 	if created == nil || strings.TrimSpace(created.URL) == "" {
-		return nil, "warning", append(warnings, fmt.Sprintf("GitHub did not return a PR URL for target branch %s. Retry `gx publish %s` or create the PR manually.", refName, refName))
+		return nil, "warning", append(warnings, fmt.Sprintf("GitHub did not return a PR URL for target branch %s. Retry `gx push %s` or create the PR manually.", refName, refName))
 	}
 	return ptr(strings.TrimSpace(created.URL)), "created", warnings
 }

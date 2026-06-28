@@ -5,9 +5,12 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 ## Primary workflow
 
 1. `gx_sync` before changes, so remote GitHub merges are reflected locally.
-2. `gx_compose` to propose changes. Ready proposals auto-accept by default.
-3. `gx_publish` to publish accepted stacks.
-4. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
+2. `gx_generate` to generate local features and revisions. Safe generated revisions apply automatically and may append to semantically similar stacks.
+3. `gx_status` to inspect generated local features, revisions, and remote state.
+4. `gx_push` to push generated features to the remote.
+5. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
+
+If `gx_push` reports remote divergence, run `gx_sync`, resolve the divergence, then retry `gx_push` for that stack.
 
 If a repository is not initialized for GX, MCP runs `gx init` non-interactively
 before repository tools continue. It uses Git identity when available and falls
@@ -17,27 +20,16 @@ back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
 
 | Tool | CLI | Purpose |
 |------|-----|---------|
-| `gx_sync` | `gx sync` | Sync remote Git state before composing or publishing |
-| `gx_compose` | `gx compose --json` | Layer working-copy changes into a pending compose proposal from a session-isolated JJ workspace |
-| `gx_accept` | `gx compose apply <proposal-id> --json` | Manually accept a held ready compose proposal |
-| `gx_publish` | `gx publish [stack]` | Publish accepted stacks |
+| `gx_sync` | `gx sync` | Sync remote Git and GX remote state before generating or pushing |
+| `gx_generate` | `gx generate --json` | Generate local features and revisions from a session-isolated JJ workspace; may append to similar stacks |
+| `gx_status` | `gx status --json` | Inspect unstaged files, local features, revisions, and remote state |
+| `gx_push` | `gx push [stack]` | Push generated features, sessions, metadata, and guarded rewrites |
 | `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
-| `gx_fix` | `gx compose fix <proposal-id> --json` | Repair compose proposal issues with deterministic repair plus LLM repair |
 | `gx_set_base` | `gx base --set <default> --json` | Return the GX authoring base to the repo default branch only |
-
-## `gx_compose` actions
-
-| `action` | CLI | Purpose |
-|----------|-----|---------|
-| `propose` (default) | `gx compose --json` | Layer working-copy changes into the pending compose proposal; auto-accepts ready proposals unless `auto_accept=false` |
-| `review-plan` | `gx compose review-plan --json --plan-file …` | Validate an LLM-authored proposal without applying |
-| `apply` | `gx compose apply-plan --json --plan-file …` | Accept a reviewed proposal into GX stacks |
-
-Proposal JSON may include `hunk_links` capture evidence (empty when matcher has no sessions).
 
 ### Session workspaces
 
-`gx_compose` requires a session id. Pass `session_id` / `session_ids`, or set `GX_SESSION_ID` / `GX_SESSION_IDS`.
+`gx_generate` requires a session id. Pass `session_id` / `session_ids`, or set `GX_SESSION_ID` / `GX_SESSION_IDS`.
 
 Before shelling out to `gx`, the MCP server resolves the requested repo, creates or reuses a JJ workspace at:
 
@@ -45,7 +37,7 @@ Before shelling out to `gx`, the MCP server resolves the requested repo, creates
 $GX_HOME/workspaces/<repo-hash>/<session-hash>
 ```
 
-Then it runs `gx compose` from that workspace cwd. This keeps concurrent MCP sessions from composing or applying each other's dirty checkout changes.
+Then it runs `gx generate` from that workspace cwd. This keeps concurrent MCP sessions from generating each other's dirty checkout changes.
 
 Set `GX_MCP_WORKSPACE_ROOT` to override the workspace directory.
 
@@ -103,9 +95,9 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | `GX_BINARY` | Optional path to `gx` executable |
 | `JJ_BINARY` | Path to `jj` executable (default: `jj` on PATH) |
 | `GIT_BINARY` | Path to `git` executable (default: `git` on PATH) |
-| `GX_SESSION_ID` / `GX_SESSION_IDS` | Session ids used to isolate compose workspaces |
+| `GX_SESSION_ID` / `GX_SESSION_IDS` | Session ids used to isolate generate workspaces |
 | `GX_MCP_WORKSPACE_ROOT` | Override the root directory for MCP session workspaces |
-| `GX_CLOUD_URL` | GX cloud API base URL for review and compose AI fallback |
+| `GX_CLOUD_URL` | GX cloud API base URL for review and generate AI fallback |
 | `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |
 | `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 

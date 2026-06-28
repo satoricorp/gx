@@ -1,19 +1,19 @@
 ---
 title: "GX: stacked PR review for agentic coding sessions"
-description: "Capture agent coding sessions as reviewable revisions, organize them into local stacks, and publish stacked pull requests with rich review context."
+description: "Capture agent coding sessions as reviewable revisions, organize them into local stacks, and push stacked pull requests with rich review context."
 ---
 
-GX captures coding sessions and attaches that context to reviewable revisions, then uses those revisions to publish stacked PRs and generate better review artifacts.
+GX captures coding sessions and attaches that context to reviewable revisions, then uses those revisions to push stacked PRs and generate better review artifacts.
 
 ## Core Workflow
 
 ```bash
-gx compose
-gx stacks
-gx publish
+gx generate
+gx status
+gx push
 ```
 
-`gx compose` turns working-copy changes into proposed revisions and stacks. `gx stacks` shows accepted local stacks. `gx publish` publishes accepted stacks to the remote review surface.
+`gx generate` turns working-copy changes into local revisions and stacks. `gx status` shows Unstaged work, local stacks, and Remote state. `gx push` pushes code, sessions, and GX metadata to the remote review surface.
 
 ## Product Model
 

@@ -97,16 +97,16 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 
 	text := out.String()
 	for _, want := range []string{
-		"$ gx stacks",
+		"$ gx status",
 		"acme/console",
 		"● waitlist + gx-pr",
 		"waitlist · main · draft · ↑1 · ✓1",
 		"waitlist form component",
 		"gx-pr payload sync",
 		"dirty scratch",
-		"Published",
+		"Remote",
 		"onboarding repo picker",
-		"onboarding · main · ✓",
+		"onboarding · feature/onboarding · main · remote · ✓1",
 		"onboarding empty state",
 		"j/k revision · e edit · d diff · Shift+D delete · esc stacks · q quit",
 	} {
@@ -147,7 +147,7 @@ func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *test
 
 	text := renderStacksSummary(stack, nil, 0, false, 0)
 	for _, want := range []string{
-		"$ gx stacks",
+		"$ gx status",
 		"console",
 		"● feature/change-kxwqpvuo",
 		"feature/change-kxwqpvuo  main · draft · ↑1",
@@ -404,7 +404,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		},
 		NeedsMessage:  true,
 		Files:         []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
-		Next:          []string{"gx compose -a", "gx stacks"},
+		Next:          []string{"gx generate -a", "gx status"},
 		GitStatusNote: "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -417,8 +417,8 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		"internal/cli/stacks_tui.go",
 		"gx stores new changes in revisions, so `git status` may be clean.",
 		"Next",
-		"gx compose -a",
-		"gx stacks",
+		"gx generate -a",
+		"gx status",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
@@ -459,7 +459,7 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 		},
 		NeedsMessage: true,
 		Files:        []string{"internal/cli/root.go", "internal/cli/style.go"},
-		Next:         []string{`gx add -m "describe this revision"`, "gx stacks"},
+		Next:         []string{`gx add -m "describe this revision"`, "gx status"},
 	}
 	var out bytes.Buffer
 
@@ -467,7 +467,7 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"gx add -m \"describe this revision\"",
-		"gx stacks",
+		"gx status",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("dirty edit status missing %q in:\n%s", want, text)
@@ -483,7 +483,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 	status := currentStatus{
 		PublishUploads: publication.QueueStatus{LastError: `POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`},
 		Files:          []string{"internal/github/client_test.go"},
-		Next:           []string{"gx compose -a", "gx stacks"},
+		Next:           []string{"gx generate -a", "gx status"},
 		GitStatusNote:  "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -494,7 +494,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 		`ERROR: POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`,
 		"Run `gx report` to report this issue.",
 		"internal/github/client_test.go",
-		"gx compose -a",
+		"gx generate -a",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
@@ -580,8 +580,8 @@ func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
 
 	text := model.View().Content
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if lines[0] != "$ gx stacks" {
-		t.Fatalf("top line = %q, want gx stacks header in:\n%s", lines[0], text)
+	if lines[0] != "$ gx status" {
+		t.Fatalf("top line = %q, want gx status header in:\n%s", lines[0], text)
 	}
 	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
 		t.Fatalf("last line should be legend, got %q in:\n%s", lines[len(lines)-1], text)
@@ -607,7 +607,7 @@ func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
 	}
 }
 
-func TestStacksDisplayHidesMergedAndKeepsPublishedAtBottomByDefault(t *testing.T) {
+func TestStacksDisplayHidesMergedAndKeepsRemoteAtBottomByDefault(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	current := authoring.StackInfo{Name: "active work", Alias: "active", BookmarkName: "feature/active", BaseRef: "main", Status: "draft"}
 	stack := authoring.StackSummary{
@@ -690,7 +690,7 @@ func TestStacksDisplayHidesEmptyStacksAndShowsListNotice(t *testing.T) {
 		t.Fatalf("HiddenEmpty = %d, want 2", display.HiddenEmpty)
 	}
 	for _, want := range []string{
-		"2 branches without revisions. Run 'gx stacks list' to see a full list of stacks.",
+		"2 branches without revisions. Run 'gx status list' to see a full list of features.",
 		"active work",
 	} {
 		if !strings.Contains(text, want) {
@@ -707,7 +707,7 @@ func TestStacksDisplayHidesEmptyStacksAndShowsListNotice(t *testing.T) {
 	fullText := renderStacksSummary(full, nil, 0, true, 0)
 	for _, want := range []string{"empty docs", "empty cli"} {
 		if !strings.Contains(fullText, want) {
-			t.Fatalf("gx stacks list display missing %q in:\n%s", want, fullText)
+			t.Fatalf("gx status list display missing %q in:\n%s", want, fullText)
 		}
 	}
 }
@@ -779,7 +779,7 @@ func TestPrintModifySummaryKeepsTargetAndNextCommand(t *testing.T) {
 		"commit abcdef12",
 		"message Review demux hunk coverage",
 		"stack waitlist + gx-pr",
-		"next gx compose",
+		"next gx generate",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printModifySummary() missing %q in:\n%s", want, text)
@@ -811,14 +811,14 @@ func TestPrintDemuxProposalHidesDiagnosticsByDefault(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"Compose proposal",
+		"Generate plan",
 		"Found 1 file",
 		"Proposes 1 revisions",
 		"Status needs review",
 		"Revisions",
 		"r1 split generated work",
 		"Diagnostics 2 hidden; use --raw or --json",
-		"JSON gx compose --json",
+		"JSON gx generate --json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxProposal() missing %q in:\n%s", want, text)
@@ -896,7 +896,7 @@ func TestPrintDemuxProposalRawIncludesDiagnostics(t *testing.T) {
 		"alpha.go references Beta from beta.go, but r2 is proposed after it",
 		"[structural_dependency / r1]",
 		"no structural dependency edges found",
-		"JSON gx compose --json",
+		"JSON gx generate --json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxProposal() missing %q in:\n%s", want, text)
@@ -926,12 +926,11 @@ func TestPrintDemuxChangesPacketIncludesWorkflowHeader(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"$ gx compose",
-		"Compose proposal",
+		"$ gx generate",
+		"Generate plan",
 		"Found 1 file",
 		"Revisions",
-		"Accept gx compose apply demux-1",
-		"JSON gx compose --json",
+		"JSON gx generate --json",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxChangesPacket() missing %q in:\n%s", want, text)
@@ -1031,8 +1030,6 @@ func TestPrintDemuxChangesPacketShowsPartialAcceptAndFollowup(t *testing.T) {
 	for _, want := range []string{
 		"Partial proposal",
 		demuxPartialComposeWarning,
-		"Accept gx compose apply demux-partial",
-		"Then gx compose",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxChangesPacket() missing %q in:\n%s", want, text)
@@ -1074,7 +1071,7 @@ func TestPrintDemuxReviewPacketSummarizesWarningsAndRepairHintsByDefault(t *test
 
 	text := out.String()
 	for _, want := range []string{
-		"Compose proposal",
+		"Generate plan",
 		"Found 2 files",
 		"Proposes 2 revisions",
 		"Status needs review",
@@ -1082,7 +1079,7 @@ func TestPrintDemuxReviewPacketSummarizesWarningsAndRepairHintsByDefault(t *test
 		"Blocking warnings",
 		"u1  app.go depends on helper.go",
 		"Next",
-		"gx compose fix demux-1",
+		"gx generate",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxReviewPacket() missing %q in:\n%s", want, text)
@@ -1139,7 +1136,7 @@ func TestPrintDemuxReviewPacketShowsInfoWarningsInReviewScreen(t *testing.T) {
 	printDemuxReviewPacket(&out, packet, demuxPrintOptions{})
 
 	text := out.String()
-	for _, want := range []string{"Compose proposal", "Diagnostics 1 hidden; use --raw or --json", "Next", "gx compose"} {
+	for _, want := range []string{"Generate plan", "Diagnostics 1 hidden; use --raw or --json", "Next", "gx generate"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxReviewPacket() missing %q in:\n%s", want, text)
 		}
@@ -1192,12 +1189,12 @@ func TestPrintDemuxProposalListShowsLatestPendingMarker(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"Compose proposals",
+		"Generate plans",
 		"* d1",
 		"demux-new",
 		"pending / 2 revisions / 2 files / 3 diagnostics",
 		"update alpha",
-		"default for revisions: gx compose show <revision-id>",
+		"default for revisions: gx generate --json",
 		"  d2",
 		"demux-old",
 		"pending / 1 revisions / 1 files",
@@ -1221,36 +1218,30 @@ func TestDemuxShowTargetIsProposal(t *testing.T) {
 	}
 }
 
-func TestComposeHelpHidesAgentOnlyCommandsAndRemovesOldAliases(t *testing.T) {
+func TestGenerateHelpRemovesManualProposalCommandsAndOldAliases(t *testing.T) {
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"compose", "--help"})
+	root.SetArgs([]string{"generate", "--help"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("root.Execute() error = %v", err)
 	}
 
 	text := out.String()
-	for _, want := range []string{"list", "review", "fix", "show"} {
+	for _, want := range []string{"Generate GX features and revisions", "--intent", "--exclude"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("compose help missing %q in:\n%s", want, text)
+			t.Fatalf("generate help missing %q in:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"  apply ", "  check ", "  proposal ", "apply-plan", "review-plan", "validate", "changes"} {
+	for _, unwanted := range []string{"  apply ", "  accept ", "  review ", "  fix ", "apply-plan", "review-plan", "proposal"} {
 		if strings.Contains(text, unwanted) {
-			t.Fatalf("compose help should hide %q:\n%s", unwanted, text)
+			t.Fatalf("generate help should hide %q:\n%s", unwanted, text)
 		}
 	}
 
-	for _, args := range [][]string{{"compose", "review-plan"}, {"compose", "apply-plan"}} {
-		cmd, _, err := root.Find(args)
-		if err != nil || cmd == nil || !cmd.Hidden {
-			t.Fatalf("Find(%v) = cmd=%v err=%v, want hidden command", args, cmd, err)
-		}
-	}
-	for _, args := range [][]string{{"demux"}, {"gxa"}, {"gxt"}, {"pr"}, {"modify"}, {"stack", "--new", "demo"}} {
+	for _, args := range [][]string{{"compose"}, {"stacks"}, {"publish"}, {"demux"}, {"gxa"}, {"gxt"}, {"pr"}, {"modify"}, {"stack", "--new", "demo"}} {
 		cmd, _, err := root.Find(args)
 		if err == nil && cmd != nil && cmd.Name() == args[0] {
 			t.Fatalf("Find(%v) resolved removed command %q", args, cmd.Name())
@@ -1311,8 +1302,8 @@ func TestPrintDemuxAIReviewResult(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"Compose fix",
-		"Proposal demux-1",
+		"Generate fix",
+		"Plan demux-1",
 		"Model test-model",
 		"Updated yes",
 		"State ready_to_apply",
@@ -1320,7 +1311,7 @@ func TestPrintDemuxAIReviewResult(t *testing.T) {
 		"Blocking issues 0",
 		"Sent 3/8 warnings, 2/5 repair hints",
 		"moved helper before caller",
-		"Accept gx compose",
+		"Generate gx generate",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxAIReviewResult() missing %q in:\n%s", want, text)
@@ -1354,7 +1345,7 @@ func TestPrintDemuxAIReviewResultShowsBlockingWarnings(t *testing.T) {
 		"Updated no",
 		"Blocking issues 1",
 		"Diagnostics 3 hidden; use --raw or --json",
-		"Review gx compose review demux-1 --raw",
+		"Review gx generate --raw",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printDemuxAIReviewResult() missing %q in:\n%s", want, text)
@@ -1396,8 +1387,8 @@ func TestPrintDemuxRevisionViewShowsMetadataAndDiff(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"Compose revision",
-		"Proposal demux-1",
+		"Generate revision",
+		"Plan demux-1",
 		"Revision u1",
 		"Intent split generated work",
 		"Mode hunk (1)",
@@ -1653,17 +1644,17 @@ func TestPublishHelpDoesNotPublish(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"publish", "--help"})
+	root.SetArgs([]string{"push", "--help"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("root.Execute() error = %v", err)
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "Publish accepted GX stacks for review") {
+	if !strings.Contains(text, "Push GX features, sessions, and metadata to the remote") {
 		t.Fatalf("help output missing publish summary:\n%s", text)
 	}
-	if !strings.Contains(text, "gx publish [stack]") {
+	if !strings.Contains(text, "gx push [stack]") {
 		t.Fatalf("help output missing stack usage:\n%s", text)
 	}
 	if !strings.Contains(text, "--all") {
@@ -1676,34 +1667,34 @@ func TestPublishHelpDoesNotPublish(t *testing.T) {
 		t.Fatalf("help output should not include removed --no-github flag:\n%s", text)
 	}
 	if strings.Contains(text, "Pushing ") || strings.Contains(text, "Creating draft PR") {
-		t.Fatalf("publish help entered publish path:\n%s", text)
+		t.Fatalf("push help entered publish path:\n%s", text)
 	}
 }
 
 func TestPublishGitHubCompatibilityFlagRejectsFalseAndNoGitHubIsRemoved(t *testing.T) {
 	root := NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"publish"})
+	cmd, _, err := root.Find([]string{"push"})
 	if err != nil {
-		t.Fatalf("Find(publish) error = %v", err)
+		t.Fatalf("Find(push) error = %v", err)
 	}
 	githubFlag := cmd.Flags().Lookup("github")
 	if githubFlag == nil {
-		t.Fatal("publish command missing --github flag")
+		t.Fatal("push command missing --github flag")
 	}
 	if githubFlag.DefValue != "true" {
 		t.Fatalf("--github default = %q, want true", githubFlag.DefValue)
 	}
 	noGitHubFlag := cmd.Flags().Lookup("no-github")
 	if noGitHubFlag != nil {
-		t.Fatal("publish command still registers removed --no-github flag")
+		t.Fatal("push command still registers removed --no-github flag")
 	}
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"publish", "--github=false"})
+	root.SetArgs([]string{"push", "--github=false"})
 	err = root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--github=false is no longer supported") {
-		t.Fatalf("publish --github=false error = %v, want unsupported flag value", err)
+		t.Fatalf("push --github=false error = %v, want unsupported flag value", err)
 	}
 }
 
@@ -1865,8 +1856,8 @@ func TestAutoReportFailurePostsCommandError(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GX_CLOUD_URL", server.URL)
 
-	autoReportFailure(context.Background(), authoring.NewEngine(), fmt.Errorf("publish exploded"), "gx publish")
-	if !strings.Contains(gotReport.Error, "gx publish: publish exploded") {
+	autoReportFailure(context.Background(), authoring.NewEngine(), fmt.Errorf("push exploded"), "gx push")
+	if !strings.Contains(gotReport.Error, "gx push: push exploded") {
 		t.Fatalf("report error = %q, want command error", gotReport.Error)
 	}
 	if gotReport.GXVersion == "" || gotReport.OS == "" || gotReport.Arch == "" {

@@ -78,6 +78,8 @@ test -x "$tmp_dir/gx/bin/gx-mcp" || fail "archive is missing gx-mcp"
 mkdir -p "$install_dir"
 install -m 755 "$tmp_dir/gx/bin/gx" "$install_dir/gx"
 install -m 755 "$tmp_dir/gx/bin/gx-mcp" "$install_dir/gx-mcp"
+ln -sf gx "$install_dir/gxg"
+ln -sf gx "$install_dir/gxs"
 
 if [ -f "$tmp_dir/gx/completions/gx.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"
@@ -89,6 +91,8 @@ if [ -f "$tmp_dir/gx/completions/_gx" ]; then
 fi
 
 echo "Installed gx to $install_dir/gx"
+echo "Installed gxg to $install_dir/gxg"
+echo "Installed gxs to $install_dir/gxs"
 echo "Installed gx-mcp to $install_dir/gx-mcp"
 if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."

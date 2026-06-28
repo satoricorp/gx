@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import gxPublish, { metadata as publishMetadata, schema as publishSchema } from "../src/tools/gx-publish";
+import gxPush, { metadata as pushMetadata, schema as pushSchema } from "../src/tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
+import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
 
 describe("gx_review metadata and schema", () => {
   test("describes the review surface", () => {
@@ -16,16 +17,25 @@ describe("gx_review metadata and schema", () => {
   });
 });
 
-describe("gx_publish metadata and schema", () => {
-  test("describes publishing accepted stacks", () => {
-    expect(publishMetadata.name).toBe("gx_publish");
-    expect(publishMetadata.description).toMatch(/accepted GX stacks/i);
-    expect(publishMetadata.annotations?.readOnlyHint).toBe(false);
-    expect(publishSchema.stack.parse("feature/review")).toBe("feature/review");
+describe("gx_push metadata and schema", () => {
+  test("describes pushing generated features", () => {
+    expect(pushMetadata.name).toBe("gx_push");
+    expect(pushMetadata.description).toMatch(/generated GX features/i);
+    expect(pushMetadata.annotations?.readOnlyHint).toBe(false);
+    expect(pushSchema.stack.parse("feature/review")).toBe("feature/review");
   });
 });
 
-describe("gx_review and gx_publish CLI invocation", () => {
+describe("gx_status metadata and schema", () => {
+  test("describes status as read-only", () => {
+    expect(statusMetadata.name).toBe("gx_status");
+    expect(statusMetadata.description).toMatch(/gx status --json/i);
+    expect(statusMetadata.annotations?.readOnlyHint).toBe(true);
+    expect(statusSchema.show_all.parse(true)).toBe(true);
+  });
+});
+
+describe("gx_review and gx_push CLI invocation", () => {
   let mockDir: string;
   let repoRoot: string;
   let callLog: string;
@@ -49,12 +59,16 @@ if [ "$1" = review ]; then
   echo "review ok"
   exit 0
 fi
-if [ "$1" = publish ]; then
+if [ "$1" = push ]; then
   if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
     echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
     exit 1
   fi
-  echo "publish ok"
+  echo "push ok"
+  exit 0
+fi
+if [ "$1" = status ]; then
+  echo '{"stacks":[],"files":[]}'
   exit 0
 fi
 echo "unexpected gx args: $@" >&2
@@ -127,23 +141,32 @@ exit 1
     expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
   });
 
-  test("gx_publish passes an optional stack name", async () => {
-    const output = await gxPublish({ cwd: repoRoot, stack: "feature/review" });
+  test("gx_push passes an optional stack name", async () => {
+    const output = await gxPush({ cwd: repoRoot, stack: "feature/review" });
     const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("publish");
-    expect(parsed.display).toBe("publish ok");
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "publish", "feature/review"]);
-    expect(parsed.next_actions).toEqual(["Run gx_sync after GitHub merges land."]);
+    expect(parsed.action).toBe("push");
+    expect(parsed.display).toBe("push ok");
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "push", "feature/review"]);
+    expect(parsed.next_actions).toEqual(["Run gx_status to verify remote state. Run gx_sync after remote merges land."]);
   });
 
-  test("gx_publish surfaces MCP auth login guidance", async () => {
+  test("gx_status runs status json", async () => {
+    const output = await gxStatus({ cwd: repoRoot });
+    const parsed = JSON.parse(output);
+    expect(parsed.action).toBe("status");
+    expect(parsed.result).toEqual({ stacks: [], files: [] });
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json"]);
+    expect(parsed.next_actions).toEqual(["Run gx_generate for local changes or gx_push for ready features."]);
+  });
+
+  test("gx_push surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const output = await gxPublish({ cwd: repoRoot });
+    const output = await gxPush({ cwd: repoRoot });
     const parsed = JSON.parse(output);
 
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("publish");
+    expect(parsed.action).toBe("push");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.display).toBe(
       "GX cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",

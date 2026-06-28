@@ -144,7 +144,7 @@ gx capture sync
 
 Captured sessions are recorded in `~/.gx/gx.db`.
 When a captured session originates inside a repo, the next `gx add`, `gx edit`,
-or `gx compose` can attach unlinked captured sessions from that repo to the GX
+or `gx generate` can attach unlinked captured sessions from that repo to the GX
 revision. Sessions provide provenance only; they do not route work to a body,
 bookmark, or branch.
 
@@ -171,21 +171,14 @@ gx init --name "Some One" --email "someone@example.com"
 gx add -m "describe this revision"
 gx add --interactive -m "describe selected changes"
 gx add --hunk --patch-file /tmp/selected.patch -m "describe selected hunks"
-gx compose
-gx compose --plan
-gx compose --json
-gx compose list
-gx compose proposals
-gx compose review d1
-gx compose fix d1
-gx compose show d1
-gx compose show u1
-gx compose apply <proposal-id>
+gx generate
+gx generate --json
+gxg
 gx edit
 gx status
-gx stacks
+gxs
 gx sync
-gx publish
+gx push
 ```
 
 Current behavior:
@@ -195,30 +188,22 @@ Current behavior:
 - `gx add --interactive` opens JJ's interactive split editor for a human to select hunks or lines, records the selected changes, and leaves the remaining changes in the next revision.
 - `gx add --hunk --patch-file <path>` splits using selected hunks from a unified patch file for agent-friendly non-interactive workflows.
 - `gx add` always prints the recorded change hash, commit hash, description, split summary, and edit commands.
-- `gx compose` proposes ordered revisions from the current working copy, applies deterministic repair passes, then asks OpenAI to refine the proposal when local repair cannot finish it.
-- `gx compose --plan` stops after local deterministic planning and repair; it never calls OpenAI.
-- `gx compose --json` returns the machine-facing compose workflow packet used by MCP: proposal, review result, workflow state, and review/apply tool guidance.
-- `gx compose` accepts filesets plus `--exclude <fileset>` so humans and agents can compose only part of a dirty working copy.
-- `gx compose list` lists saved proposals for the current repo; `gx compose proposals` is an alias.
-- `gx compose review d1` reviews a saved proposal and prints a compact deterministic state summary without requiring a temporary plan file. Full feasibility warnings, repair hints, and info diagnostics are available with `--raw` or `--json`.
-- `gx compose fix d1` runs the same repair pipeline for a saved proposal: deterministic repair first, then OpenAI when local repair cannot finish it. Pass `--plan` for local-only repair.
-- `gx compose show d1` shows a saved proposal, where `d1` is the newest pending proposal from `gx compose list`.
-- `gx compose show u1` shows one proposed revision from the latest pending proposal; pass `--proposal <id-or-dN>` to inspect a revision from another proposal.
-- Agent-only commands such as `gx compose review-plan` and `gx compose apply-plan` are hidden from human help, but remain callable by MCP/agent workflows.
-- The compose JSON packet includes a top-level hunk catalog, lightweight local structural facts, and dependency edges for MCP/LLM-authored revision plans.
+- `gx generate` creates ordered local GX features/stacks and revisions from the current working copy. It applies ready generated revisions automatically.
+- `gx generate --json` returns the machine-facing generated result used by MCP.
+- `gx generate` accepts filesets plus `--exclude <fileset>` so humans and agents can generate only part of a dirty working copy.
+- Human `gx generate` runs three internal repair/preflight attempts before asking whether to keep working on the issues; MCP gets six attempts without prompting.
+- The generate pipeline includes a top-level hunk catalog, lightweight local structural facts, and dependency edges for generated revision plans.
 - Changed hunks are annotated with enclosing symbols when GX can infer them locally.
 - When one file has multiple changed symbols, deterministic compose can propose separate hunk-level revisions before the MCP/LLM refines the plan.
-- Compose proposals include `feasibility_warnings` for deterministic concerns such as unmapped hunks, dependency-order conflicts, inferred `depends_on` hints, and separated test/source counterparts.
-- If no explicit `GX_SESSION_ID(S)` is present, `gx compose` looks for unlinked captured sessions from the same repo and marks those revisions with `provenance_status: "repo_local"`.
-- Provenance attachment is centralized: `gx add`, `gx edit`, and `gx compose` all classify sessions as `explicit`, `repo_local`, or `absent` through the same local provenance logic.
-- Hidden `gx compose review-plan --plan-file <path>` reviews an LLM-authored revision plan without applying JJ changes; invalid, under-specified, and structurally misordered plans return structured JSON errors or `repair_hints`.
-- Hidden `gx compose apply-plan --plan-file <path>` applies a revision plan; hunk-level revisions can refer to `hunk_ids` instead of copying patch payloads. GX checks that every proposed hunk is covered exactly once before applying, and blocks structural warning-severity plans unless `--allow-warnings` is passed after review.
-- Applied compose records are persisted per revision and included in push review bundles as compose evidence.
+- Generate plans include `feasibility_warnings` for deterministic concerns such as unmapped hunks, dependency-order conflicts, inferred `depends_on` hints, and separated test/source counterparts.
+- If no explicit `GX_SESSION_ID(S)` is present, `gx generate` looks for unlinked captured sessions from the same repo and marks those revisions with `provenance_status: "repo_local"`.
+- Provenance attachment is centralized: `gx add`, `gx edit`, and `gx generate` all classify sessions as `explicit`, `repo_local`, or `absent` through the same local provenance logic.
+- Applied generate records are persisted per revision and included in push review bundles as generate evidence.
 - Push review bundles are assembled by a dedicated local review-bundle module before cloud upload, so the versioned review payload shape is testable without the HTTP adapter.
 - Review publication is coordinated by a dedicated publication module; the cloud client is only the HTTP upload adapter, and semantic indexing sits behind an optional indexing seam.
 - Review bundles expose first-class `review_context` per revision, including provenance status, per-revision provenance sources, transcript source IDs, linked session count, structural signal availability, structural facts, changed symbols, feasibility warnings, typed evidence entries (`provenance`, `structural`, `risk`), and an initial deterministic risk score derived from local evidence. Revisions without compose evidence still get an honest context shell so the review surface can distinguish missing provenance from unavailable structural evidence.
 - A cloud ingest module turns review bundles into stored review artifacts, risk/context fields, transcript source availability, and a session index for the review surface.
-- MCP callers should use `gx_compose` for messy diffs. It shells to `gx compose --json` by default, which returns the hunk catalog, an initial review result, and a state. Apply directly when ready; when repair is recommended or required, revise the proposal with the calling codegen's LLM, review again with `gx_compose` action `review-plan`, then call `gx_compose` action `apply` or `gx_accept`. Pass `use_gx_llm: true` only when the user explicitly wants GX to spend its configured LLM tokens.
+- MCP callers should use `gx_generate` for messy diffs. It shells to `gx generate --json`; GX handles repair/preflight internally and applies safe generated revisions automatically.
 - `gx init` initializes a JJ-backed GX repo for the current working tree, or reuses the nearest existing one.
 - `gx init` also sets up gx user identity and writes JJ `user.name` / `user.email`.
 - if `GX_POSTLIST_URL` is set, `gx init` also sends identity to gx signup
@@ -226,11 +211,9 @@ Current behavior:
 - `gx edit [rev]` re-enters an existing JJ change.
 - `gx edit` with no revision opens an interactive picker of recent mutable changes.
 - `gx modify` remains as a compatibility alias for `gx edit`.
-- `gx status` shows the current revision, message state, changed files, and next commands. gx stores new changes in revisions, so `git status` may be clean.
-- `gx stacks` browses GX stacks and revisions. The interactive view supports stack navigation, revision navigation, edit, and diff. Use `gx edit` to re-enter a revision and continue working on its stack.
+- `gx status` shows Unstaged files, local features/stacks and revisions, and Remote state. The interactive view supports stack navigation, revision navigation, edit, and diff. Use `gx edit` to re-enter a revision and continue working on its stack.
 - `gx sync` fetches and prunes the remote line of work (default `origin`).
-- `gx publish` pushes the recorded GX stack as branch refs, records GX metadata, and prints branch-mapped PR links.
-- `gx pr` remains as a hidden compatibility alias for agent and script workflows.
+- `gx push` pushes generated GX features as branch refs, uploads sessions and GX metadata, and prints branch-mapped PR links.
 - release builds upload pushed stack context to gx cloud automatically; `gx auth login` works without env setup
 - contributors can override cloud endpoints with `CONVEX_SITE_URL`, `GITHUB_CLIENT_ID`, and `GX_CLOUD_URL`
 - shell completions are installed with `just install`, not through a CLI subcommand
@@ -238,9 +221,6 @@ Current behavior:
 For pure JJ operations that gx does not extend, use `jj` directly. That includes history surgery and inspection commands such as `jj squash`, `jj log`, and `jj bookmark list`.
 
 Use Git directly only for compatibility and remote inspection, such as checking the current branch, refs, remotes, and raw commit history.
-
-`gx publish` currently expects a normal Git branch when no explicit refspec is provided.
-If there is no current branch, pass an explicit push target or create a branch first.
 
 ## Data Directory
 
@@ -278,17 +258,17 @@ docs/postlist-neon.sql
 ## gx Cloud
 
 Shipped `gx` binaries include production cloud endpoints. No env setup is required for
-`gx auth login` or `gx publish` cloud upload.
+`gx auth login` or `gx push` remote upload.
 
 ```bash
 gx auth login
 gx auth status
-gx publish
+gx push
 ```
 
-After `gx publish`, gx uploads the pushed change, changed files, linked sessions, requests,
+After `gx push`, gx uploads the pushed change, changed files, linked sessions, requests,
 responses, token usage, and the GitHub PR URL when available. When the cloud API returns
-a review URL, `gx publish` prints it.
+a review URL, `gx push` prints it.
 
 ### Semantic transcript indexing
 
@@ -302,7 +282,7 @@ export GX_SEMANTIC_INDEX=1
 export OPENAI_API_KEY="<openai-api-key>"
 export TURBOPUFFER_API_KEY="<turbopuffer-api-key>"
 export GX_TPUF_NAMESPACE="gx-sessions"
-gx publish
+gx push
 ```
 
 Optional overrides:
@@ -316,7 +296,7 @@ export GX_SEMANTIC_BATCH_SIZE=64
 export GX_SEMANTIC_MAX_CHUNK_BYTES=12000
 ```
 
-If semantic indexing is misconfigured or unavailable, `gx publish` still uploads the
+If semantic indexing is misconfigured or unavailable, `gx push` still uploads the
 review bundle and reports the semantic indexing error separately.
 
 `gx review` can also use the same OpenAI and TurboPuffer credentials to retrieve

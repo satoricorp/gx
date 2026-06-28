@@ -57,7 +57,7 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
     await ensureGxInitialized(params.cwd);
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: "review",
-      nextActions: ["Use findings as context before composing or publishing changes."],
+      nextActions: ["Use findings as context before generating or pushing changes."],
     });
   } catch (error) {
     return formatError(error, { action: "review" });

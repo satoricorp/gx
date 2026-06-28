@@ -508,6 +508,38 @@ func (s *Store) WriteChangeRevision(ctx context.Context, rev ChangeRevision) err
 	return nil
 }
 
+func (s *Store) ListChangeRevisionsByChangeID(ctx context.Context, changeID int64) ([]ChangeRevision, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, change_id, jj_commit_id, jj_operation_id, changed_files_json, created_at
+		FROM change_revisions
+		WHERE change_id = ?
+		ORDER BY created_at ASC, id ASC
+	`, changeID)
+	if err != nil {
+		return nil, fmt.Errorf("list change revisions: %w", err)
+	}
+	defer rows.Close()
+	revisions := []ChangeRevision{}
+	for rows.Next() {
+		var revision ChangeRevision
+		if err := rows.Scan(
+			&revision.ID,
+			&revision.ChangeID,
+			&revision.JJCommitID,
+			&revision.JJOperationID,
+			&revision.ChangedFiles,
+			&revision.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan change revision: %w", err)
+		}
+		revisions = append(revisions, revision)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate change revisions: %w", err)
+	}
+	return revisions, nil
+}
+
 func (s *Store) WriteChangeSessions(ctx context.Context, changeID int64, sessionIDs []string, createdAt int64) error {
 	for _, sessionID := range sessionIDs {
 		if sessionID == "" {

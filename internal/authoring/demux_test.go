@@ -1442,6 +1442,65 @@ func TestPlanDemuxRoutesUsesExistingStackHeuristic(t *testing.T) {
 	}
 }
 
+func TestPlanDemuxRoutesUsesStoredFileOverlapForExistingStack(t *testing.T) {
+	repoRoot, repoID, store, cleanup := setupDemuxRouteStoreWithRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	head := "change-status"
+	stackID, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "status display",
+		BookmarkName: "feature/status-display",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      head,
+		CurrentCommitID: "commit-status",
+		Description:     "render status remote state",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	files, _ := json.Marshal([]string{"internal/cli/root.go", "internal/vcs/status_snapshot.go"})
+	if err := store.WriteChangeRevision(ctx, storage.ChangeRevision{
+		ChangeID:      changeID,
+		JJCommitID:    "commit-status",
+		JJOperationID: "op-status",
+		ChangedFiles:  string(files),
+		CreatedAt:     1,
+	}); err != nil {
+		t.Fatalf("WriteChangeRevision() error = %v", err)
+	}
+	engine := NewEngine()
+	proposal, err := engine.planDemuxRoutes(ctx, DemuxProposal{
+		RepoRoot: repoRoot,
+		Revisions: []RevisionProposal{{
+			ID:     "r1",
+			Intent: "tighten remote badges",
+			Files:  []string{"internal/cli/root.go"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("planDemuxRoutes() error = %v", err)
+	}
+	revision := proposal.Revisions[0]
+	if revision.TargetStack != "feature/status-display" || !strings.Contains(revision.RouteReason, "files overlap") {
+		t.Fatalf("planned route = %#v, want semantic file-overlap route", revision)
+	}
+}
+
 func TestPlanDemuxRoutesInfersNewStacksForMultipleClusters(t *testing.T) {
 	repoRoot := setupDemuxRouteRepo(t)
 	engine := NewEngine()

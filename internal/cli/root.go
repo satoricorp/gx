@@ -80,14 +80,13 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newPublishUploadCommand(ctx),
 		newBaseCommand(ctx, engine),
 		newDemoCommand(),
-		newComposeCommand(ctx, engine),
+		newGenerateCommand(ctx, engine),
 		newAddCommand(ctx, engine, "add [filesets...]", "add", true),
 		newEditCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
-		newStacksCommand(ctx, engine),
 		newReportCommand(ctx, engine),
 		newReviewCommand(ctx, engine),
-		newPublishCommand(ctx, engine, "publish [stack]", false),
+		newPushCommand(ctx, engine),
 		newSyncCommand(ctx, engine),
 		newOpsCommand(ctx),
 	)
@@ -114,9 +113,9 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "login", "version", "demo", "doctor":
 			cmd.GroupID = groupSetup
-		case "add", "base", "compose", "edit", "report", "review", "status", "stacks":
+		case "add", "base", "edit", "generate", "report", "review", "status":
 			cmd.GroupID = groupWork
-		case "publish", "sync":
+		case "push", "sync":
 			cmd.GroupID = groupShip
 		case "ops":
 			cmd.GroupID = groupAdvanced
@@ -396,7 +395,7 @@ func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 		Args:   cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
-				if err := engine.RequireAuthoringBase(ctx, "gx compose"); err != nil {
+				if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
 					return authoring.DemuxPlanPacket{}, err
 				}
 				return engine.DemuxChanges(ctx, authoring.ProposeDemuxOptions{
@@ -518,7 +517,7 @@ func demuxErrorHasInteractiveProposal(packet authoring.DemuxPlanPacket, raw bool
 	return strings.TrimSpace(packet.Proposal.ID) != "" && !raw && !planOnly
 }
 
-const demuxPartialComposeWarning = "Partial compose proposal: these revisions do not cover all current changes. Accept them if they look right, then run gx compose again for the remaining changes."
+const demuxPartialComposeWarning = "Partial generate plan: these revisions do not cover all current changes. Run gx generate again for the remaining changes."
 
 func saveDemuxPacketProposal(ctx context.Context, engine *authoring.Engine, packet authoring.DemuxPlanPacket) (authoring.DemuxPlanPacket, error) {
 	saved, err := engine.SaveDemuxProposal(ctx, packet.Proposal)
@@ -593,6 +592,158 @@ func newComposeCommand(ctx context.Context, engine *authoring.Engine) *cobra.Com
 	configureComposeApplyDefaults(cmd)
 	renameDemuxCommandSurface(cmd)
 	return cmd
+}
+
+func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+	var jsonOut bool
+	var intent string
+	var raw bool
+	var model string
+	var maxWarnings int
+	var excludeFilesets []string
+	cmd := &cobra.Command{
+		Use:     "generate [filesets...]",
+		Aliases: []string{"gxg"},
+		Short:   "Generate GX features and revisions from the current working copy",
+		Args:    cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				switch strings.TrimSpace(args[0]) {
+				case "apply", "accept", "review", "fix":
+					return fmt.Errorf("unknown command %q for %q", args[0], "gx generate")
+				}
+			}
+			startedAt := time.Now()
+			for round := 1; ; round++ {
+				packet, result, err := runGenerateApply(ctx, engine, cmd, generateRunOptions{
+					JSON:              jsonOut,
+					Raw:               raw,
+					Intent:            intent,
+					Model:             model,
+					MaxWarnings:       maxWarnings,
+					Filesets:          args,
+					ExcludeFilesets:   excludeFilesets,
+					PreflightAttempts: generatePreflightAttempts(),
+				})
+				emitGenerateRunTelemetry(ctx, packet, result, err, generateRunTelemetryOptions{
+					JSON:         jsonOut,
+					Raw:          raw,
+					Filesets:     args,
+					ExcludeCount: len(excludeFilesets),
+					HasIntent:    strings.TrimSpace(intent) != "",
+					ModelSet:     strings.TrimSpace(model) != "",
+					Duration:     time.Since(startedAt),
+				})
+				if err == nil {
+					return nil
+				}
+				if jsonOut || generateIsMCP() || !useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
+					return err
+				}
+				if strings.TrimSpace(packet.Proposal.ID) == "" {
+					return err
+				}
+				printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
+				fmt.Fprintln(cmd.OutOrStdout())
+				continued := promptContinueGenerate(cmd.InOrStdin(), cmd.OutOrStdout())
+				telemetry.EmitProductEvent(ctx, telemetry.EventCLIGeneratePrompt, map[string]any{
+					"round":     round,
+					"continued": continued,
+				})
+				if !continued {
+					return err
+				}
+			}
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
+	cmd.Flags().StringVar(&intent, "intent", "", "optional intent prefix for generated revisions")
+	cmd.Flags().BoolVar(&raw, "raw", false, "show full generate diagnostics in human output")
+	cmd.Flags().StringVar(&model, "model", "", "OpenAI model for generate repair; defaults to GX_DEMUX_REVIEW_MODEL or gpt-4.1-mini")
+	cmd.Flags().IntVar(&maxWarnings, "max-warnings", 0, "maximum warning-severity diagnostics to send to the model; defaults to 50")
+	cmd.Flags().StringArrayVar(&excludeFilesets, "exclude", nil, "exclude changed file or directory from generate; may be repeated")
+	return cmd
+}
+
+type generateRunOptions struct {
+	JSON              bool
+	Raw               bool
+	Intent            string
+	Model             string
+	MaxWarnings       int
+	Filesets          []string
+	ExcludeFilesets   []string
+	PreflightAttempts int
+}
+
+func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) (authoring.DemuxPlanPacket, authoring.ApplyDemuxResult, error) {
+	run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
+		if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
+			return authoring.DemuxPlanPacket{}, err
+		}
+		return engine.DemuxChanges(ctx, authoring.ProposeDemuxOptions{
+			Intent:                 opts.Intent,
+			Filesets:               opts.Filesets,
+			ExcludeFilesets:        opts.ExcludeFilesets,
+			Model:                  opts.Model,
+			MaxWarnings:            opts.MaxWarnings,
+			ApplyPreflightAttempts: opts.PreflightAttempts,
+			ProgressWriter:         progress,
+		})
+	}
+	var (
+		packet authoring.DemuxPlanPacket
+		err    error
+	)
+	if !opts.JSON && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
+		packet, err = runDemuxWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), run)
+	} else {
+		var progress io.Writer
+		if !opts.JSON {
+			progress = cmd.ErrOrStderr()
+		}
+		packet, err = run(progress)
+	}
+	if err != nil {
+		if opts.JSON && strings.TrimSpace(packet.Proposal.ID) != "" {
+			_ = writeJSON(cmd, map[string]any{
+				"error":  err.Error(),
+				"packet": packet,
+			})
+		}
+		return packet, authoring.ApplyDemuxResult{}, err
+	}
+	if reason := demuxAutoAcceptBlockedReason(packet); reason != "" {
+		if opts.JSON {
+			_ = writeJSON(cmd, map[string]any{
+				"error":  reason,
+				"packet": packet,
+			})
+		}
+		return packet, authoring.ApplyDemuxResult{}, fmt.Errorf("%s", reason)
+	}
+	result, err := engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
+		ReturnToDefaultBranch: true,
+	})
+	if err != nil {
+		return packet, result, err
+	}
+	if opts.JSON {
+		return packet, result, writeJSON(cmd, result)
+	}
+	printDemuxApplySummary(cmd.OutOrStdout(), result)
+	return packet, result, nil
+}
+
+func generatePreflightAttempts() int {
+	if generateIsMCP() {
+		return 6
+	}
+	return 3
+}
+
+func generateIsMCP() bool {
+	return strings.TrimSpace(os.Getenv("GX_MCP")) != ""
 }
 
 func configureComposeApplyDefaults(cmd *cobra.Command) {
@@ -792,16 +943,16 @@ func newDemuxApplyCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 }
 
 func printDemuxApplySummary(out io.Writer, result authoring.ApplyDemuxResult) {
-	fmt.Fprintln(out, success("Compose applied"))
-	fmt.Fprintln(out, labelValue("Proposal", result.Proposal.ID))
+	fmt.Fprintln(out, success("Generated revisions applied"))
+	fmt.Fprintln(out, labelValue("Plan", result.Proposal.ID))
 	fmt.Fprintln(out, labelValue("Created", fmt.Sprintf("%d revisions", len(result.Revisions))))
 	for index, revision := range result.Revisions {
 		fmt.Fprintf(out, "  %s %s  %s\n", command(fmt.Sprintf("r%d", index+1)), value(revision.Change.Description), muted(shortID(revision.Change.ChangeID, 12)))
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, section("Next"))
-	fmt.Fprintf(out, "  %s\n", command("gx stacks"))
-	fmt.Fprintf(out, "  %s\n", command("gx publish"))
+	fmt.Fprintf(out, "  %s\n", command("gx status"))
+	fmt.Fprintf(out, "  %s\n", command("gx push"))
 	if result.RemainingChanges {
 		printDemuxPartialFollowup(out)
 	}
@@ -810,7 +961,7 @@ func printDemuxApplySummary(out io.Writer, result authoring.ApplyDemuxResult) {
 func printDemuxPartialFollowup(out io.Writer) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, section("Remaining changes"))
-	fmt.Fprintln(out, muted("Selected compose changes were applied. Run "+command("gx compose")+" again for the remaining changes."))
+	fmt.Fprintln(out, muted("Selected generated changes were applied. Run "+command("gx generate")+" again for the remaining changes."))
 }
 
 func newDemuxReviewPlanCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
@@ -914,11 +1065,10 @@ type demuxPrintOptions struct {
 }
 
 func printDemuxChangesPacket(out io.Writer, packet authoring.DemuxPlanPacket, opts demuxPrintOptions) {
-	fmt.Fprintln(out, commandLine("gx compose", true))
+	fmt.Fprintln(out, commandLine("gx generate", true))
 	fmt.Fprintln(out)
 	printDemuxPartialWarning(out, packet.Proposal)
 	printDemuxProposal(out, packet.Proposal, opts)
-	printDemuxAcceptHint(out, packet)
 }
 
 func printDemuxPartialWarning(out io.Writer, proposal authoring.DemuxProposal) {
@@ -944,16 +1094,16 @@ func printDemuxAcceptHint(out io.Writer, packet authoring.DemuxPlanPacket) {
 		return
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, labelValue("Accept", fmt.Sprintf("gx compose apply %s", packet.Proposal.ID)))
+	fmt.Fprintln(out, labelValue("Generate", "gx generate"))
 	if demuxProposalIsPartial(packet.Proposal) {
-		fmt.Fprintln(out, labelValue("Then", "gx compose"))
+		fmt.Fprintln(out, labelValue("Then", "gx generate"))
 	}
 }
 
 func printDemuxReviewPacket(out io.Writer, packet authoring.DemuxPlanPacket, opts demuxPrintOptions) {
 	proposal := packet.Proposal
 	review := packet.Review
-	fmt.Fprintln(out, commandLine("gx compose review "+proposal.ID, true))
+	fmt.Fprintln(out, commandLine("gx generate", true))
 	fmt.Fprintln(out)
 	printDemuxProposalSummary(out, proposal, packet.State)
 	if len(review.Errors) > 0 {
@@ -1010,17 +1160,17 @@ func printDemuxReviewPacket(out io.Writer, packet authoring.DemuxPlanPacket, opt
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, section("Next"))
 	if packet.State == authoring.DemuxWorkflowReadyToApply {
-		fmt.Fprintf(out, "  %s\n", command("gx compose"))
+		fmt.Fprintf(out, "  %s\n", command("gx generate"))
 	} else {
-		fmt.Fprintf(out, "  %s\n", command(fmt.Sprintf("gx compose fix %s", proposal.ID)))
+		fmt.Fprintf(out, "  %s\n", command("gx generate"))
 	}
 }
 
 func printDemuxAIReviewResult(out io.Writer, result authoring.DemuxAIReviewResult) {
-	fmt.Fprintln(out, commandLine("gx compose fix "+result.Proposal.ID, true))
+	fmt.Fprintln(out, commandLine("gx generate", true))
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Compose fix"))
-	fmt.Fprintln(out, labelValue("Proposal", result.Proposal.ID))
+	fmt.Fprintln(out, section("Generate fix"))
+	fmt.Fprintln(out, labelValue("Plan", result.Proposal.ID))
 	fmt.Fprintln(out, labelValue("Model", result.Model))
 	fmt.Fprintln(out, labelValue("Updated", yesNo(result.Updated)))
 	fmt.Fprintln(out, labelValue("State", string(result.State)))
@@ -1049,9 +1199,9 @@ func printDemuxAIReviewResult(out io.Writer, result authoring.DemuxAIReviewResul
 	}
 	fmt.Fprintln(out)
 	if result.State == authoring.DemuxWorkflowReadyToApply {
-		fmt.Fprintln(out, labelValue("Accept", "gx compose"))
+		fmt.Fprintln(out, labelValue("Generate", "gx generate"))
 	} else {
-		fmt.Fprintln(out, labelValue("Review", fmt.Sprintf("gx compose review %s --raw", result.Proposal.ID)))
+		fmt.Fprintln(out, labelValue("Review", "gx generate --raw"))
 	}
 }
 
@@ -1120,9 +1270,9 @@ func formatRepairHint(repairHint authoring.RepairHint) string {
 }
 
 func printDemuxProposalList(out io.Writer, proposals []authoring.DemuxProposalSummary) {
-	fmt.Fprintln(out, section("Compose proposals"))
+	fmt.Fprintln(out, section("Generate plans"))
 	if len(proposals) == 0 {
-		fmt.Fprintln(out, muted("No compose proposals found."))
+		fmt.Fprintln(out, muted("No generate plans found."))
 		return
 	}
 	for _, proposal := range proposals {
@@ -1147,7 +1297,7 @@ func printDemuxProposalList(out io.Writer, proposals []authoring.DemuxProposalSu
 			fmt.Fprintf(out, "    %s\n", proposal.FirstRevisionIntent)
 		}
 		if proposal.LatestPendingForShow {
-			fmt.Fprintf(out, "    %s\n", muted("default for revisions: gx compose show <revision-id>"))
+			fmt.Fprintf(out, "    %s\n", muted("default for revisions: gx generate --json"))
 		}
 	}
 }
@@ -1161,11 +1311,11 @@ func formatMillis(ms int64) string {
 
 func printDemuxRevisionView(out io.Writer, view authoring.DemuxRevisionView, opts demuxPrintOptions) {
 	revision := view.Revision
-	fmt.Fprintln(out, commandLine("gx compose show "+revision.ID, true))
+	fmt.Fprintln(out, commandLine("gx generate", true))
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Compose revision"))
-	fmt.Fprintln(out, labelValue("Proposal", view.ProposalID))
-	fmt.Fprintln(out, labelValue("Proposal status", string(view.ProposalStatus)))
+	fmt.Fprintln(out, section("Generate revision"))
+	fmt.Fprintln(out, labelValue("Plan", view.ProposalID))
+	fmt.Fprintln(out, labelValue("Plan status", string(view.ProposalStatus)))
 	fmt.Fprintln(out, labelValue("Base revision", view.ProposedChangeID))
 	fmt.Fprintln(out, labelValue("Revision", revision.ID))
 	fmt.Fprintln(out, labelValue("Intent", revision.Intent))
@@ -1295,7 +1445,7 @@ func printDemuxProposal(out io.Writer, proposal authoring.DemuxProposal, opts de
 		}
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, labelValue("JSON", "gx compose --json"))
+	fmt.Fprintln(out, labelValue("JSON", "gx generate --json"))
 }
 
 type demuxStackDisplayGroup struct {
@@ -1359,7 +1509,7 @@ func printDemuxRevisionLine(out io.Writer, revision authoring.RevisionProposal, 
 }
 
 func printDemuxProposalSummary(out io.Writer, proposal authoring.DemuxProposal, state authoring.DemuxWorkflowState) {
-	fmt.Fprintln(out, section("Compose proposal"))
+	fmt.Fprintln(out, section("Generate plan"))
 	fmt.Fprintln(out, labelValue("Found", demuxFoundSummary(proposal)))
 	fmt.Fprintln(out, labelValue("Proposes", fmt.Sprintf("%d revisions", len(proposal.Revisions))))
 	status := demuxProposalDisplayStatus(proposal, state)
@@ -1409,6 +1559,16 @@ type composeRunTelemetryOptions struct {
 	ModelSet     bool
 }
 
+type generateRunTelemetryOptions struct {
+	JSON         bool
+	Raw          bool
+	Filesets     []string
+	ExcludeCount int
+	HasIntent    bool
+	ModelSet     bool
+	Duration     time.Duration
+}
+
 func emitComposeRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, runErr error, opts composeRunTelemetryOptions) {
 	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
 	status := "success"
@@ -1439,7 +1599,40 @@ func emitComposeRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPack
 	if packet.Proposal.HunkCoverage > 0 {
 		props["hunk_coverage"] = packet.Proposal.HunkCoverage
 	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIComposeRun, props)
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIGenerateRun, props)
+}
+
+func emitGenerateRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, result authoring.ApplyDemuxResult, runErr error, opts generateRunTelemetryOptions) {
+	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
+	status := "success"
+	if runErr != nil {
+		status = "error"
+	}
+	props := map[string]any{
+		"status":                   status,
+		"state":                    string(packet.State),
+		"revision_count":           len(packet.Proposal.Revisions),
+		"generated_revision_count": len(result.Revisions),
+		"stack_count":              len(demuxStackDisplayGroups(packet.Proposal.Revisions)),
+		"hunk_count":               len(packet.Proposal.Hunks),
+		"file_count":               demuxProposalFileCount(packet.Proposal),
+		"warning_count":            len(packet.Proposal.Warnings) + len(packet.Proposal.FeasibilityWarnings),
+		"blocking_warning_count":   len(blockingWarnings),
+		"diagnostic_warning_count": len(diagnosticWarnings),
+		"repair_hint_count":        len(packet.Review.RepairHints),
+		"review_error_count":       len(packet.Review.Errors),
+		"json":                     opts.JSON,
+		"raw":                      opts.Raw,
+		"fileset_count":            len(opts.Filesets),
+		"exclude_count":            opts.ExcludeCount,
+		"has_intent":               opts.HasIntent,
+		"model_set":                opts.ModelSet,
+		"duration_ms":              opts.Duration.Milliseconds(),
+	}
+	if packet.Proposal.HunkCoverage > 0 {
+		props["hunk_coverage"] = packet.Proposal.HunkCoverage
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIGenerateRun, props)
 }
 
 func demuxProposalDisplayStatus(proposal authoring.DemuxProposal, state authoring.DemuxWorkflowState) string {
@@ -1458,23 +1651,23 @@ func demuxProposalDisplayStatus(proposal authoring.DemuxProposal, state authorin
 
 func demuxAutoAcceptBlockedReason(packet authoring.DemuxPlanPacket) string {
 	if packet.State != authoring.DemuxWorkflowReadyToApply {
-		return fmt.Sprintf("compose proposal is not ready to auto-accept: %s", packet.State)
+		return fmt.Sprintf("generated revisions are not ready: %s", packet.State)
 	}
 	if strings.TrimSpace(packet.Proposal.ID) == "" {
-		return "compose proposal is not ready to auto-accept: missing proposal id"
+		return "generated revisions are not ready: missing proposal id"
 	}
 	if len(packet.Review.Errors) > 0 {
-		return "compose proposal is not ready to auto-accept: review errors found"
+		return "generated revisions are not ready: review errors found"
 	}
 	if len(packet.Review.RepairHints) > 0 {
-		return "compose proposal is not ready to auto-accept: repair hints found"
+		return "generated revisions are not ready: repair hints found"
 	}
 	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
 	if len(blockingWarnings) > 0 {
-		return "compose proposal is not ready to auto-accept: blocking warnings found"
+		return "generated revisions are not ready: blocking warnings found"
 	}
 	if len(diagnosticWarnings) > 0 || len(packet.Proposal.Warnings) > 0 {
-		return "compose proposal is not ready to auto-accept: diagnostics found"
+		return "generated revisions are not ready: diagnostics found"
 	}
 	return ""
 }
@@ -1589,18 +1782,70 @@ func revisionsFromModifyCandidates(snapshot authoring.StatusSnapshot, candidates
 func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string, helpName string, hidden bool) *cobra.Command {
 	var jsonOut bool
 	var agentOut bool
+	var showAll bool
 	cmd := &cobra.Command{
-		Use:    use,
-		Short:  "Show the current GX revision and changed files",
-		Hidden: hidden,
-		Args:   cobra.NoArgs,
+		Use:     use,
+		Aliases: []string{"gxs"},
+		Short:   "Show GX unstaged files, local features, and remote state",
+		Hidden:  hidden,
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printCurrentStatus(ctx, engine, cmd.OutOrStdout(), jsonOut, agentOut)
+			if jsonOut {
+				stack, _, err := statusAfterPruningEmptyStacks(ctx, engine)
+				if err != nil {
+					return err
+				}
+				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
+				return writeJSON(cmd, stack)
+			}
+			if len(args) > 0 && !agentOut {
+				return fmt.Errorf("stack selector is only supported with --agent")
+			}
+			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll})
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
+	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
+	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
+		flag.Hidden = true
+	}
+	cmd.AddCommand(
+		newStatusListCommand(ctx, engine),
+		newStacksEditCommand(ctx, engine),
+		newStacksDiffCommand(),
+	)
 	setHelpName(cmd, helpName)
+	return cmd
+}
+
+func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+	var jsonOut bool
+	var agentOut bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all non-merged GX features",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
+			if err != nil {
+				return err
+			}
+			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
+			if jsonOut {
+				return writeJSON(cmd, stack)
+			}
+			if agentOut {
+				printStatusAgent(cmd.OutOrStdout(), stack, "")
+				return nil
+			}
+			printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
+			fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
+	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
 	return cmd
 }
 
@@ -2032,9 +2277,9 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	}
 	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
-	next := []string{"gx compose -a", "gx stacks"}
+	next := []string{"gx generate", "gx status"}
 	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
-		next = []string{`gx add -m "describe this revision"`, "gx stacks"}
+		next = []string{`gx add -m "describe this revision"`, "gx status"}
 	}
 	refs := currentStatusRefs{
 		GXBaseRef:      currentStatusBaseStack(currentStatus{Repo: stack.Repo, Stack: stack.Stack}),
@@ -2152,11 +2397,11 @@ func printPublishUploadStatus(out io.Writer, status publication.QueueStatus) {
 		label += " (worker running)"
 	}
 	if status.Failed > 0 && strings.TrimSpace(status.LastError) != "" {
-		fmt.Fprintf(out, "   %s %s\n", muted("GX context uploads:"), danger(label))
+		fmt.Fprintf(out, "   %s %s\n", muted("GX Cloud uploads:"), danger(label))
 		fmt.Fprintf(out, "   %s %s\n", muted("Upload error:"), status.LastError)
 		return
 	}
-	fmt.Fprintf(out, "   %s %s\n", muted("GX context uploads:"), valueText(label))
+	fmt.Fprintf(out, "   %s %s\n", muted("GX Cloud uploads:"), valueText(label))
 }
 
 func currentStatusBaseStack(status currentStatus) string {
@@ -2218,7 +2463,7 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOut {
-				stack, err := engine.Status(ctx)
+				stack, _, err := statusAfterPruningEmptyStacks(ctx, engine)
 				if err != nil {
 					return err
 				}
@@ -2253,7 +2498,7 @@ func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 		Short: "List all non-merged GX stacks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stack, err := engine.Status(ctx)
+			stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
 			if err != nil {
 				return err
 			}
@@ -2265,6 +2510,7 @@ func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 				printStatusAgent(cmd.OutOrStdout(), stack, "")
 				return nil
 			}
+			printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
 			fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
 			return nil
 		},
@@ -2302,7 +2548,7 @@ func newStacksDiffCommand() *cobra.Command {
 }
 
 func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions) error {
-	stack, err := engine.Status(ctx)
+	stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
 	if err != nil {
 		return err
 	}
@@ -2334,8 +2580,29 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 		}
 		return runStacksAction(ctx, engine, out, action)
 	}
+	printDeletedEmptyStacksNotice(out, prunedEmpty)
 	printStacksSummary(out, stack, unrecorded, display.HiddenEmpty)
 	return nil
+}
+
+func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine) (authoring.StackSummary, int, error) {
+	pruned, err := engine.PruneEmptyStacks(ctx)
+	if err != nil {
+		return authoring.StackSummary{}, 0, err
+	}
+	stack, err := engine.Status(ctx)
+	if err != nil {
+		return authoring.StackSummary{}, len(pruned.Deleted), err
+	}
+	return stack, len(pruned.Deleted), nil
+}
+
+func printDeletedEmptyStacksNotice(out io.Writer, count int) {
+	if count == 0 {
+		return
+	}
+	fmt.Fprintln(out, muted(deletedEmptyStacksNotice(count)))
+	fmt.Fprintln(out)
 }
 
 func runStacksAction(ctx context.Context, engine *authoring.Engine, out io.Writer, action stacksAction) error {
@@ -2471,6 +2738,26 @@ func printCurrentRevisions(out io.Writer, stack authoring.StackSummary, unrecord
 	}
 }
 
+func printUnstagedFiles(out io.Writer, unrecorded *authoring.ChangeInfo) {
+	for _, line := range unstagedFileLines(unrecorded) {
+		fmt.Fprintln(out, line)
+	}
+	if len(unstagedFileLines(unrecorded)) > 0 {
+		fmt.Fprintln(out)
+	}
+}
+
+func unstagedFileLines(unrecorded *authoring.ChangeInfo) []string {
+	if unrecorded == nil || len(unrecorded.Files) == 0 {
+		return nil
+	}
+	lines := []string{section("Unstaged")}
+	for _, file := range unrecorded.Files {
+		lines = append(lines, "  "+danger(file))
+	}
+	return lines
+}
+
 func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int) string {
 	return renderStacksSummaryWithHidden(stack, unrecorded, stackCursor, stackMode, revCursor, 0)
 }
@@ -2480,12 +2767,13 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 	stacks := orderedStacks(stack)
 	if len(stacks) == 0 {
 		var out strings.Builder
-		fmt.Fprintln(&out, commandLine("gx stacks", true))
+		fmt.Fprintln(&out, commandLine("gx status", true))
 		fmt.Fprintln(&out)
 		if hiddenEmpty > 0 {
 			fmt.Fprintln(&out, muted(emptyStacksNotice(hiddenEmpty)))
 			fmt.Fprintln(&out)
 		}
+		printUnstagedFiles(&out, unrecorded)
 		printCurrentRevisions(&out, stack, unrecorded, 0)
 		fmt.Fprintln(&out)
 		fmt.Fprintln(&out, stacksLegend(stackMode))
@@ -2498,11 +2786,15 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 		stackCursor = len(stacks) - 1
 	}
 	lines := []string{
-		commandLine("gx stacks", true),
+		commandLine("gx status", true),
 		"",
 	}
 	if hiddenEmpty > 0 {
 		lines = append(lines, muted(emptyStacksNotice(hiddenEmpty)), "")
+	}
+	if unstaged := unstagedFileLines(unrecorded); len(unstaged) > 0 {
+		lines = append(lines, unstaged...)
+		lines = append(lines, "")
 	}
 	lines = append(lines, stacksHeaderLine(stack, len(stacks), stackMode), "")
 	previousBucket := -1
@@ -2512,7 +2804,7 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 			if index > 0 {
 				lines = append(lines, "")
 			}
-			lines = append(lines, section("Published"))
+			lines = append(lines, section("Remote"))
 			lines = append(lines, "")
 		} else if index > 0 {
 			lines = append(lines, muted(strings.Repeat("─", 52)))
@@ -2545,9 +2837,13 @@ func renderStacksSummaryViewport(stack authoring.StackSummary, unrecorded *autho
 	}
 	stack = stackSummaryWithDisplayFallback(stack)
 	stacks := orderedStacks(stack)
-	top := []string{commandLine("gx stacks", true), ""}
+	top := []string{commandLine("gx status", true), ""}
 	if hiddenEmpty > 0 {
 		top = append(top, muted(emptyStacksNotice(hiddenEmpty)), "")
+	}
+	if unstaged := unstagedFileLines(unrecorded); len(unstaged) > 0 {
+		top = append(top, unstaged...)
+		top = append(top, "")
 	}
 	if len(stacks) > 0 {
 		top = append(top, stacksHeaderLine(stack, len(stacks), stackMode), "")
@@ -2578,7 +2874,7 @@ func stackSummaryBodyLines(stack authoring.StackSummary, unrecorded *authoring.C
 			if index > 0 {
 				lines = append(lines, "")
 			}
-			lines = append(lines, section("Published"))
+			lines = append(lines, section("Remote"))
 			lines = append(lines, "")
 		} else if index > 0 {
 			lines = append(lines, muted(strings.Repeat("─", 52)))
@@ -2682,7 +2978,15 @@ func emptyStacksNotice(count int) string {
 	if count == 1 {
 		word = "branch"
 	}
-	return fmt.Sprintf("%d %s without revisions. Run 'gx stacks list' to see a full list of stacks.", count, word)
+	return fmt.Sprintf("%d %s without revisions. Run 'gx status list' to see a full list of features.", count, word)
+}
+
+func deletedEmptyStacksNotice(count int) string {
+	word := "branches"
+	if count == 1 {
+		word = "branch"
+	}
+	return fmt.Sprintf("Deleted %d %s without revisions.", count, word)
 }
 
 func renderSelectableRevisionLines(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, cursor int) []string {
@@ -2836,7 +3140,7 @@ func printModifySummary(out io.Writer, result authoring.ModifyResult) {
 		fmt.Fprintln(out, labelToken("git branch", strings.TrimSpace(*result.Repo.BranchName)))
 	}
 	fmt.Fprintln(out, muted(strings.Repeat("-", 48)))
-	fmt.Fprintln(out, labelToken("next", "gx compose"))
+	fmt.Fprintln(out, labelToken("next", "gx generate"))
 }
 
 func stackAgentLine(summary authoring.StackSummary, entry authoring.StackInfo, includeName bool) string {
@@ -2965,7 +3269,7 @@ func compactStackStatus(status string) string {
 	case "":
 		return ""
 	case "published":
-		return "✓"
+		return "remote"
 	case "draft":
 		return "draft"
 	default:
@@ -3285,27 +3589,23 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
-func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string, hidden bool) *cobra.Command {
+func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var allowBackwards bool
 	var pushToGitHub bool
 	var publishAll bool
 	cmd := &cobra.Command{
-		Use:    use,
-		Short:  "Publish accepted GX stacks for review",
-		Hidden: hidden,
-		Args:   cobra.MaximumNArgs(1),
+		Use:   "push [stack]",
+		Short: "Push GX features, sessions, and metadata to the remote",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var runErr error
 			defer func() {
 				if runErr != nil {
-					autoReportFailure(ctx, engine, runErr, "gx publish")
+					autoReportFailure(ctx, engine, runErr, "gx push")
 				}
 			}()
 			out := cmd.OutOrStdout()
-			invocation := "gx publish"
-			if hidden {
-				invocation = "gx pr"
-			}
+			invocation := "gx push"
 			publishAllRequested := publishAll || len(args) == 0
 			if publishAll {
 				invocation += " --all"
@@ -3317,7 +3617,7 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 			engine.SetProgressWriter(out)
 
 			if !pushToGitHub {
-				runErr = fmt.Errorf("--github=false is no longer supported; gx publish always pushes stack refs")
+				runErr = fmt.Errorf("--github=false is no longer supported; gx push always pushes stack refs")
 				return runErr
 			}
 			mode := authoring.PublishModeReviewAndGit
@@ -3325,15 +3625,15 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 			client := cloud.NewClient()
 			if client == nil {
 				publishHook := func(result authoring.PushResult) error {
-					printPublishPush(out, result)
+					printPushResult(out, result)
 					branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not upload GX review context for branch %s: gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints. Local publish metadata was still recorded.", branch)))
+					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not upload GX review context for branch %s: GX Cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints. Local remote metadata was still recorded.", branch)))
 					return nil
 				}
 
 				if publishAllRequested {
 					if len(args) > 0 {
-						runErr = fmt.Errorf("gx publish --all does not accept a stack name")
+						runErr = fmt.Errorf("gx push --all does not accept a stack name")
 						return runErr
 					}
 					results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
@@ -3341,8 +3641,8 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 						runErr = err
 						return runErr
 					}
-					fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", len(results))))
-					emitPublishRunTelemetry(ctx, results, false, false, publishAllRequested, len(args) > 0)
+					fmt.Fprintln(out, labelValue("Pushed", fmt.Sprintf("%d stacks", len(results))))
+					emitPushRunTelemetry(ctx, results, false, false, publishAllRequested, len(args) > 0)
 					return nil
 				}
 
@@ -3359,13 +3659,13 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 					runErr = err
 					return runErr
 				}
-				emitPublishRunTelemetry(ctx, []authoring.PushResult{push}, false, false, publishAllRequested, len(args) > 0)
+				emitPushRunTelemetry(ctx, []authoring.PushResult{push}, false, false, publishAllRequested, len(args) > 0)
 				return nil
 			}
 
 			if publishAllRequested {
 				if len(args) > 0 {
-					runErr = fmt.Errorf("gx publish --all does not accept a stack name")
+					runErr = fmt.Errorf("gx push --all does not accept a stack name")
 					return runErr
 				}
 				prepared, err := engine.PrepareAllPublishes(ctx, nil, authoring.PushOptions{Mode: mode})
@@ -3374,25 +3674,36 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 					return runErr
 				}
 				published := 0
+				var firstErr error
 				for _, push := range prepared {
 					review, err := publication.EnqueuePush(ctx, push)
 					if err != nil {
-						runErr = err
-						return runErr
+						if firstErr == nil {
+							firstErr = err
+						}
+						fmt.Fprintln(out, labelWarningValue("GX Cloud", err.Error()))
+						continue
 					}
 					if err := engine.RecordPublish(ctx, push); err != nil {
-						runErr = err
-						return runErr
+						if firstErr == nil {
+							firstErr = err
+						}
+						fmt.Fprintln(out, labelWarningValue("Remote metadata", err.Error()))
+						continue
 					}
-					printPublishPush(out, push)
-					printPublishReview(out, review)
+					printPushResult(out, push)
+					printPushReview(out, review)
 					published++
 				}
 				if published > 0 {
 					startPublishUploadWorker(out)
 				}
-				fmt.Fprintln(out, labelValue("Published", fmt.Sprintf("%d stacks", published)))
-				emitPublishRunTelemetry(ctx, prepared, true, published > 0, publishAllRequested, len(args) > 0)
+				fmt.Fprintln(out, labelValue("Pushed", fmt.Sprintf("%d stacks", published)))
+				emitPushRunTelemetry(ctx, prepared, true, published > 0, publishAllRequested, len(args) > 0)
+				if firstErr != nil && published == 0 {
+					runErr = firstErr
+					return runErr
+				}
 				return nil
 			}
 
@@ -3416,17 +3727,17 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 				runErr = err
 				return runErr
 			}
-			printPublishPush(out, push)
-			printPublishReview(out, review)
+			printPushResult(out, push)
+			printPushReview(out, review)
 			startPublishUploadWorker(out)
-			emitPublishRunTelemetry(ctx, []authoring.PushResult{push}, true, true, publishAllRequested, len(args) > 0)
+			emitPushRunTelemetry(ctx, []authoring.PushResult{push}, true, true, publishAllRequested, len(args) > 0)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&allowBackwards, "allow-backwards", false, "accepted for compatibility; gx handles required JJ bookmark moves automatically")
-	cmd.Flags().BoolVar(&publishAll, "all", false, "accepted for compatibility; gx publish publishes all stacks by default")
+	cmd.Flags().BoolVar(&publishAll, "all", false, "accepted for compatibility; gx push pushes all stacks by default")
 	pushToGitHub = true
-	cmd.Flags().BoolVar(&pushToGitHub, "github", true, "accepted for compatibility; gx publish always pushes stack refs")
+	cmd.Flags().BoolVar(&pushToGitHub, "github", true, "accepted for compatibility; gx push always pushes stack refs")
 	if flag := cmd.Flags().Lookup("allow-backwards"); flag != nil {
 		flag.Hidden = true
 	}
@@ -3436,7 +3747,7 @@ func newPublishCommand(ctx context.Context, engine *authoring.Engine, use string
 	return cmd
 }
 
-func emitPublishRunTelemetry(ctx context.Context, pushes []authoring.PushResult, cloudConfigured bool, uploadQueued bool, publishAllRequested bool, selectedStack bool) {
+func emitPushRunTelemetry(ctx context.Context, pushes []authoring.PushResult, cloudConfigured bool, uploadQueued bool, publishAllRequested bool, selectedStack bool) {
 	revisionCount := 0
 	githubPRCount := 0
 	gitPushCount := 0
@@ -3448,35 +3759,35 @@ func emitPublishRunTelemetry(ctx context.Context, pushes []authoring.PushResult,
 		}
 		revisionCount += publishedCount
 		warningCount += len(push.Warnings)
-		if publishWasPushedToGitHub(push.GitPushStatus) {
+		if pushWasPushedToGitHub(push.GitPushStatus) {
 			gitPushCount++
 		}
-		githubPRCount += publishGitHubPRCount(push)
+		githubPRCount += pushGitHubPRCount(push)
 	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIPublishRun, map[string]any{
-		"status":                "success",
-		"cloud_configured":      cloudConfigured,
-		"upload_queued":         uploadQueued,
-		"publish_all_requested": publishAllRequested,
-		"selected_stack":        selectedStack,
-		"stack_count":           len(pushes),
-		"revision_count":        revisionCount,
-		"github_pr_count":       githubPRCount,
-		"git_push_count":        gitPushCount,
-		"warning_count":         warningCount,
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIPushRun, map[string]any{
+		"status":             "success",
+		"cloud_configured":   cloudConfigured,
+		"upload_queued":      uploadQueued,
+		"push_all_requested": publishAllRequested,
+		"selected_stack":     selectedStack,
+		"stack_count":        len(pushes),
+		"revision_count":     revisionCount,
+		"github_pr_count":    githubPRCount,
+		"git_push_count":     gitPushCount,
+		"warning_count":      warningCount,
 	})
 }
 
-func publishWasPushedToGitHub(status string) bool {
+func pushWasPushedToGitHub(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "pushed", "already up to date":
+	case "pushed", "force pushed", "already up to date":
 		return true
 	default:
 		return false
 	}
 }
 
-func publishGitHubPRCount(push authoring.PushResult) int {
+func pushGitHubPRCount(push authoring.PushResult) int {
 	seen := map[string]bool{}
 	if push.GitHubPullRequestURL != nil {
 		if url := strings.TrimSpace(*push.GitHubPullRequestURL); url != "" {
@@ -3494,17 +3805,17 @@ func publishGitHubPRCount(push authoring.PushResult) int {
 	return len(seen)
 }
 
-func printPublishPush(out io.Writer, result authoring.PushResult) {
+func printPushResult(out io.Writer, result authoring.PushResult) {
 	if strings.TrimSpace(result.Output) != "" {
-		fmt.Fprintln(out, highlightPublishRevisions(strings.TrimSpace(result.Output)))
+		fmt.Fprintln(out, highlightPushRevisions(strings.TrimSpace(result.Output)))
 	}
 	if strings.TrimSpace(result.GXStackRef) != "" || result.Repo.BranchName != nil {
 		branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
 		fmt.Fprintln(out, labelValue("Branch", branch))
-		if status := publishGitPushStatusText(result.GitPushStatus); status != "" {
+		if status := pushGitPushStatusText(result.GitPushStatus); status != "" {
 			fmt.Fprintln(out, labelStatus("GitHub", status))
 		}
-		if prStatus := publishGitHubPRStatusText(result.GitHubPRStatus); prStatus != "" {
+		if prStatus := pushGitHubPRStatusText(result.GitHubPRStatus); prStatus != "" {
 			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(prStatus)), "warn:") {
 				fmt.Fprintln(out, labelWarningValue("GitHub PR", strings.TrimSpace(prStatus)))
 			} else {
@@ -3527,10 +3838,12 @@ func printPublishPush(out io.Writer, result authoring.PushResult) {
 	}
 }
 
-func publishGitPushStatusText(status string) string {
+func pushGitPushStatusText(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "pushed":
 		return "ok: pushed"
+	case "force pushed":
+		return "ok: force pushed with lease"
 	case "already up to date":
 		return "ok: already pushed"
 	case "not pushed":
@@ -3543,7 +3856,7 @@ func publishGitPushStatusText(status string) string {
 	}
 }
 
-func publishGitHubPRStatusText(status string) string {
+func pushGitHubPRStatusText(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "created", "existing", "stored":
 		return "ok: " + strings.TrimSpace(status)
@@ -3554,7 +3867,7 @@ func publishGitHubPRStatusText(status string) string {
 	}
 }
 
-func highlightPublishRevisions(output string) string {
+func highlightPushRevisions(output string) string {
 	lines := strings.Split(output, "\n")
 	for i, line := range lines {
 		matches := publishRevisionOutputLine.FindStringSubmatch(line)
@@ -3569,9 +3882,9 @@ func highlightPublishRevisions(output string) string {
 	return strings.Join(lines, "\n")
 }
 
-func printPublishReview(out io.Writer, result publication.Result) {
+func printPushReview(out io.Writer, result publication.Result) {
 	if result.Queued {
-		fmt.Fprintln(out, labelValue("GX context", "queued for background upload"))
+		fmt.Fprintln(out, labelValue("GX Cloud", "queued for background upload"))
 		if result.QueueID != "" {
 			fmt.Fprintln(out, labelValue("Upload ID", result.QueueID))
 		}
@@ -3589,7 +3902,7 @@ func printPublishReview(out io.Writer, result publication.Result) {
 	if result.ReviewURL != "" {
 		fmt.Fprintln(out, labelValue("Review:", result.ReviewURL))
 	} else {
-		fmt.Fprintln(out, labelValue("Synced", "gx session context"))
+		fmt.Fprintln(out, labelValue("Remote", "gx session context"))
 	}
 	if result.ArtifactPath != "" {
 		fmt.Fprintln(out, labelValue("Local artifact", result.ArtifactPath))
@@ -3652,21 +3965,33 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			if summary, err := syncCloudMetadata(ctx, engine, result.Repo, out); err != nil {
 				return err
 			} else if summary != nil {
-				fmt.Fprintln(out, labelValue("Cloud bookmarks", fmt.Sprintf("%d listed", summary.Listed)))
+				telemetry.EmitProductEvent(ctx, telemetry.EventCLISyncRun, map[string]any{
+					"remote":        result.RemoteName,
+					"listed":        summary.Listed,
+					"updated":       summary.Updated,
+					"caught_up":     summary.CaughtUp,
+					"merged_pruned": summary.Removed,
+				})
+				fmt.Fprintln(out, labelValue("Remote bookmarks", fmt.Sprintf("%d listed", summary.Listed)))
 				if summary.Updated > 0 {
-					fmt.Fprintln(out, labelValue("Cloud revisions", fmt.Sprintf("%d updated", summary.Updated)))
+					fmt.Fprintln(out, labelValue("Remote revisions", fmt.Sprintf("%d updated", summary.Updated)))
 				}
 				if summary.CaughtUp > 0 {
-					fmt.Fprintln(out, labelValue("Cloud catch-up", fmt.Sprintf("%d bookmark(s) fetched from remote", summary.CaughtUp)))
+					fmt.Fprintln(out, labelValue("Remote catch-up", fmt.Sprintf("%d bookmark(s) fetched from remote", summary.CaughtUp)))
 				}
 				if summary.Removed > 0 {
-					fmt.Fprintln(out, labelValue("Cloud merged", fmt.Sprintf("%d bookmark(s) removed from published", summary.Removed)))
+					fmt.Fprintln(out, labelValue("Remote merged", fmt.Sprintf("%d bookmark(s) removed from remote", summary.Removed)))
 				}
 			}
 			if status, err := publication.QueuedUploadStatus(); err == nil && (status.Pending > 0 || status.Failed > 0) {
 				if err := drainPublishUploadOutbox(ctx, out, false, 20); err != nil {
-					fmt.Fprintln(out, labelWarningValue("GX context uploads", err.Error()))
+					fmt.Fprintln(out, labelWarningValue("GX Cloud uploads", err.Error()))
 				}
+			}
+			if !cloud.CloudConfigured() {
+				telemetry.EmitProductEvent(ctx, telemetry.EventCLISyncRun, map[string]any{
+					"remote": result.RemoteName,
+				})
 			}
 			return nil
 		},
@@ -3680,7 +4005,7 @@ func newPublishUploadCommand(ctx context.Context) *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:    "__gx-upload-outbox",
-		Short:  "Upload queued GX publish context",
+		Short:  "Upload queued GX Cloud context",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -3702,7 +4027,7 @@ func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, li
 		return err
 	}
 	if !quiet {
-		fmt.Fprintln(out, labelValue("GX context uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
+		fmt.Fprintln(out, labelValue("GX Cloud uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
 	}
 	return nil
 }
@@ -3710,7 +4035,7 @@ func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, li
 func startPublishUploadWorker(out io.Writer) {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(out, labelWarningValue("GX context upload", "queued; could not find gx executable, run `gx sync` to upload"))
+		fmt.Fprintln(out, labelWarningValue("GX Cloud upload", "queued; could not find gx executable, run `gx sync` to upload"))
 		return
 	}
 	cmd := exec.Command(exe, "__gx-upload-outbox", "--quiet")
@@ -3726,13 +4051,13 @@ func startPublishUploadWorker(out io.Writer) {
 	cmd.Env = os.Environ()
 	configureDetachedCommand(cmd)
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(out, labelWarningValue("GX context upload", "queued; run `gx sync` to upload"))
+		fmt.Fprintln(out, labelWarningValue("GX Cloud upload", "queued; run `gx sync` to upload"))
 		return
 	}
 	if cmd.Process != nil {
 		_ = cmd.Process.Release()
 	}
-	fmt.Fprintln(out, labelValue("GX context upload", "background upload started"))
+	fmt.Fprintln(out, labelValue("GX Cloud upload", "background upload started"))
 }
 
 func publishUploadLogFile() (*os.File, error) {
@@ -3811,6 +4136,12 @@ func newOpsIngestCommand(ctx context.Context) *cobra.Command {
 
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
+	switch filepath.Base(os.Args[0]) {
+	case "gxg":
+		args = append([]string{"generate"}, args...)
+	case "gxs":
+		args = append([]string{"status"}, args...)
+	}
 	if ShouldLaunch(args) {
 		if err := launcher.Run(ctx, args); err != nil {
 			if !errors.Is(err, context.Canceled) {

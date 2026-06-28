@@ -50,6 +50,8 @@ echo "Building gx ${version} for ${goos}/${goarch}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED="${CGO_ENABLED:-0}" \
   go build -trimpath -ldflags "$GX_LDFLAGS" -o "$stage_dir/bin/gx" ./cmd/gx
 chmod 755 "$stage_dir/bin/gx"
+ln -sf gx "$stage_dir/bin/gxg"
+ln -sf gx "$stage_dir/bin/gxs"
 
 echo "Building gx-mcp for ${goos}/${goarch}"
 (
@@ -70,6 +72,8 @@ GX CLI package
 
 Install:
   install -m 755 bin/gx ~/.local/bin/gx
+  ln -sf gx ~/.local/bin/gxg
+  ln -sf gx ~/.local/bin/gxs
   install -m 755 bin/gx-mcp ~/.local/bin/gx-mcp
 
 The preferred installer is:

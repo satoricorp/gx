@@ -21,6 +21,9 @@ type ReportLogRequest struct {
 	GXVersion    string          `json:"gx_version"`
 	OS           string          `json:"os"`
 	Arch         string          `json:"arch"`
+	UserID       string          `json:"user_id,omitempty"`
+	Login        string          `json:"login,omitempty"`
+	MachineID    string          `json:"machine_id,omitempty"`
 	RepoRoot     string          `json:"repo_root,omitempty"`
 	RepoFullName string          `json:"repo_full_name,omitempty"`
 	CloudURL     string          `json:"cloud_url,omitempty"`

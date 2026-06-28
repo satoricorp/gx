@@ -593,8 +593,8 @@ func TestEnsureGitHubPullRequestWarnsWhenGXStackBaseNotPublished(t *testing.T) {
 	if status != "warning" {
 		t.Fatalf("status=%q warnings=%#v, want warning", status, warnings)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "Run `gx publish feature/base-stack` first, then retry `gx publish feature/demo-stack`") {
-		t.Fatalf("warnings=%#v, want stack publish guidance", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Run `gx push feature/base-stack` first, then retry `gx push feature/demo-stack`") {
+		t.Fatalf("warnings=%#v, want stack push guidance", warnings)
 	}
 	if posted {
 		t.Fatal("ensureGitHubPullRequest() posted despite missing base branch")
@@ -1169,8 +1169,8 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(cwd, "jj", "root"):                               {cwd + "\n"},
-			runnerKey(cwd, "jj", "abandon", "chg-one"):                 {"Abandoned one\n"},
-			runnerKey(cwd, "jj", "abandon", "chg-two"):                 {"Abandoned two\n"},
+			runnerKey(cwd, "jj", "abandon", "commit-one"):              {"Abandoned one\n"},
+			runnerKey(cwd, "jj", "abandon", "commit-two"):              {"Abandoned two\n"},
 			runnerKey(cwd, "jj", "bookmark", "delete", "feature/docs"): {"Deleted bookmark\n"},
 		},
 		errors: map[string][]error{
@@ -1210,6 +1210,121 @@ func TestDeleteStackAbandonsRevisionsDeletesBookmarkAndMetadata(t *testing.T) {
 		if change == nil || change.Status != "abandoned" {
 			t.Fatalf("change %s = %#v, want abandoned", changeID, change)
 		}
+	}
+}
+
+func TestPruneEmptyStacksDeletesRevisionlessMetadataAndMissingBookmark(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultBranch: ptr("main"),
+		CreatedAt:     1,
+		UpdatedAt:     1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	stackID, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "docs",
+		BookmarkName: "feature/docs",
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      "empty-change",
+		CurrentCommitID: "empty-commit",
+		Description:     "empty",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close() error = %v", err)
+	}
+
+	prev, _ := os.Getwd()
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	defer os.Chdir(prev)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	currentChangeTmpl := `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`
+	stackRevset := `mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(main)`
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {""},
+		},
+		stdoutOutputs: map[string][]string{
+			runnerKey(cwd, "jj", "root"):                      {cwd + "\n"},
+			runnerKey(cwd, "git", "branch", "--show-current"): {"main\n"},
+			runnerKey(cwd, "jj", "log", "-r", stackRevset, "--reversed", "--no-graph", "-T", jjStackLineTmpl): {""},
+			runnerKey(cwd, "jj", "log", "-r", "empty-commit", "--no-graph", "-T", "empty"):                    {"true\n"},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", currentChangeTmpl):                     {"work-change|work-commit|work|\n"},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                            {""},
+		},
+		errors: map[string][]error{
+			runnerKey(cwd, "git", "remote"):                                              {fmt.Errorf("no remote")},
+			runnerKey(cwd, "git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"): {fmt.Errorf("no origin head")},
+			runnerKey(cwd, "jj", "bookmark", "delete", "feature/docs"):                   {fmt.Errorf("bookmark doesn't exist")},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+	result, err := svc.PruneEmptyStacks(ctx)
+	if err != nil {
+		t.Fatalf("PruneEmptyStacks() error = %v", err)
+	}
+	if len(result.Deleted) != 1 || result.Deleted[0].Stack.BookmarkName != "feature/docs" {
+		t.Fatalf("PruneEmptyStacks() = %#v, want feature/docs deleted", result)
+	}
+	assertRunnerCalled(t, runner.calls, runnerKey(cwd, "jj", "bookmark", "delete", "feature/docs"))
+	assertRunnerNotCalled(t, runner.calls, runnerKey(cwd, "jj", "abandon", "empty-commit"))
+
+	db, err = storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() reopen error = %v", err)
+	}
+	store, err = storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() reopen error = %v", err)
+	}
+	defer store.Close()
+	stack, err := store.FindStackByBookmark(ctx, repoID, "feature/docs")
+	if err != nil {
+		t.Fatalf("FindStackByBookmark() error = %v", err)
+	}
+	if stack != nil {
+		t.Fatalf("stack still exists: %#v", stack)
 	}
 }
 
@@ -2721,7 +2836,7 @@ func TestPushRecordedStackRejectsEmptyStackBeforeGitSideEffects(t *testing.T) {
 		BranchName:    ptr("feature/body"),
 		RemoteURL:     ptr("git@github.com:example/repo.git"),
 	}, "origin", "feature/body", StackInfo{BaseRef: "main"}, PushOptions{Mode: PublishModeReviewOnly})
-	if err == nil || !strings.Contains(err.Error(), "no revisions on stack to publish") {
+	if err == nil || !strings.Contains(err.Error(), "no revisions on stack to push") {
 		t.Fatalf("pushRecordedStack() error = %v, want no revisions", err)
 	}
 	for _, call := range runner.calls {
@@ -2828,7 +2943,16 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 		DefaultBranch: ptr("main"),
 		BranchName:    ptr("feature/body"),
 		RemoteURL:     ptr("git@github.com:example/repo.git"),
-	}, "origin", "feature/body", StackInfo{ID: stackID, BookmarkName: "feature/body", BaseRef: "main"}, PushOptions{Mode: PublishModeReviewAndGit})
+	}, "origin", "feature/body", StackInfo{
+		ID:           stackID,
+		BookmarkName: "feature/body",
+		BaseRef:      "main",
+		Revisions: []RevisionSummary{{
+			ChangeID:    head,
+			CommitID:    "head123",
+			Description: "body change",
+		}},
+	}, PushOptions{Mode: PublishModeReviewAndGit})
 	if err != nil {
 		t.Fatalf("pushRecordedStack() error = %v", err)
 	}
@@ -2841,6 +2965,229 @@ func TestPushRecordedStackSkipsGitPushWhenRemoteAlreadyAtHead(t *testing.T) {
 	for _, call := range runner.calls {
 		if call == runnerKey(repoRoot, "git", "push", "origin", "feature/body") {
 			t.Fatalf("pushRecordedStack() pushed despite matching remote head: %v", runner.calls)
+		}
+	}
+}
+
+func TestPushRecordedStackForcePushesWithLeaseWhenRemoteMatchesLastGXPush(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	db, err := storage.Open(context.Background())
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(context.Background(), db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(context.Background(), storage.Repo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultRemote: ptr("origin"),
+		DefaultBranch: ptr("main"),
+		RemoteURL:     ptr("git@github.com:example/repo.git"),
+		CreatedAt:     1,
+		UpdatedAt:     1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "chg123"
+	stackID, err := store.UpsertStack(context.Background(), storage.Stack{
+		RepoID:       repoID,
+		Name:         "body",
+		BookmarkName: "feature/body",
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(context.Background(), storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      head,
+		CurrentCommitID: "new123",
+		Description:     "body change",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(context.Background(), stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	if err := store.WritePush(context.Background(), storage.Push{
+		RepoID:       repoID,
+		RemoteName:   ptr("origin"),
+		BranchName:   ptr("feature/body"),
+		HeadCommitID: "old123",
+		CreatedAt:    1,
+	}); err != nil {
+		t.Fatalf("WritePush() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close() error = %v", err)
+	}
+	runner := &fakeRunner{
+		stdoutOutputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "feature/body", "--no-graph", "-T", "commit_id"): {
+				"new123\n",
+			},
+			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "feature/body"): {
+				"old123\trefs/heads/feature/body\n",
+			},
+			runnerKey(repoRoot, "jj", "diff", "-r", "new123", "--git"): {
+				"diff --git a/file b/file\n",
+			},
+		},
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/body", "new123"):                                     {""},
+			runnerKey(repoRoot, "git", "push", "--force-with-lease=refs/heads/feature/body:old123", "origin", "feature/body"): {""},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	_, status, warnings, err := svc.pushRecordedStack(context.Background(), RepoInfo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultRemote: ptr("origin"),
+		DefaultBranch: ptr("main"),
+		BranchName:    ptr("feature/body"),
+		RemoteURL:     ptr("git@github.com:example/repo.git"),
+	}, "origin", "feature/body", StackInfo{
+		ID:           stackID,
+		BookmarkName: "feature/body",
+		BaseRef:      "main",
+		Revisions: []RevisionSummary{{
+			ChangeID:    head,
+			CommitID:    "new123",
+			Description: "body change",
+		}},
+	}, PushOptions{Mode: PublishModeReviewAndGit})
+	if err != nil {
+		t.Fatalf("pushRecordedStack() error = %v", err)
+	}
+	if status != "force pushed" || len(warnings) != 0 {
+		t.Fatalf("status=%q warnings=%#v, want force pushed without warnings", status, warnings)
+	}
+	assertRunnerCalled(t, runner.calls, runnerKey(repoRoot, "git", "push", "--force-with-lease=refs/heads/feature/body:old123", "origin", "feature/body"))
+}
+
+func TestPushRecordedStackRejectsRemoteDivergence(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	db, err := storage.Open(context.Background())
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(context.Background(), db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(context.Background(), storage.Repo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultRemote: ptr("origin"),
+		DefaultBranch: ptr("main"),
+		RemoteURL:     ptr("git@github.com:example/repo.git"),
+		CreatedAt:     1,
+		UpdatedAt:     1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "chg123"
+	stackID, err := store.UpsertStack(context.Background(), storage.Stack{
+		RepoID:       repoID,
+		Name:         "body",
+		BookmarkName: "feature/body",
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(context.Background(), storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      head,
+		CurrentCommitID: "new123",
+		Description:     "body change",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(context.Background(), stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	if err := store.WritePush(context.Background(), storage.Push{
+		RepoID:       repoID,
+		RemoteName:   ptr("origin"),
+		BranchName:   ptr("feature/body"),
+		HeadCommitID: "old123",
+		CreatedAt:    1,
+	}); err != nil {
+		t.Fatalf("WritePush() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close() error = %v", err)
+	}
+	runner := &fakeRunner{
+		stdoutOutputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "feature/body", "--no-graph", "-T", "commit_id"): {
+				"new123\n",
+			},
+			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "feature/body"): {
+				"other123\trefs/heads/feature/body\n",
+			},
+		},
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/body", "new123"): {""},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	_, _, _, err = svc.pushRecordedStack(context.Background(), RepoInfo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultRemote: ptr("origin"),
+		DefaultBranch: ptr("main"),
+		BranchName:    ptr("feature/body"),
+		RemoteURL:     ptr("git@github.com:example/repo.git"),
+	}, "origin", "feature/body", StackInfo{
+		ID:           stackID,
+		BookmarkName: "feature/body",
+		BaseRef:      "main",
+		Revisions: []RevisionSummary{{
+			ChangeID:    head,
+			CommitID:    "new123",
+			Description: "body change",
+		}},
+	}, PushOptions{Mode: PublishModeReviewAndGit})
+	if err == nil || !strings.Contains(err.Error(), "run `gx sync`") {
+		t.Fatalf("pushRecordedStack() error = %v, want gx sync guidance", err)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, "git push") {
+			t.Fatalf("pushRecordedStack() pushed divergent remote: %v", runner.calls)
 		}
 	}
 }

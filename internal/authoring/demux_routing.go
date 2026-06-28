@@ -2,6 +2,7 @@ package authoring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -189,13 +190,15 @@ func (r demuxRouter) routeForRevision(revision RevisionProposal) (*storage.Stack
 }
 
 type demuxStackIndex struct {
-	stacks []storage.Stack
-	byKey  map[string]storage.Stack
+	stacks       []storage.Stack
+	byKey        map[string]storage.Stack
+	stackChanges map[int64][]storage.Change
+	stackFiles   map[int64][]string
 }
 
 func (e *Engine) demuxStackIndex(ctx context.Context, repoRoot string) (demuxStackIndex, error) {
 	if strings.TrimSpace(repoRoot) == "" {
-		return demuxStackIndex{byKey: map[string]storage.Stack{}}, nil
+		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil
 	}
 	db, err := storage.Open(ctx)
 	if err != nil {
@@ -211,23 +214,53 @@ func (e *Engine) demuxStackIndex(ctx context.Context, repoRoot string) (demuxSta
 		return demuxStackIndex{}, err
 	}
 	if repo == nil {
-		return demuxStackIndex{byKey: map[string]storage.Stack{}}, nil
+		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil
 	}
 	stacks, err := store.ListStacksByRepoID(ctx, repo.ID)
 	if err != nil {
 		return demuxStackIndex{}, err
 	}
 	index := demuxStackIndex{
-		stacks: stacks,
-		byKey:  map[string]storage.Stack{},
+		stacks:       stacks,
+		byKey:        map[string]storage.Stack{},
+		stackChanges: map[int64][]storage.Change{},
+		stackFiles:   map[int64][]string{},
 	}
 	for i, stack := range stacks {
 		index.add(stack.Name, stack)
 		index.add(stack.BookmarkName, stack)
 		index.add(stackAlias(i), stack)
 		index.add(stackNameFromBookmark(stack.BookmarkName), stack)
+		changes, err := store.ListChangesByStackID(ctx, stack.ID)
+		if err != nil {
+			return demuxStackIndex{}, err
+		}
+		index.stackChanges[stack.ID] = changes
+		files, err := stackChangedFiles(ctx, store, changes)
+		if err != nil {
+			return demuxStackIndex{}, err
+		}
+		index.stackFiles[stack.ID] = files
 	}
 	return index, nil
+}
+
+func stackChangedFiles(ctx context.Context, store *storage.Store, changes []storage.Change) ([]string, error) {
+	files := []string{}
+	for _, change := range changes {
+		revisions, err := store.ListChangeRevisionsByChangeID(ctx, change.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, revision := range revisions {
+			var changed []string
+			if err := json.Unmarshal([]byte(revision.ChangedFiles), &changed); err != nil {
+				continue
+			}
+			files = append(files, changed...)
+		}
+	}
+	return cleanFiles(files), nil
 }
 
 func (i demuxStackIndex) add(key string, stack storage.Stack) {
@@ -266,28 +299,192 @@ func (i demuxStackIndex) candidates() []string {
 }
 
 func stackRouteForRevision(revision RevisionProposal, index demuxStackIndex) (*storage.Stack, float64, string) {
-	intent := strings.ToLower(strings.TrimSpace(revision.Intent))
-	if intent == "" {
+	files := cleanFiles(revisionFilesForRouting(revision))
+	intent := strings.TrimSpace(revision.Intent)
+	if intent == "" && len(files) == 0 {
 		return nil, 0, ""
 	}
 	var best *storage.Stack
+	secondBestScore := 0.0
 	bestScore := 0.0
 	bestReason := ""
 	for _, stack := range index.stacks {
-		for _, candidate := range []string{stack.Name, stack.BookmarkName, stackNameFromBookmark(stack.BookmarkName)} {
-			score := routeTextScore(intent, candidate)
-			if score > bestScore {
-				copy := stack
-				best = &copy
-				bestScore = score
-				bestReason = fmt.Sprintf("intent matched stack %q", candidate)
-			}
+		if IsTerminalDemuxStackStatus(stack.Status) {
+			continue
+		}
+		score, reason := routeStackSimilarity(revision, files, stack, index.stackChanges[stack.ID], index.stackFiles[stack.ID])
+		if score > bestScore {
+			secondBestScore = bestScore
+			copy := stack
+			best = &copy
+			bestScore = score
+			bestReason = reason
+			continue
+		}
+		if score > secondBestScore {
+			secondBestScore = score
 		}
 	}
-	if bestScore < 0.72 {
+	if bestScore < 0.75 || bestScore-secondBestScore < 0.15 {
 		return nil, 0, ""
 	}
 	return best, bestScore, bestReason
+}
+
+func IsTerminalDemuxStackStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "merged", "closed":
+		return true
+	default:
+		return false
+	}
+}
+
+func routeStackSimilarity(revision RevisionProposal, revisionFiles []string, stack storage.Stack, changes []storage.Change, stackFiles []string) (float64, string) {
+	score := 0.0
+	reasons := []string{}
+	intent := strings.ToLower(strings.TrimSpace(revision.Intent))
+	stackText := strings.ToLower(strings.TrimSpace(stack.Name + " " + stack.BookmarkName + " " + stackNameFromBookmark(stack.BookmarkName)))
+	for _, change := range changes {
+		stackText = strings.TrimSpace(stackText + " " + change.Description)
+	}
+	textScore := 0.0
+	for _, candidate := range []string{stack.Name, stack.BookmarkName, stackNameFromBookmark(stack.BookmarkName)} {
+		if candidateScore := routeTextScore(intent, candidate); candidateScore > textScore {
+			textScore = candidateScore
+		}
+	}
+	if textScore > 0 {
+		score = textScore
+		reasons = append(reasons, "intent matched stack name")
+	}
+	if descriptionScore := routeDescriptionScore(intent, stackText); descriptionScore > 0 {
+		score += descriptionScore * 0.15
+		reasons = append(reasons, "intent matched prior revisions")
+	}
+	if exact := exactFileOverlapScore(revisionFiles, stackFiles); exact > 0 {
+		score += exact * 0.55
+		reasons = append(reasons, "files overlap existing revisions")
+	}
+	if dir := directoryOverlapScore(revisionFiles, stackFiles); dir > 0 {
+		score += dir * 0.25
+		reasons = append(reasons, "directories overlap existing revisions")
+	}
+	if symbol := hunkHeaderOverlapScore(revision.Hunks, stackText); symbol > 0 {
+		score += symbol * 0.15
+		reasons = append(reasons, "hunks match prior revision text")
+	}
+	if score > 1 {
+		score = 1
+	}
+	if len(reasons) == 0 {
+		return 0, ""
+	}
+	return score, strings.Join(reasons, "; ")
+}
+
+func exactFileOverlapScore(left, right []string) float64 {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	set := map[string]bool{}
+	for _, file := range right {
+		set[file] = true
+	}
+	matched := 0
+	for _, file := range left {
+		if set[file] {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(left))
+}
+
+func directoryOverlapScore(left, right []string) float64 {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	set := map[string]bool{}
+	for _, file := range right {
+		for _, dir := range routeDirectories(file) {
+			set[dir] = true
+		}
+	}
+	matched := 0
+	for _, file := range left {
+		for _, dir := range routeDirectories(file) {
+			if set[dir] {
+				matched++
+				break
+			}
+		}
+	}
+	return float64(matched) / float64(len(left))
+}
+
+func routeDirectories(file string) []string {
+	file = strings.Trim(strings.TrimSpace(file), "/")
+	if file == "" || !strings.Contains(file, "/") {
+		return nil
+	}
+	parts := strings.Split(file, "/")
+	out := []string{}
+	for i := 1; i < len(parts); i++ {
+		out = append(out, strings.Join(parts[:i], "/"))
+	}
+	return out
+}
+
+func routeDescriptionScore(intent, stackText string) float64 {
+	intentWords := routeWords(intent)
+	if len(intentWords) == 0 || strings.TrimSpace(stackText) == "" {
+		return 0
+	}
+	matched := 0
+	for _, word := range intentWords {
+		if strings.Contains(stackText, word) {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(intentWords))
+}
+
+func hunkHeaderOverlapScore(hunks []HunkRange, stackText string) float64 {
+	stackText = strings.ToLower(stackText)
+	if len(hunks) == 0 || stackText == "" {
+		return 0
+	}
+	matched := 0
+	total := 0
+	for _, hunk := range hunks {
+		for _, word := range routeWords(hunk.Header) {
+			total++
+			if strings.Contains(stackText, word) {
+				matched++
+			}
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return float64(matched) / float64(total)
+}
+
+func routeWords(value string) []string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	out := []string{}
+	for _, part := range parts {
+		if len(part) > 2 {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 type demuxStackCluster struct {

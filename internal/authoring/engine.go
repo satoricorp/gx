@@ -26,6 +26,7 @@ type CreateStackResult = vcs.CreateStackResult
 type BaseResult = vcs.BaseResult
 type DeleteRevisionResult = vcs.DeleteRevisionResult
 type DeleteStackResult = vcs.DeleteStackResult
+type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
 type StackInfo = vcs.StackInfo
 type PushOptions = vcs.PushOptions
 type PublishMode = vcs.PublishMode
@@ -130,6 +131,10 @@ func (e *Engine) DeleteRevision(ctx context.Context, rev string) (DeleteRevision
 
 func (e *Engine) DeleteStack(ctx context.Context, bookmarkName string) (DeleteStackResult, error) {
 	return e.vcs.DeleteStack(ctx, bookmarkName)
+}
+
+func (e *Engine) PruneEmptyStacks(ctx context.Context) (PruneEmptyStacksResult, error) {
+	return e.vcs.PruneEmptyStacks(ctx)
 }
 
 func (e *Engine) Status(ctx context.Context) (StackSummary, error) {

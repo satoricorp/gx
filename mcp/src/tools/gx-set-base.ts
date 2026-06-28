@@ -34,7 +34,7 @@ export default async function gxSetBase(params: InferSchema<typeof schema>) {
     }
     return formatJsonResult(await runGxJson(["base", "--set", branch, "--json"], { cwd: params.cwd }), {
       action: "set_base",
-      nextActions: ["Run gx_compose after returning to the default branch."],
+      nextActions: ["Run gx_generate after returning to the default branch."],
     });
   } catch (error) {
     return formatError(error, { action: "set_base" });
