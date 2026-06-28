@@ -187,7 +187,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check gx setup and workflow state",
+		Short: "Fix current gx state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var repair vcs.RepairResult
 			var repairErr error

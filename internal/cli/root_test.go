@@ -1230,7 +1230,7 @@ func TestGenerateHelpRemovesManualProposalCommandsAndOldAliases(t *testing.T) {
 	}
 
 	text := out.String()
-	for _, want := range []string{"Generate GX features and revisions", "--intent", "--exclude"} {
+	for _, want := range []string{"Save your work in branches & commits", "--intent", "--exclude"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("generate help missing %q in:\n%s", want, text)
 		}
@@ -1529,6 +1529,22 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	if !strings.Contains(text, "Not signed in  gx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
+	for _, want := range []string{"review (gxr)", "generate (gxg)", "status (gxs)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("root help missing alias %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Shortcuts:") {
+		t.Fatalf("root help should render aliases inline instead of a shortcut section:\n%s", text)
+	}
+}
+
+func TestReviewAliasResolves(t *testing.T) {
+	root := NewRoot(context.Background())
+	cmd, _, err := root.Find([]string{"gxr"})
+	if err != nil || cmd == nil || cmd.Name() != "review" {
+		t.Fatalf("Find(gxr) = cmd=%v err=%v, want review command", cmd, err)
+	}
 }
 
 func TestRootHelpShowsSignedInUser(t *testing.T) {
@@ -1651,14 +1667,14 @@ func TestPublishHelpDoesNotPublish(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "Push GX features, sessions, and metadata to the remote") {
+	if !strings.Contains(text, "Push stacks and metadata to remote") {
 		t.Fatalf("help output missing publish summary:\n%s", text)
 	}
 	if !strings.Contains(text, "gx push [stack]") {
 		t.Fatalf("help output missing stack usage:\n%s", text)
 	}
-	if !strings.Contains(text, "--all") {
-		t.Fatalf("help output missing --all flag:\n%s", text)
+	if strings.Contains(text, "--all") {
+		t.Fatalf("help output should not include removed --all flag:\n%s", text)
 	}
 	if strings.Contains(text, "--github") {
 		t.Fatalf("help output should hide compatibility --github flag:\n%s", text)

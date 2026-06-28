@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
-	"github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/clitui"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
@@ -31,7 +30,6 @@ import (
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
-	"github.com/satoricorp/gx/internal/uploadauth"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
@@ -66,6 +64,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		&cobra.Group{ID: groupSetup, Title: "Setup:"},
 		&cobra.Group{ID: groupWork, Title: "Work:"},
 		&cobra.Group{ID: groupShip, Title: "Ship:"},
+		&cobra.Group{ID: groupHelp, Title: "Help:"},
 		&cobra.Group{ID: groupAdvanced, Title: "Advanced:"},
 	)
 
@@ -111,12 +110,14 @@ func NewRoot(ctx context.Context) *cobra.Command {
 func assignCommandGroups(root *cobra.Command) {
 	for _, cmd := range root.Commands() {
 		switch cmd.Name() {
-		case "init", "auth", "login", "version", "demo", "doctor":
+		case "init", "auth", "login", "demo":
 			cmd.GroupID = groupSetup
-		case "add", "base", "edit", "generate", "report", "review", "status":
+		case "add", "base", "edit", "generate", "review", "status":
 			cmd.GroupID = groupWork
 		case "push", "sync":
 			cmd.GroupID = groupShip
+		case "doctor", "report", "version":
+			cmd.GroupID = groupHelp
 		case "ops":
 			cmd.GroupID = groupAdvanced
 		}
@@ -171,7 +172,7 @@ func newVersionCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print gx version",
+		Short: "gx version",
 		Run: func(cmd *cobra.Command, args []string) {
 			if jsonOut {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(version.BuildInfo()); err != nil {
@@ -191,7 +192,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	var email string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up GX in the current repository",
+		Short: "Set up gx in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
 			fmt.Fprintln(cmd.OutOrStdout())
@@ -604,7 +605,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 	cmd := &cobra.Command{
 		Use:     "generate [filesets...]",
 		Aliases: []string{"gxg"},
-		Short:   "Generate GX features and revisions from the current working copy",
+		Short:   "Save your work in branches & commits",
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -1786,7 +1787,7 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	cmd := &cobra.Command{
 		Use:     use,
 		Aliases: []string{"gxs"},
-		Short:   "Show GX unstaged files, local features, and remote state",
+		Short:   "Show unstaged changes, local and remote stacks",
 		Hidden:  hidden,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1855,9 +1856,10 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	var deep bool
 	var verbose bool
 	cmd := &cobra.Command{
-		Use:   "review [prompt]",
-		Short: "Review current changes with local facts, indexed context, and configured AI reviewers",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "review [prompt]",
+		Aliases: []string{"gxr"},
+		Short:   "Review changes based on codebase & session context, along with independent resources",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			startedAt := time.Now()
 			var runErr error
@@ -3566,10 +3568,9 @@ func firstNonEmptyString(values ...string) string {
 func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var allowBackwards bool
 	var pushToGitHub bool
-	var publishAll bool
 	cmd := &cobra.Command{
 		Use:   "push [stack]",
-		Short: "Push GX features, sessions, and metadata to the remote",
+		Short: "Push stacks and metadata to remote",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var runErr error
@@ -3580,10 +3581,8 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}()
 			out := cmd.OutOrStdout()
 			invocation := "gx push"
-			publishAllRequested := publishAll || len(args) == 0
-			if publishAll {
-				invocation += " --all"
-			} else if len(args) > 0 {
+			publishAllRequested := len(args) == 0
+			if len(args) > 0 {
 				invocation += " " + args[0]
 			}
 			fmt.Fprintln(out, commandLine(invocation, false))
@@ -3606,10 +3605,6 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				}
 
 				if publishAllRequested {
-					if len(args) > 0 {
-						runErr = fmt.Errorf("gx push --all does not accept a stack name")
-						return runErr
-					}
 					results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
 					if err != nil {
 						runErr = err
@@ -3638,10 +3633,6 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}
 
 			if publishAllRequested {
-				if len(args) > 0 {
-					runErr = fmt.Errorf("gx push --all does not accept a stack name")
-					return runErr
-				}
 				prepared, err := engine.PrepareAllPublishes(ctx, nil, authoring.PushOptions{Mode: mode})
 				if err != nil {
 					runErr = err
@@ -3709,7 +3700,6 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 		},
 	}
 	cmd.Flags().BoolVar(&allowBackwards, "allow-backwards", false, "accepted for compatibility; gx handles required JJ bookmark moves automatically")
-	cmd.Flags().BoolVar(&publishAll, "all", false, "accepted for compatibility; gx push pushes all stacks by default")
 	pushToGitHub = true
 	cmd.Flags().BoolVar(&pushToGitHub, "github", true, "accepted for compatibility; gx push always pushes stack refs")
 	if flag := cmd.Flags().Lookup("allow-backwards"); flag != nil {
@@ -3895,32 +3885,12 @@ func printPushReview(out io.Writer, result publication.Result) {
 }
 
 func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var captureOnly bool
 	cmd := &cobra.Command{
 		Use:   "sync [remote]",
-		Short: "Sync remote Git state for the current GX line of work",
+		Short: "Sync remote with local",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			if captureOnly {
-				fmt.Fprintln(out, commandLine("gx sync --capture", true))
-				fmt.Fprintln(out)
-				creds, ok := uploadauth.Load()
-				if !ok {
-					return fmt.Errorf("not logged in for capture upload — run `gx auth login`")
-				}
-				stager, err := storage.OpenCaptureStager(ctx)
-				if err != nil {
-					return err
-				}
-				result, err := extract.SyncPending(ctx, stager, creds, telemetry.NewFromEnv())
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(out, "capture sync: extracts=%d sessions=%d\n",
-					result.ExtractsUploaded, result.SessionsUploaded)
-				return nil
-			}
 			fmt.Fprintln(out, commandLine("gx sync", true))
 			fmt.Fprintln(out)
 			remote := ""
@@ -3970,7 +3940,6 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&captureOnly, "capture", false, "drain pending capture staging uploads")
 	return cmd
 }
 
@@ -4113,6 +4082,8 @@ func Execute(ctx context.Context) error {
 	switch filepath.Base(os.Args[0]) {
 	case "gxg":
 		args = append([]string{"generate"}, args...)
+	case "gxr":
+		args = append([]string{"review"}, args...)
 	case "gxs":
 		args = append([]string{"status"}, args...)
 	}

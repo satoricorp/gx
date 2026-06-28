@@ -28,7 +28,7 @@ func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "report",
-		Short: "Send recent GX logs to support",
+		Short: "Send logs to support",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			report := buildReportLogRequest(ctx, engine, "")

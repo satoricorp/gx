@@ -59,7 +59,7 @@ func buildAuthStatusJSON(ctx context.Context) (authStatusJSON, error) {
 func newAuthCommand(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Log in to gx cloud",
+		Short: "Authenticate with gx cloud",
 	}
 	cmd.AddCommand(
 		newAuthLoginCommand(ctx),
@@ -74,7 +74,7 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 	var machineName string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log in to gx cloud with GitHub",
+		Short: "Log into gx cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			creds, err := cloud.Login(ctx, cloud.LoginOptions{
 				MachineName: machineName,
@@ -99,7 +99,7 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 func newAuthLogoutCommand(ctx context.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Log out of gx cloud on this machine",
+		Short: "Logout of gx cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			props := map[string]any{
 				"status":    "success",

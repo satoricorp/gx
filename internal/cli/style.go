@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -48,6 +49,7 @@ const (
 	groupSetup    = "setup"
 	groupWork     = "work"
 	groupShip     = "ship"
+	groupHelp     = "help"
 	groupAdvanced = "advanced"
 )
 
@@ -76,8 +78,7 @@ func helpBodyTemplate() string {
 
 {{end}}`
 
-	commandBlock := `{{$commands := .Commands}}{{section "Available Commands:"}}{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{commandDisplayPadded . $commands}} {{helpDescription .Short}}{{end}}{{end}}`
+	commandBlock := `{{commandSections .}}`
 
 	return intro + `{{if or .Runnable .HasSubCommands}}{{section "Usage:"}}
   {{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{if .Runnable}}
@@ -165,6 +166,7 @@ func helpTemplateFuncs() template.FuncMap {
 		"command":                 command,
 		"commandPadded":           commandPadded,
 		"commandDisplayPadded":    commandDisplayPadded,
+		"commandSections":         commandSections,
 		"helpDescription":         helpDescription,
 		"muted":                   muted,
 	}
@@ -209,12 +211,151 @@ func commandDisplayPadded(cmd *cobra.Command, commands []*cobra.Command) string 
 	return logoText(padRight(commandDisplay(cmd), commandDisplayPadding(commands)))
 }
 
+func commandSections(cmd *cobra.Command) string {
+	commands := availableHelpCommands(cmd.Commands())
+	if len(commands) == 0 {
+		return ""
+	}
+	grouped := groupedHelpCommands(cmd, commands)
+	if len(grouped) == 0 {
+		return renderCommandSection("Available Commands:", commands)
+	}
+	var out bytes.Buffer
+	for _, group := range cmd.Groups() {
+		sectionCommands := orderedHelpCommands(grouped[group.ID], group.ID)
+		if len(sectionCommands) == 0 {
+			continue
+		}
+		renderCommandSectionTo(&out, group.Title, sectionCommands)
+	}
+	var ungrouped []*cobra.Command
+	for _, sub := range commands {
+		if sub.Name() == "help" && cmd.ContainsGroup(groupHelp) {
+			continue
+		}
+		if strings.TrimSpace(sub.GroupID) == "" {
+			ungrouped = append(ungrouped, sub)
+		}
+	}
+	if len(ungrouped) > 0 {
+		title := "Other:"
+		if len(ungrouped) == 1 && ungrouped[0].Name() == "help" {
+			title = "Help:"
+		}
+		renderCommandSectionTo(&out, title, ungrouped)
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func orderedHelpCommands(commands []*cobra.Command, groupID string) []*cobra.Command {
+	order := rootHelpCommandOrder(groupID)
+	if len(order) == 0 || len(commands) < 2 {
+		return commands
+	}
+	byName := make(map[string]*cobra.Command, len(commands))
+	for _, cmd := range commands {
+		byName[cmd.Name()] = cmd
+	}
+	var ordered []*cobra.Command
+	seen := make(map[string]bool, len(commands))
+	for _, name := range order {
+		cmd := byName[name]
+		if cmd == nil {
+			continue
+		}
+		ordered = append(ordered, cmd)
+		seen[name] = true
+	}
+	for _, cmd := range commands {
+		if seen[cmd.Name()] {
+			continue
+		}
+		ordered = append(ordered, cmd)
+	}
+	return ordered
+}
+
+func rootHelpCommandOrder(groupID string) []string {
+	switch groupID {
+	case groupSetup:
+		return []string{"init", "auth"}
+	case groupWork:
+		return []string{"review", "generate", "status"}
+	case groupShip:
+		return []string{"push", "sync"}
+	case groupHelp:
+		return []string{"doctor", "report", "version", "help"}
+	default:
+		return nil
+	}
+}
+
+func availableHelpCommands(commands []*cobra.Command) []*cobra.Command {
+	var available []*cobra.Command
+	for _, cmd := range commands {
+		if !cmd.IsAvailableCommand() && cmd.Name() != "help" {
+			continue
+		}
+		available = append(available, cmd)
+	}
+	return available
+}
+
+func groupedHelpCommands(cmd *cobra.Command, commands []*cobra.Command) map[string][]*cobra.Command {
+	if len(cmd.Groups()) == 0 {
+		return nil
+	}
+	grouped := make(map[string][]*cobra.Command)
+	for _, sub := range commands {
+		groupID := strings.TrimSpace(sub.GroupID)
+		if groupID == "" && sub.Name() == "help" && cmd.ContainsGroup(groupHelp) {
+			groupID = groupHelp
+		}
+		if groupID == "" {
+			continue
+		}
+		grouped[groupID] = append(grouped[groupID], sub)
+	}
+	if len(grouped) == 0 {
+		return nil
+	}
+	return grouped
+}
+
+func renderCommandSection(title string, commands []*cobra.Command) string {
+	var out bytes.Buffer
+	renderCommandSectionTo(&out, title, commands)
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func renderCommandSectionTo(out io.Writer, title string, commands []*cobra.Command) {
+	if len(commands) == 0 {
+		return
+	}
+	fmt.Fprintln(out, section(title))
+	for _, cmd := range commands {
+		fmt.Fprintf(out, "  %s %s\n", commandDisplayPadded(cmd, commands), helpDescription(commandShortDescription(cmd)))
+	}
+	fmt.Fprintln(out)
+}
+
+func commandShortDescription(cmd *cobra.Command) string {
+	if cmd.Name() == "help" {
+		return "Help screen"
+	}
+	return cmd.Short
+}
+
 func helpDescription(text string) string {
 	return muted(text)
 }
 
 func commandDisplay(cmd *cobra.Command) string {
-	return cmd.Name()
+	name := cmd.Name()
+	if len(cmd.Aliases) == 0 {
+		return name
+	}
+	return name + " (" + strings.Join(cmd.Aliases, ", ") + ")"
 }
 
 func commandDisplayPadding(commands []*cobra.Command) int {

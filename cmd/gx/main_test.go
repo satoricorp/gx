@@ -130,10 +130,46 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	}
 
 	text := out.String()
-	for _, want := range []string{"generate", "push", "review", "status", "sync"} {
+	ordered := []string{
+		"Setup:",
+		"  init",
+		"  auth",
+		"Work:",
+		"  review (gxr)",
+		"  generate (gxg)",
+		"  status (gxs)",
+		"Ship:",
+		"  push",
+		"  sync",
+		"Help:",
+		"  doctor",
+		"  report",
+		"  version",
+		"  help",
+	}
+	previous := -1
+	for _, want := range ordered {
+		index := strings.Index(text, want)
+		if index < 0 {
+			t.Fatalf("root help missing %q in:\n%s", want, text)
+		}
+		if index <= previous {
+			t.Fatalf("root help renders %q out of order:\n%s", want, text)
+		}
+		previous = index
+	}
+	for _, want := range []string{
+		"Setup:",
+		"Work:",
+		"Ship:",
+		"Help:",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("root help missing %q in:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "Available Commands:") {
+		t.Fatalf("root help should group commands by type:\n%s", text)
 	}
 	for _, hidden := range []string{"  add ", "  edit ", "  demo ", "  ops ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux "} {
 		if strings.Contains(text, hidden) {
