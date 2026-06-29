@@ -4,6 +4,9 @@
   "name": "GX",
   "colors": { "primary": "#ff0000" },
   "navigation": {
-    "groups": [{ "group": "Home", "pages": ["index"] }]
+    "groups": [
+      { "group": "Home", "pages": ["index"] },
+      { "group": "Changelog", "pages": ["changelog"] }
+    ]
   }
 }

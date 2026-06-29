@@ -1,0 +1,44 @@
+---
+title: "Changelog"
+description: "Product updates and improvements to GX."
+---
+
+<Update label="June 29, 2026" description="Weekly release">
+
+## New features
+
+**Renamed core commands.** `gx compose` is now [`gx generate`](/), `gx publish` is now [`gx push`](/), and the stacks browser moved into [`gx status`](/). `gx generate` turns working-copy changes into local features, stacks, and revisions, and applies safe revisions automatically. See the new [core workflow](/) for the full flow.
+
+**`gxg`, `gxr`, and `gxs` shortcuts.** The menubar app now installs short aliases for `gx generate`, `gx review`, and `gx status` alongside the `gx` binary, so common commands are one keystroke away.
+
+**`gx report`.** A new command sends recent GX logs to support to make troubleshooting faster. Add `--json` for machine-readable output.
+
+**Codex MCP setup in the menubar.** The MCP setup dialog adds a **Copy Codex Command** option, alongside the existing Cursor and Claude Desktop snippets, so Codex users can register the GX MCP server in one click.
+
+**`gx review` policy and history context.** `gx review` now incorporates a repository review policy and reuses prior review history so feedback stays consistent with what you've already approved or rejected. Reviews also focus on the current change in a stack rather than the full diff.
+
+**Indexed review context and GitHub PR summaries.** Pushed stacks include indexed review context, posted GitHub comments, and adopt GitHub PR summaries for richer review artifacts on the remote surface.
+
+**PostHog product analytics.** GX now reports anonymized CLI usage to help prioritize improvements. Builds without a PostHog key (local and contributor builds) keep telemetry disabled.
+
+## Updates
+
+**Faster, scrollable stack views.** The stack read model is significantly faster, and the stack TUIs now have a scrollable viewport so large stacks remain navigable.
+
+**Cleaner CLI help and menubar.** Help output, the menubar menu, and `gx doctor` diagnostics have all been simplified. The menubar status surface also shows the current menubar tag and CLI versions.
+
+**Background and resilient publish uploads.** `gx push` uploads artifacts and capture data in the background, retries abandoned uploads, and continues even when the cloud API doesn't return a review URL.
+
+**GitHub auth that stays signed in.** Expiring GitHub tokens are now refreshed automatically, and the GX CLI session is verified against the console API on login.
+
+**Merged stack cleanup.** Merged and closed GitHub PR stacks are pruned from local state, and empty stored stack revisions are hidden, so `gx status` stays focused on active work.
+
+## Bug fixes
+
+- Fixed cross-platform CLI packaging and macOS release PostHog configuration.
+- Fixed GX branch naming and compose reliability issues.
+- Restored the `gx doctor` repository registry lookup.
+- Removed the `Shift-D` delete shortcut from the status UI to prevent accidental deletes.
+- Hid the Convex site from `gx auth status` output.
+
+</Update>
