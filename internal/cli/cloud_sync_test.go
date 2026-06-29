@@ -176,8 +176,8 @@ func TestSyncCloudMetadataDeletesMergedBookmarksAndPrunesPublishedStack(t *testi
 	if err != nil {
 		t.Fatalf("FindStackByBookmark() error = %v", err)
 	}
-	if stack == nil || stack.Status != "merged" {
-		t.Fatalf("stack = %#v, want merged", stack)
+	if stack != nil {
+		t.Fatalf("stack = %#v, want removed from local db", stack)
 	}
 	bookmarks, err := store.ListChangeBookmarksByName(ctx, "feature/merged")
 	if err != nil {

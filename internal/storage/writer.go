@@ -450,11 +450,16 @@ func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, 
 		return fmt.Errorf("delete stack pushes: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE stacks
-		SET status = 'merged', updated_at = ?
+		DELETE FROM stack_changes
+		WHERE stack_id = ?
+	`, stackID); err != nil {
+		return fmt.Errorf("delete pruned stack changes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM stacks
 		WHERE repo_id = ? AND id = ?
-	`, updatedAt, repoID, stackID); err != nil {
-		return fmt.Errorf("mark stack merged: %w", err)
+	`, repoID, stackID); err != nil {
+		return fmt.Errorf("delete pruned stack: %w", err)
 	}
 	return tx.Commit()
 }

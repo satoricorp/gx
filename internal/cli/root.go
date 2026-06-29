@@ -3927,6 +3927,11 @@ func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(out, labelValue("Remote merged", fmt.Sprintf("%d bookmark(s) removed from remote", summary.Removed)))
 				}
 			}
+			if summary, err := engine.PruneTerminalGitHubPullRequestStacks(ctx, result.Repo); err != nil {
+				fmt.Fprintln(out, labelWarningValue("GitHub PR sync", err.Error()))
+			} else if summary.Removed > 0 {
+				fmt.Fprintln(out, labelValue("GitHub PRs closed", fmt.Sprintf("%d stack(s) removed from local db", summary.Removed)))
+			}
 			if status, err := publication.QueuedUploadStatus(); err == nil && (status.Pending > 0 || status.Failed > 0) {
 				if err := drainPublishUploadOutbox(ctx, out, false, 20); err != nil {
 					fmt.Fprintln(out, labelWarningValue("GX Cloud uploads", err.Error()))

@@ -1852,8 +1852,8 @@ func TestLoadStoredStackInfosPrunesMergedPublishedStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindStackByBookmark() error = %v", err)
 	}
-	if stack == nil || stack.Status != "merged" {
-		t.Fatalf("stack = %#v, want merged", stack)
+	if stack != nil {
+		t.Fatalf("stack = %#v, want removed from local db", stack)
 	}
 	bookmarks, err := store.ListChangeBookmarksByName(ctx, "feature/merged")
 	if err != nil {
@@ -1863,6 +1863,131 @@ func TestLoadStoredStackInfosPrunesMergedPublishedStack(t *testing.T) {
 		t.Fatalf("change bookmarks = %#v, want none", bookmarks)
 	}
 	push, err := store.LatestPushByBranchName(ctx, repoID, "feature/merged")
+	if err != nil {
+		t.Fatalf("LatestPushByBranchName() error = %v", err)
+	}
+	if push != nil {
+		t.Fatalf("push = %#v, want nil", push)
+	}
+}
+
+func TestPruneTerminalGitHubPullRequestStacksRemovesClosedPRStack(t *testing.T) {
+	repoRoot := t.TempDir()
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+	ctx := context.Background()
+	prURL := "https://github.com/satoricorp/gx/pull/42"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/repos/satoricorp/gx/pulls/42" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if auth := r.Header.Get("Authorization"); auth != "Bearer token-one" {
+			t.Fatalf("Authorization = %q", auth)
+		}
+		_, _ = w.Write([]byte(`{"number":42,"html_url":"https://github.com/satoricorp/gx/pull/42","state":"closed","merged":false}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	defer store.Close()
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:  repoRoot,
+		Backend:   "jj",
+		RemoteURL: ptr("git@github.com:satoricorp/gx.git"),
+		CreatedAt: 1,
+		UpdatedAt: 1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	stackID, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "closed pr",
+		BookmarkName: "feature/closed-pr",
+		BaseRef:      "main",
+		BaseCommitID: "base",
+		HeadChangeID: ptr("closed-change"),
+		HeadCommitID: ptr("closed-commit"),
+		GitHubPRURL:  &prURL,
+		Status:       "published",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	changeID, err := store.UpsertChange(ctx, storage.Change{
+		RepoID:          repoID,
+		JJChangeID:      "closed-change",
+		CurrentCommitID: "closed-commit",
+		Description:     "closed change",
+		Status:          "draft",
+		FirstSeenAt:     1,
+		UpdatedAt:       1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertChange() error = %v", err)
+	}
+	if err := store.AddChangeToStack(ctx, stackID, changeID, 1); err != nil {
+		t.Fatalf("AddChangeToStack() error = %v", err)
+	}
+	if err := store.UpsertChangeBookmark(ctx, storage.ChangeBookmark{
+		ChangeID:           changeID,
+		BookmarkName:       "feature/closed-pr",
+		RemoteName:         ptr("origin"),
+		RemoteRef:          ptr("refs/heads/feature/closed-pr"),
+		LastPushedCommitID: "closed-commit",
+		CreatedAt:          1,
+		UpdatedAt:          1,
+	}); err != nil {
+		t.Fatalf("UpsertChangeBookmark() error = %v", err)
+	}
+	if err := store.WritePush(ctx, storage.Push{
+		RepoID:          repoID,
+		RemoteName:      ptr("origin"),
+		BranchName:      ptr("feature/closed-pr"),
+		HeadCommitID:    "closed-commit",
+		CurrentChangeID: ptr(changeID),
+		CreatedAt:       1,
+	}); err != nil {
+		t.Fatalf("WritePush() error = %v", err)
+	}
+
+	svc := NewServiceWithRunner(&fakeRunner{})
+	result, err := svc.PruneTerminalGitHubPullRequestStacks(ctx, RepoInfo{
+		RootPath:  repoRoot,
+		Backend:   "jj",
+		RemoteURL: ptr("git@github.com:satoricorp/gx.git"),
+	})
+	if err != nil {
+		t.Fatalf("PruneTerminalGitHubPullRequestStacks() error = %v", err)
+	}
+	if result.Checked != 1 || result.Removed != 1 {
+		t.Fatalf("result = %#v, want one checked and removed", result)
+	}
+	stack, err := store.FindStackByBookmark(ctx, repoID, "feature/closed-pr")
+	if err != nil {
+		t.Fatalf("FindStackByBookmark() error = %v", err)
+	}
+	if stack != nil {
+		t.Fatalf("stack = %#v, want removed from local db", stack)
+	}
+	bookmarks, err := store.ListChangeBookmarksByName(ctx, "feature/closed-pr")
+	if err != nil {
+		t.Fatalf("ListChangeBookmarksByName() error = %v", err)
+	}
+	if len(bookmarks) != 0 {
+		t.Fatalf("change bookmarks = %#v, want none", bookmarks)
+	}
+	push, err := store.LatestPushByBranchName(ctx, repoID, "feature/closed-pr")
 	if err != nil {
 		t.Fatalf("LatestPushByBranchName() error = %v", err)
 	}

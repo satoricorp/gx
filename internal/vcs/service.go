@@ -229,6 +229,11 @@ type PruneEmptyStacksResult struct {
 	Deleted []DeleteStackResult
 }
 
+type PruneGitHubPullRequestsResult struct {
+	Checked int
+	Removed int
+}
+
 type RepairResult struct {
 	Repo     RepoInfo `json:"repo"`
 	Actions  []string `json:"actions"`
@@ -3134,6 +3139,86 @@ func (s *Service) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, p
 		return nil
 	})
 	return pruned, err
+}
+
+func (s *Service) PruneTerminalGitHubPullRequestStacks(ctx context.Context, repo RepoInfo) (PruneGitHubPullRequestsResult, error) {
+	var result PruneGitHubPullRequestsResult
+	err := withBusyRetry(ctx, "prune terminal GitHub pull request stacks", func() error {
+		store, err := openStore(ctx)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+
+		repoID, err := upsertRepo(ctx, store, repo)
+		if err != nil {
+			return err
+		}
+		stacks, err := store.ListStacksByRepoID(ctx, repoID)
+		if err != nil {
+			return err
+		}
+		clients := map[string]*githubapi.Client{}
+		for _, stack := range stacks {
+			info := stackInfoFromStorage(stack)
+			if IsTerminalStackStatus(info.Status) || info.GitHubPRURL == nil {
+				continue
+			}
+			ref, ok := githubPullRequestRefFromURL(*info.GitHubPRURL)
+			if !ok {
+				continue
+			}
+			client := clients[ref.host]
+			if client == nil {
+				client, err = githubapi.NewClient(ref.host)
+				if err != nil {
+					return err
+				}
+				clients[ref.host] = client
+			}
+			pr, err := client.GetPullRequest(ctx, ref.owner, ref.repo, ref.number)
+			if err != nil {
+				return err
+			}
+			result.Checked++
+			if pr == nil || !terminalGitHubPullRequest(*pr) {
+				continue
+			}
+			if err := store.PrunePublishedStack(ctx, repoID, stack.ID, publishRefForStack(info), time.Now().UnixMilli()); err != nil {
+				return err
+			}
+			result.Removed++
+		}
+		return nil
+	})
+	return result, err
+}
+
+type githubPullRequestRef struct {
+	host   string
+	owner  string
+	repo   string
+	number int
+}
+
+func githubPullRequestRefFromURL(raw string) (githubPullRequestRef, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return githubPullRequestRef{}, false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 4 || parts[0] == "" || parts[1] == "" || parts[2] != "pull" {
+		return githubPullRequestRef{}, false
+	}
+	number, err := strconv.Atoi(parts[3])
+	if err != nil || number <= 0 {
+		return githubPullRequestRef{}, false
+	}
+	return githubPullRequestRef{host: parsed.Host, owner: parts[0], repo: strings.TrimSuffix(parts[1], ".git"), number: number}, true
+}
+
+func terminalGitHubPullRequest(pr githubapi.PullRequest) bool {
+	return pr.Merged || strings.EqualFold(strings.TrimSpace(pr.State), "closed")
 }
 
 func stackPublishRefMatches(stack StackInfo, publishRef string) bool {

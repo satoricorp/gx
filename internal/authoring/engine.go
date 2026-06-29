@@ -27,6 +27,7 @@ type BaseResult = vcs.BaseResult
 type DeleteRevisionResult = vcs.DeleteRevisionResult
 type DeleteStackResult = vcs.DeleteStackResult
 type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
+type PruneGitHubPullRequestsResult = vcs.PruneGitHubPullRequestsResult
 type StackInfo = vcs.StackInfo
 type PushOptions = vcs.PushOptions
 type PublishMode = vcs.PublishMode
@@ -191,6 +192,10 @@ func (e *Engine) SyncCloudBookmarkTip(ctx context.Context, repo RepoInfo, branch
 
 func (e *Engine) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
 	return e.vcs.PrunePublishedStackByRef(ctx, repo, publishRef)
+}
+
+func (e *Engine) PruneTerminalGitHubPullRequestStacks(ctx context.Context, repo RepoInfo) (PruneGitHubPullRequestsResult, error) {
+	return e.vcs.PruneTerminalGitHubPullRequestStacks(ctx, repo)
 }
 
 func (e *Engine) SaveDemuxProposal(ctx context.Context, proposal DemuxProposal) (DemuxProposal, error) {
