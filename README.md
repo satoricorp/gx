@@ -72,6 +72,10 @@ When the user says "save work", "save using gx", or "save with gx", run the
 GX save workflow with GX generate and push ready stacks unless asked to keep
 them local.
 
+GX PR summaries are posted for PRs published or adopted by `gx push`. A PR
+created only with raw Git or the GitHub UI will not get a GX summary until that
+branch is pushed through GX.
+
 Only use raw Git for read-only inspection unless explicitly asked for raw Git.
 If supported, deny or require approval for `git commit`, `git push`,
 `git reset`, and branch deletion.

@@ -17,6 +17,10 @@ a request to run the GX save workflow: `gx_generate`, then `gx_status`, then
 `gx_push` for ready stacks unless the user explicitly asks to keep the work
 local.
 
+GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
+created only with raw Git or the GitHub UI will not get a GX summary until that
+branch is pushed through GX.
+
 If a repository is not initialized for GX, MCP runs `gx init` non-interactively
 before repository tools continue. It uses Git identity when available and falls
 back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
@@ -44,6 +48,10 @@ If MCP is unavailable, use the CLI fallback:
 When the user says "save work", "save using gx", or "save with gx", run the
 GX save workflow: generate the work with GX, inspect status, and push ready
 stacks unless the user asks to keep them local.
+
+GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
+created only with raw Git or the GitHub UI will not get a GX summary until that
+branch is pushed through GX.
 
 Only use raw Git for read-only inspection unless the user explicitly asks for
 raw Git. If your agent client supports tool policies, deny or require approval

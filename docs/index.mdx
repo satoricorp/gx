@@ -52,6 +52,10 @@ When the user says "save work", "save using gx", or "save with gx", run the
 GX save workflow: generate the work with GX, inspect status, and push ready
 stacks unless the user asks to keep them local.
 
+GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
+created only with raw Git or the GitHub UI will not get a GX summary until that
+branch is pushed through GX.
+
 Only use raw Git for read-only inspection unless the user explicitly asks for
 raw Git. If your agent client supports tool policies, deny or require approval
 for `git commit`, `git push`, `git reset`, and branch deletion.
