@@ -1,0 +1,55 @@
+---
+title: "GitHub PR summaries"
+description: "How gx push writes a generated review summary into your GitHub pull request and preserves your own notes."
+---
+
+When `gx push` publishes a stack to GitHub, GX writes a generated review summary into the pull request body. The summary helps reviewers see what changed, how risky it is, and where to focus — without you authoring a description by hand.
+
+## When this runs
+
+GX updates the PR body automatically whenever an artifact is published to a GitHub pull request:
+
+- During `gx push`, after the remote PR is created or updated.
+- Whenever a queued artifact is published from the outbox.
+
+No flag or configuration is required. If the artifact is not tied to a GitHub PR URL, nothing is updated.
+
+## What the body contains
+
+The generated body is wrapped in a marker comment (`<!-- gx:pr-summary:v1 -->`) and includes:
+
+- **Opening summary** — a one-paragraph description of the stack: revisions, affected areas, blast radius (low, medium, or high), and total lines added/removed.
+- **Needs Review** — up to 10 high-impact review targets, each with a deep link to the relevant hunk on GitHub and an attribution noting whether the item came from a GX finding, an indexed past review, or a heuristic on the diff.
+
+If GX cannot isolate any high-impact targets, the section renders an explicit "no specific targets" line rather than omitting the heading.
+
+## Preserving your own notes
+
+GX does not erase a description you wrote. The first time GX updates a PR body that already has author content, that content is moved beneath the generated summary under an `## Author Notes` heading, delimited by `<!-- gx:author-notes -->`.
+
+The final body looks like this:
+
+```markdown
+<!-- gx:pr-summary:v1 -->
+
+This PR publishes 2 GX revisions for `feature/cache`: refactor cache adapter; add expiry tests. Blast radius is medium (4 file(s), 2 area(s), +120/-38 lines), with 3 review targets below.
+
+## Needs Review
+
+- [internal/cache/adapter.go#L42](https://github.com/acme/repo/pull/123/files#diff-...): adapter now short-circuits on nil keys; verify the new branch.
+  Attribution: GX finding (Strong)
+- ...
+
+<!-- gx:author-notes -->
+## Author Notes
+
+Anything you wrote in the PR description ends up here. Edit freely — GX will not touch this block on future pushes.
+```
+
+On every subsequent push, GX rewrites everything above `<!-- gx:author-notes -->` and leaves everything below it untouched. Edit your notes there at any time.
+
+## Working with the summary
+
+- **Edit author notes anywhere, anytime.** Anything you add or change under `## Author Notes` is preserved across future pushes.
+- **Don't edit the GX-managed section.** Changes above the author-notes marker are overwritten on the next push.
+- **Force a refresh.** Run `gx push` again to regenerate the summary after new revisions, findings, or indexed context become available.
