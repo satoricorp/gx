@@ -156,41 +156,37 @@ func (d *demoSession) composePrompt() error {
 	d.println(demoWhite("Let's automate this process."))
 	d.println(demoWhite("We have new changes in our /tmp directory, but instead of running ") + demoWhite("`gx add`") + demoWhite(", let's try a new command. Type:"))
 	d.println("")
-	d.println(demoMint("gx compose"))
+	d.println(demoMint("gx generate"))
 	d.println("")
-	_, err := d.promptCommand("gx compose", []string{"gx compose"})
+	_, err := d.promptCommand("gx generate", []string{"gx generate"})
 	return err
 }
 
 func (d *demoSession) composeOutputAndAcceptPrompt() error {
 	d.beginScreen()
-	d.println(demoCommandOutput("$ gx compose"))
-	d.println(demoCommandOutput("Proposal demo-compose-1"))
+	d.println(demoCommandOutput("$ gx generate"))
+	d.println(demoCommandOutput("Generated demo-stack"))
 	d.println(demoCommandOutput("● demo-stack"))
-	d.println(demoCommandOutput("    r1  initial change for demo"))
 	d.println(demoCommandOutput("    r2  add friendly greeting"))
 	d.println(demoCommandOutput("        hello.txt"))
 	d.println(demoCommandOutput("    r3  document demo workspace"))
 	d.println(demoCommandOutput("        README.md"))
 	d.println(demoCommandOutput(""))
-	d.println(demoCommandOutput("Review proposal: j/k move · e edit · c combine · x remove · Shift+A accept"))
+	d.println(demoCommandOutput("Next: gx status, then gx push"))
 	d.println("")
-	d.println(demoWhite("`gx compose`") + demoMint(" reviews all of your code changes and deterministically creates stacks and revisions for you."))
+	d.println(demoWhite("`gx generate`") + demoMint(" reviews all of your code changes and creates local stacks and revisions for you."))
 	d.println(demoWhite("No more `gx add`!"))
 	d.println("")
 	d.println(demoWhite("You may notice that the revisions are small. This is to help you during the code review process."))
 	d.println(demoWhite("Smaller code changes make it easier to understand what you're merging and easier to suggest changes."))
 	d.println("")
-	d.println(demoWhite("You may also notice the output of ") + demoWhite("`gx compose`") + demoMint(" is very similar to ") + demoWhite("`gx stacks`") + demoMint("."))
+	d.println(demoWhite("You can inspect generated work with ") + demoWhite("`gx status`") + demoMint(" before pushing."))
 	d.println("")
-	d.println(demoWhite("This is intentional."))
-	d.println(demoMint("The difference is ") + demoWhite("`gx compose`") + demoMint(" is a ") + demoItalic("proposal") + demoMint("."))
-	d.println(demoMint("You can interactively review the changes ") + demoWhite("`gx compose`") + demoMint(" created, make edits, combine revisions, or remove work from the proposal."))
-	d.println(demoMint("Once it looks good, press ") + demoWhite("`Shift+A`") + demoWhite(" to accept."))
+	d.println(demoMint("Type:"))
 	d.println("")
-	d.println(demoMint("Shift + A"))
+	d.println(demoMint("gx status"))
 	d.println("")
-	_, err := d.promptCommand("Shift+A", []string{"shift+a", "shift + a", "a"})
+	_, err := d.promptCommand("gx status", []string{"gx status"})
 	return err
 }
 
@@ -198,15 +194,15 @@ func (d *demoSession) publishPrompt() error {
 	d.beginScreen()
 	d.println(demoMint("That was much easier! The benefit of gx is organizing your work to help yourself and your team review code faster."))
 	d.println("")
-	d.println(demoMint("Our changes are still local (and now viewable in ") + demoWhite("`gx stacks`") + demoMint("). They aren't on the server yet, so let's publish our changes. Type:"))
+	d.println(demoMint("Our changes are still local (and now viewable in ") + demoWhite("`gx status`") + demoMint("). They aren't on the server yet, so let's push our changes. Type:"))
 	d.println("")
-	d.println(demoMint("gx publish"))
+	d.println(demoMint("gx push"))
 	d.println("")
-	if _, err := d.promptCommand("gx publish", []string{"gx publish"}); err != nil {
+	if _, err := d.promptCommand("gx push", []string{"gx push"}); err != nil {
 		return err
 	}
 	d.println("")
-	d.println(demoWhite("This is just like `git push`, but it sends your changes for code review on the gx platform."))
+	d.println(demoWhite("This is just like `git push`, but it sends code, sessions, and GX metadata for review."))
 	d.println(demoWhite("When GitHub is configured, gx also creates or updates the matching PR."))
 	d.println("")
 	return d.wait()
@@ -214,8 +210,8 @@ func (d *demoSession) publishPrompt() error {
 
 func (d *demoSession) reviewURLScreen() error {
 	d.beginScreen()
-	d.println(demoCommandOutput("$ gx publish"))
-	d.println(demoCommandOutput("Publishing 1 stack with 3 revisions"))
+	d.println(demoCommandOutput("$ gx push"))
+	d.println(demoCommandOutput("Pushing 1 stack with 3 revisions"))
 	d.println(demoCommandOutput("Synced       gx session context"))
 	d.println(demoCommandOutput("Review       " + d.reviewURL))
 	d.println("")
@@ -230,8 +226,8 @@ func (d *demoSession) mcpScreen() error {
 	d.println(demoWhite("Command line tools are very helpful for both humans and agents,"))
 	d.println(demoWhite("but to take full advantage of gx, you'll want to install the MCP server."))
 	d.println("")
-	d.println(demoWhite("The MCP server exposes one tool — gx_compose — to propose, review, and apply"))
-	d.println(demoWhite("compose revisions from your coding agent. Capture and review stay on the CLI."))
+	d.println(demoWhite("The MCP server exposes gx_sync, gx_generate, gx_status, gx_push,"))
+	d.println(demoWhite("gx_review, and gx_set_base so your coding agent can save with GX first."))
 	d.println("")
 	for _, item := range d.mcpInstructions() {
 		d.println(demoWhite("> " + item.Name))
@@ -240,7 +236,8 @@ func (d *demoSession) mcpScreen() error {
 		}
 	}
 	d.println("")
-	d.println(demoWhite("Ask your agent to use gx to save code; gx_compose runs gx compose for you."))
+	d.println(demoWhite(`Ask your agent to "save work", "save using gx", or "save with gx".`))
+	d.println(demoWhite("It should run gx_generate, inspect gx_status, and gx_push ready stacks."))
 	d.println("")
 	return d.wait()
 }

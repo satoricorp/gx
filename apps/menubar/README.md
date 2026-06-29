@@ -43,6 +43,40 @@ The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxg`,
 `~/.local/bin/gxr`, and `~/.local/bin/gxs` from the bundled CLI on launch and
 through the **Update CLI** menu item.
 
+## Agent setup
+
+After installing the app, add GX instructions to the start or end of your
+`AGENTS.md` or `CLAUDE.md` so agents save with GX instead of raw Git:
+
+```md
+Version control: use GX, not `git commit` or `git push`.
+
+Use GX MCP first: `gx_sync`, `gx_generate`, `gx_status`, then `gx_push`.
+If MCP is unavailable, use the CLI fallback: `gx sync`, `gx generate`,
+`gx status`, then `gx push`.
+
+When the user says "save work", "save using gx", or "save with gx", run the
+GX save workflow with GX generate and push ready stacks unless asked to keep
+them local.
+
+Only use raw Git for read-only inspection unless explicitly asked for raw Git.
+If supported, deny or require approval for `git commit`, `git push`,
+`git reset`, and branch deletion.
+```
+
+## Git hooks
+
+The menu-bar app gives you the bundled `gx` CLI and `gx-mcp`; repo hooks are
+installed when a repo is initialized with `gx init` or by MCP
+auto-initialization. GX writes `.git/hooks/pre-push`, which runs
+`gx capture push` for each pushed ref range before the push completes.
+
+The hook captures Claude, Codex, and Cursor session context into `~/.gx/gx.db`.
+It stages locally without network access when upload credentials are absent,
+and uploads when GX upload credentials are configured. The tray reads
+`gx doctor --json` to report whether registered repo hooks are installed,
+missing, or unreachable.
+
 ## MCP setup
 
 The package includes a standalone `gx-mcp` stdio binary. After

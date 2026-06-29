@@ -15,7 +15,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_generate",
   description:
-    "Generate local GX features and revisions from current work with gx generate. GX applies safe generated revisions automatically, can append to semantically similar stacks, and uses a longer repair budget for MCP.",
+    "Generate local GX features and revisions from current work with gx generate. Use when the user says save work, save using gx, or save with gx. GX applies safe generated revisions automatically, can append to semantically similar stacks, and uses a longer repair budget for MCP.",
   annotations: {
     title: "GX Generate",
     readOnlyHint: false,

@@ -11,7 +11,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_push",
   description:
-    "Push generated GX features with gx push. Syncs code to GitHub/origin, uploads sessions plus GX metadata, and uses guarded lease pushes when edited revisions rewrite a stack.",
+    "Push generated GX features with gx push. Use after gx_generate/gx_status in the GX save workflow unless the user asked to keep work local. Syncs code to GitHub/origin, uploads sessions plus GX metadata, and uses guarded lease pushes when edited revisions rewrite a stack.",
   annotations: {
     title: "GX Push",
     readOnlyHint: false,

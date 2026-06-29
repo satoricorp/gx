@@ -69,10 +69,19 @@ If MCP is unavailable, use the CLI fallback: `gx sync`, `gx generate`,
 `gx status`, then `gx push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow and push ready stacks unless asked to keep them local.
+GX save workflow with GX generate and push ready stacks unless asked to keep
+them local.
 
 Only use raw Git for read-only inspection unless explicitly asked for raw Git.
+If supported, deny or require approval for `git commit`, `git push`,
+`git reset`, and branch deletion.
 ```
+
+Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.
+When a repo is initialized with `gx init` or by MCP auto-initialization, GX
+installs a `pre-push` hook that runs `gx capture push` for the pushed ref range,
+captures Claude/Codex/Cursor session context into `~/.gx/gx.db`, and uploads
+only when GX upload credentials are configured.
 
 ## Basic Workflow
 

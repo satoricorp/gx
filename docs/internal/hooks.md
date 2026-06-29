@@ -2,6 +2,11 @@
 
 gx installs a **pre-push** hook that runs the capture pipeline locally before your push completes. Staged extracts and sessions are written to `~/.gx/gx.db` without network access.
 
+Installing the GX menu-bar app installs the bundled `gx` CLI and `gx-mcp`
+binary. It does not rewrite every repository immediately; each repo gets the
+Git hook when it is initialized with `gx init`, initialized automatically by
+MCP, or configured with `gx capture install`.
+
 ## Native git hook
 
 `gx init` writes `.git/hooks/pre-push` that invokes:
@@ -11,6 +16,10 @@ gx capture push --remote "$remote" --ref-range "$range" --repo "$(git rev-parse 
 ```
 
 The ref range is `remote_sha..local_sha` for updates, or the local SHA for new branches.
+
+The hook skips deleted refs, captures Claude/Codex/Cursor session context by
+default, stages capture data locally when upload credentials are missing, and
+uploads when credentials are configured.
 
 ## Team propagation
 

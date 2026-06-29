@@ -12,9 +12,43 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 
 If `gx_push` reports remote divergence, run `gx_sync`, resolve the divergence, then retry `gx_push` for that stack.
 
+When a user says "save work", "save using gx", or "save with gx", treat that as
+a request to run the GX save workflow: `gx_generate`, then `gx_status`, then
+`gx_push` for ready stacks unless the user explicitly asks to keep the work
+local.
+
 If a repository is not initialized for GX, MCP runs `gx init` non-interactively
 before repository tools continue. It uses Git identity when available and falls
 back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
+
+## Agent instructions
+
+Add a block like this to the start or end of `AGENTS.md` or `CLAUDE.md` in repos
+where agents should use GX:
+
+```md
+Version control: use GX, not `git commit` or `git push`.
+
+Use GX MCP first:
+- `gx_sync` before generating or pushing when remote changes may have landed.
+- `gx_generate` to save work into GX revisions and stacks.
+- `gx_status` to inspect local and remote stack state.
+- `gx_push` to publish ready GX stacks.
+
+If MCP is unavailable, use the CLI fallback:
+- `gx sync`
+- `gx generate`
+- `gx status`
+- `gx push`
+
+When the user says "save work", "save using gx", or "save with gx", run the
+GX save workflow: generate the work with GX, inspect status, and push ready
+stacks unless the user asks to keep them local.
+
+Only use raw Git for read-only inspection unless the user explicitly asks for
+raw Git. If your agent client supports tool policies, deny or require approval
+for `git commit`, `git push`, `git reset`, and branch deletion.
+```
 
 ## Tools
 
@@ -69,6 +103,12 @@ For cloud auth, log in once with GitHub:
 ```bash
 gx auth login
 ```
+
+The GX menu-bar app installs the bundled `gx` CLI and `gx-mcp` binary. Repo Git
+hooks are installed when a repo is initialized with `gx init` or by MCP
+auto-initialization. The installed `pre-push` hook runs `gx capture push` for
+the pushed ref range, stages captured Claude/Codex/Cursor session context in
+`~/.gx/gx.db`, and uploads only when GX upload credentials are configured.
 
 Development stdio:
 

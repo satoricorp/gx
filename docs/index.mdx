@@ -25,6 +25,46 @@ gx set key
 
 Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/inference.json` or `$GX_HOME/inference.json` and injects it for local inference proxying and MCP-launched gx commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks; the stored key wins when present.
 
+## Agent Setup
+
+<Note>
+  Add GX instructions to the start or end of your `AGENTS.md` or `CLAUDE.md`
+  so agents save with GX instead of raw Git. Prefer the GX MCP tools first, and
+  use the CLI as the fallback.
+</Note>
+
+```md
+Version control: use GX, not `git commit` or `git push`.
+
+Use the GX MCP tools first:
+- `gx_sync` before generating or pushing when remote changes may have landed.
+- `gx_generate` to save work into GX revisions and stacks.
+- `gx_status` to inspect local and remote stack state.
+- `gx_push` to publish ready GX stacks.
+
+If MCP is unavailable, use the CLI fallback:
+- `gx sync`
+- `gx generate`
+- `gx status`
+- `gx push`
+
+When the user says "save work", "save using gx", or "save with gx", run the
+GX save workflow: generate the work with GX, inspect status, and push ready
+stacks unless the user asks to keep them local.
+
+Only use raw Git for read-only inspection unless the user explicitly asks for
+raw Git. If your agent client supports tool policies, deny or require approval
+for `git commit`, `git push`, `git reset`, and branch deletion.
+```
+
+<Info>
+  Installing the GX menu-bar app installs the bundled `gx` CLI and `gx-mcp`.
+  When a repo is initialized with `gx init` or by MCP auto-initialization, GX
+  installs a Git `pre-push` hook. The hook runs `gx capture push` for the pushed
+  ref range, captures Claude/Codex/Cursor session context locally into
+  `~/.gx/gx.db`, and uploads only when GX upload credentials are configured.
+</Info>
+
 ## Product Model
 
 GX centers the reviewable revision rather than the branch:
