@@ -65,8 +65,11 @@ func EnqueuePush(ctx context.Context, push vcs.PushResult) (Result, error) {
 	return EnqueueArtifact(ctx, reviewbundle.NewArtifact(bundle))
 }
 
-func EnqueueArtifact(_ context.Context, artifact reviewbundle.Artifact) (Result, error) {
+func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact) (Result, error) {
 	artifact.IndexStatus = firstNonEmpty(artifact.IndexStatus, "queued")
+	if _, err := UpdateGitHubPullRequestBody(ctx, artifact); err != nil {
+		return Result{}, err
+	}
 	item, err := newQueueItem(artifact)
 	if err != nil {
 		return Result{}, err

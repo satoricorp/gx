@@ -21,7 +21,7 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 		if r.URL.Query().Get("head") != "satoricorp:feature/demo" {
 			t.Fatalf("head query = %q", r.URL.Query().Get("head"))
 		}
-		_, _ = w.Write([]byte(`[{"html_url":"https://github.com/satoricorp/gx/pull/7"}]`))
+		_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/satoricorp/gx/pull/7","body":"existing body"}]`))
 	}))
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
@@ -35,11 +35,64 @@ func TestFindPullRequestUsesGitHubAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindPullRequest() error = %v", err)
 	}
-	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/7" {
+	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/7" || pr.Number != 7 || pr.Body != "existing body" {
 		t.Fatalf("FindPullRequest() = %#v", pr)
 	}
 	if gotAuth != "Bearer token-one" {
 		t.Fatalf("Authorization = %q", gotAuth)
+	}
+}
+
+func TestFindPullRequestByHeadCanIncludeMergedPRs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/satoricorp/gx/pulls" {
+			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls", r.URL.Path)
+		}
+		if r.URL.Query().Get("state") != "all" {
+			t.Fatalf("state query = %q, want all", r.URL.Query().Get("state"))
+		}
+		_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/satoricorp/gx/pull/7","state":"closed","merged_at":"2026-06-28T12:00:00Z"}]`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	pr, err := client.FindPullRequestByHead(context.Background(), CreatePullRequestOptions{
+		Owner:      "satoricorp",
+		Repo:       "gx",
+		HeadBranch: "feature/demo",
+	}, "all")
+	if err != nil {
+		t.Fatalf("FindPullRequestByHead() error = %v", err)
+	}
+	if pr == nil || pr.Number != 7 || !pr.Merged || pr.State != "closed" {
+		t.Fatalf("FindPullRequestByHead() = %#v, want merged closed PR", pr)
+	}
+}
+
+func TestListPullRequestsReturnsHeadRefs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/satoricorp/gx/pulls" {
+			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls", r.URL.Path)
+		}
+		if r.URL.Query().Get("state") != "all" {
+			t.Fatalf("state query = %q, want all", r.URL.Query().Get("state"))
+		}
+		if r.URL.Query().Get("per_page") != "100" {
+			t.Fatalf("per_page query = %q, want 100", r.URL.Query().Get("per_page"))
+		}
+		_, _ = w.Write([]byte(`[{"number":10,"html_url":"https://github.com/satoricorp/gx/pull/10","state":"closed","merged_at":"2026-06-25T14:50:33Z","head":{"ref":"feature/docs"}}]`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	prs, err := client.ListPullRequests(context.Background(), "satoricorp", "gx", "all")
+	if err != nil {
+		t.Fatalf("ListPullRequests() error = %v", err)
+	}
+	if len(prs) != 1 || prs[0].HeadRefName != "feature/docs" || !prs[0].Merged {
+		t.Fatalf("ListPullRequests() = %#v, want merged feature/docs PR", prs)
 	}
 }
 
@@ -74,6 +127,67 @@ func TestCreatePullRequestUsesGitHubAPI(t *testing.T) {
 	}
 	if pr == nil || pr.URL != "https://github.com/satoricorp/gx/pull/8" {
 		t.Fatalf("CreatePullRequest() = %#v", pr)
+	}
+}
+
+func TestGetPullRequestReturnsMergedState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/repos/satoricorp/gx/pulls/8" {
+			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls/8", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"number":8,"html_url":"https://github.com/satoricorp/gx/pull/8","state":"closed","merged":true,"body":"merged body"}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	pr, err := client.GetPullRequest(context.Background(), "satoricorp", "gx", 8)
+	if err != nil {
+		t.Fatalf("GetPullRequest() error = %v", err)
+	}
+	if pr == nil || pr.Number != 8 || !pr.Merged || pr.State != "closed" || pr.Body != "merged body" {
+		t.Fatalf("GetPullRequest() = %#v, want merged closed PR", pr)
+	}
+}
+
+func TestUpdatePullRequestPatchesBody(t *testing.T) {
+	var patchedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if r.URL.Path != "/repos/satoricorp/gx/pulls/8" {
+			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls/8", r.URL.Path)
+		}
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		patchedBody = payload["body"]
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"number":   8,
+			"html_url": "https://github.com/satoricorp/gx/pull/8",
+			"body":     patchedBody,
+		})
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	pr, err := client.UpdatePullRequest(context.Background(), UpdatePullRequestOptions{
+		Owner:  "satoricorp",
+		Repo:   "gx",
+		Number: 8,
+		Body:   "new summary",
+	})
+	if err != nil {
+		t.Fatalf("UpdatePullRequest() error = %v", err)
+	}
+	if pr == nil || pr.Number != 8 || pr.Body != "new summary" || patchedBody != "new summary" {
+		t.Fatalf("UpdatePullRequest() = %#v patchedBody=%q", pr, patchedBody)
 	}
 }
 

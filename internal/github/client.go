@@ -22,8 +22,12 @@ type Client struct {
 }
 
 type PullRequest struct {
-	Number int
-	URL    string
+	Number      int
+	URL         string
+	State       string
+	Merged      bool
+	HeadRefName string
+	Body        string
 }
 
 type IssueComment struct {
@@ -40,6 +44,13 @@ type CreatePullRequestOptions struct {
 	HeadBranch string
 	Title      string
 	Body       string
+}
+
+type UpdatePullRequestOptions struct {
+	Owner  string
+	Repo   string
+	Number int
+	Body   string
 }
 
 type IssueCommentOptions struct {
@@ -92,11 +103,19 @@ func apiBaseURL(host string) string {
 }
 
 func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOptions) (*PullRequest, error) {
+	return c.FindPullRequestByHead(ctx, opts, "open")
+}
+
+func (c *Client) FindPullRequestByHead(ctx context.Context, opts CreatePullRequestOptions, state string) (*PullRequest, error) {
 	if c == nil {
 		return nil, fmt.Errorf("github client is required")
 	}
 	q := url.Values{}
-	q.Set("state", "open")
+	state = strings.TrimSpace(state)
+	if state == "" {
+		state = "open"
+	}
+	q.Set("state", state)
 	q.Set("head", opts.Owner+":"+opts.HeadBranch)
 	endpoint := fmt.Sprintf("/repos/%s/%s/pulls?%s", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), q.Encode())
 	req, err := c.request(ctx, http.MethodGet, endpoint, nil)
@@ -104,8 +123,11 @@ func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOpti
 		return nil, err
 	}
 	var payload []struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
+		Number   int     `json:"number"`
+		HTMLURL  string  `json:"html_url"`
+		State    string  `json:"state"`
+		MergedAt *string `json:"merged_at"`
+		Body     string  `json:"body"`
 	}
 	if err := c.do(req, &payload); err != nil {
 		return nil, fmt.Errorf("find github pull request: %w", err)
@@ -113,7 +135,91 @@ func (c *Client) FindPullRequest(ctx context.Context, opts CreatePullRequestOpti
 	if len(payload) == 0 || strings.TrimSpace(payload[0].HTMLURL) == "" {
 		return nil, nil
 	}
-	return &PullRequest{Number: payload[0].Number, URL: strings.TrimSpace(payload[0].HTMLURL)}, nil
+	return &PullRequest{
+		Number: payload[0].Number,
+		URL:    strings.TrimSpace(payload[0].HTMLURL),
+		State:  strings.TrimSpace(payload[0].State),
+		Merged: payload[0].MergedAt != nil && strings.TrimSpace(*payload[0].MergedAt) != "",
+		Body:   payload[0].Body,
+	}, nil
+}
+
+func (c *Client) ListPullRequests(ctx context.Context, owner, repo, state string) ([]PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repo) == "" {
+		return nil, fmt.Errorf("github repository target is required")
+	}
+	state = strings.TrimSpace(state)
+	if state == "" {
+		state = "open"
+	}
+	q := url.Values{}
+	q.Set("state", state)
+	q.Set("per_page", "100")
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls?%s", url.PathEscape(owner), url.PathEscape(repo), q.Encode())
+	req, err := c.request(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	var payload []struct {
+		Number   int     `json:"number"`
+		HTMLURL  string  `json:"html_url"`
+		State    string  `json:"state"`
+		MergedAt *string `json:"merged_at"`
+		Head     struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("list github pull requests: %w", err)
+	}
+	out := make([]PullRequest, 0, len(payload))
+	for _, item := range payload {
+		out = append(out, PullRequest{
+			Number:      item.Number,
+			URL:         strings.TrimSpace(item.HTMLURL),
+			State:       strings.TrimSpace(item.State),
+			Merged:      item.MergedAt != nil && strings.TrimSpace(*item.MergedAt) != "",
+			HeadRefName: strings.TrimSpace(item.Head.Ref),
+		})
+	}
+	return out, nil
+}
+
+func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repo) == "" || number <= 0 {
+		return nil, fmt.Errorf("github pull request target is required")
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number)
+	req, err := c.request(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		State   string `json:"state"`
+		Merged  bool   `json:"merged"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("get github pull request: %w", err)
+	}
+	if payload.Number == 0 {
+		payload.Number = number
+	}
+	return &PullRequest{
+		Number: payload.Number,
+		URL:    strings.TrimSpace(payload.HTMLURL),
+		State:  strings.TrimSpace(payload.State),
+		Merged: payload.Merged,
+		Body:   payload.Body,
+	}, nil
 }
 
 func (c *Client) CreatePullRequest(ctx context.Context, opts CreatePullRequestOptions) (*PullRequest, error) {
@@ -135,7 +241,9 @@ func (c *Client) CreatePullRequest(ctx context.Context, opts CreatePullRequestOp
 		return nil, err
 	}
 	var payload struct {
+		Number  int    `json:"number"`
 		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
 	}
 	if err := c.do(req, &payload); err != nil {
 		return nil, fmt.Errorf("create github pull request: %w", err)
@@ -143,7 +251,45 @@ func (c *Client) CreatePullRequest(ctx context.Context, opts CreatePullRequestOp
 	if strings.TrimSpace(payload.HTMLURL) == "" {
 		return nil, nil
 	}
-	return &PullRequest{URL: strings.TrimSpace(payload.HTMLURL)}, nil
+	return &PullRequest{Number: payload.Number, URL: strings.TrimSpace(payload.HTMLURL), Body: payload.Body}, nil
+}
+
+func (c *Client) UpdatePullRequest(ctx context.Context, opts UpdatePullRequestOptions) (*PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github client is required")
+	}
+	if strings.TrimSpace(opts.Owner) == "" || strings.TrimSpace(opts.Repo) == "" || opts.Number <= 0 {
+		return nil, fmt.Errorf("github pull request target is required")
+	}
+	body, err := json.Marshal(map[string]string{"body": opts.Body})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), opts.Number)
+	req, err := c.request(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		State   string `json:"state"`
+		Merged  bool   `json:"merged"`
+		Body    string `json:"body"`
+	}
+	if err := c.do(req, &payload); err != nil {
+		return nil, fmt.Errorf("update github pull request: %w", err)
+	}
+	if payload.Number == 0 {
+		payload.Number = opts.Number
+	}
+	return &PullRequest{
+		Number: payload.Number,
+		URL:    strings.TrimSpace(payload.HTMLURL),
+		State:  strings.TrimSpace(payload.State),
+		Merged: payload.Merged,
+		Body:   payload.Body,
+	}, nil
 }
 
 func (c *Client) ListIssueComments(ctx context.Context, opts IssueCommentOptions) ([]IssueComment, error) {

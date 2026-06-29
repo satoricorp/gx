@@ -191,6 +191,9 @@ func (p *Publisher) PublishArtifact(ctx context.Context, artifact reviewbundle.A
 	if p == nil || p.uploader == nil {
 		return result, nil
 	}
+	if _, err := UpdateGitHubPullRequestBody(ctx, artifact); err != nil {
+		return Result{}, err
+	}
 	if p.indexer != nil {
 		indexResult, err := p.indexer.IndexBundle(ctx, artifact.Bundle)
 		result.SemanticIndexed = indexResult.Indexed

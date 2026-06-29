@@ -440,6 +440,9 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	if createPayload["base"] != "main" || createPayload["head"] != "feature/demo" || createPayload["title"] != "Demo stack" {
 		t.Fatalf("create payload = %#v", createPayload)
 	}
+	if createPayload["body"] != "" {
+		t.Fatalf("create payload body = %q, want empty body until GX summary is ready", createPayload["body"])
+	}
 }
 
 func TestEnsureGitHubPullRequestResolvesInternalBaseRefToPublicBookmark(t *testing.T) {
