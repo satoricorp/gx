@@ -125,10 +125,17 @@ type LocalContextRetriever struct{}
 
 func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
 	hints := reviewHints(facts)
+	policy := opts.ReviewPolicy
+	if policy == nil {
+		loaded := LoadReviewPolicy(ctx, repoRoot)
+		policy = &loaded
+		opts.ReviewPolicy = policy
+	}
 	contextSnippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
 	if err != nil {
 		return ReviewBrief{}, err
 	}
+	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	contextSnippets = labelContextSnippets(contextSnippets)
 	changed := reviewChangedFiles(ctx, repoRoot)
 	return ReviewBrief{
@@ -201,7 +208,6 @@ func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts O
 		kind string
 	}{
 		{path: "CONTEXT.md", kind: "domain_doc"},
-		{path: "REVIEW.md", kind: "repo_doc"},
 		{path: "AGENTS.md", kind: "repo_doc"},
 		{path: "README.md", kind: "repo_doc"},
 	} {
@@ -508,6 +514,10 @@ func sourceRefKind(snippet ContextSnippet) string {
 		return "session"
 	case "review_resource":
 		return "resource"
+	case "review_policy":
+		return "policy"
+	case "review_reference":
+		return "reference"
 	case "domain_doc", "repo_doc", "adr", "dependency_manifest":
 		return "local"
 	default:

@@ -8,11 +8,12 @@ import (
 )
 
 type Engine struct {
-	scanner   Scanner
-	catalog   Catalog
-	rules     []Rule
-	retriever ContextRetriever
-	reviewer  AIReviewer
+	scanner      Scanner
+	catalog      Catalog
+	rules        []Rule
+	retriever    ContextRetriever
+	reviewer     AIReviewer
+	autoReviewer bool
 }
 
 type Scanner interface {
@@ -33,11 +34,11 @@ type ReviewContext struct {
 
 func NewEngine() *Engine {
 	return &Engine{
-		scanner:   LocalScanner{},
-		catalog:   StaticCatalog{},
-		rules:     defaultRules(),
-		retriever: contextRetrieverFromEnv(),
-		reviewer:  reviewerFromEnv(),
+		scanner:      LocalScanner{},
+		catalog:      StaticCatalog{},
+		rules:        defaultRules(),
+		retriever:    contextRetrieverFromEnv(),
+		autoReviewer: true,
 	}
 }
 
@@ -83,6 +84,8 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if err != nil {
 		return Report{}, err
 	}
+	policy := LoadReviewPolicy(ctx, repoRoot)
+	opts.ReviewPolicy = &policy
 	active := activeScopeList(opts)
 	sources := catalog.SourcesForScopes(active)
 	reviewProgress(opts, "Building review context")
@@ -100,9 +103,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	reviewProgress(opts, "Checking fallback review rules")
 	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
-	if e.reviewer != nil {
+	reviewer := e.reviewer
+	if reviewer == nil && e.autoReviewer {
+		reviewer = reviewerFromEnvWithPolicy(&policy)
+	}
+	if reviewer != nil {
 		reviewProgress(opts, "Asking AI reviewer")
-		if aiFindings, err := e.reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
+		if aiFindings, err := reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
 			findings = mergeFindings(findings, aiFindings)
 			reviewerLabel = "heuristic+ai"
 		}

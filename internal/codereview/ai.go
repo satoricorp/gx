@@ -60,6 +60,10 @@ type fallbackAIReviewer struct {
 	fallback AIReviewer
 }
 
+type unavailableAIReviewer struct {
+	reason string
+}
+
 type bedrockAnthropicReviewer struct {
 	region    string
 	model     string
@@ -105,28 +109,44 @@ type aiRecommendation struct {
 }
 
 func reviewerFromEnv() AIReviewer {
+	return reviewerFromEnvWithPolicy(nil)
+}
+
+func ReviewerFromEnv() AIReviewer {
+	return reviewerFromEnv()
+}
+
+func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
 		return nil
 	}
 	var reviewers []namedAIReviewer
-	if reviewer := openAIReviewerFromEnv(); reviewer != nil {
+	openAIModel := ""
+	anthropicModel := ""
+	if policy != nil {
+		openAIModel = policy.OpenAIModelHint()
+		anthropicModel = policy.AnthropicModelHint()
+	}
+	if reviewer := openAIReviewerFromEnvWithModel(openAIModel); reviewer != nil {
 		reviewers = append(reviewers, namedAIReviewer{name: "openai", label: "OpenAI", reviewer: reviewer})
+	} else {
+		reviewers = append(reviewers, namedAIReviewer{name: "openai", label: "OpenAI", reviewer: unavailableAIReviewer{reason: "OpenAI reviewer is not configured"}})
 	}
-	if reviewer := bedrockAnthropicReviewerFromEnv(); reviewer != nil {
+	if reviewer := bedrockAnthropicReviewerFromEnvWithModel(anthropicModel); reviewer != nil {
 		reviewers = append(reviewers, namedAIReviewer{name: "anthropic", label: "Anthropic", reviewer: reviewer})
+	} else {
+		reviewers = append(reviewers, namedAIReviewer{name: "anthropic", label: "Anthropic", reviewer: unavailableAIReviewer{reason: "Anthropic reviewer is not configured"}})
 	}
-	switch len(reviewers) {
-	case 0:
-		return nil
-	case 1:
-		return reviewers[0].reviewer
-	default:
-		return multiAIReviewer{reviewers: reviewers}
-	}
+	return multiAIReviewer{reviewers: reviewers}
 }
 
 func openAIReviewerFromEnv() AIReviewer {
+	return openAIReviewerFromEnvWithModel("")
+}
+
+func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
 	model := strings.TrimSpace(firstNonEmpty(
+		modelOverride,
 		os.Getenv("GX_REVIEW_OPENAI_MODEL"),
 		os.Getenv("GX_REVIEW_MODEL"),
 		os.Getenv("OPENAI_MODEL"),
@@ -191,6 +211,10 @@ func directOpenAIReviewerFromEnv(model string) (AIReviewer, error) {
 }
 
 func bedrockAnthropicReviewerFromEnv() AIReviewer {
+	return bedrockAnthropicReviewerFromEnvWithModel("")
+}
+
+func bedrockAnthropicReviewerFromEnvWithModel(modelOverride string) AIReviewer {
 	accessKey := strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
 	secretKey := strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
 	if accessKey == "" || secretKey == "" {
@@ -203,11 +227,15 @@ func bedrockAnthropicReviewerFromEnv() AIReviewer {
 	))
 	return &bedrockAnthropicReviewer{
 		region:    region,
-		model:     bedrockReviewModel,
+		model:     firstNonEmpty(modelOverride, os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"), bedrockReviewModel),
 		accessKey: accessKey,
 		secretKey: secretKey,
 		client:    &http.Client{Timeout: 120 * time.Second},
 	}
+}
+
+func (r unavailableAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
+	return nil, fmt.Errorf("%s", r.reason)
 }
 
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
@@ -232,12 +260,12 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 			finding.ID = item.name + "." + finding.ID
 			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
 			out = append(out, finding)
-			if len(out) >= 6 {
-				return out, nil
-			}
 		}
 	}
 	if len(out) > 0 {
+		if len(out) > 6 {
+			out = out[:6]
+		}
 		return out, nil
 	}
 	if len(errors) > 0 {
@@ -538,23 +566,27 @@ func contextSnippetPriority(snippet ContextSnippet) int {
 	switch snippet.Kind {
 	case "domain_doc":
 		return 0
-	case "adr":
+	case "review_policy":
 		return 1
-	case "repo_doc":
+	case "review_reference":
 		return 2
-	case "review_resource":
+	case "adr":
 		return 3
-	case "dependency_manifest":
+	case "repo_doc":
 		return 4
-	case "code_quality_file":
+	case "review_resource":
 		return 5
-	case "module_file":
+	case "dependency_manifest":
 		return 6
-	default:
-		if snippet.Source == "indexed" {
-			return 4
-		}
+	case "code_quality_file":
 		return 7
+	case "module_file":
+		return 8
+	default:
+		if snippet.Source == "indexed" || strings.HasPrefix(snippet.Source, "turbopuffer:") {
+			return 6
+		}
+		return 9
 	}
 }
 
@@ -631,6 +663,8 @@ func reviewDeveloperPrompt() string {
 		"For patch_focused reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
 		"For prompt_directed reviews, prioritize findings where review_prompt, the current diff, and broader repo context intersect. Do not limit yourself to changed lines, but do not emit generic repo-wide advice unrelated to review_prompt.",
 		"For deep_full_spectrum reviews, check security, bugs, data integrity, concurrency, idempotency, architecture, testing, observability, performance, dependencies, docs, and operability while still grounding every finding in changed files, tool output, local policy, or retrieved context.",
+		"Treat REVIEW.md review_policy snippets as repo-local review instructions. Follow them unless they conflict with the explicit review_prompt, hard evidence in the changed patch, or safety/security requirements.",
+		"Treat review_reference snippets as fetched guidance referenced by REVIEW.md. Use them as supporting context below local REVIEW.md and above general external review resources.",
 		"Use the architecture vocabulary exactly when discussing structure: Module, Interface, Implementation, Depth, deep, shallow, seam, adapter, leverage, locality.",
 		"Never use component, service, API, boundary, or layer when Module, Interface, seam, or adapter fits.",
 		"Treat static facts and hints as clues only. Do not turn file counts, missing docs, or missing tests directly into findings.",

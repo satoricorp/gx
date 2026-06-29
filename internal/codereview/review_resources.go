@@ -201,13 +201,14 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 }
 
 type reviewResourceSignalSet struct {
-	Files      []string
-	Languages  []string
-	Frameworks []string
-	RiskTags   []string
-	Categories []string
-	Hints      []string
-	Intents    []string
+	Files       []string
+	Languages   []string
+	Frameworks  []string
+	RiskTags    []string
+	Categories  []string
+	Hints       []string
+	Intents     []string
+	PolicyQuery string
 }
 
 func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) reviewResourceSignalSet {
@@ -226,12 +227,13 @@ func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, f
 	}
 	files = limitStrings(files, 80)
 	signals := reviewResourceSignalSet{
-		Files:      files,
-		Languages:  languageTagsForFiles(files),
-		Frameworks: frameworkTagsForFiles(files, facts.DependencyFiles),
-		RiskTags:   riskTagsForReview(files, facts.DependencyFiles, opts),
-		Categories: categoriesForReview(opts),
-		Intents:    reviewResourceIntents(opts),
+		Files:       files,
+		Languages:   languageTagsForFiles(files),
+		Frameworks:  frameworkTagsForFiles(files, facts.DependencyFiles),
+		RiskTags:    riskTagsForReview(files, facts.DependencyFiles, opts),
+		Categories:  categoriesForReview(opts),
+		Intents:     reviewResourceIntents(opts),
+		PolicyQuery: reviewPolicyQueryText(opts.ReviewPolicy),
 	}
 	for _, hint := range hints {
 		if title := strings.TrimSpace(hint.Title); title != "" {
@@ -259,7 +261,17 @@ func reviewResourceQueryText(opts Options, signals reviewResourceSignalSet) stri
 		"hints: " + strings.Join(signals.Hints, " "),
 		"changed files: " + strings.Join(limitStrings(signals.Files, 30), " "),
 	}
+	if strings.TrimSpace(signals.PolicyQuery) != "" {
+		parts = append(parts, "review policy direction:\n"+strings.TrimSpace(signals.PolicyQuery))
+	}
 	return strings.Join(parts, "\n")
+}
+
+func reviewPolicyQueryText(policy *ReviewPolicy) string {
+	if policy == nil {
+		return ""
+	}
+	return policy.QueryText()
 }
 
 func reviewResourceBaseFilter() any {

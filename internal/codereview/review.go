@@ -50,6 +50,7 @@ type Options struct {
 	Prompt       string
 	Verbose      bool
 	PatchFocused bool
+	ReviewPolicy *ReviewPolicy
 
 	ProgressWriter io.Writer
 	Color          bool

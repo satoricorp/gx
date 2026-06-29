@@ -75,6 +75,7 @@ func reviewHistoryQuery(opts Options, facts RepoFacts, hints []ReviewHint) strin
 		strings.TrimSpace(opts.Prompt),
 		strings.TrimSpace(opts.Scope),
 		strings.Join(facts.DependencyFiles, " "),
+		reviewPolicyQueryText(opts.ReviewPolicy),
 	}
 	for _, file := range facts.Files {
 		if language := reviewHistoryLanguage(file); language != "" {
