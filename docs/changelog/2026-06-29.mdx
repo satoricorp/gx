@@ -1,0 +1,39 @@
+---
+title: "Week of June 29, 2026"
+description: "Streamlined CLI flow, smarter code review, and a cleaner menu bar."
+---
+
+This week we streamlined the core CLI workflow, gave `gx review` deeper context, and tightened up the macOS menu-bar app.
+
+## New features
+
+- **Streamlined `gx generate` and `gx push` flow.** The compose pipeline is now `gx generate`, and publishing is now `gx push`. `gx generate` proposes ordered revisions from your working copy, applies internal repair and preflight passes, and auto-applies safe revisions for you. `gx push` uploads sessions and GX metadata along with your branches and prints PR links. See the [core workflow](/).
+- **`gx review` now writes GitHub PR summaries.** After `gx push`, GX assembles a structured PR description from review evidence — risk, context, and review findings — and posts it back to the GitHub pull request.
+- **Indexed review context and inline GitHub comments.** `gx review` pulls relevant snippets from an indexed review context store and can post inline review comments on the GitHub PR alongside the summary.
+- **Code review history memory.** `gx review` remembers prior findings across revisions so repeated reviews stay consistent and avoid re-raising resolved issues.
+- **Review policy context.** `gx review` now honors per-repo review policy so guidance, tone, and standards carry through into each review.
+- **Prompted `gx review`.** You can pass a focused prompt to `gx review` (and the MCP `gx_review` tool) to steer what the reviewer pays attention to on a given run.
+- **`gx report` command.** New `gx report` summarizes the local stack and recent activity for quick situational awareness.
+- **`gxg`, `gxr`, `gxs` shortcuts.** The CLI installer now also installs `gxg` (`gx generate`), `gxr` (`gx review`), and `gxs` (`gx status`) so the most common commands are one keystroke away. The menu-bar **Update CLI** action keeps them in sync.
+- **Menu-bar shows CLI and app versions.** The macOS menu-bar app now surfaces both the bundled CLI version and its own build tag.
+
+## Updates
+
+- **Unified `gx status`.** Stack browsing moved into `gx status`, which now shows Unstaged files, local features and stacks, remote state, and supports stack navigation, revision navigation, edit, and diff in one place.
+- **`gx review` focuses on current changes.** Reviews now scope to the working revision by default, with cleaner attribution and reporting in the CLI output.
+- **Better GitHub auth.** GX now refreshes expiring GitHub auth tokens automatically and verifies your console session during `gx auth login`.
+- **Background publish uploads.** Publish artifact uploads are detached into a background worker that retries abandoned uploads, so `gx push` returns faster and is resilient to flaky networks.
+- **Cleaner doctor output.** `gx doctor` was trimmed to surface only the checks that matter day-to-day. Hook initialization is tracked so doctor can tell you when a repo still needs setup.
+- **Polished CLI help and prompts.** Help text was rewritten for clarity, and the status UI no longer accepts the destructive `Shift-D` delete shortcut.
+- **Simpler menu-bar menu.** The menu was trimmed down: `Doctor` is now `Status`, MCP setup links to the docs, and the auth status panel no longer surfaces internal infrastructure URLs.
+- **Stacks list hides clutter.** Merged published stacks and empty stored stack revisions are now hidden from the stacks view, and merged stacks are pruned over time.
+- **Faster stack browsing.** The stack read model was reworked for noticeably faster loads on large local histories, with scroll viewports added to the stack TUIs.
+- **Product analytics in the CLI.** GX now sends anonymous PostHog product analytics from the CLI to help us prioritize the workflow improvements that matter most. All events include a stable identity for accurate funnels.
+
+## Bug fixes
+
+- Fixed PostHog configuration in packaged macOS releases.
+- Fixed cross-platform CLI packaging so installers work cleanly on every supported OS.
+- Fixed GX branch naming and compose reliability when working against unusual remotes.
+- Restored the doctor repo registry lookup that had regressed in a recent build.
+- Removed the unsupported MCP sync capture option that could surface stale capture state.
