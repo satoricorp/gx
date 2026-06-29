@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -29,4 +30,30 @@ func TestClaudeCommandArgsUnchanged(t *testing.T) {
 	if !reflect.DeepEqual(got, args) {
 		t.Fatalf("expected args to stay unchanged, got %#v", got)
 	}
+}
+
+func TestBaseEnvironmentWithoutInferenceKeys(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "anthropic-key")
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("GX_TEST_KEEP", "1")
+
+	env := baseEnvironmentWithoutInferenceKeys()
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "OPENAI_API_KEY=") {
+			t.Fatalf("base env retained inference key: %s", entry)
+		}
+	}
+	if !containsEnvEntry(env, "GX_TEST_KEEP=1") {
+		t.Fatalf("base env dropped unrelated variable")
+	}
+}
+
+func containsEnvEntry(env []string, want string) bool {
+	for _, entry := range env {
+		if entry == want {
+			return true
+		}
+	}
+	return false
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/providers"
 	"github.com/satoricorp/gx/internal/storage"
 )
@@ -101,6 +102,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header = r.Header.Clone()
 	req.Host = upstream.host
+	applyInferenceAuth(req, provider)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -221,6 +223,25 @@ func detectProvider(r *http.Request) string {
 		return "anthropic"
 	default:
 		return "openai"
+	}
+}
+
+func applyInferenceAuth(req *http.Request, provider string) {
+	creds, ok := inference.Resolve()
+	if !ok || creds.Provider != provider {
+		return
+	}
+	switch provider {
+	case "anthropic":
+		if req.Header.Get("x-api-key") != "" || req.Header.Get("anthropic-api-key") != "" {
+			return
+		}
+		req.Header.Set("x-api-key", creds.APIKey)
+	case "openai":
+		if req.Header.Get("Authorization") != "" || isChatGPTAuth(req) {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+creds.APIKey)
 	}
 }
 

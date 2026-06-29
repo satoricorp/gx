@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
@@ -109,6 +110,7 @@ func printRootIntro(out io.Writer) {
 	fmt.Fprintln(out, renderStaticLogo())
 	fmt.Fprintln(out, muted(gxTagline))
 	fmt.Fprintln(out, rootAuthStatusLine())
+	fmt.Fprintln(out, rootInferenceStatusLine())
 	fmt.Fprintln(out)
 }
 
@@ -118,6 +120,14 @@ func rootAuthStatusLine() string {
 		return success("●") + " " + value("Signed in as "+strings.TrimSpace(creds.Login))
 	}
 	return danger("●") + " " + muted("Not signed in") + "  " + logoText("gx auth login")
+}
+
+func rootInferenceStatusLine() string {
+	creds, ok := inference.Resolve()
+	if !ok {
+		return danger("●") + " " + muted("API Key required. Run `gx set key` to set an API Key.")
+	}
+	return success("●") + " " + value(inference.ProviderDisplay(creds.Provider)+": Key provided")
 }
 
 func printRootHelp(cmd *cobra.Command) error {

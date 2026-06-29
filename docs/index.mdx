@@ -15,6 +15,16 @@ gx push
 
 `gx generate` turns working-copy changes into local revisions and stacks. `gx status` shows Unstaged work, local stacks, and Remote state. `gx push` pushes code, sessions, and GX metadata to the remote review surface.
 
+## Local Inference
+
+For open-source inference, run:
+
+```bash
+gx set key
+```
+
+Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/inference.json` or `$GX_HOME/inference.json` and injects it for local inference proxying and MCP-launched gx commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks; the stored key wins when present.
+
 ## Product Model
 
 GX centers the reviewable revision rather than the branch:

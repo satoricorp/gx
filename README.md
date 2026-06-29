@@ -272,6 +272,30 @@ After `gx push`, gx uploads the pushed change, changed files, linked sessions, r
 responses, token usage, and the GitHub PR URL when available. When the cloud API returns
 a review URL, `gx push` prints it.
 
+### Local inference credentials
+
+Open-source use can run gx inference through a local provider API key instead of
+gx Cloud auth:
+
+```bash
+gx set key
+```
+
+Choose Anthropic or OpenAI, then paste the API key. gx stores one key in
+`~/.gx/inference.json` (or `$GX_HOME/inference.json`) and uses it for local
+inference proxying and MCP-launched gx commands. `gx auth login` is still used
+for gx Cloud and GitHub-backed features.
+
+Environment variables remain supported as fallbacks:
+
+```bash
+export ANTHROPIC_API_KEY="<anthropic-api-key>"
+export OPENAI_API_KEY="<openai-api-key>"
+```
+
+When multiple keys are available, gx uses the first resolved key: stored
+`inference.json`, then `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`.
+
 ### Semantic transcript indexing
 
 Semantic indexing is opt-in because it sends linked session transcript chunks to

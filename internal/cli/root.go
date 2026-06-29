@@ -25,6 +25,7 @@ import (
 	"github.com/satoricorp/gx/internal/daemon"
 	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/launcher"
 	"github.com/satoricorp/gx/internal/postlist"
 	"github.com/satoricorp/gx/internal/publication"
@@ -49,6 +50,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 			if strings.Contains(cmd.CommandPath(), "__") {
 				return
 			}
+			inference.ApplyToEnvironment()
 			telemetry.EmitInstallOnce(ctx)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,6 +76,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newDoctorCommand(ctx),
 		newLoginCommand(ctx),
 		newAuthCommand(ctx),
+		newSetCommand(ctx),
 		newInitCommand(ctx, engine),
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
@@ -110,7 +113,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 func assignCommandGroups(root *cobra.Command) {
 	for _, cmd := range root.Commands() {
 		switch cmd.Name() {
-		case "init", "auth", "login", "demo":
+		case "init", "auth", "set", "login", "demo":
 			cmd.GroupID = groupSetup
 		case "add", "base", "edit", "generate", "review", "status":
 			cmd.GroupID = groupWork

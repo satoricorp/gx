@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/inference"
 )
 
 func TestIsChatGPTAuth(t *testing.T) {
@@ -64,6 +66,68 @@ func TestUpstreamTargetURLPreservesQuery(t *testing.T) {
 	want := "https://chatgpt.com/backend-api/codex/models?client_version=0.135.0"
 	if got != want {
 		t.Fatalf("URL() = %q, want %q", got, want)
+	}
+}
+
+func TestApplyInferenceAuthAddsAnthropicAPIKey(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	if err := inference.Save(inference.Credentials{Provider: "anthropic", APIKey: "anthropic-key"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	req := httptestRequestWithPath("/v1/messages")
+
+	applyInferenceAuth(req, "anthropic")
+
+	if got := req.Header.Get("x-api-key"); got != "anthropic-key" {
+		t.Fatalf("x-api-key = %q, want anthropic-key", got)
+	}
+}
+
+func TestApplyInferenceAuthAddsOpenAIBearer(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: "openai-key"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	req := httptestRequestWithPath("/v1/responses")
+
+	applyInferenceAuth(req, "openai")
+
+	if got := req.Header.Get("Authorization"); got != "Bearer openai-key" {
+		t.Fatalf("Authorization = %q, want bearer openai key", got)
+	}
+}
+
+func TestApplyInferenceAuthPreservesExistingCredentials(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: "stored-openai"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	req := httptestRequestWithHeader("Authorization", "Bearer caller-openai")
+
+	applyInferenceAuth(req, "openai")
+
+	if got := req.Header.Get("Authorization"); got != "Bearer caller-openai" {
+		t.Fatalf("Authorization = %q, want caller auth preserved", got)
+	}
+}
+
+func TestApplyInferenceAuthPreservesChatGPTToken(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: "stored-openai"}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	req := httptestRequestWithPath("/v1/responses")
+	req.Header.Set("Authorization", "Bearer chatgpt-token")
+	req.Header.Set("Chatgpt-Account-Id", "acct-123")
+
+	applyInferenceAuth(req, "openai")
+
+	if got := req.Header.Get("Authorization"); got != "Bearer chatgpt-token" {
+		t.Fatalf("Authorization = %q, want ChatGPT token preserved", got)
 	}
 }
 

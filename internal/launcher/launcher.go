@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
@@ -47,7 +48,10 @@ func Run(ctx context.Context, args []string) error {
 	cmd.Stderr = os.Stderr
 	envVars := tool.EnvVars(session.Port)
 	envVars["GX_SESSION_ID"] = session.SessionID
-	cmd.Env = append(os.Environ(), flattenEnv(envVars)...)
+	for key, value := range inference.EnvVars() {
+		envVars[key] = value
+	}
+	cmd.Env = append(baseEnvironmentWithoutInferenceKeys(), flattenEnv(envVars)...)
 
 	if err := cmd.Start(); err != nil {
 		_ = manager.EndSession(context.Background(), controlURL, session.SessionID, 127)
@@ -66,6 +70,18 @@ func Run(ctx context.Context, args []string) error {
 		return waitErr
 	}
 	return endErr
+}
+
+func baseEnvironmentWithoutInferenceKeys() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "ANTHROPIC_API_KEY=") || strings.HasPrefix(entry, "OPENAI_API_KEY=") {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func flattenEnv(values map[string]string) []string {
