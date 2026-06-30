@@ -598,12 +598,12 @@ func TestReviewDemuxPlanReturnsNormalizedWarnings(t *testing.T) {
 	if len(result.Proposal.FeasibilityWarnings) != 1 || result.Proposal.FeasibilityWarnings[0].Source != "inferred_dependency" {
 		t.Fatalf("ReviewDemuxPlan() warnings = %#v, want inferred dependency", result.Proposal.FeasibilityWarnings)
 	}
-	if len(result.RepairHints) != 1 || result.RepairHints[0].Kind != "inferred_dependency" || result.RepairHints[0].RevisionID != "r2" || result.RepairHints[0].DependsOn != "r1" {
-		t.Fatalf("ReviewDemuxPlan() repair hints = %#v, want depends_on r1 hint", result.RepairHints)
+	if len(result.RepairHints) != 0 {
+		t.Fatalf("ReviewDemuxPlan() repair hints = %#v, want none for advisory dependency warning", result.RepairHints)
 	}
 }
 
-func TestReviewDemuxPlanReturnsReorderRepairHint(t *testing.T) {
+func TestReviewDemuxPlanKeepsStructuralDependencyAdvisoryNonBlocking(t *testing.T) {
 	engine := NewEngine()
 	result, err := engine.ReviewDemuxPlan(context.Background(), DemuxProposal{
 		Hunks: []HunkRange{
@@ -633,8 +633,8 @@ func TestReviewDemuxPlanReturnsReorderRepairHint(t *testing.T) {
 	if warning.RevisionID != "r1" || warning.DependsOn != "r2" || warning.Symbol != "NewThing" {
 		t.Fatalf("ReviewDemuxPlan() warning = %#v, want typed dependency fields", warning)
 	}
-	if len(result.RepairHints) != 1 || result.RepairHints[0].Kind != "reorder_dependency" || result.RepairHints[0].RevisionID != "r1" || result.RepairHints[0].DependsOn != "r2" {
-		t.Fatalf("ReviewDemuxPlan() repair hints = %#v, want reorder r2 before r1 hint", result.RepairHints)
+	if len(result.RepairHints) != 0 {
+		t.Fatalf("ReviewDemuxPlan() repair hints = %#v, want none for advisory dependency warning", result.RepairHints)
 	}
 }
 
@@ -1450,7 +1450,7 @@ func TestRepairReviewedDemuxProposalDeterministicallyFixesInvalidAIDependsOn(t *
 	}
 }
 
-func TestReviewDemuxProposalWithAIPlanPersistsDeterministicRepair(t *testing.T) {
+func TestReviewDemuxProposalWithAIPlanLeavesAdvisoryDependencyReady(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	engine := NewEngine()
 	saved, err := engine.SaveDemuxProposal(context.Background(), DemuxProposal{
@@ -1481,8 +1481,8 @@ func TestReviewDemuxProposalWithAIPlanPersistsDeterministicRepair(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ReviewDemuxProposalWithAI() error = %v", err)
 	}
-	if !result.Updated || result.State != DemuxWorkflowReadyToApply {
-		t.Fatalf("ReviewDemuxProposalWithAI() = updated %t state %q, want updated ready_to_apply", result.Updated, result.State)
+	if result.Updated || result.State != DemuxWorkflowReadyToApply {
+		t.Fatalf("ReviewDemuxProposalWithAI() = updated %t state %q, want unchanged ready_to_apply", result.Updated, result.State)
 	}
 
 	packet, err := engine.ShowDemuxProposal(context.Background(), saved.ID)
@@ -1492,8 +1492,8 @@ func TestReviewDemuxProposalWithAIPlanPersistsDeterministicRepair(t *testing.T) 
 	if packet.State != DemuxWorkflowReadyToApply {
 		t.Fatalf("ShowDemuxProposal() state = %q, want ready_to_apply; warnings=%#v", packet.State, packet.Proposal.FeasibilityWarnings)
 	}
-	if got := revisionIDs(packet.Proposal.Revisions); !reflect.DeepEqual(got, []string{"r2", "r1"}) {
-		t.Fatalf("persisted revision order = %#v, want deterministic repaired order", got)
+	if got := revisionIDs(packet.Proposal.Revisions); !reflect.DeepEqual(got, []string{"r1", "r2"}) {
+		t.Fatalf("persisted revision order = %#v, want original advisory order", got)
 	}
 }
 

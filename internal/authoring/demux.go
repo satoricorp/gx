@@ -445,7 +445,7 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 	if err != nil {
 		return CheckpointResult{}, err
 	}
-	source, err := e.demuxSourceLocation(ctx, sourceChange)
+	source, err := e.demuxApplySourceLocation(ctx, sourceChange)
 	if err != nil {
 		return CheckpointResult{}, err
 	}
@@ -1150,6 +1150,9 @@ func repairHintsForReviewError(proposal DemuxProposal, message string) []RepairH
 func repairHintsForWarnings(warnings []FeasibilityWarning) []RepairHint {
 	var hints []RepairHint
 	for _, warning := range warnings {
+		if strings.EqualFold(strings.TrimSpace(warning.Severity), "info") {
+			continue
+		}
 		switch warning.Source {
 		case "inferred_dependency":
 			dependsOn := strings.TrimSpace(warning.DependsOn)
