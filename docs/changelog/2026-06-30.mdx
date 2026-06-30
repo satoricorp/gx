@@ -1,0 +1,82 @@
+---
+title: "Week of June 30, 2026"
+description: "GX PR summaries, indexed review context, local inference setup, and stack hygiene improvements."
+---
+
+## New features
+
+### GitHub PR summaries on `gx push`
+
+`gx push` now writes a generated review summary into the GitHub pull request body, including an opening overview, blast radius, and up to 10 high-impact review targets with deep links. Existing PR descriptions are preserved beneath an `## Author Notes` heading. See [GitHub PR summaries](/reference/github-pr-summaries).
+
+### Local inference API key setup
+
+Run `gx set key` to store an Anthropic or OpenAI API key for local inference. The stored key is used for inference proxying and MCP-launched `gx` commands, and takes precedence over `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` fallbacks. See [Local inference](/#local-inference).
+
+### Indexed review context and GitHub comments
+
+`gx review` now pulls in indexed review context and surfaces relevant GitHub comments alongside findings, so reviewers see prior discussion next to the code in question.
+
+### Code review history memory
+
+`gx review` remembers past review outcomes and uses them to attribute and prioritize new findings.
+
+### Review policy context
+
+`gx review` picks up review policy context from the repo so findings reflect your team's standards.
+
+### Prompted `gx review`
+
+You can now run `gx review` with a prompt to focus the review on a specific concern or area.
+
+### `gx report`
+
+New `gx report` command summarizes stack activity and review output.
+
+### `gxr` review shortcut
+
+The menubar app installs a `gxr` shortcut as a fast alias for the review workflow.
+
+## Updates
+
+### `gx generate` and `gx push` flow
+
+The generate and push flow has been updated end-to-end for more reliable revision capture, smoother routing through generate preflight, and fewer surprises when pushing stacks.
+
+### Stack hygiene
+
+- Merged published stacks are now hidden and pruned automatically.
+- Closed GitHub PR stacks are pruned from local state.
+- Empty stored stack revisions are hidden from the status UI.
+
+### Stack UX
+
+- Stack TUIs now have a scroll viewport for navigating long stacks.
+- Stack read model performance has been improved, making `gx status` snappier on large histories.
+- Refined stack UX across the status surfaces.
+
+### Menubar and CLI polish
+
+- The menubar menu now shows both the menubar tag and CLI versions.
+- Menubar menu and surrounding docs have been simplified.
+- CLI help surface polished for clarity.
+- `gx doctor` output simplified.
+- Convex site no longer appears in auth status.
+
+### Authentication
+
+- Expiring GitHub auth tokens are refreshed automatically.
+- Login now verifies the console API session before continuing.
+
+### Analytics
+
+- PostHog events now include identity for accurate per-user metrics.
+- Main GX builds can run without a PostHog key.
+
+## Bug fixes
+
+- Fixed PostHog configuration for macOS releases.
+- Removed the destructive `Shift-D` delete shortcut from the status UI to prevent accidental deletes.
+- Removed the MCP sync capture option, which was causing redundant capture work.
+- Improved attribution and reporting in `gx review` so findings are credited to the right source.
+- Console: fixed community repository navigation.

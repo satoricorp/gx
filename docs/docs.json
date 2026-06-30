@@ -6,7 +6,8 @@
   "navigation": {
     "groups": [
       { "group": "Home", "pages": ["index"] },
-      { "group": "Reference", "pages": ["reference/github-pr-summaries"] }
+      { "group": "Reference", "pages": ["reference/github-pr-summaries"] },
+      { "group": "Changelog", "pages": ["changelog/2026-06-30"] }
     ]
   }
 }
