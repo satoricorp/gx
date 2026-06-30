@@ -2356,6 +2356,11 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 	gxBaseRef := s.publicStackBaseRef(ctx, repo, body.BaseRef)
 
 	gitExported := opts.gitExportEnabled()
+	if gitExported {
+		if err := s.requireGitHubPullRequestAuth(ctx, repo, body); err != nil {
+			return PushResult{}, err
+		}
+	}
 	pushed, gitPushStatus, warnings, stackErr := s.pushRecordedStack(ctx, repo, *remoteName, refName, body, opts)
 	output := ""
 	if stackErr != nil {
@@ -2410,6 +2415,23 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 		Warnings:             warnings,
 		GitHubPullRequestURL: githubPRURL,
 	}, nil
+}
+
+func (s *Service) requireGitHubPullRequestAuth(ctx context.Context, repo RepoInfo, stack StackInfo) error {
+	if stack.GitHubPRURL != nil && strings.TrimSpace(*stack.GitHubPRURL) != "" {
+		return nil
+	}
+	if repo.RemoteURL == nil || strings.TrimSpace(*repo.RemoteURL) == "" {
+		return nil
+	}
+	host, _, _, ok := parseGitHubRemote(*repo.RemoteURL)
+	if !ok {
+		return nil
+	}
+	if _, err := githubapi.NewClient(host); err != nil {
+		return fmt.Errorf("GitHub PR setup requires authentication before pushing code: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) stackHeadCommitID(ctx context.Context, repoRoot string, stack StackInfo, pushed []PushedChange) (string, error) {

@@ -396,6 +396,36 @@ func TestEnsureGitHubPullRequestReusesStoredPR(t *testing.T) {
 	}
 }
 
+func TestRequireGitHubPullRequestAuthFailsBeforePushWhenMissingToken(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	svc := NewServiceWithRunner(&fakeRunner{})
+	remoteURL := "git@github.com:satoricorp/gx.git"
+	err := svc.requireGitHubPullRequestAuth(context.Background(), RepoInfo{RemoteURL: &remoteURL}, StackInfo{})
+	if err == nil {
+		t.Fatal("requireGitHubPullRequestAuth() error = nil, want missing token error")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "before pushing code") || !strings.Contains(message, "gx auth login") {
+		t.Fatalf("error = %q, want pre-push auth login guidance", message)
+	}
+}
+
+func TestRequireGitHubPullRequestAuthSkipsStoredPR(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	svc := NewServiceWithRunner(&fakeRunner{})
+	remoteURL := "git@github.com:satoricorp/gx.git"
+	prURL := "https://github.com/satoricorp/gx/pull/42"
+	if err := svc.requireGitHubPullRequestAuth(context.Background(), RepoInfo{RemoteURL: &remoteURL}, StackInfo{GitHubPRURL: &prURL}); err != nil {
+		t.Fatalf("requireGitHubPullRequestAuth() error = %v, want nil for stored PR", err)
+	}
+}
+
 func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	repoRoot := t.TempDir()
 	var createPayload map[string]string
