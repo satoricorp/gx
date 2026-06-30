@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +34,49 @@ func TestGroupFilesPairsSourceAndTests(t *testing.T) {
 		{"internal/storage/schema.sql"},
 		{"internal/foo/foo.go", "internal/foo/foo_test.go"},
 	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("groupFiles() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGroupFilesClustersGreenfieldTauriScaffold(t *testing.T) {
+	got := groupFiles([]string{
+		".gitignore",
+		".vscode/extensions.json",
+		"README.md",
+		"index.html",
+		"package-lock.json",
+		"package.json",
+		"src/App.css",
+		"src/App.tsx",
+		"src/main.tsx",
+		"src/vite-env.d.ts",
+		"src-tauri/.gitignore",
+		"src-tauri/Cargo.lock",
+		"src-tauri/Cargo.toml",
+		"src-tauri/build.rs",
+		"src-tauri/capabilities/default.json",
+		"src-tauri/src/lib.rs",
+		"src-tauri/src/main.rs",
+		"src-tauri/tauri.conf.json",
+		"tsconfig.json",
+		"tsconfig.node.json",
+		"vite.config.ts",
+	})
+	want := [][]string{
+		{".gitignore", ".vscode/extensions.json", "package-lock.json", "package.json", "tsconfig.json", "tsconfig.node.json", "vite.config.ts"},
+		{"src-tauri/.gitignore", "src-tauri/Cargo.lock", "src-tauri/Cargo.toml", "src-tauri/build.rs", "src-tauri/capabilities/default.json", "src-tauri/src/lib.rs", "src-tauri/src/main.rs", "src-tauri/tauri.conf.json"},
+		{"index.html", "src/App.css", "src/App.tsx", "src/main.tsx", "src/vite-env.d.ts"},
+		{"README.md"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("groupFiles() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCounterpartKeyPairsPackageManifestAndLock(t *testing.T) {
+	got := groupFiles([]string{"package-lock.json", "package.json"})
+	want := [][]string{{"package-lock.json", "package.json"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("groupFiles() = %#v, want %#v", got, want)
 	}
@@ -460,6 +504,71 @@ func TestDemuxPreflightSkipsGeneratedDirsUnlessProposalTouchesThem(t *testing.T)
 	}
 }
 
+func TestCopyTreeWithSkipsOmitsIgnoredFilesUnlessProtected(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+	mustWriteFile(t, filepath.Join(src, "keep.txt"), "keep")
+	mustWriteFile(t, filepath.Join(src, "src-tauri/gen/schemas/desktop-schema.json"), "{}")
+	mustWriteFile(t, filepath.Join(src, ".jj/repo/store/type"), "git")
+
+	ignored := map[string]struct{}{
+		filepath.Clean("src-tauri/gen/schemas/desktop-schema.json"): {},
+		filepath.Clean(".jj/repo/store/type"):                       {},
+	}
+	skipIgnored := func(rel string, entry fs.DirEntry) bool {
+		return demuxPreflightIgnoredPath(rel, ignored)
+	}
+	if err := copyTreeWithSkips(src, dst, nil, skipIgnored); err != nil {
+		t.Fatalf("copyTreeWithSkips() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "keep.txt")); err != nil {
+		t.Fatalf("kept file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "src-tauri/gen/schemas/desktop-schema.json")); !os.IsNotExist(err) {
+		t.Fatalf("ignored generated file should be omitted, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, ".jj/repo/store/type")); err != nil {
+		t.Fatalf("jj internals should be preserved even when git reports them ignored: %v", err)
+	}
+
+	protectedDst := t.TempDir()
+	protected := map[string]struct{}{
+		filepath.Clean("src-tauri/gen/schemas/desktop-schema.json"): {},
+	}
+	if err := copyTreeWithSkips(src, protectedDst, protected, skipIgnored); err != nil {
+		t.Fatalf("copyTreeWithSkips(protected) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(protectedDst, "src-tauri/gen/schemas/desktop-schema.json")); err != nil {
+		t.Fatalf("protected ignored file should be copied: %v", err)
+	}
+}
+
+func TestDemuxTargetBlockingFilesIgnoresSourceIgnoredGeneratedOutput(t *testing.T) {
+	ignored := map[string]struct{}{
+		filepath.Clean("node_modules/react/index.js"): {},
+		filepath.Clean("dist/index.html"):             {},
+	}
+	got := demuxTargetBlockingFiles(
+		[]string{"node_modules/react/index.js", "dist/index.html", "package.json", "README.md"},
+		[]string{"package.json"},
+		ignored,
+	)
+	want := []string{"package.json", "README.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("demuxTargetBlockingFiles() = %#v, want %#v", got, want)
+	}
+}
+
+func mustWriteFile(t *testing.T, path string, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
 func TestReviewDemuxPlanReturnsNormalizedWarnings(t *testing.T) {
 	engine := NewEngine()
 	result, err := engine.ReviewDemuxPlan(context.Background(), DemuxProposal{
@@ -645,6 +754,112 @@ func TestShapeDemuxProposalCoalescesRelatedPackageRevisionsUnderSoftMax(t *testi
 	}
 	if !sawCluster || !sawLargeModule {
 		t.Fatalf("shaped revisions = %#v, want one cluster and one large module", proposal.Revisions)
+	}
+}
+
+func TestDemuxStackClusterNamesScaffoldRoutes(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		wantKey  string
+		wantName string
+		wantKind string
+	}{
+		{
+			name:     "tooling",
+			files:    []string{".gitignore", "package-lock.json", "package.json", "tsconfig.json", "vite.config.ts"},
+			wantKey:  "project-tooling",
+			wantName: "project tooling",
+			wantKind: "chore",
+		},
+		{
+			name:     "tauri",
+			files:    []string{"src-tauri/Cargo.toml", "src-tauri/src/lib.rs", "src-tauri/tauri.conf.json"},
+			wantKey:  "tauri-app",
+			wantName: "Tauri app",
+			wantKind: "feature",
+		},
+		{
+			name:     "frontend",
+			files:    []string{"index.html", "src/App.tsx", "src/main.tsx"},
+			wantKey:  "frontend-app",
+			wantName: "frontend app",
+			wantKind: "feature",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, name, kind, _, _ := demuxStackClusterForRevision(RevisionProposal{
+				Intent: "stand up Tauri app shell",
+				Files:  tt.files,
+			})
+			if key != tt.wantKey || name != tt.wantName || kind != tt.wantKind {
+				t.Fatalf("demuxStackClusterForRevision() = (%q, %q, %q), want (%q, %q, %q)", key, name, kind, tt.wantKey, tt.wantName, tt.wantKind)
+			}
+		})
+	}
+}
+
+func TestScaffoldDemuxProposalGroupsBeforeRouting(t *testing.T) {
+	files := []string{
+		".gitignore",
+		".vscode/extensions.json",
+		"README.md",
+		"index.html",
+		"package-lock.json",
+		"package.json",
+		"src/App.css",
+		"src/App.tsx",
+		"src/main.tsx",
+		"src/vite-env.d.ts",
+		"src-tauri/.gitignore",
+		"src-tauri/Cargo.lock",
+		"src-tauri/Cargo.toml",
+		"src-tauri/build.rs",
+		"src-tauri/capabilities/default.json",
+		"src-tauri/src/lib.rs",
+		"src-tauri/src/main.rs",
+		"src-tauri/tauri.conf.json",
+		"tsconfig.json",
+		"tsconfig.node.json",
+		"vite.config.ts",
+	}
+	var hunks []HunkRange
+	for index, file := range files {
+		hunks = append(hunks, HunkRange{
+			ID:    fmt.Sprintf("h%d", index+1),
+			File:  file,
+			Patch: "@@\n+" + file + "\n",
+		})
+	}
+	groups := expandGroupsByChangedSymbols(groupFiles(files), hunksByFile(hunks))
+	revisions := make([]RevisionProposal, 0, len(groups))
+	for index, group := range groups {
+		revisions = append(revisions, RevisionProposal{
+			ID:       fmt.Sprintf("u%d", index+1),
+			Intent:   proposalIntentForGroup("Stand up Tauri app shell", group),
+			Files:    group.Files,
+			HunkIDs:  hunkIDs(group.Hunks),
+			Hunks:    group.Hunks,
+			UseHunks: len(group.Hunks) > 0,
+		})
+	}
+	proposal, _ := shapeDemuxProposalForReview(DemuxProposal{
+		Hunks:     hunks,
+		Revisions: revisions,
+	})
+	proposal = inferNewStackRoutes(proposal)
+
+	if len(proposal.Revisions) != 4 {
+		t.Fatalf("revisions = %#v, want 4 scaffold groups", proposal.Revisions)
+	}
+	gotRoutes := make([]string, 0, len(proposal.Revisions))
+	for _, revision := range proposal.Revisions {
+		gotRoutes = append(gotRoutes, revision.TargetStack)
+	}
+	wantRoutes := []string{"chore/project-tooling", "feature/tauri-app", "feature/frontend-app", "docs/documentation"}
+	if !reflect.DeepEqual(gotRoutes, wantRoutes) {
+		t.Fatalf("routes = %#v, want %#v", gotRoutes, wantRoutes)
 	}
 }
 

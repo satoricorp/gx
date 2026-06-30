@@ -997,10 +997,23 @@ func TestDemuxAutoAcceptBlockedReasonRequiresCleanReadyProposal(t *testing.T) {
 		t.Fatalf("ready proposal blocked: %s", reason)
 	}
 
+	withInfo := ready
+	withInfo.Proposal.FeasibilityWarnings = []authoring.FeasibilityWarning{{Severity: "info", Message: "diagnostic"}}
+	withInfo.Proposal.Warnings = []string{"deterministic proposal uses file heuristics"}
+	if reason := demuxAutoAcceptBlockedReason(withInfo); reason != "" {
+		t.Fatalf("info-only diagnostics blocked: %s", reason)
+	}
+
 	withWarning := ready
 	withWarning.Proposal.FeasibilityWarnings = []authoring.FeasibilityWarning{{Severity: "warning", Message: "blocked"}}
 	if reason := demuxAutoAcceptBlockedReason(withWarning); !strings.Contains(reason, "blocking warnings") {
 		t.Fatalf("warning reason = %q, want blocking warnings", reason)
+	}
+
+	withPlainWarning := ready
+	withPlainWarning.Proposal.Warnings = []string{"Compose apply preflight failed: blocked"}
+	if reason := demuxAutoAcceptBlockedReason(withPlainWarning); !strings.Contains(reason, "blocking warnings") {
+		t.Fatalf("plain warning reason = %q, want blocking warnings", reason)
 	}
 
 	withRepairHint := ready

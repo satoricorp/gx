@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -65,7 +66,14 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 }
 
 func copyTreeForDemuxPreflight(proposal DemuxProposal, dst string) error {
-	return copyTreeWithSkips(proposal.RepoRoot, dst, demuxPreflightProtectedPaths(proposal), demuxPreflightSkippableDir)
+	protected := demuxPreflightProtectedPaths(proposal)
+	ignored := demuxPreflightIgnoredPaths(proposal.RepoRoot)
+	return copyTreeWithSkips(proposal.RepoRoot, dst, protected, func(rel string, entry fs.DirEntry) bool {
+		if entry.IsDir() && demuxPreflightSkippableDir(rel) {
+			return true
+		}
+		return demuxPreflightIgnoredPath(rel, ignored)
+	})
 }
 
 func demuxPreflightProtectedPaths(proposal DemuxProposal) map[string]struct{} {
@@ -99,6 +107,39 @@ func demuxPreflightSkippableDir(rel string) bool {
 	default:
 		return false
 	}
+}
+
+func demuxPreflightIgnoredPaths(repoRoot string) map[string]struct{} {
+	out, err := exec.Command("git", "-C", repoRoot, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+	ignored := map[string]struct{}{}
+	for _, raw := range strings.Split(string(out), "\x00") {
+		rel := filepath.Clean(strings.TrimSpace(raw))
+		if rel == "." || rel == "" || demuxPreflightVCSInternalPath(rel) {
+			continue
+		}
+		ignored[rel] = struct{}{}
+	}
+	return ignored
+}
+
+func demuxPreflightIgnoredPath(rel string, ignored map[string]struct{}) bool {
+	if len(ignored) == 0 {
+		return false
+	}
+	rel = filepath.Clean(strings.TrimSpace(rel))
+	if rel == "." || rel == "" || demuxPreflightVCSInternalPath(rel) {
+		return false
+	}
+	_, ok := ignored[rel]
+	return ok
+}
+
+func demuxPreflightVCSInternalPath(rel string) bool {
+	rel = filepath.ToSlash(filepath.Clean(strings.TrimSpace(rel)))
+	return rel == ".git" || strings.HasPrefix(rel, ".git/") || rel == ".jj" || strings.HasPrefix(rel, ".jj/")
 }
 
 func loadDemuxApplyPreflightState(ctx context.Context, repoRoot string) (demuxApplyPreflightState, error) {
@@ -233,7 +274,7 @@ func copyTree(src, dst string) error {
 	return copyTreeWithSkips(src, dst, nil, nil)
 }
 
-func copyTreeWithSkips(src, dst string, protected map[string]struct{}, skipDir func(string) bool) error {
+func copyTreeWithSkips(src, dst string, protected map[string]struct{}, skipEntry func(string, fs.DirEntry) bool) error {
 	src = filepath.Clean(src)
 	return filepath.WalkDir(src, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -259,16 +300,27 @@ func copyTreeWithSkips(src, dst string, protected map[string]struct{}, skipDir f
 			}
 			return os.Symlink(link, target)
 		case entry.IsDir():
-			if skipDir != nil && skipDir(rel) && !hasProtectedPathUnder(protected, rel) {
+			if skipEntry != nil && skipEntry(rel, entry) && !hasProtectedPathUnder(protected, rel) {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(target, mode.Perm())
 		case mode.IsRegular():
+			if skipEntry != nil && skipEntry(rel, entry) && !isProtectedPath(protected, rel) {
+				return nil
+			}
 			return copyFile(path, target, mode.Perm())
 		default:
 			return nil
 		}
 	})
+}
+
+func isProtectedPath(protected map[string]struct{}, rel string) bool {
+	if len(protected) == 0 {
+		return false
+	}
+	_, ok := protected[filepath.Clean(rel)]
+	return ok
 }
 
 func hasProtectedPathUnder(protected map[string]struct{}, rel string) bool {

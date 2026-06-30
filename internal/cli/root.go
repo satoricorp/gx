@@ -1666,14 +1666,32 @@ func demuxAutoAcceptBlockedReason(packet authoring.DemuxPlanPacket) string {
 	if len(packet.Review.RepairHints) > 0 {
 		return "generated revisions are not ready: repair hints found"
 	}
-	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
+	blockingWarnings, _ := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
 	if len(blockingWarnings) > 0 {
 		return "generated revisions are not ready: blocking warnings found"
 	}
-	if len(diagnosticWarnings) > 0 || len(packet.Proposal.Warnings) > 0 {
-		return "generated revisions are not ready: diagnostics found"
+	if len(demuxBlockingPlainWarnings(packet.Proposal.Warnings)) > 0 {
+		return "generated revisions are not ready: blocking warnings found"
 	}
 	return ""
+}
+
+func demuxBlockingPlainWarnings(warnings []string) []string {
+	var blocking []string
+	for _, warning := range warnings {
+		warning = strings.TrimSpace(warning)
+		switch {
+		case warning == "":
+			continue
+		case warning == demuxPartialComposeWarning:
+			blocking = append(blocking, warning)
+		case strings.HasPrefix(warning, "Compose repair failed:"):
+			blocking = append(blocking, warning)
+		case strings.HasPrefix(warning, "Compose apply preflight failed:"):
+			blocking = append(blocking, warning)
+		}
+	}
+	return blocking
 }
 
 func pluralize(word string, count int) string {

@@ -119,6 +119,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		Revisions:        revisions,
 		Warnings:         warnings,
 	}
+	proposal, _ = shapeDemuxProposalForReview(proposal)
 	proposal, err = e.planDemuxRoutes(ctx, proposal)
 	if err != nil {
 		return DemuxProposal{}, err
@@ -456,6 +457,7 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 		return CheckpointResult{}, fmt.Errorf("route requires files for revision %s", revision.ID)
 	}
 	sourceRev := firstNonEmpty(proposal.ProposedCommitID, sourceChange.ChangeID)
+	sourceIgnored := demuxPreflightIgnoredPaths(proposal.RepoRoot)
 
 	restoreSource := func() error {
 		if err := source.restore(ctx, e, proposal.RepoRoot); err != nil {
@@ -500,8 +502,9 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 	if err != nil {
 		return CheckpointResult{}, restoreAfterError(err)
 	}
-	if len(targetBefore.Files) > 0 {
-		return CheckpointResult{}, restoreAfterError(fmt.Errorf("target stack %q has existing working-copy changes: %s", target, strings.Join(targetBefore.Files, ", ")))
+	targetFiles := demuxTargetBlockingFiles(targetBefore.Files, files, sourceIgnored)
+	if len(targetFiles) > 0 {
+		return CheckpointResult{}, restoreAfterError(fmt.Errorf("target stack %q has existing working-copy changes: %s", target, strings.Join(targetFiles, ", ")))
 	}
 	if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, sourceRev, files); err != nil {
 		return CheckpointResult{}, restoreAfterError(fmt.Errorf("copy routed files to target stack %q: %w", target, err))
@@ -523,6 +526,35 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 		return CheckpointResult{}, fmt.Errorf("remove routed files from source %s: %w", source.label(), err)
 	}
 	return result, nil
+}
+
+func demuxTargetBlockingFiles(targetFiles []string, revisionFiles []string, sourceIgnored map[string]struct{}) []string {
+	if len(targetFiles) == 0 {
+		return nil
+	}
+	protected := map[string]struct{}{}
+	for _, file := range revisionFiles {
+		file = filepath.Clean(strings.TrimSpace(file))
+		if file != "" && file != "." {
+			protected[file] = struct{}{}
+		}
+	}
+	blocking := make([]string, 0, len(targetFiles))
+	for _, file := range targetFiles {
+		file = filepath.Clean(strings.TrimSpace(file))
+		if file == "" || file == "." {
+			continue
+		}
+		if isProtectedPath(protected, file) {
+			blocking = append(blocking, file)
+			continue
+		}
+		if demuxPreflightIgnoredPath(file, sourceIgnored) {
+			continue
+		}
+		blocking = append(blocking, file)
+	}
+	return blocking
 }
 
 type demuxSourceLocation struct {
@@ -1741,6 +1773,9 @@ func groupFiles(files []string) [][]string {
 	sort.SliceStable(remaining, func(i, j int) bool {
 		return fileOrderRank(remaining[i]) < fileOrderRank(remaining[j])
 	})
+	if looksLikeAppScaffold(remaining) {
+		return groupAppScaffoldFiles(remaining)
+	}
 
 	groups := [][]string{}
 	used := map[string]struct{}{}
@@ -1763,6 +1798,103 @@ func groupFiles(files []string) [][]string {
 		groups = append(groups, group)
 	}
 	return groups
+}
+
+func looksLikeAppScaffold(files []string) bool {
+	if len(files) < 6 {
+		return false
+	}
+	fileSet := stringSet(files)
+	if _, ok := fileSet["package.json"]; !ok {
+		return false
+	}
+	for _, marker := range []string{
+		"index.html",
+		"src/main.tsx",
+		"src/main.ts",
+		"src/main.jsx",
+		"src/main.js",
+		"src/App.tsx",
+		"src/App.ts",
+		"src/App.jsx",
+		"src/App.js",
+		"src-tauri/tauri.conf.json",
+	} {
+		if _, ok := fileSet[marker]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func groupAppScaffoldFiles(files []string) [][]string {
+	type scaffoldGroup struct {
+		key   string
+		rank  int
+		files []string
+	}
+	groupsByKey := map[string]*scaffoldGroup{}
+	order := []string{}
+	var passthrough []string
+	for _, file := range files {
+		key, rank := appScaffoldGroupKey(file)
+		if key == "" {
+			passthrough = append(passthrough, file)
+			continue
+		}
+		group := groupsByKey[key]
+		if group == nil {
+			group = &scaffoldGroup{key: key, rank: rank}
+			groupsByKey[key] = group
+			order = append(order, key)
+		}
+		group.files = append(group.files, file)
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		left := groupsByKey[order[i]]
+		right := groupsByKey[order[j]]
+		if left.rank != right.rank {
+			return left.rank < right.rank
+		}
+		return left.key < right.key
+	})
+	groups := make([][]string, 0, len(order)+len(passthrough))
+	for _, key := range order {
+		group := groupsByKey[key]
+		files := cleanFiles(group.files)
+		if len(files) > 0 {
+			groups = append(groups, files)
+		}
+	}
+	if len(passthrough) > 0 {
+		groups = append(groups, groupFiles(passthrough)...)
+	}
+	return groups
+}
+
+func appScaffoldGroupKey(file string) (string, int) {
+	file = normalizeFilesetPath(file)
+	switch {
+	case file == "":
+		return "", 0
+	case file == "README.md" || strings.HasSuffix(file, ".md"):
+		return "scaffold:docs", 90
+	case strings.HasPrefix(file, "src-tauri/"):
+		return "scaffold:tauri", 20
+	case file == "index.html" || strings.HasPrefix(file, "src/"):
+		return "scaffold:frontend", 30
+	case file == ".gitignore" ||
+		file == ".vscode/extensions.json" ||
+		file == "package.json" ||
+		file == "package-lock.json" ||
+		strings.HasPrefix(file, "tsconfig") ||
+		strings.HasPrefix(file, "vite.config.") ||
+		strings.HasSuffix(file, ".config.ts") ||
+		strings.HasSuffix(file, ".config.js"):
+		return "scaffold:tooling", 10
+	default:
+		return "", 0
+	}
 }
 
 func expandGroupsByChangedSymbols(fileGroups [][]string, hunksByFile map[string][]HunkRange) []demuxGroup {
@@ -2011,6 +2143,10 @@ func counterpartKey(file string) string {
 	base := filepath.Base(file)
 	ext := filepath.Ext(base)
 	name := strings.TrimSuffix(base, ext)
+	switch name {
+	case "package-lock", "npm-shrinkwrap", "pnpm-lock", "yarn", "bun":
+		name = "package"
+	}
 	for _, suffix := range []string{"_test", ".test", ".spec"} {
 		name = strings.TrimSuffix(name, suffix)
 	}

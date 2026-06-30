@@ -584,6 +584,15 @@ func demuxStackClusterForRevision(revision RevisionProposal) (string, string, st
 	if containsPathPrefix(files, "docs/") || containsPathPrefix(files, "skills/") || containsMarkdownFile(files) {
 		return "documentation", "documentation", kind, "revision touches documentation", 0.72
 	}
+	if containsPathPrefix(files, "src-tauri/") {
+		return "tauri-app", "Tauri app", kind, "revision touches the Tauri application shell", 0.78
+	}
+	if containsPathPrefix(files, "src/") || containsExactFile(files, "index.html") {
+		return "frontend-app", "frontend app", kind, "revision touches the frontend application shell", 0.76
+	}
+	if containsProjectToolingFile(files) {
+		return "project-tooling", "project tooling", kind, "revision touches project tooling, dependencies, or build configuration", 0.74
+	}
 	if containsPathPrefix(files, "cmd/gx/") || containsPathPrefix(files, "internal/cli/") || containsPathPrefix(files, "internal/clitui/") {
 		return "cli", "CLI", kind, "revision touches the GX command-line surface", 0.72
 	}
@@ -611,7 +620,7 @@ func conventionalDemuxStackKind(text string, files []string) string {
 	if containsOnlyTestFiles(files) {
 		return "test"
 	}
-	if containsOnlyBuildOrDependencyFiles(files) {
+	if containsOnlyBuildOrDependencyFiles(files) || containsOnlyProjectToolingFiles(files) {
 		return "chore"
 	}
 	return "feature"
@@ -717,6 +726,16 @@ func containsPathPrefix(files []string, prefix string) bool {
 	return false
 }
 
+func containsExactFile(files []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, file := range files {
+		if strings.TrimSpace(file) == target {
+			return true
+		}
+	}
+	return false
+}
+
 func containsMarkdownFile(files []string) bool {
 	for _, file := range files {
 		file = strings.ToLower(strings.TrimSpace(file))
@@ -793,7 +812,51 @@ func containsBuildOrDependencyFile(files []string) bool {
 	return false
 }
 
+func containsOnlyProjectToolingFiles(files []string) bool {
+	sawFile := false
+	for _, file := range files {
+		file = strings.ToLower(strings.TrimSpace(file))
+		if file == "" {
+			continue
+		}
+		sawFile = true
+		if !isBuildOrDependencyFile(file) && !isProjectToolingFile(file) {
+			return false
+		}
+	}
+	return sawFile
+}
+
+func containsProjectToolingFile(files []string) bool {
+	for _, file := range files {
+		if isProjectToolingFile(strings.ToLower(strings.TrimSpace(file))) {
+			return true
+		}
+	}
+	return false
+}
+
+func isProjectToolingFile(file string) bool {
+	switch {
+	case file == ".gitignore", file == ".vscode/extensions.json":
+		return true
+	case strings.HasPrefix(file, "tsconfig"):
+		return true
+	default:
+		return false
+	}
+}
+
 func demuxClusterKeyFromFiles(files []string) string {
+	if containsPathPrefix(files, "src-tauri/") {
+		return "tauri-app"
+	}
+	if containsPathPrefix(files, "src/") || containsExactFile(files, "index.html") {
+		return "frontend-app"
+	}
+	if containsProjectToolingFile(files) {
+		return "project-tooling"
+	}
 	for _, file := range files {
 		file = strings.Trim(strings.TrimSpace(file), "/")
 		if file == "" {
