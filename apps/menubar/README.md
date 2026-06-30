@@ -2,8 +2,9 @@
 
 Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it plus
 the `gxg`, `gxr`, and `gxs` shortcuts to `~/.local/bin` on launch, shows
-`gx doctor --json` status and stats, links to gx.run, and provides MCP setup
-snippets.
+`gx doctor --json` status and stats, checks the latest GitHub release, updates
+the local CLI when a newer release is available, links to gx.run, and provides
+MCP setup snippets.
 
 ## Quick start
 
@@ -25,7 +26,9 @@ Open the DMG to get the standard drag-to-Applications install window.
 |------|----------|
 | **Status** | Parsed from `gx doctor --json`; green/yellow/red status dot plus hook, auth, Cursor, disk, and backlog checks |
 | **Stats** | Capture backlog, disk, and ledger summary from doctor JSON |
-| **Update CLI** | Installs or updates `~/.local/bin/gx`, `gxg`, `gxr`, and `gxs` from the bundled CLI |
+| **Update CLI to vX.Y.Z** | Downloads the newest matching CLI release asset from GitHub Releases and installs it to `~/.local/bin` |
+| **Check for Updates** | Fetches the latest `satoricorp/gx` GitHub release and compares it with `gx version --json` |
+| **Install Bundled CLI** | Installs or updates `~/.local/bin/gx`, `gxg`, `gxr`, and `gxs` from the bundled CLI |
 | **Open https://gx.run** | Opens `https://gx.run` |
 | **MCP** | Shows setup instructions at `https://docs.gx.run` |
 | **Quit** | Exits the app |
@@ -41,7 +44,25 @@ Resolution order:
 
 The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxg`,
 `~/.local/bin/gxr`, and `~/.local/bin/gxs` from the bundled CLI on launch and
-through the **Update CLI** menu item.
+through the **Install Bundled CLI** menu item.
+
+## CLI updates
+
+The tray uses `gx version --json` to read the installed CLI version and fetches
+the latest release from:
+
+```text
+https://api.github.com/repos/satoricorp/gx/releases/latest
+```
+
+When the release tag is newer than the installed CLI `release_version`, the
+menu shows **Update CLI to vX.Y.Z**. The updater downloads the matching macOS
+archive asset for the current architecture, verifies a sibling `.sha256` asset
+when present, extracts it, validates the downloaded `gx version --json`, then
+replaces the local binaries in `~/.local/bin`.
+
+For local testing, set `GX_MENUBAR_RELEASE_URL` to a compatible GitHub release
+JSON endpoint or fixture server.
 
 ## Agent setup
 

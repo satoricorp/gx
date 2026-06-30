@@ -2,8 +2,10 @@ import AppKit
 import Foundation
 
 private let pollInterval: TimeInterval = 60
+private let releaseCheckInterval: TimeInterval = 60 * 60
 private let defaultConsoleURL = "https://gx.run"
 private let documentationURL = "https://docs.gx.run"
+private let defaultGitHubLatestReleaseURL = "https://api.github.com/repos/satoricorp/gx/releases/latest"
 
 private struct CommandResult {
     let ok: Bool
@@ -155,6 +157,33 @@ private enum CLIInstaller {
         }
     }
 
+    static func installExtractedCLI(from gxRoot: URL) throws {
+        let binDirectory = gxRoot.appendingPathComponent("bin", isDirectory: true)
+        let gxSource = binDirectory.appendingPathComponent("gx")
+        let mcpSource = binDirectory.appendingPathComponent("gx-mcp")
+        guard FileManager.default.isExecutableFile(atPath: gxSource.path) else {
+            throw NSError(domain: "GXMenuBar", code: 1, userInfo: [NSLocalizedDescriptionKey: "Archive is missing gx"])
+        }
+
+        try FileManager.default.createDirectory(at: installDirectory, withIntermediateDirectories: true)
+        try installExecutable(gxSource, to: installPath)
+        if FileManager.default.isExecutableFile(atPath: mcpSource.path) {
+            try installExecutable(mcpSource, to: installDirectory.appendingPathComponent("gx-mcp"))
+        }
+        try installShortcutSymlinks()
+    }
+
+    private static func installExecutable(_ source: URL, to destination: URL) throws {
+        let temp = installDirectory.appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        try FileManager.default.copyItem(at: source, to: temp)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: temp.path)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temp, backupItemName: nil, options: .usingNewMetadataOnly)
+        } else {
+            try FileManager.default.moveItem(at: temp, to: destination)
+        }
+    }
+
     private static func installShortcutSymlinks() throws {
         for name in ["gxg", "gxr", "gxs"] {
             let shortcut = installDirectory.appendingPathComponent(name)
@@ -162,6 +191,311 @@ private enum CLIInstaller {
             try FileManager.default.createSymbolicLink(atPath: shortcut.path, withDestinationPath: "gx")
         }
     }
+}
+
+private struct CLIVersionInfo: Decodable {
+    let version: String?
+    let releaseVersion: String?
+    let gitSHA: String?
+    let revision: String?
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case releaseVersion = "release_version"
+        case gitSHA = "git_sha"
+        case revision
+    }
+
+    var display: String {
+        clean(releaseVersion) ?? clean(version) ?? clean(revision) ?? "unknown"
+    }
+
+    var comparisonVersion: String? {
+        if let release = clean(releaseVersion), release != "dev" {
+            return release
+        }
+        if let value = clean(version), value != "dev", SemVer.parse(value) != nil {
+            return value
+        }
+        return nil
+    }
+
+    var comparisonRevision: String? {
+        clean(gitSHA) ?? clean(revision)
+    }
+}
+
+private struct GitHubRelease: Decodable {
+    let tagName: String
+    let name: String?
+    let htmlURL: String?
+    let assets: [GitHubAsset]
+
+    enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name"
+        case name
+        case htmlURL = "html_url"
+        case assets
+    }
+
+    var displayVersion: String {
+        tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedVersion: String {
+        normalizeVersion(displayVersion)
+    }
+}
+
+private struct GitHubAsset: Decodable {
+    let name: String
+    let browserDownloadURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
+    }
+}
+
+private struct SemVer: Comparable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    let prerelease: String?
+
+    static func parse(_ value: String) -> SemVer? {
+        let normalized = normalizeVersion(value)
+        let withoutBuild = normalized.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? normalized
+        let versionParts = withoutBuild.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        let core = versionParts.first.map(String.init) ?? ""
+        let prerelease = versionParts.count > 1 ? String(versionParts[1]) : nil
+        let numbers = core.split(separator: ".", omittingEmptySubsequences: false)
+        guard numbers.count >= 2, numbers.count <= 3 else { return nil }
+        guard let major = Int(numbers[0]), let minor = Int(numbers[1]) else { return nil }
+        let patch = numbers.count == 3 ? Int(numbers[2]) : 0
+        guard let patch else { return nil }
+        return SemVer(major: major, minor: minor, patch: patch, prerelease: prerelease?.isEmpty == true ? nil : prerelease)
+    }
+
+    static func < (left: SemVer, right: SemVer) -> Bool {
+        if left.major != right.major { return left.major < right.major }
+        if left.minor != right.minor { return left.minor < right.minor }
+        if left.patch != right.patch { return left.patch < right.patch }
+        switch (left.prerelease, right.prerelease) {
+        case (nil, nil):
+            return false
+        case (nil, _):
+            return false
+        case (_, nil):
+            return true
+        case let (left?, right?):
+            return left.localizedStandardCompare(right) == .orderedAscending
+        }
+    }
+}
+
+private struct ReleaseLoad {
+    let release: GitHubRelease?
+    let error: String?
+}
+
+private enum ReleaseClient {
+    static func currentCLI() -> (CLIVersionInfo?, String?) {
+        let result = CommandRunner.run(CLIInstaller.gxExecutable(), ["version", "--json"], timeout: 5)
+        guard result.ok else {
+            return (nil, result.error.isEmpty ? "Unable to read CLI version" : result.error)
+        }
+        do {
+            return (try JSONDecoder().decode(CLIVersionInfo.self, from: Data(result.stdout.utf8)), nil)
+        } catch {
+            return (nil, "Invalid version JSON: \(error.localizedDescription)")
+        }
+    }
+
+    static func latestRelease() -> ReleaseLoad {
+        let urlString = ProcessInfo.processInfo.environment["GX_MENUBAR_RELEASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: (urlString?.isEmpty == false ? urlString! : defaultGitHubLatestReleaseURL)) else {
+            return ReleaseLoad(release: nil, error: "Invalid GitHub release URL")
+        }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("GXMenuBar", forHTTPHeaderField: "User-Agent")
+        let result = fetch(request)
+        guard let data = result.data else {
+            return ReleaseLoad(release: nil, error: result.error ?? "GitHub release fetch failed")
+        }
+        do {
+            return ReleaseLoad(release: try JSONDecoder().decode(GitHubRelease.self, from: data), error: nil)
+        } catch {
+            return ReleaseLoad(release: nil, error: "Invalid GitHub release JSON: \(error.localizedDescription)")
+        }
+    }
+
+    static func isNewer(current: CLIVersionInfo?, latest: GitHubRelease?) -> Bool {
+        guard let latest else { return false }
+        guard let current else { return true }
+        let latestVersion = latest.normalizedVersion
+        if let currentVersion = current.comparisonVersion {
+            if let currentSemVer = SemVer.parse(currentVersion), let latestSemVer = SemVer.parse(latestVersion) {
+                return latestSemVer > currentSemVer
+            }
+            return normalizeVersion(currentVersion) != latestVersion
+        }
+        if let currentRevision = current.comparisonRevision, !currentRevision.isEmpty {
+            return !sameRevision(currentRevision, latestVersion)
+        }
+        return true
+    }
+
+    static func update(to release: GitHubRelease, status: (String) -> Void) -> String {
+        guard let archive = archiveAsset(in: release) else {
+            return "Update failed: release asset not found"
+        }
+
+        let fileManager = FileManager.default
+        let workRoot = fileManager.temporaryDirectory.appendingPathComponent("gx-update-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: workRoot, withIntermediateDirectories: true)
+            defer { try? fileManager.removeItem(at: workRoot) }
+
+            status("Downloading GX \(release.displayVersion)...")
+            let archiveURL = workRoot.appendingPathComponent(archive.name)
+            try download(asset: archive, to: archiveURL)
+
+            if let checksum = checksumAsset(for: archive, in: release) {
+                status("Verifying GX \(release.displayVersion)...")
+                let checksumURL = workRoot.appendingPathComponent(checksum.name)
+                try download(asset: checksum, to: checksumURL)
+                try verifyChecksum(archiveURL: archiveURL, checksumURL: checksumURL)
+            }
+
+            status("Installing GX \(release.displayVersion)...")
+            let extractURL = workRoot.appendingPathComponent("extract", isDirectory: true)
+            try fileManager.createDirectory(at: extractURL, withIntermediateDirectories: true)
+            let tar = CommandRunner.run("/usr/bin/tar", ["-xzf", archiveURL.path, "-C", extractURL.path], timeout: 30)
+            guard tar.ok else {
+                return "Update failed: \(tar.error.isEmpty ? "archive extraction failed" : tar.error)"
+            }
+
+            let gxRoot = extractURL.appendingPathComponent("gx", isDirectory: true)
+            let downloadedGX = gxRoot.appendingPathComponent("bin", isDirectory: true).appendingPathComponent("gx")
+            let validation = CommandRunner.run(downloadedGX.path, ["version", "--json"], timeout: 5)
+            guard validation.ok else {
+                return "Update failed: downloaded gx did not run"
+            }
+            if let downloaded = try? JSONDecoder().decode(CLIVersionInfo.self, from: Data(validation.stdout.utf8)),
+               let downloadedVersion = downloaded.comparisonVersion,
+               normalizeVersion(downloadedVersion) != release.normalizedVersion {
+                return "Update failed: downloaded \(downloaded.display) did not match \(release.displayVersion)"
+            }
+
+            try CLIInstaller.installExtractedCLI(from: gxRoot)
+            return "Updated CLI to \(release.displayVersion)"
+        } catch {
+            return "Update failed: \(error.localizedDescription)"
+        }
+    }
+
+    private static func archiveAsset(in release: GitHubRelease) -> GitHubAsset? {
+        let arch = currentArch()
+        let tag = release.displayVersion
+        let normalized = release.normalizedVersion
+        let candidates = [
+            "gx_\(tag)_darwin_\(arch).tar.gz",
+            "gx_\(normalized)_darwin_\(arch).tar.gz",
+            "gx_darwin_\(arch).tar.gz"
+        ]
+        for candidate in candidates {
+            if let asset = release.assets.first(where: { $0.name == candidate }) {
+                return asset
+            }
+        }
+        return release.assets.first { asset in
+            asset.name.hasSuffix("_darwin_\(arch).tar.gz") || asset.name == "gx_darwin_\(arch).tar.gz"
+        }
+    }
+
+    private static func checksumAsset(for archive: GitHubAsset, in release: GitHubRelease) -> GitHubAsset? {
+        release.assets.first { $0.name == "\(archive.name).sha256" }
+    }
+
+    private static func currentArch() -> String {
+        #if arch(arm64)
+        return "arm64"
+        #else
+        return "amd64"
+        #endif
+    }
+
+    private static func download(asset: GitHubAsset, to destination: URL) throws {
+        guard let url = URL(string: asset.browserDownloadURL) else {
+            throw NSError(domain: "GXMenuBar", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid asset URL for \(asset.name)"])
+        }
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.setValue("GXMenuBar", forHTTPHeaderField: "User-Agent")
+        let result = fetch(request)
+        guard let data = result.data else {
+            throw NSError(domain: "GXMenuBar", code: 3, userInfo: [NSLocalizedDescriptionKey: result.error ?? "Download failed for \(asset.name)"])
+        }
+        try data.write(to: destination, options: .atomic)
+    }
+
+    private static func verifyChecksum(archiveURL: URL, checksumURL: URL) throws {
+        let expectedText = try String(contentsOf: checksumURL, encoding: .utf8)
+        guard let expected = expectedText.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).first.map(String.init), !expected.isEmpty else {
+            throw NSError(domain: "GXMenuBar", code: 4, userInfo: [NSLocalizedDescriptionKey: "Checksum file was empty"])
+        }
+        let result = CommandRunner.run("/usr/bin/shasum", ["-a", "256", archiveURL.path], timeout: 10)
+        guard result.ok, let actual = result.stdout.split(separator: " ").first.map(String.init) else {
+            throw NSError(domain: "GXMenuBar", code: 5, userInfo: [NSLocalizedDescriptionKey: "Could not compute checksum"])
+        }
+        if expected.lowercased() != actual.lowercased() {
+            throw NSError(domain: "GXMenuBar", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum mismatch"])
+        }
+    }
+
+    private static func fetch(_ request: URLRequest) -> (data: Data?, error: String?) {
+        let semaphore = DispatchSemaphore(value: 0)
+        var receivedData: Data?
+        var receivedResponse: URLResponse?
+        var receivedError: Error?
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            receivedData = data
+            receivedResponse = response
+            receivedError = error
+            semaphore.signal()
+        }.resume()
+        if semaphore.wait(timeout: .now() + request.timeoutInterval + 2) == .timedOut {
+            return (nil, "Request timed out")
+        }
+        if let receivedError {
+            return (nil, receivedError.localizedDescription)
+        }
+        if let http = receivedResponse as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            return (nil, "GitHub returned HTTP \(http.statusCode)")
+        }
+        return (receivedData, nil)
+    }
+
+    private static func sameRevision(_ left: String, _ right: String) -> Bool {
+        let cleanLeft = left.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanRight = right.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanLeft == cleanRight || cleanLeft.hasPrefix(cleanRight) || cleanRight.hasPrefix(cleanLeft)
+    }
+}
+
+private func clean(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func normalizeVersion(_ value: String) -> String {
+    var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    while normalized.hasPrefix("v") || normalized.hasPrefix("V") {
+        normalized.removeFirst()
+    }
+    return normalized
 }
 
 private struct DoctorEnvelope: Decodable {
@@ -290,17 +624,24 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private let worker = DispatchQueue(label: "dev.gx.menubar.worker", qos: .utility)
     private var timer: Timer?
     private var refreshing = false
+    private var updatingCLI = false
 
     private var doctor: DoctorStatus?
     private var doctorRawJSON = ""
     private var doctorError: String?
     private var lastUpdated: Date?
+    private var cliInfo: CLIVersionInfo?
+    private var cliError: String?
+    private var latestRelease: GitHubRelease?
+    private var releaseError: String?
+    private var lastReleaseChecked: Date?
+    private var updateMessage: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         rebuildMenu()
-        refreshAll(installCLI: true)
+        refreshAll(installCLI: true, forceReleaseCheck: true)
         timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.refreshAll(installCLI: false)
         }
@@ -323,18 +664,42 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func refreshAll(installCLI: Bool) {
-        guard !refreshing else { return }
+    private func refreshAll(installCLI: Bool, forceReleaseCheck: Bool = false) {
+        guard !refreshing, !updatingCLI else { return }
         refreshing = true
         rebuildMenu()
+        let shouldCheckRelease = forceReleaseCheck || lastReleaseChecked == nil || Date().timeIntervalSince(lastReleaseChecked!) >= releaseCheckInterval
         worker.async { [weak self] in
+            let installMessage: String?
             if installCLI {
-                _ = CLIInstaller.installBundledCLI()
+                installMessage = CLIInstaller.installBundledCLI()
+            } else {
+                installMessage = nil
             }
+            let currentCLI = ReleaseClient.currentCLI()
+            let releaseLoad = shouldCheckRelease ? ReleaseClient.latestRelease() : nil
             let doctorLoad = DoctorClient.fetch()
 
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.cliInfo = currentCLI.0
+                self.cliError = currentCLI.1
+                if let releaseLoad {
+                    self.latestRelease = releaseLoad.release
+                    self.releaseError = releaseLoad.error
+                    self.lastReleaseChecked = Date()
+                }
+                if let installMessage {
+                    self.updateMessage = installMessage
+                } else if forceReleaseCheck, let releaseLoad {
+                    if let error = releaseLoad.error {
+                        self.updateMessage = "Update check failed: \(error)"
+                    } else if ReleaseClient.isNewer(current: currentCLI.0, latest: releaseLoad.release) {
+                        self.updateMessage = "GX \(releaseLoad.release?.displayVersion ?? "latest") is available"
+                    } else {
+                        self.updateMessage = "CLI is up to date"
+                    }
+                }
                 self.doctor = doctorLoad.envelope?.doctor
                 self.doctorRawJSON = doctorLoad.rawJSON
                 self.doctorError = doctorLoad.error
@@ -348,6 +713,10 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         menu.addItem(disabled(versionSummary()))
+        menu.addItem(disabled(releaseSummary()))
+        if let updateMessage, !updateMessage.isEmpty {
+            menu.addItem(disabled(updateMessage))
+        }
         if let updated = lastUpdated {
             menu.addItem(disabled("Updated \(Self.timeFormatter.string(from: updated))"))
         } else if refreshing {
@@ -361,7 +730,15 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         menu.addItem(submenuItem(title: "Stats", submenu: statsMenu()))
         menu.addItem(.separator())
 
-        menu.addItem(actionItem("Update CLI", #selector(installCLI)))
+        if updatingCLI {
+            menu.addItem(disabled("Updating CLI..."))
+        } else if hasRemoteUpdate() {
+            menu.addItem(actionItem("Update CLI to \(latestRelease?.displayVersion ?? "latest")", #selector(updateCLIFromGitHub)))
+        } else if latestRelease != nil {
+            menu.addItem(disabled("CLI is up to date"))
+        }
+        menu.addItem(actionItem("Check for Updates", #selector(checkForUpdates)))
+        menu.addItem(actionItem("Install Bundled CLI", #selector(installCLI)))
         menu.addItem(.separator())
 
         menu.addItem(actionItem("Open https://gx.run", #selector(openConsole)))
@@ -589,7 +966,24 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func versionSummary() -> String {
-        "\(displayVersion()), \(cliVersion())"
+        "\(displayVersion()), CLI \(cliVersion())"
+    }
+
+    private func releaseSummary() -> String {
+        if let releaseError {
+            return "Latest CLI: unavailable (\(releaseError))"
+        }
+        guard let latestRelease else {
+            return lastReleaseChecked == nil ? "Latest CLI: checking..." : "Latest CLI: unavailable"
+        }
+        if hasRemoteUpdate() {
+            return "Update available: \(latestRelease.displayVersion)"
+        }
+        return "Latest CLI: \(latestRelease.displayVersion)"
+    }
+
+    private func hasRemoteUpdate() -> Bool {
+        ReleaseClient.isNewer(current: cliInfo, latest: latestRelease)
     }
 
     private func displayVersion() -> String {
@@ -604,7 +998,13 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     }
 
     private func cliVersion() -> String {
-        abbreviateVersion(plistString("GXCLIVersion") ?? "dev", maxLength: 7)
+        if let cliInfo {
+            return abbreviateVersion(cliInfo.display, maxLength: 12)
+        }
+        if cliError != nil {
+            return "unknown"
+        }
+        return abbreviateVersion(plistString("GXCLIVersion") ?? "dev", maxLength: 12)
     }
 
     private func abbreviateVersion(_ value: String, maxLength: Int) -> String {
@@ -646,7 +1046,38 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func installCLI() {
-        refreshAll(installCLI: true)
+        updateMessage = "Installing bundled CLI..."
+        refreshAll(installCLI: true, forceReleaseCheck: true)
+    }
+
+    @objc private func checkForUpdates() {
+        updateMessage = "Checking for updates..."
+        refreshAll(installCLI: false, forceReleaseCheck: true)
+    }
+
+    @objc private func updateCLIFromGitHub() {
+        guard !updatingCLI, let release = latestRelease else { return }
+        updatingCLI = true
+        updateMessage = "Preparing GX \(release.displayVersion)..."
+        rebuildMenu()
+        worker.async { [weak self] in
+            let result = ReleaseClient.update(to: release) { message in
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateMessage = message
+                    self?.rebuildMenu()
+                }
+            }
+            let currentCLI = ReleaseClient.currentCLI()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.cliInfo = currentCLI.0
+                self.cliError = currentCLI.1
+                self.updateMessage = result
+                self.lastUpdated = Date()
+                self.updatingCLI = false
+                self.rebuildMenu()
+            }
+        }
     }
 
     @objc private func openConsole() {
