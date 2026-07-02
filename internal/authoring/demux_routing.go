@@ -374,6 +374,10 @@ func routeStackSimilarity(revision RevisionProposal, revisionFiles []string, sta
 		score += symbol * 0.15
 		reasons = append(reasons, "hunks match prior revision text")
 	}
+	if semantic := semanticLabelStackOverlapScore(revision.SemanticLabels, stackText); semantic > 0 {
+		score += semantic * 0.12
+		reasons = append(reasons, "semantic labels matched stack context")
+	}
 	if score > 1 {
 		score = 1
 	}

@@ -142,6 +142,10 @@ func (e *Engine) Status(ctx context.Context) (StackSummary, error) {
 	return e.vcs.Stack(ctx)
 }
 
+func (e *Engine) ResolveJJRepo(ctx context.Context) (RepoInfo, error) {
+	return e.vcs.ResolveJJRepo(ctx)
+}
+
 func (e *Engine) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 	return e.vcs.StatusSnapshot(ctx)
 }
