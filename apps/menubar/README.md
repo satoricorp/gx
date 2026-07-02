@@ -3,8 +3,8 @@
 Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it plus
 the `gxg`, `gxr`, and `gxs` shortcuts to `~/.local/bin` on launch, shows
 `gx doctor --json` status and stats, checks the latest GitHub release, updates
-the local CLI when a newer release is available, links to gx.run, and provides
-MCP setup snippets.
+the local CLI when a newer release is available, checks app-bundle updates with
+Sparkle, links to gx.run, and provides MCP setup snippets.
 
 ## Quick start
 
@@ -29,6 +29,7 @@ Open the DMG to get the standard drag-to-Applications install window.
 | **Update CLI to vX.Y.Z** | Downloads the newest matching CLI release asset from GitHub Releases and installs it to `~/.local/bin` |
 | **Check for Updates** | Fetches the latest `satoricorp/gx` GitHub release and compares it with `gx version --json` |
 | **Install Bundled CLI** | Installs or updates `~/.local/bin/gx`, `gxg`, `gxr`, and `gxs` from the bundled CLI |
+| **Check for App Updates** | Runs Sparkle against the configured appcast feed and updates `GX.app` in place |
 | **Open https://gx.run** | Opens `https://gx.run` |
 | **MCP** | Shows setup instructions at `https://docs.gx.run` |
 | **Quit** | Exits the app |
@@ -63,6 +64,26 @@ replaces the local binaries in `~/.local/bin`.
 
 For local testing, set `GX_MENUBAR_RELEASE_URL` to a compatible GitHub release
 JSON endpoint or fixture server.
+
+## App updates
+
+The menu-bar app uses Sparkle for app-bundle updates. Release builds stamp:
+
+- `GX_APPCAST_URL` into `SUFeedURL` (defaults to `https://download.gx.run/appcast.xml`)
+- `GX_SPARKLE_PUBLIC_ED_KEY` into `SUPublicEDKey`
+- `GX_APP_BUILD_VERSION` into `CFBundleVersion`
+
+Generate the appcast after packaging:
+
+```bash
+GX_APPCAST_DOWNLOAD_URL_PREFIX=https://download.gx.run/menubar \
+GX_SPARKLE_PRIVATE_ED_KEY_FILE=/path/to/ed25519.key \
+apps/menubar/scripts/generate-appcast.sh
+```
+
+For local verification when SwiftPM cannot download Sparkle's binary artifact,
+set `GX_LOCAL_SPARKLE_XCFRAMEWORK` to a package-relative `Sparkle.xcframework`
+path before running `apps/menubar/scripts/package.sh`.
 
 ## Agent setup
 
@@ -153,7 +174,7 @@ just menubar
 ```
 
 The app is ad-hoc signed with `codesign -`. There is no Developer ID,
-notarization, Sparkle, or App Store distribution in this package.
+notarization, or App Store distribution in this package.
 
 ## What's missing (MVP gaps)
 
