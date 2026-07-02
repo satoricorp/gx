@@ -33,6 +33,16 @@ gx init
 This creates a `.gx/` in your repo root and installs a Git pre-push hook to
 capture session data before pushes.
 
+To uninstall the CLI and menu-bar app:
+
+```bash
+rm -f ~/.local/bin/gx ~/.local/bin/gxg ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -rf /Applications/GX.app ~/Applications/GX.app
+```
+
+This removes the installed binaries and app bundle only. Local GX data remains
+in `~/.gx`.
+
 ## Set An API Key
 
 ```bash
