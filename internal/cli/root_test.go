@@ -108,13 +108,14 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 		"onboarding repo picker",
 		"onboarding · feature/onboarding · main · remote · ✓1",
 		"onboarding empty state",
-		"j/k revision · e edit · d diff · esc stacks · q quit",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printStatusSummary() missing %q in:\n%s", want, text)
 		}
 	}
 	for _, unwanted := range []string{
+		"j/k up/down",
+		"j/k revision",
 		"j/k move stack",
 		"j/k select",
 		"repo acme/console",
@@ -131,6 +132,43 @@ func TestPrintStacksSummaryUsesCompactBookmarkDesignWithoutDroppingDetails(t *te
 	}
 	if strings.Index(text, "dirty scratch") > strings.Index(text, "gx-pr payload sync") {
 		t.Fatalf("latest revision should render before older revisions:\n%s", text)
+	}
+}
+
+func TestPrintStacksSummaryShowsUnstagedFilesWithoutStacks(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	stack := authoring.StackSummary{
+		Repo: authoring.RepoInfo{RootPath: "/tmp/console"},
+	}
+	unrecorded := authoring.ChangeInfo{
+		ChangeID:    "dirtychange",
+		CommitID:    "dirtycommit",
+		Description: "(no description set)",
+		Files:       []string{"README.md", "internal/cli/root.go"},
+	}
+	var out bytes.Buffer
+
+	printStacksSummary(&out, stack, &unrecorded, 0)
+
+	text := out.String()
+	for _, want := range []string{
+		"$ gx status",
+		"Unstaged",
+		"README.md",
+		"internal/cli/root.go",
+		"unrecorded",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("printStacksSummary() missing %q in:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{
+		"No GX revisions recorded yet.",
+		"j/k up/down",
+	} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("printStacksSummary() should not include %q:\n%s", unwanted, text)
+		}
 	}
 }
 
@@ -152,11 +190,13 @@ func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *test
 		"● feature/change-kxwqpvuo",
 		"feature/change-kxwqpvuo  main · draft · ↑1",
 		"gx-pr payload sync",
-		"j/k revision · e edit · d diff · esc stacks · q quit",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("renderStacksSummary() missing %q in:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "j/k up/down") || strings.Contains(text, "j/k revision") {
+		t.Fatalf("renderStacksSummary() should not include interactive legend:\n%s", text)
 	}
 	if strings.Contains(text, "change-kxwqpvuo · main") {
 		t.Fatalf("renderStacksSummary() should not repeat the stack name in metadata:\n%s", text)
@@ -527,8 +567,8 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 		},
 	}
 
-	first := renderStacksSummary(stack, nil, 0, false, 0)
-	for _, want := range []string{"j/k revision · e edit · d diff · esc stacks · q quit", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
+	first := renderInteractiveStacksSummaryWithHidden(stack, nil, 0, false, 0, 0)
+	for _, want := range []string{"j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("renderStacksSummary(cursor 0) missing %q in:\n%s", want, first)
 		}
@@ -583,7 +623,7 @@ func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
 	if lines[0] != "$ gx status" {
 		t.Fatalf("top line = %q, want gx status header in:\n%s", lines[0], text)
 	}
-	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+	if !strings.Contains(lines[len(lines)-1], "j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local") {
 		t.Fatalf("last line should be legend, got %q in:\n%s", lines[len(lines)-1], text)
 	}
 	if !strings.Contains(text, "... more below") {
@@ -602,7 +642,7 @@ func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
 		t.Fatalf("viewport should keep selected stack visible:\n%s", text)
 	}
 	lines = strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if !strings.Contains(lines[len(lines)-1], "j/k stack") {
+	if !strings.Contains(lines[len(lines)-1], "j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local") {
 		t.Fatalf("last line should remain legend after scroll, got %q in:\n%s", lines[len(lines)-1], text)
 	}
 }
@@ -1243,7 +1283,7 @@ func TestGenerateHelpRemovesManualProposalCommandsAndOldAliases(t *testing.T) {
 	}
 
 	text := out.String()
-	for _, want := range []string{"Save your work in branches & commits", "--intent", "--exclude"} {
+	for _, want := range []string{"Save your work in branches & commits", "--intent", "--exclude", "--legacy"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("generate help missing %q in:\n%s", want, text)
 		}

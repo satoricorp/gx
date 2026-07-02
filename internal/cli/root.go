@@ -605,6 +605,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 	var model string
 	var maxWarnings int
 	var excludeFilesets []string
+	var legacy bool
 	cmd := &cobra.Command{
 		Use:     "generate [filesets...]",
 		Aliases: []string{"gxg"},
@@ -628,6 +629,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 					Filesets:          args,
 					ExcludeFilesets:   excludeFilesets,
 					PreflightAttempts: generatePreflightAttempts(),
+					Legacy:            legacy,
 				})
 				emitGenerateRunTelemetry(ctx, packet, result, err, generateRunTelemetryOptions{
 					JSON:         jsonOut,
@@ -666,6 +668,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 	cmd.Flags().StringVar(&model, "model", "", "OpenAI model for generate repair; defaults to GX_DEMUX_REVIEW_MODEL or gpt-4.1-mini")
 	cmd.Flags().IntVar(&maxWarnings, "max-warnings", 0, "maximum warning-severity diagnostics to send to the model; defaults to 50")
 	cmd.Flags().StringArrayVar(&excludeFilesets, "exclude", nil, "exclude changed file or directory from generate; may be repeated")
+	cmd.Flags().BoolVar(&legacy, "legacy", false, "run the legacy generate repair and preflight pipeline")
 	return cmd
 }
 
@@ -678,6 +681,7 @@ type generateRunOptions struct {
 	Filesets          []string
 	ExcludeFilesets   []string
 	PreflightAttempts int
+	Legacy            bool
 }
 
 func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) (authoring.DemuxPlanPacket, authoring.ApplyDemuxResult, error) {
@@ -685,10 +689,11 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 		if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
 			return authoring.DemuxPlanPacket{}, err
 		}
-		return engine.DemuxChanges(ctx, authoring.ProposeDemuxOptions{
+		return engine.GenerateChanges(ctx, authoring.ProposeDemuxOptions{
 			Intent:                 opts.Intent,
 			Filesets:               opts.Filesets,
 			ExcludeFilesets:        opts.ExcludeFilesets,
+			Legacy:                 opts.Legacy,
 			Model:                  opts.Model,
 			MaxWarnings:            opts.MaxWarnings,
 			ApplyPreflightAttempts: opts.PreflightAttempts,
@@ -697,6 +702,7 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 	}
 	var (
 		packet authoring.DemuxPlanPacket
+		result authoring.ApplyDemuxResult
 		err    error
 	)
 	if !opts.JSON && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
@@ -726,9 +732,16 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 		}
 		return packet, authoring.ApplyDemuxResult{}, fmt.Errorf("%s", reason)
 	}
-	result, err := engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
-		ReturnToDefaultBranch: true,
-	})
+	apply := func() (authoring.ApplyDemuxResult, error) {
+		return engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
+			ReturnToDefaultBranch: true,
+		})
+	}
+	if !opts.JSON && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
+		result, err = runDemuxApplyWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), "Creating revision stacks...", apply)
+	} else {
+		result, err = apply()
+	}
 	if err != nil {
 		return packet, result, err
 	}
@@ -1805,6 +1818,7 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	var jsonOut bool
 	var agentOut bool
 	var showAll bool
+	var interactive bool
 	cmd := &cobra.Command{
 		Use:     use,
 		Aliases: []string{"gxs"},
@@ -1823,12 +1837,13 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 			if len(args) > 0 && !agentOut {
 				return fmt.Errorf("stack selector is only supported with --agent")
 			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll})
+			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, interactive)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
 	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "open the interactive status browser")
 	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
 		flag.Hidden = true
 	}
@@ -2496,7 +2511,7 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if len(args) > 0 && !agentOut {
 				return fmt.Errorf("stack selector is only supported with --agent")
 			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll})
+			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, true)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
@@ -2570,7 +2585,7 @@ func newStacksDiffCommand() *cobra.Command {
 	}
 }
 
-func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions) error {
+func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions, interactive bool) error {
 	stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
 	if err != nil {
 		return err
@@ -2596,7 +2611,7 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 			}
 		}
 	}
-	if useStatusInteractive(in, out) {
+	if interactive && useStatusInteractive(in, out) {
 		action, err := runStacksInteractive(in, out, stack, unrecorded, display.HiddenEmpty)
 		if err != nil {
 			return err
@@ -2616,6 +2631,11 @@ func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine
 	stack, err := engine.Status(ctx)
 	if err != nil {
 		return authoring.StackSummary{}, len(pruned.Deleted), err
+	}
+	if strings.TrimSpace(stack.Repo.RootPath) == "" {
+		if repo, repoErr := engine.ResolveJJRepo(ctx); repoErr == nil {
+			stack.Repo = repo
+		}
 	}
 	return stack, len(pruned.Deleted), nil
 }
@@ -2693,7 +2713,7 @@ func printStatus(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 }
 
 func printStatusSummary(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo) {
-	if len(stack.Revisions) == 0 && len(stack.Stacks) == 0 && stack.Stack == nil {
+	if len(stack.Revisions) == 0 && len(stack.Stacks) == 0 && stack.Stack == nil && !hasUnrecordedFiles(unrecorded) {
 		fmt.Fprintln(out, muted("No GX revisions recorded yet."))
 		return
 	}
@@ -2701,7 +2721,7 @@ func printStatusSummary(out io.Writer, stack authoring.StackSummary, unrecorded 
 }
 
 func printStacksSummary(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int) {
-	if len(stack.Revisions) == 0 && len(stack.Stacks) == 0 && stack.Stack == nil {
+	if len(stack.Revisions) == 0 && len(stack.Stacks) == 0 && stack.Stack == nil && !hasUnrecordedFiles(unrecorded) {
 		fmt.Fprintln(out, muted("No GX revisions recorded yet."))
 		if hiddenEmpty > 0 {
 			fmt.Fprintln(out)
@@ -2710,6 +2730,10 @@ func printStacksSummary(out io.Writer, stack authoring.StackSummary, unrecorded 
 		return
 	}
 	fmt.Fprint(out, renderStacksSummaryWithHidden(stack, unrecorded, currentStackIndex(stack), false, latestRevisionDisplayIndex(stack.Revisions, unrecorded), hiddenEmpty))
+}
+
+func hasUnrecordedFiles(unrecorded *authoring.ChangeInfo) bool {
+	return unrecorded != nil && len(unrecorded.Files) > 0
 }
 
 func printCurrentRevisions(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, indent int) {
@@ -2760,6 +2784,14 @@ func renderStacksSummary(stack authoring.StackSummary, unrecorded *authoring.Cha
 }
 
 func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int) string {
+	return renderStacksSummaryWithHiddenOptions(stack, unrecorded, stackCursor, stackMode, revCursor, hiddenEmpty, false)
+}
+
+func renderInteractiveStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int) string {
+	return renderStacksSummaryWithHiddenOptions(stack, unrecorded, stackCursor, stackMode, revCursor, hiddenEmpty, true)
+}
+
+func renderStacksSummaryWithHiddenOptions(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int, showLegend bool) string {
 	stack = stackSummaryWithDisplayFallback(stack)
 	stacks := orderedStacks(stack)
 	if len(stacks) == 0 {
@@ -2772,8 +2804,10 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 		}
 		printUnstagedFiles(&out, unrecorded)
 		printCurrentRevisions(&out, stack, unrecorded, 0)
-		fmt.Fprintln(&out)
-		fmt.Fprintln(&out, stacksLegend(stackMode))
+		if showLegend {
+			fmt.Fprintln(&out)
+			fmt.Fprintln(&out, stacksLegend())
+		}
 		return out.String()
 	}
 	if stackCursor < 0 {
@@ -2824,13 +2858,15 @@ func renderStacksSummaryWithHidden(stack authoring.StackSummary, unrecorded *aut
 		lines = append(lines, statusBookmarkLine("○", entry, stackStatusMeta(stack, entry), false))
 		lines = append(lines, renderStackRevisionLines(stack, entry, unrecorded, -1)...)
 	}
-	lines = append(lines, "", stacksLegend(stackMode))
+	if showLegend {
+		lines = append(lines, "", stacksLegend())
+	}
 	return strings.Join(lines, "\n") + "\n"
 }
 
 func renderStacksSummaryViewport(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int, hiddenEmpty int, height int) string {
 	if height <= 0 {
-		return renderStacksSummaryWithHidden(stack, unrecorded, stackCursor, stackMode, revCursor, hiddenEmpty)
+		return renderInteractiveStacksSummaryWithHidden(stack, unrecorded, stackCursor, stackMode, revCursor, hiddenEmpty)
 	}
 	stack = stackSummaryWithDisplayFallback(stack)
 	stacks := orderedStacks(stack)
@@ -2846,7 +2882,7 @@ func renderStacksSummaryViewport(stack authoring.StackSummary, unrecorded *autho
 		top = append(top, stacksHeaderLine(stack, len(stacks), stackMode), "")
 	}
 	body, selectedLine := stackSummaryBodyLines(stack, unrecorded, stackCursor, stackMode, revCursor)
-	return renderScrollableView(top, body, stacksLegend(stackMode), selectedLine, height)
+	return renderScrollableView(top, body, stacksLegend(), selectedLine, height)
 }
 
 func stackSummaryBodyLines(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, stackCursor int, stackMode bool, revCursor int) ([]string, int) {
@@ -3244,14 +3280,8 @@ func statusBookmarkLine(marker string, stack authoring.StackInfo, meta string, s
 	return line
 }
 
-func stacksLegend(stackMode bool) string {
-	parts := []string{"● selected", "○ other", "↑ local", "↓ cloud", "* active"}
-	if stackMode {
-		parts = append([]string{"j/k stack", "enter revisions", "d diff", "q quit"}, parts...)
-	} else {
-		parts = append([]string{"j/k revision", "e edit", "d diff", "esc stacks", "q quit"}, parts...)
-	}
-	return mint(strings.Join(parts, " · "))
+func stacksLegend() string {
+	return mint("j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local")
 }
 
 func compactBookmarkRef(ref string) string {

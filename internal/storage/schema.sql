@@ -200,6 +200,49 @@ CREATE TABLE IF NOT EXISTS change_demux_evidence (
 
 CREATE INDEX IF NOT EXISTS idx_change_demux_evidence_proposal ON change_demux_evidence(demux_proposal_id);
 
+CREATE TABLE IF NOT EXISTS semantic_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    label TEXT NOT NULL,
+    aliases_json TEXT NOT NULL,
+    sources_json TEXT NOT NULL,
+    seen_count INTEGER NOT NULL,
+    accepted_count INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(repo_id, label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_labels_repo ON semantic_labels(repo_id, updated_at DESC);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS semantic_label_fts USING fts5(
+    repo_id UNINDEXED,
+    label,
+    aliases_json,
+    sources_json,
+    tokenize='unicode61'
+);
+
+CREATE TABLE IF NOT EXISTS semantic_label_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    label_id INTEGER NOT NULL REFERENCES semantic_labels(id),
+    demux_proposal_id TEXT,
+    revision_proposal_id TEXT,
+    change_id INTEGER REFERENCES changes(id),
+    stack_bookmark TEXT,
+    source TEXT NOT NULL,
+    score REAL NOT NULL,
+    accepted INTEGER NOT NULL,
+    evidence_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_label_links_repo ON semantic_label_links(repo_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_semantic_label_links_change ON semantic_label_links(change_id);
+CREATE INDEX IF NOT EXISTS idx_semantic_label_links_proposal ON semantic_label_links(demux_proposal_id);
+
 CREATE TABLE IF NOT EXISTS modify_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     repo_id INTEGER NOT NULL REFERENCES repos(id),

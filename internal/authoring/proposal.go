@@ -46,6 +46,15 @@ type RevisionProposal struct {
 	Confidence       float64            `json:"confidence"`
 	EffectiveLOC     int                `json:"effective_loc,omitempty"`
 	ShapeReasons     []string           `json:"shape_reasons,omitempty"`
+	SemanticLabels   []SemanticLabel    `json:"semantic_labels,omitempty"`
+}
+
+type SemanticLabel struct {
+	Label    string   `json:"label"`
+	Source   string   `json:"source"`
+	Status   string   `json:"status,omitempty"`
+	Score    float64  `json:"score"`
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 type StructuralFact struct {
@@ -89,6 +98,22 @@ type FeasibilityWarning struct {
 	Message    string `json:"message"`
 }
 
+type PlanConfidence struct {
+	LogicConfidence     float64            `json:"logic_confidence,omitempty"`
+	LLMConfidence       float64            `json:"llm_confidence,omitempty"`
+	EffectiveConfidence float64            `json:"effective_confidence,omitempty"`
+	LogicReasons        []ConfidenceReason `json:"logic_reasons,omitempty"`
+	LLMReasons          []ConfidenceReason `json:"llm_reasons,omitempty"`
+}
+
+type ConfidenceReason struct {
+	Kind       string  `json:"kind"`
+	Severity   string  `json:"severity"`
+	Message    string  `json:"message"`
+	Suggestion string  `json:"suggestion,omitempty"`
+	Delta      float64 `json:"delta,omitempty"`
+}
+
 type DemuxProposal struct {
 	ID                  string                 `json:"id"`
 	RepoRoot            string                 `json:"repo_root"`
@@ -106,6 +131,7 @@ type DemuxProposal struct {
 	HunkLinks           []matcher.HunkLink     `json:"hunk_links,omitempty"`
 	HunkCoverage        float64                `json:"hunk_coverage,omitempty"`
 	CaptureTools        []string               `json:"capture_tools,omitempty"`
+	Confidence          PlanConfidence         `json:"confidence_summary,omitempty"`
 	CreatedAt           int64                  `json:"created_at"`
 }
 
@@ -148,6 +174,7 @@ type ProposeDemuxOptions struct {
 	Filesets               []string
 	ExcludeFilesets        []string
 	PlanOnly               bool
+	Legacy                 bool
 	Model                  string
 	MaxWarnings            int
 	ApplyPreflightAttempts int
@@ -208,6 +235,7 @@ type demuxAIProposalForReview struct {
 	ProposedCommitID string                 `json:"proposed_commit_id"`
 	Status           ProposalStatus         `json:"status"`
 	PlanInstructions []string               `json:"plan_instructions,omitempty"`
+	Confidence       PlanConfidence         `json:"confidence_summary,omitempty"`
 	Hunks            []HunkRange            `json:"hunks,omitempty"`
 	StructuralDeps   []StructuralDependency `json:"structural_dependencies,omitempty"`
 	ChangedSymbols   []ChangedSymbol        `json:"changed_symbols,omitempty"`

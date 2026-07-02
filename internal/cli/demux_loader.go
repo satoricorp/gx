@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -14,6 +15,32 @@ import (
 )
 
 type demuxLoaderRunFunc func(io.Writer) (authoring.DemuxPlanPacket, error)
+type demuxApplyLoaderRunFunc func() (authoring.ApplyDemuxResult, error)
+
+var demuxBrailleColors = []string{
+	"#22D3EE",
+	"#38BDF8",
+	"#818CF8",
+	"#C084FC",
+	"#F472B6",
+	"#FB7185",
+	"#FBBF24",
+	"#A3E635",
+}
+
+var demuxBrailleSpinner = spinner.Spinner{
+	Frames: demuxBrailleFrames(),
+	FPS:    70 * time.Millisecond,
+}
+
+var demuxLoaderStyle = lipgloss.NewStyle().
+	MarginTop(1).
+	MarginLeft(2).
+	MarginBottom(1)
+
+var demuxDidYouKnowHeaderStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#A78BFA")).
+	Bold(true)
 
 type demuxLoaderModel struct {
 	spinner spinner.Model
@@ -25,12 +52,26 @@ type demuxLoaderModel struct {
 	done    bool
 }
 
+type demuxApplyLoaderModel struct {
+	spinner spinner.Model
+	phase   string
+	run     demuxApplyLoaderRunFunc
+	result  authoring.ApplyDemuxResult
+	err     error
+	done    bool
+}
+
 type demuxLoaderPhaseMsg string
 
 type demuxLoaderNoopMsg struct{}
 
 type demuxLoaderResultMsg struct {
 	packet authoring.DemuxPlanPacket
+	err    error
+}
+
+type demuxApplyLoaderResultMsg struct {
+	result authoring.ApplyDemuxResult
 	err    error
 }
 
@@ -52,12 +93,9 @@ func useDemuxLoader(in io.Reader, out io.Writer) bool {
 func runDemuxWithLoader(in io.Reader, out io.Writer, run demuxLoaderRunFunc) (authoring.DemuxPlanPacket, error) {
 	phases := make(chan string, 4)
 	model := demuxLoaderModel{
-		spinner: spinner.New(
-			spinner.WithSpinner(spinner.Line),
-			spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1"))),
-		),
-		phase:  "Starting compose...",
-		phases: phases,
+		spinner: newDemuxBrailleSpinner(),
+		phase:   "Grouping changes...",
+		phases:  phases,
 		run: func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
 			return run(progress)
 		},
@@ -71,6 +109,23 @@ func runDemuxWithLoader(in io.Reader, out io.Writer, run demuxLoaderRunFunc) (au
 		return result.packet, result.err
 	}
 	return authoring.DemuxPlanPacket{}, nil
+}
+
+func runDemuxApplyWithLoader(in io.Reader, out io.Writer, phase string, run demuxApplyLoaderRunFunc) (authoring.ApplyDemuxResult, error) {
+	model := demuxApplyLoaderModel{
+		spinner: newDemuxBrailleSpinner(),
+		phase:   phase,
+		run:     run,
+	}
+	program := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out))
+	finalModel, err := program.Run()
+	if err != nil {
+		return authoring.ApplyDemuxResult{}, err
+	}
+	if result, ok := finalModel.(demuxApplyLoaderModel); ok {
+		return result.result, result.err
+	}
+	return authoring.ApplyDemuxResult{}, nil
 }
 
 func (m demuxLoaderModel) Init() tea.Cmd {
@@ -102,7 +157,34 @@ func (m demuxLoaderModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
-	return tea.NewView(m.spinner.View() + " " + muted(m.phase))
+	return tea.NewView(renderDemuxLoaderView(m.spinner.View(), m.phase))
+}
+
+func (m demuxApplyLoaderModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, runDemuxApplyLoader(m.run))
+}
+
+func (m demuxApplyLoaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case demuxApplyLoaderResultMsg:
+		m.done = true
+		m.phase = ""
+		m.result = msg.result
+		m.err = msg.err
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m demuxApplyLoaderModel) View() tea.View {
+	if m.done {
+		return tea.NewView("")
+	}
+	return tea.NewView(renderDemuxLoaderView(m.spinner.View(), m.phase))
 }
 
 func waitDemuxLoaderPhase(phases <-chan string) tea.Cmd {
@@ -123,6 +205,13 @@ func runDemuxLoader(run demuxLoaderRunFunc, phases chan<- string) tea.Cmd {
 	}
 }
 
+func runDemuxApplyLoader(run demuxApplyLoaderRunFunc) tea.Cmd {
+	return func() tea.Msg {
+		result, err := run()
+		return demuxApplyLoaderResultMsg{result: result, err: err}
+	}
+}
+
 type demuxLoaderProgressWriter struct {
 	phases chan<- string
 }
@@ -139,4 +228,34 @@ func (w demuxLoaderProgressWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+func newDemuxBrailleSpinner() spinner.Model {
+	return spinner.New(
+		spinner.WithSpinner(demuxBrailleSpinner),
+	)
+}
+
+func demuxBrailleFrames() []string {
+	patterns := []string{"⡿", "⣟", "⣯", "⣷", "⣾", "⣽", "⣻", "⢿"}
+	frames := make([]string, 0, len(patterns))
+	for index, pattern := range patterns {
+		color := demuxBrailleColors[index%len(demuxBrailleColors)]
+		frames = append(frames, lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(pattern))
+	}
+	return frames
+}
+
+func renderDemuxLoaderView(frame, phase string) string {
+	body := strings.Join([]string{
+		frame + " " + muted(phase),
+		"",
+		demuxDidYouKnowHeaderStyle.Render("Did you know?"),
+		muted(demuxLoaderFact()),
+	}, "\n")
+	return demuxLoaderStyle.Render(body)
+}
+
+func demuxLoaderFact() string {
+	return "GX stores revision and stack metadata with the code changes it creates."
 }
