@@ -120,6 +120,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		Warnings:         warnings,
 	}
 	proposal, _ = shapeDemuxProposalForReview(proposal)
+	proposal = e.annotateSemanticLabels(ctx, proposal)
 	proposal, err = e.planDemuxRoutes(ctx, proposal)
 	if err != nil {
 		return DemuxProposal{}, err
@@ -132,6 +133,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	}
 	proposal = normalizeConventionalDemuxStackRoutes(proposal)
 	proposal, _ = shapeDemuxProposalForReview(proposal)
+	proposal = e.annotateSemanticLabels(ctx, proposal)
 	proposal.FeasibilityWarnings = feasibilityWarningsForProposal(proposal)
 	return e.SaveDemuxProposal(ctx, proposal)
 }
@@ -252,6 +254,8 @@ func (e *Engine) ApplyDemuxProposal(ctx context.Context, proposalID string) (App
 }
 
 func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID string, opts ApplyDemuxOptions) (result ApplyDemuxResult, err error) {
+	applyStarted := time.Now()
+	applyMode := "serial"
 	proposal, err := e.LoadDemuxProposal(ctx, proposalID)
 	if err != nil {
 		return ApplyDemuxResult{}, err
@@ -327,15 +331,39 @@ func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID s
 	}()
 
 	results := make([]CheckpointResult, 0, len(proposal.Revisions))
-	for index, revision := range proposal.Revisions {
-		if strings.TrimSpace(revision.Intent) == "" {
-			return ApplyDemuxResult{}, fmt.Errorf("revision %s has empty intent", revision.ID)
+	revisionsStarted := time.Now()
+	batchedResults, batched, err := e.applyNewStackRoutedDemuxRevisions(ctx, proposal, source, current)
+	if err != nil {
+		return ApplyDemuxResult{}, err
+	}
+	if batched {
+		applyMode = "new-stack-batch"
+		results = append(results, batchedResults...)
+		for index, revision := range proposal.Revisions {
+			if err := e.writeDemuxEvidence(ctx, proposal, revision, results[index]); err != nil {
+				return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
+			}
 		}
-		if len(revision.Files) == 0 {
-			return ApplyDemuxResult{}, fmt.Errorf("revision %s has no files", revision.ID)
-		}
-		if hasNonCurrentDemuxRoute(revision) {
-			result, err := e.applyRoutedDemuxRevision(ctx, proposal, revision)
+	} else {
+		for index, revision := range proposal.Revisions {
+			if strings.TrimSpace(revision.Intent) == "" {
+				return ApplyDemuxResult{}, fmt.Errorf("revision %s has empty intent", revision.ID)
+			}
+			if len(revision.Files) == 0 {
+				return ApplyDemuxResult{}, fmt.Errorf("revision %s has no files", revision.ID)
+			}
+			if hasNonCurrentDemuxRoute(revision) {
+				result, err := e.applyRoutedDemuxRevision(ctx, proposal, revision)
+				if err != nil {
+					return ApplyDemuxResult{}, fmt.Errorf("apply revision %s: %w", revision.ID, err)
+				}
+				results = append(results, result)
+				if err := e.writeDemuxEvidence(ctx, proposal, revision, result); err != nil {
+					return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
+				}
+				continue
+			}
+			result, err := e.applyCurrentDemuxRevision(ctx, revision)
 			if err != nil {
 				return ApplyDemuxResult{}, fmt.Errorf("apply revision %s: %w", revision.ID, err)
 			}
@@ -343,21 +371,22 @@ func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID s
 			if err := e.writeDemuxEvidence(ctx, proposal, revision, result); err != nil {
 				return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
 			}
-			continue
-		}
-		result, err := e.applyCurrentDemuxRevision(ctx, revision)
-		if err != nil {
-			return ApplyDemuxResult{}, fmt.Errorf("apply revision %s: %w", revision.ID, err)
-		}
-		results = append(results, result)
-		if err := e.writeDemuxEvidence(ctx, proposal, revision, result); err != nil {
-			return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
-		}
-		if index < len(proposal.Revisions)-1 {
-			if err := e.prepareNextDemuxRevision(ctx, proposal.RepoRoot, result.Change.ChangeID); err != nil {
-				return ApplyDemuxResult{}, fmt.Errorf("prepare next revision after %s: %w", revision.ID, err)
+			if index < len(proposal.Revisions)-1 {
+				if err := e.prepareNextDemuxRevision(ctx, proposal.RepoRoot, result.Change.ChangeID); err != nil {
+					return ApplyDemuxResult{}, fmt.Errorf("prepare next revision after %s: %w", revision.ID, err)
+				}
 			}
 		}
+	}
+	revisionsDuration := time.Since(revisionsStarted)
+	proposal = appendGeneratePipelineWarning(proposal, fmt.Sprintf(
+		"apply timing mode=%s revisions_ms=%d total_before_cleanup_ms=%d",
+		applyMode,
+		revisionsDuration.Milliseconds(),
+		time.Since(applyStarted).Milliseconds(),
+	))
+	if _, err := e.SaveDemuxProposal(ctx, proposal); err != nil {
+		return ApplyDemuxResult{}, err
 	}
 	if err := e.MarkDemuxProposalStatus(ctx, proposal.ID, ProposalApplied); err != nil {
 		return ApplyDemuxResult{}, err
@@ -384,6 +413,92 @@ func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID s
 		result.NextAction = "gx compose"
 	}
 	return result, nil
+}
+
+func (e *Engine) applyNewStackRoutedDemuxRevisions(ctx context.Context, proposal DemuxProposal, source demuxSourceLocation, sourceChange ChangeInfo) ([]CheckpointResult, bool, error) {
+	if len(proposal.Revisions) == 0 || source.Stack != nil {
+		return nil, false, nil
+	}
+	router, err := e.demuxRouter(ctx, proposal.RepoRoot)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, revision := range proposal.Revisions {
+		if strings.TrimSpace(revision.Intent) == "" {
+			return nil, false, fmt.Errorf("revision %s has empty intent", revision.ID)
+		}
+		if !hasNonCurrentDemuxRoute(revision) {
+			return nil, false, nil
+		}
+		if len(cleanFiles(revision.Files)) == 0 {
+			return nil, false, fmt.Errorf("revision %s has no files", revision.ID)
+		}
+		target := routeTargetStack(revision)
+		if strings.TrimSpace(target) == "" || router.lookup(target) != nil {
+			return nil, false, nil
+		}
+	}
+	sourceRev := firstNonEmpty(proposal.ProposedCommitID, sourceChange.ChangeID)
+	results := make([]CheckpointResult, 0, len(proposal.Revisions))
+	restoreAfterError := func(cause error) error {
+		if restoreErr := source.restore(ctx, e, proposal.RepoRoot); restoreErr != nil {
+			return fmt.Errorf("%w; additionally failed to restore source %s: %v", cause, source.label(), restoreErr)
+		}
+		return cause
+	}
+	createdBookmarks := map[string]struct{}{}
+	currentBookmark := ""
+	for _, revision := range proposal.Revisions {
+		files := cleanFiles(revision.Files)
+		bookmark := newStackRouteBookmark(revision)
+		_, appendToExisting := createdBookmarks[bookmark]
+		if appendToExisting {
+			if currentBookmark != bookmark {
+				if _, err := e.Switch(ctx, bookmark); err != nil {
+					return nil, true, restoreAfterError(fmt.Errorf("switch to routed target %q: %w", bookmark, err))
+				}
+				if err := e.vcs.NewRevisionChild(ctx, proposal.RepoRoot); err != nil {
+					return nil, true, restoreAfterError(fmt.Errorf("prepare empty child on routed target %q: %w", bookmark, err))
+				}
+				currentBookmark = bookmark
+			}
+		} else {
+			baseRef := firstNonEmpty(routeBaseStack(revision), "base")
+			resolvedBase, ok, err := e.BaseSwitchTarget(ctx, baseRef)
+			if err != nil {
+				return nil, true, err
+			}
+			if !ok {
+				resolvedBase = baseRef
+			}
+			if err := e.vcs.NewRevisionFrom(ctx, proposal.RepoRoot, resolvedBase); err != nil {
+				return nil, true, restoreAfterError(fmt.Errorf("prepare empty child on routed base %q: %w", baseRef, err))
+			}
+		}
+		if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, sourceRev, files); err != nil {
+			return nil, true, restoreAfterError(fmt.Errorf("copy routed files to target stack %q: %w", routeTargetStack(revision), err))
+		}
+		var result CheckpointResult
+		var err error
+		if appendToExisting {
+			result, err = e.vcs.RecordCurrentRevisionInStackDeferredReconcile(ctx, bookmark, revision.Intent, revision.SessionIDs)
+		} else {
+			result, err = e.vcs.RecordCurrentRevisionInNewStackDeferredReconcile(ctx, newStackRouteName(revision), bookmark, routeBaseStack(revision), revision.Intent, revision.SessionIDs)
+			createdBookmarks[bookmark] = struct{}{}
+		}
+		if err != nil {
+			return nil, true, restoreAfterError(err)
+		}
+		currentBookmark = bookmark
+		results = append(results, result)
+	}
+	if err := source.restore(ctx, e, proposal.RepoRoot); err != nil {
+		return nil, true, fmt.Errorf("return to source %s: %w", source.label(), err)
+	}
+	if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", demuxProposalCoveredFiles(proposal)); err != nil {
+		return nil, true, fmt.Errorf("remove routed files from source %s: %w", source.label(), err)
+	}
+	return results, true, nil
 }
 
 func (e *Engine) currentDemuxApplyChange(ctx context.Context, repoRoot string) (string, ChangeInfo, error) {
@@ -806,6 +921,7 @@ type demuxEvidencePayload struct {
 	Files               []string               `json:"files"`
 	HunkIDs             []string               `json:"hunk_ids,omitempty"`
 	Hunks               []HunkRange            `json:"hunks,omitempty"`
+	SemanticLabels      []SemanticLabel        `json:"semantic_labels,omitempty"`
 	FeasibilityWarnings []FeasibilityWarning   `json:"feasibility_warnings,omitempty"`
 	StructuralFacts     []StructuralFact       `json:"structural_facts,omitempty"`
 	StructuralDeps      []StructuralDependency `json:"structural_dependencies,omitempty"`
@@ -859,6 +975,7 @@ func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal,
 		Files:               files,
 		HunkIDs:             hunkIDs,
 		Hunks:               revision.Hunks,
+		SemanticLabels:      revision.SemanticLabels,
 		FeasibilityWarnings: relevantFeasibilityWarnings(proposal.FeasibilityWarnings, revision.ID),
 		StructuralFacts:     relevantStructuralFacts(proposal.StructuralFacts, files),
 		StructuralDeps:      relevantStructuralDependencies(proposal.StructuralDeps, files),
@@ -876,7 +993,7 @@ func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal,
 	if err != nil {
 		return err
 	}
-	return store.WriteChangeDemuxEvidence(ctx, storage.ChangeDemuxEvidence{
+	evidence := storage.ChangeDemuxEvidence{
 		ChangeID:           changeID,
 		DemuxProposalID:    proposal.ID,
 		RevisionProposalID: revision.ID,
@@ -888,7 +1005,11 @@ func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal,
 		ProvenanceStatus:   revision.ProvenanceStatus,
 		EvidenceJSON:       string(evidenceJSON),
 		CreatedAt:          now,
-	})
+	}
+	if err := store.WriteChangeDemuxEvidenceWithSemanticLabels(ctx, evidence, semanticLabelWrites(repoID, proposal, revision, &changeID, true, now)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func relevantFeasibilityWarnings(warnings []FeasibilityWarning, revisionID string) []FeasibilityWarning {

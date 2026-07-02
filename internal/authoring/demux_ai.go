@@ -42,10 +42,12 @@ type demuxAIReviewRequest struct {
 }
 
 type demuxAIReviewResponse struct {
-	Proposal  DemuxProposal      `json:"proposal,omitempty"`
-	Revisions []RevisionProposal `json:"revisions,omitempty"`
-	Notes     []string           `json:"notes,omitempty"`
-	Model     string             `json:"model,omitempty"`
+	Proposal      DemuxProposal      `json:"proposal,omitempty"`
+	Revisions     []RevisionProposal `json:"revisions,omitempty"`
+	LLMConfidence float64            `json:"llm_confidence,omitempty"`
+	LLMReasons    []ConfidenceReason `json:"llm_reasons,omitempty"`
+	Notes         []string           `json:"notes,omitempty"`
+	Model         string             `json:"model,omitempty"`
 }
 
 type cloudChatCompletionRequest struct {
@@ -489,7 +491,7 @@ func demuxPtr[T any](value T) *T {
 func demuxAIReviewDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You repair GX demux proposals.",
-		"Return only JSON with shape {\"revisions\": <full ordered revision array>, \"notes\": [string]}.",
+		"Return only JSON with shape {\"revisions\": <full ordered revision array>, \"llm_confidence\": number, \"llm_reasons\": [confidence reason], \"notes\": [string]}.",
 		"Return every revision, in final order. Do not return patches or the top-level proposal object.",
 		"Preserve revision ids, provenance_status, session_ids, and valid hunk_ids.",
 		"Use hunk_ids from the provided hunk catalog; do not invent hunk ids.",
@@ -501,6 +503,8 @@ func demuxAIReviewDeveloperPrompt() string {
 		"For cross_stack_dependency hints, either keep dependent revisions on one target_stack or set the dependent revision base_stack to the hinted base_stack.",
 		"Your output must be apply-ready: no warning-severity feasibility_warnings should remain after GX reviews the returned revisions.",
 		"If ordering alone cannot fix a warning, merge the dependent revisions instead of leaving a blocking dependency.",
+		"Use the provided confidence_summary as the deterministic logic score for the heuristic draft.",
+		"Return llm_confidence for semantic grouping quality only; GX will combine it with logic_confidence using the lower value.",
 	}, "\n")
 }
 
@@ -536,6 +540,7 @@ func proposalForAIReview(proposal DemuxProposal, maxWarnings int) demuxAIProposa
 		ProposedCommitID: proposal.ProposedCommitID,
 		Status:           proposal.Status,
 		PlanInstructions: append([]string(nil), proposal.PlanInstructions...),
+		Confidence:       proposal.Confidence,
 		Hunks:            hunks,
 		StructuralDeps:   limitStructuralDependencies(proposal.StructuralDeps, maxWarnings),
 		ChangedSymbols:   append([]ChangedSymbol(nil), proposal.ChangedSymbols...),
@@ -547,10 +552,16 @@ func proposalFromAIReviewResponse(base DemuxProposal, response demuxAIReviewResp
 	if len(response.Revisions) > 0 {
 		base.Revisions = response.Revisions
 		base.FeasibilityWarnings = nil
+		base.Confidence.LLMConfidence = response.LLMConfidence
+		base.Confidence.LLMReasons = append([]ConfidenceReason(nil), response.LLMReasons...)
 		return base
 	}
 	if strings.TrimSpace(response.Proposal.ID) == "" {
 		response.Proposal.ID = base.ID
+	}
+	if response.LLMConfidence > 0 {
+		response.Proposal.Confidence.LLMConfidence = response.LLMConfidence
+		response.Proposal.Confidence.LLMReasons = append([]ConfidenceReason(nil), response.LLMReasons...)
 	}
 	return response.Proposal
 }

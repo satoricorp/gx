@@ -21,13 +21,13 @@ func (e *Engine) demuxPipeline() demuxPipeline {
 }
 
 func (p demuxPipeline) proposeChanges(ctx context.Context, opts ProposeDemuxOptions) (DemuxPlanPacket, error) {
-	demuxProgress(opts.ProgressWriter, "Planning generated revisions...")
+	demuxProgress(opts.ProgressWriter, "Grouping changes...")
 	proposal, err := p.engine.ProposeDemux(ctx, opts)
 	if err != nil {
 		return DemuxPlanPacket{}, err
 	}
 	if !opts.PlanOnly {
-		demuxProgress(opts.ProgressWriter, "Fixing generated revisions %s...", proposal.ID)
+		demuxProgress(opts.ProgressWriter, "Checking revisions...")
 		result, err := p.repairProposal(ctx, proposal, DemuxAIReviewOptions{
 			Model:       opts.Model,
 			MaxWarnings: opts.MaxWarnings,
@@ -57,7 +57,7 @@ func (p demuxPipeline) proposeChanges(ctx context.Context, opts ProposeDemuxOpti
 			return DemuxPlanPacket{}, err
 		}
 	} else {
-		demuxProgress(opts.ProgressWriter, "Skipping generate fix because --plan was set.")
+		demuxProgress(opts.ProgressWriter, "Skipping revision checks because --plan was set.")
 	}
 	return p.packetForProposal(ctx, proposal)
 }
@@ -111,7 +111,7 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		demuxProgress(opts.ProgressWriter, "Checking generated revisions in disposable attempt %d/%d...", attempt, attempts)
+		demuxProgress(opts.ProgressWriter, "Verifying revision apply in disposable check %d/%d...", attempt, attempts)
 		if err := p.engine.PreflightDemuxApply(ctx, proposal); err == nil {
 			return proposal, nil
 		} else {
@@ -125,7 +125,7 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 			}
 			return proposal, nil
 		}
-		demuxProgress(opts.ProgressWriter, "Repairing generated revisions after apply preflight failure...")
+		demuxProgress(opts.ProgressWriter, "Repairing revision groups after verification failed...")
 		result, err := p.engine.demuxRepair().repairApplyPreflightFailure(ctx, proposal, lastErr, DemuxAIReviewOptions{
 			Model:       opts.Model,
 			MaxWarnings: opts.MaxWarnings,
