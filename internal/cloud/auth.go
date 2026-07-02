@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satoricorp/gx/internal/authstore"
 	"github.com/satoricorp/gx/internal/version"
 )
 
@@ -191,6 +192,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	if complete.CLISessionExpiresAt > 0 {
 		creds.CLISessionExpiresAt = time.UnixMilli(complete.CLISessionExpiresAt).UTC()
 	}
+	creds.GitHubKeychainAccount = authstore.GitHubKeychainAccount(complete.UserID, complete.Login)
 	if strings.TrimSpace(creds.CLISessionToken) != "" {
 		cloudURL := opts.Endpoints.cloudURL()
 		if cloudURL == "" {
@@ -210,9 +212,21 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 			}
 		}
 	}
+	if err := authstore.StoreGitHubToken(creds.GitHubKeychainAccount, authstore.GitHubToken{
+		AccessToken:           githubToken.AccessToken,
+		AccessTokenExpiresAt:  creds.GitHubAccessTokenExpiresAt,
+		RefreshToken:          githubToken.RefreshToken,
+		RefreshTokenExpiresAt: creds.GitHubRefreshTokenExpiresAt,
+	}); err != nil {
+		return CloudCredentials{}, fmt.Errorf("store GitHub token in keychain: %w", err)
+	}
 	if err := SaveCloudCredentials(creds); err != nil {
 		return CloudCredentials{}, err
 	}
+	creds.GitHubAccessToken = ""
+	creds.GitHubAccessTokenExpiresAt = time.Time{}
+	creds.GitHubRefreshToken = ""
+	creds.GitHubRefreshTokenExpiresAt = time.Time{}
 	if opts.Out != nil && strings.TrimSpace(complete.GitHubAppInstallURL) != "" {
 		fmt.Fprintf(opts.Out, "Install the GX GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
 	}
@@ -306,6 +320,8 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 			// continue polling
 		case "slow_down":
 			interval++
+		case "incorrect_device_code", "expired_token":
+			return accessTokenResponse{}, fmt.Errorf("github device authorization was rejected or expired; run `gx auth login` again and use the newest code")
 		case "":
 			return accessTokenResponse{}, fmt.Errorf("github access token response missing access_token")
 		default:
