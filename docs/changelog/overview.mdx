@@ -1,0 +1,40 @@
+---
+title: "GX changelog: new features, updates, and fixes"
+description: "Weekly changelog for GX covering new features, product updates, CLI and menubar improvements, review workflow changes, and bug fixes."
+---
+
+<Update label="July 2, 2026">
+
+## New features
+
+**`gx report` for stack summaries** — A new `gx report` command surfaces a quick overview of your stack state, and stack terminal UIs now scroll cleanly through longer revision lists. See the [GitHub PR summaries reference](/reference/github-pr-summaries) for related context on how stacks are published.
+
+**Generated GitHub PR summaries** — `gx push` now writes a generated review summary into the pull request body, highlighting revisions, blast radius, and up to 10 high-impact review targets. Anything you write in the PR description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries) for the full behavior.
+
+**Code review history memory** — `gx review` now pulls in indexed context from your past reviews and GitHub comment history, and attaches review policy context so findings stay consistent with how your team reviews code. Attribution on findings has also been improved so you can tell whether a note came from a GX finding, indexed history, or a diff heuristic.
+
+**Prompted `gx review`** — You can now trigger `gx review` with a targeted prompt to focus the review on a specific concern instead of the full default sweep.
+
+**Local inference API key setup** — GX now supports configuring an API key for a local inference provider during setup, so you can run reviews against a self-hosted model.
+
+**Menubar shortcuts and version info** — The macOS menubar app now installs a `gxr` shortcut for one-tap review and shows both the menubar tag and CLI versions inline.
+
+## Updates
+
+**Simpler `gx generate` and `gx push`** — The generate and push flow has been reworked for a smoother end-to-end path, including better preflight routing when demuxing changes into revisions.
+
+**Cleaner stack views** — Merged published stacks and empty stored revisions are now hidden by default, and closed or merged PR stacks are pruned automatically so your stack list stays focused on active work. Stack read performance is also noticeably faster on large repositories.
+
+**Simpler menubar and CLI surface** — The menubar menu, `gx doctor` output, and CLI help have all been tightened. The auth status view no longer surfaces internal Convex site details.
+
+**Auth reliability** — GitHub auth tokens now refresh automatically before they expire, and login verifies your console API session before completing so you're not left in a half-authenticated state.
+
+**Analytics identity** — Product analytics events now consistently include your identity, and main builds no longer require a PostHog key to build locally. A macOS release config issue that broke analytics on installed builds has been fixed.
+
+## Bug fixes
+
+- Removed the accidental `Shift-D` delete shortcut from the status UI so revisions can't be deleted by mistake.
+- Removed the MCP sync capture option, which no longer had a use in the current workflow.
+- Fixed a macOS release build where the PostHog config was misapplied.
+
+</Update>
