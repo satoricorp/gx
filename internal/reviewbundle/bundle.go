@@ -95,6 +95,7 @@ type ReviewContextPayload struct {
 	StructuralFacts     []ReviewStructuralFact     `json:"structural_facts,omitempty"`
 	StructuralDeps      []ReviewStructuralDep      `json:"structural_dependencies,omitempty"`
 	ChangedSymbols      []ReviewChangedSymbol      `json:"changed_symbols,omitempty"`
+	SemanticLabels      []ReviewSemanticLabel      `json:"semantic_labels,omitempty"`
 	FeasibilityWarnings []ReviewFeasibilityWarning `json:"feasibility_warnings,omitempty"`
 	Risk                RiskPayload                `json:"risk"`
 	Evidence            []ReviewEvidencePayload    `json:"evidence,omitempty"`
@@ -119,6 +120,14 @@ type ReviewEvidencePayload struct {
 	Source string         `json:"source"`
 	Status string         `json:"status,omitempty"`
 	Data   map[string]any `json:"data,omitempty"`
+}
+
+type ReviewSemanticLabel struct {
+	Label    string   `json:"label"`
+	Source   string   `json:"source,omitempty"`
+	Status   string   `json:"status,omitempty"`
+	Score    float64  `json:"score,omitempty"`
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 type ReviewStructuralFact struct {
@@ -578,6 +587,7 @@ type demuxEvidenceContext struct {
 	StructuralFacts     []ReviewStructuralFact     `json:"structural_facts,omitempty"`
 	StructuralDeps      []ReviewStructuralDep      `json:"structural_dependencies,omitempty"`
 	ChangedSymbols      []ReviewChangedSymbol      `json:"changed_symbols,omitempty"`
+	SemanticLabels      []ReviewSemanticLabel      `json:"semantic_labels,omitempty"`
 }
 
 func buildReviewContext(files []string, evidence []DemuxEvidencePayload, sourceGraph reviewsource.Graph, agentProvenance []ReviewAgentProvenance) *ReviewContextPayload {
@@ -593,6 +603,7 @@ func buildReviewContext(files []string, evidence []DemuxEvidencePayload, sourceG
 	seenFacts := map[string]struct{}{}
 	seenDeps := map[string]struct{}{}
 	seenSymbols := map[string]struct{}{}
+	seenLabels := map[string]struct{}{}
 	for _, item := range evidence {
 		var decoded demuxEvidenceContext
 		if len(item.Evidence) > 0 && json.Valid(item.Evidence) {
@@ -629,6 +640,14 @@ func buildReviewContext(files []string, evidence []DemuxEvidencePayload, sourceG
 			}
 			seenSymbols[key] = struct{}{}
 			context.ChangedSymbols = append(context.ChangedSymbols, symbol)
+		}
+		for _, label := range decoded.SemanticLabels {
+			key := label.Label + "\x00" + label.Source + "\x00" + label.Status
+			if _, ok := seenLabels[key]; ok {
+				continue
+			}
+			seenLabels[key] = struct{}{}
+			context.SemanticLabels = append(context.SemanticLabels, label)
 		}
 	}
 	if len(context.StructuralFacts) > 0 || len(context.StructuralDeps) > 0 || len(context.ChangedSymbols) > 0 {
@@ -676,6 +695,14 @@ func evidenceForContext(context ReviewContextPayload) []ReviewEvidencePayload {
 			Data: map[string]any{
 				"score":   context.Risk.Score,
 				"signals": context.Risk.Signals,
+			},
+		},
+		{
+			Kind:   "semantic_labels",
+			Source: "local_bm25",
+			Status: "available",
+			Data: map[string]any{
+				"label_count": len(context.SemanticLabels),
 			},
 		},
 	}
