@@ -476,6 +476,14 @@ func (s *Service) ensureNewDraftStackForCurrent(ctx context.Context, repo RepoIn
 }
 
 func (s *Service) RecordCurrentRevisionInStack(ctx context.Context, stackBookmark, message string, preferredSessionIDs []string) (CommitResult, error) {
+	return s.recordCurrentRevisionInStack(ctx, stackBookmark, message, preferredSessionIDs, true)
+}
+
+func (s *Service) RecordCurrentRevisionInStackDeferredReconcile(ctx context.Context, stackBookmark, message string, preferredSessionIDs []string) (CommitResult, error) {
+	return s.recordCurrentRevisionInStack(ctx, stackBookmark, message, preferredSessionIDs, false)
+}
+
+func (s *Service) recordCurrentRevisionInStack(ctx context.Context, stackBookmark, message string, preferredSessionIDs []string, reconcile bool) (CommitResult, error) {
 	repo, err := s.configuredJJRepo(ctx)
 	if err != nil {
 		return CommitResult{}, err
@@ -483,7 +491,7 @@ func (s *Service) RecordCurrentRevisionInStack(ctx context.Context, stackBookmar
 	var result CommitResult
 	err = withRepoLock(repo.RootPath, func() error {
 		var commitErr error
-		result, commitErr = s.commitCurrentRevisionInStackUnlocked(ctx, repo, stackBookmark, message)
+		result, commitErr = s.commitCurrentRevisionInStackUnlocked(ctx, repo, stackBookmark, message, reconcile)
 		return commitErr
 	})
 	if err != nil {
@@ -497,6 +505,14 @@ func (s *Service) RecordCurrentRevisionInStack(ctx context.Context, stackBookmar
 }
 
 func (s *Service) RecordCurrentRevisionInNewStack(ctx context.Context, stackName, bookmarkName, baseRef, message string, preferredSessionIDs []string) (CommitResult, error) {
+	return s.recordCurrentRevisionInNewStack(ctx, stackName, bookmarkName, baseRef, message, preferredSessionIDs, true)
+}
+
+func (s *Service) RecordCurrentRevisionInNewStackDeferredReconcile(ctx context.Context, stackName, bookmarkName, baseRef, message string, preferredSessionIDs []string) (CommitResult, error) {
+	return s.recordCurrentRevisionInNewStack(ctx, stackName, bookmarkName, baseRef, message, preferredSessionIDs, false)
+}
+
+func (s *Service) recordCurrentRevisionInNewStack(ctx context.Context, stackName, bookmarkName, baseRef, message string, preferredSessionIDs []string, reconcile bool) (CommitResult, error) {
 	repo, err := s.configuredJJRepo(ctx)
 	if err != nil {
 		return CommitResult{}, err
@@ -504,7 +520,7 @@ func (s *Service) RecordCurrentRevisionInNewStack(ctx context.Context, stackName
 	var result CommitResult
 	err = withRepoLock(repo.RootPath, func() error {
 		var commitErr error
-		result, commitErr = s.commitCurrentRevisionInNewStackUnlocked(ctx, repo, stackName, bookmarkName, baseRef, message)
+		result, commitErr = s.commitCurrentRevisionInNewStackUnlocked(ctx, repo, stackName, bookmarkName, baseRef, message, reconcile)
 		return commitErr
 	})
 	if err != nil {
@@ -517,7 +533,7 @@ func (s *Service) RecordCurrentRevisionInNewStack(ctx context.Context, stackName
 	return result, nil
 }
 
-func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo RepoInfo, stackBookmark, message string) (CommitResult, error) {
+func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo RepoInfo, stackBookmark, message string, reconcile bool) (CommitResult, error) {
 	if err := ValidateCommitMessage(message); err != nil {
 		return CommitResult{}, err
 	}
@@ -551,8 +567,10 @@ func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo
 	if err != nil {
 		return CommitResult{}, err
 	}
-	if err := s.reconcileRepoChanges(ctx, repo, stackInfo.BookmarkName); err != nil {
-		return CommitResult{}, err
+	if reconcile {
+		if err := s.reconcileRepoChanges(ctx, repo, stackInfo.BookmarkName); err != nil {
+			return CommitResult{}, err
+		}
 	}
 	opID, err := s.CurrentOperation(ctx, repo.RootPath)
 	if err != nil {
@@ -567,7 +585,7 @@ func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo
 	}, nil
 }
 
-func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, repo RepoInfo, stackName, bookmarkName, baseRef, message string) (CommitResult, error) {
+func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, repo RepoInfo, stackName, bookmarkName, baseRef, message string, reconcile bool) (CommitResult, error) {
 	if err := ValidateCommitMessage(message); err != nil {
 		return CommitResult{}, err
 	}
@@ -599,8 +617,10 @@ func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, r
 		if err != nil {
 			return CommitResult{}, err
 		}
-		if err := s.reconcileRepoChanges(ctx, repo, stackInfo.BookmarkName); err != nil {
-			return CommitResult{}, err
+		if reconcile {
+			if err := s.reconcileRepoChanges(ctx, repo, stackInfo.BookmarkName); err != nil {
+				return CommitResult{}, err
+			}
 		}
 		opID, err := s.CurrentOperation(ctx, repo.RootPath)
 		if err != nil {
@@ -638,8 +658,10 @@ func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, r
 	if err != nil {
 		return CommitResult{}, err
 	}
-	if err := s.reconcileRepoChanges(ctx, repo, body.BookmarkName); err != nil {
-		return CommitResult{}, err
+	if reconcile {
+		if err := s.reconcileRepoChanges(ctx, repo, body.BookmarkName); err != nil {
+			return CommitResult{}, err
+		}
 	}
 	opID, err := s.CurrentOperation(ctx, repo.RootPath)
 	if err != nil {
