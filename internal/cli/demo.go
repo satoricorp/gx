@@ -141,7 +141,7 @@ func (d *demoSession) stacksOutput() error {
 	d.println(demoCommandOutput("    * demo-r1  initial change for demo"))
 	d.println(demoCommandOutput("        hello.txt"))
 	d.println(demoCommandOutput(""))
-	d.println(demoCommandOutput("j/k revision · e edit · d diff · esc stacks · q quit · ● selected · ↑ local"))
+	d.println(demoCommandOutput("j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local"))
 	d.println("")
 	d.println(demoWhite("This command is interactive, and you can view diffs and edit revisions here."))
 	d.println("")
