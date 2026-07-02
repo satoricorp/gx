@@ -1,0 +1,37 @@
+---
+title: "Week of June 30, 2026"
+description: "In-app updates for the menubar app, an interactive gx status flag, a new confidence-gated generate pipeline, and install instructions."
+---
+
+## New features
+
+### In-app updates for the menubar app
+
+The GX menubar app now updates itself with Sparkle. A new **Check for App Updates** menu item pulls the latest signed release and updates `GX.app` in place, alongside the existing bundled CLI update flow.
+
+### Interactive `gx status`
+
+`gx status` is now non-interactive by default and prints a clean summary. Pass `-i` / `--interactive` to open the browsable stack view. `gx stacks` continues to open the interactive view by default.
+
+### Confidence-gated generate pipeline
+
+`gx generate` now runs through a new confidence-gated pipeline that produces more reliable revisions and stacks from working-copy changes. If you need the previous behavior, use `gx generate --legacy` to fall back to the legacy pipeline.
+
+### Install and uninstall instructions
+
+The docs now include a one-line install command and a matching uninstall snippet for the CLI and menu-bar app. See [Download](/#download).
+
+## Updates
+
+### Cleaner stacks legend
+
+The status and stacks views share a single, simpler legend covering navigation, diff, selection, and local/cloud indicators.
+
+### Menubar app documentation
+
+The menubar app README documents the Sparkle-backed update flow, the appcast configuration, and local verification steps for maintainers packaging builds.
+
+## Bug fixes
+
+- `gx status` now shows unstaged files even when no GX revisions have been recorded yet, instead of reporting an empty workspace.
+- `gx status` reliably resolves the repo root when the stack summary is empty, so path-relative output stays correct on fresh repos.
