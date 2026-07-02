@@ -172,6 +172,57 @@ type ChangeDemuxEvidence struct {
 	CreatedAt          int64
 }
 
+type SemanticLabelSearchDocument struct {
+	Ordinal      int
+	Label        string
+	Text         string
+	Source       string
+	Status       string
+	EvidenceJSON string
+}
+
+type SemanticLabelSearchResult struct {
+	Ordinal      int
+	Label        string
+	Source       string
+	Status       string
+	EvidenceJSON string
+	RawScore     float64
+}
+
+type SemanticLabelWrite struct {
+	Label SemanticLabel
+	Link  SemanticLabelLink
+}
+
+type SemanticLabel struct {
+	ID            int64
+	RepoID        int64
+	Label         string
+	AliasesJSON   string
+	SourcesJSON   string
+	SeenCount     int
+	AcceptedCount int
+	Confidence    float64
+	CreatedAt     int64
+	UpdatedAt     int64
+}
+
+type SemanticLabelLink struct {
+	ID                 int64
+	RepoID             int64
+	LabelID            int64
+	DemuxProposalID    *string
+	RevisionProposalID *string
+	ChangeID           *int64
+	StackBookmark      *string
+	Source             string
+	Score              float64
+	Accepted           bool
+	EvidenceJSON       string
+	CreatedAt          int64
+}
+
 type ModifyEvent struct {
 	ID                      int64
 	RepoID                  int64
