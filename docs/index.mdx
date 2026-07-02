@@ -5,6 +5,22 @@ description: "Capture agent coding sessions as reviewable revisions, organize th
 
 GX captures coding sessions and attaches that context to reviewable revisions, then uses those revisions to push stacked PRs and generate better review artifacts.
 
+## Download
+
+```bash
+curl -fsSL https://download.gx.run/install.sh | sh
+```
+
+To uninstall the CLI and menu-bar app:
+
+```bash
+rm -f ~/.local/bin/gx ~/.local/bin/gxg ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -rf /Applications/GX.app ~/Applications/GX.app
+```
+
+This removes the installed binaries and app bundle only. Local GX data remains
+in `~/.gx`.
+
 ## Core Workflow
 
 ```bash
