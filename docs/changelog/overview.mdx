@@ -1,0 +1,37 @@
+---
+title: "Changelog"
+description: "New features, updates, and fixes shipped in GX."
+---
+
+Follow along as GX ships. Entries are grouped by week.
+
+<Update label="July 2, 2026">
+
+## New features
+
+- **Confidence-gated generate pipeline** — `gx generate` now routes changes through a confidence-scored pipeline that picks the safest revision layout before proposing a stack. Higher-confidence generations produce cleaner, more reviewable stacks.
+- **`gx generate --legacy`** — Prefer the previous generation flow? Pass `--legacy` to opt out of the new pipeline while you evaluate the new default.
+- **GitHub PR summaries on `gx push`** — When `gx push` publishes a stack to GitHub, GX writes a generated review summary, blast-radius label, and up-to-10 high-impact review targets into the PR body. Your existing description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries).
+- **`gx report`** — Generate a shareable report of stack activity from the CLI.
+- **Prompted `gx review`** — Kick off a review with a natural-language prompt and let GX focus its attention on what you care about.
+- **Review policy context** — `gx review` now pulls in team review policy so findings match how your project actually reviews code.
+- **Indexed review context and GitHub comments** — Past reviews are indexed and surfaced as attributed context, and GX can post findings directly as GitHub review comments.
+- **Code review history memory** — GX remembers prior review outcomes and reuses them to sharpen future reviews.
+- **Local inference API key setup** — Run `gx set key` to store one Anthropic or OpenAI key at `~/.gx/inference.json`. GX uses it for local inference and MCP-launched commands, with `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` as fallbacks.
+- **`gxr` review shortcut** — A dedicated `gxr` binary is installed alongside `gx` for one-key access to review.
+
+## Updates
+
+- **Simpler `gx generate` and `gx push` flow** — Generation and push have a tighter, more predictable UX with clearer prompts and reporting.
+- **Better stack UX** — Stack TUIs now have a scroll viewport, and merged or empty stacks are hidden and pruned automatically (including closed GitHub PR stacks) so your view stays focused on active work.
+- **Faster stack list** — The stack read model is meaningfully faster on repos with lots of history.
+- **Polished CLI help and menubar** — CLI help output, menubar menu items, and `gx doctor` diagnostics were simplified. The menubar now shows both menubar tag and CLI versions.
+- **Cleaner status UI** — Removed the Shift-D delete shortcut from the status UI to prevent accidental deletions, and hid the Convex site from auth status.
+- **Improved `gx review` attribution** — Review findings now carry clearer attribution back to the evidence that produced them.
+
+## Fixes
+
+- **Auth reliability** — GX now verifies your console API session on login and refreshes expiring GitHub auth tokens automatically, so long-running sessions stay signed in.
+- **PostHog on macOS** — Fixed a PostHog configuration issue that affected macOS releases, ensured events include identity, and allowed main GX builds to run without a PostHog key configured.
+
+</Update>
