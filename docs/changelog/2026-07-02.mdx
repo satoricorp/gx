@@ -1,0 +1,59 @@
+---
+title: "Week of June 29, 2026"
+description: "New generate and push flow, indexed review context, GitHub PR summaries, local inference key setup, and quality-of-life polish across the CLI and menu bar."
+---
+
+## New features
+
+**Streamlined `gx generate` and `gx push` flow.** The core loop is now `gx generate` → `gx status` → `gx push`. `gx generate` creates local features, stacks, and revisions from your working copy and applies ready revisions automatically. `gx push` publishes stacks, uploads sessions and metadata, and prints branch-mapped PR links. See the updated [core workflow](/index#core-workflow).
+
+**`gx report`.** A new command surfaces stack and revision status in a compact report suitable for humans and agents.
+
+**Prompted `gx review`.** Pass an optional prompt to guide a broader review of how current changes affect the surrounding codebase, for example `gx review "check auth rollback risks across the session flow"`.
+
+**Indexed review context and GitHub comments.** `gx review` now pulls in indexed context from past reviews and can attribute findings back to prior GitHub comments, improving relevance and reducing repeat feedback.
+
+**Code review history memory.** `gx review` remembers prior review history for the repo and factors it into new reviews.
+
+**GitHub PR summaries on push.** `gx push` now writes a generated review summary — including a blast-radius overview and up to 10 high-impact review targets — into every published GitHub PR, while preserving anything you wrote under an author-notes section. See [GitHub PR summaries](/reference/github-pr-summaries).
+
+**Local inference API key setup.** Run `gx set key` to store an Anthropic or OpenAI key for local inference and MCP-launched `gx` commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks. See [local inference](/index#local-inference).
+
+**`gxr` review shortcut.** A shorter alias for the review command is now installed alongside the CLI.
+
+**`gx generate --legacy`.** Opt into the previous generate pipeline while the new routing rolls out.
+
+## Updates
+
+**Unified `gx status`.** `gx status` now shows unstaged files, local features and stacks, and remote state in a single interactive view with stack navigation, revision navigation, edit, and diff.
+
+**Improved `gx review` attribution and reporting.** Findings surface clearer attribution (GX finding, indexed past review, or heuristic) and cleaner reporting output.
+
+**Better demux generate preflight routing.** Preflight is more accurate about which revisions and hunks belong together, reducing repair loops on messy diffs.
+
+**Merged and closed PR stacks are hidden and pruned.** Stacks whose GitHub PRs are merged no longer clutter the stacks view and are pruned from local state; closed PR stacks are pruned as well.
+
+**Empty stored stack revisions are hidden.** Revisions with no meaningful content no longer appear in `gx status` or the stacks view.
+
+**Faster stack read model.** The stacks view opens and updates noticeably faster on repos with large histories.
+
+**Scroll viewport in stack TUIs.** Long stacks and revisions are now scrollable inside their panels.
+
+**Menu bar and CLI polish.**
+- Menu bar shows both the app tag and bundled CLI version.
+- Simplified menu and doctor output.
+- Convex site is hidden from auth status.
+- `gx doctor` output is tighter and more actionable.
+- CLI help surface has been polished for readability.
+- The Shift-D delete shortcut was removed from the status UI to prevent accidental deletion.
+- The MCP sync capture option was removed.
+
+**Menu bar community repository navigation.** Fixed navigation to community repositories in the console UI.
+
+## Bug fixes
+
+- **Expiring GitHub auth tokens are refreshed automatically**, preventing mid-session auth failures during `gx push`.
+- **Console API session is verified during `gx auth login`**, catching stale sessions before you try to push.
+- **PostHog config fixed for macOS releases**, so analytics events emit correctly from packaged builds.
+- **PostHog events always include identity**, so telemetry is attributed to the right account.
+- **Main GX builds succeed without a PostHog key**, unblocking local and contributor builds.
