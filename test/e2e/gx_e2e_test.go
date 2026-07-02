@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,49 +101,6 @@ type demuxApplyPayload struct {
 			BookmarkName string `json:"BookmarkName"`
 		} `json:"Stack"`
 	} `json:"revisions"`
-}
-
-type demuxFixPayload struct {
-	Proposal struct {
-		ID        string `json:"id"`
-		Revisions []struct {
-			ID          string   `json:"id"`
-			TargetStack string   `json:"target_stack"`
-			BaseStack   string   `json:"base_stack"`
-			DependsOn   []string `json:"depends_on"`
-		} `json:"revisions"`
-	} `json:"proposal"`
-	Review struct {
-		Valid       bool `json:"valid"`
-		RepairHints []struct {
-			Kind string `json:"kind"`
-		} `json:"repair_hints"`
-	} `json:"review"`
-	State   string `json:"state"`
-	Model   string `json:"model"`
-	Updated bool   `json:"updated"`
-}
-
-type demuxReviewPayload struct {
-	Valid       bool                 `json:"valid"`
-	Proposal    demuxProposalPayload `json:"proposal"`
-	Errors      []string             `json:"errors"`
-	RepairHints []struct {
-		Kind       string `json:"kind"`
-		RevisionID string `json:"revision_id"`
-		DependsOn  string `json:"depends_on"`
-	} `json:"repair_hints"`
-}
-
-type demuxWorkflowPayload struct {
-	Action        string               `json:"action"`
-	State         string               `json:"state"`
-	NextTool      string               `json:"next_tool"`
-	FinalTool     string               `json:"final_tool"`
-	Workflow      []string             `json:"workflow"`
-	Proposal      demuxProposalPayload `json:"proposal"`
-	Review        demuxReviewPayload   `json:"review"`
-	RevisionShape map[string]any       `json:"revision_shape"`
 }
 
 type demuxEvidenceRow struct {
@@ -251,7 +207,7 @@ func TestGXBaseSetMainUsesGXCheckout(t *testing.T) {
 	assertCurrentBranch(t, h, "main")
 }
 
-func TestGXDemuxProposesAndAppliesFileLevelRevisions(t *testing.T) {
+func TestGXGenerateCreatesFileLevelRevisionsAndEvidence(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -261,11 +217,12 @@ func TestGXDemuxProposesAndAppliesFileLevelRevisions(t *testing.T) {
 	h.writeTrackedFile("beta.txt", "beta\n")
 	h.run("jj", "describe", "-m", "messy work")
 
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "compose", "--plan", "--json", "--intent", "demux e2e")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
+	rawApply := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "generate", "--json", "--intent", "demux e2e")
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
+	proposal := applied.Proposal
 	if proposal.ID == "" || proposal.ProposedChangeID == "" || proposal.ProposedCommitID == "" {
 		t.Fatalf("proposal missing identity fields: %#v", proposal)
 	}
@@ -284,78 +241,10 @@ func TestGXDemuxProposesAndAppliesFileLevelRevisions(t *testing.T) {
 	if len(proposal.FeasibilityWarnings) < 2 {
 		t.Fatalf("proposal feasibility warnings = %#v, want at least unmapped hunk warnings", proposal.FeasibilityWarnings)
 	}
-
-	list := h.gx("compose", "list")
-	for _, want := range []string{
-		"Compose proposals",
-		"* d1",
-		proposal.ID,
-		"pending / 2 revisions / 2 files",
-		"demux e2e: alpha.txt",
-		"default for revisions: gx compose show <revision-id>",
-	} {
-		if !strings.Contains(list, want) {
-			t.Fatalf("gx compose list missing %q in:\n%s", want, list)
-		}
-	}
-
-	showProposal := h.gx("compose", "show", "d1")
-	for _, want := range []string{
-		"Compose proposal",
-		"demux e2e: alpha.txt",
-		"JSON gx compose --json",
-	} {
-		if !strings.Contains(showProposal, want) {
-			t.Fatalf("gx compose show d1 missing %q in:\n%s", want, showProposal)
-		}
-	}
-
-	checkProposal := h.gx("compose", "review", "d1")
-	for _, want := range []string{
-		"Compose proposal",
-		"Proposes 2 revisions",
-		"Diagnostics",
-		"hidden; use --raw or --json",
-		"gx compose",
-	} {
-		if !strings.Contains(checkProposal, want) {
-			t.Fatalf("gx compose review d1 missing %q in:\n%s", want, checkProposal)
-		}
-	}
-	for _, unwanted := range []string{
-		"Feasibility warnings",
-		"hunk h1 in alpha.txt is not mapped to an enclosing symbol",
-	} {
-		if strings.Contains(checkProposal, unwanted) {
-			t.Fatalf("gx compose review d1 should hide %q by default:\n%s", unwanted, checkProposal)
-		}
-	}
-
-	show := h.gx("compose", "show", "u1")
-	for _, want := range []string{
-		"Compose revision",
-		"Proposal " + proposal.ID,
-		"Revision u1",
-		"Intent demux e2e: alpha.txt",
-		"Files",
-		"alpha.txt",
-		"Diff",
-		"diff --git a/alpha.txt b/alpha.txt",
-		"+alpha",
-	} {
-		if !strings.Contains(show, want) {
-			t.Fatalf("gx compose show u1 missing %q in:\n%s", want, show)
-		}
-	}
-
-	rawApply := h.gx("compose", "apply", proposal.ID, "--json")
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply: %v\n%s", err, rawApply)
-	}
 	if len(applied.Revisions) != 2 {
 		t.Fatalf("applied revisions = %#v, want 2", applied.Revisions)
 	}
+	assertCurrentBranch(t, h, "main")
 	assertChangeSessions(t, h, map[string][]string{
 		"demux e2e: alpha.txt": {"session-alpha"},
 		"demux e2e: beta.txt":  {"session-alpha"},
@@ -366,46 +255,37 @@ func TestGXDemuxProposesAndAppliesFileLevelRevisions(t *testing.T) {
 	})
 }
 
-func TestGXComposeApplyAllCreatesEveryProposedStackAndPublishPublishesAll(t *testing.T) {
+func TestGXGenerateCreatesEveryProposedStackAndPushPublishesAll(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(true)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-	h.writeMultiStackComposeFiles()
+	h.writeMultiStackGenerateFiles()
 
-	rawProposal := h.gx("compose", "--json", "--intent", "multi compose")
-	var packet struct {
-		State    string               `json:"state"`
-		Proposal demuxProposalPayload `json:"proposal"`
+	rawApply := h.gx("generate", "--json", "--intent", "multi generate")
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
-	if err := json.Unmarshal([]byte(rawProposal), &packet); err != nil {
-		t.Fatalf("decode compose packet: %v\n%s", err, rawProposal)
-	}
-	if packet.State != "ready_to_apply" || packet.Proposal.ID == "" {
-		t.Fatalf("compose packet = state %q proposal %#v", packet.State, packet.Proposal)
+	if applied.Proposal.ID == "" {
+		t.Fatalf("generate result missing proposal: %#v", applied)
 	}
 	wantStacks := map[string]bool{
 		"feature/demux-routing":    false,
 		"feature/stack-management": false,
 		"test/e2e-tests":           false,
 	}
-	for _, revision := range packet.Proposal.Revisions {
+	for _, revision := range applied.Proposal.Revisions {
 		if _, ok := wantStacks[revision.TargetStack]; ok {
 			wantStacks[revision.TargetStack] = true
 		}
 	}
 	for bookmark, seen := range wantStacks {
 		if !seen {
-			t.Fatalf("compose proposal missing stack %q in revisions %#v\n%s", bookmark, packet.Proposal.Revisions, rawProposal)
+			t.Fatalf("generate proposal missing stack %q in revisions %#v\n%s", bookmark, applied.Proposal.Revisions, rawApply)
 		}
 	}
-
-	rawApply := h.gx("compose", "apply", packet.Proposal.ID, "--json")
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode compose apply: %v\n%s", err, rawApply)
-	}
 	if applied.RemainingChanges || applied.AcceptedSubset || applied.NextAction != "" {
-		t.Fatalf("compose apply partial fields = remaining:%t subset:%t next:%q\n%s", applied.RemainingChanges, applied.AcceptedSubset, applied.NextAction, rawApply)
+		t.Fatalf("generate apply partial fields = remaining:%t subset:%t next:%q\n%s", applied.RemainingChanges, applied.AcceptedSubset, applied.NextAction, rawApply)
 	}
 	assertCurrentBranch(t, h, "main")
 	if len(applied.Revisions) != 3 {
@@ -422,9 +302,9 @@ func TestGXComposeApplyAllCreatesEveryProposedStackAndPublishPublishesAll(t *tes
 		assertRemoteBranchMissing(t, h, bookmark)
 	}
 
-	output := h.gx("publish", "--github")
-	if !strings.Contains(output, "Published") || !strings.Contains(output, "3 stacks") {
-		t.Fatalf("publish output = %q, want published 3 stacks", output)
+	output := h.gx("push")
+	if !strings.Contains(output, "Pushed") || !strings.Contains(output, "3 stacks") {
+		t.Fatalf("push output = %q, want pushed 3 stacks", output)
 	}
 	assertCurrentBranch(t, h, "main")
 	for bookmark := range wantStacks {
@@ -433,53 +313,7 @@ func TestGXComposeApplyAllCreatesEveryProposedStackAndPublishPublishesAll(t *tes
 	}
 }
 
-func TestGXComposeSelectedStackAppearsInStacksBeforeRerun(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-	h.writeMultiStackComposeFiles()
-
-	rawProposal := h.gx("compose", "--json", "--intent", "multi compose")
-	var packet struct {
-		State    string               `json:"state"`
-		Proposal demuxProposalPayload `json:"proposal"`
-	}
-	if err := json.Unmarshal([]byte(rawProposal), &packet); err != nil {
-		t.Fatalf("decode compose packet: %v\n%s", err, rawProposal)
-	}
-	selectedStack := "feature/stack-management"
-	planFile := h.writeDemuxPlanForStack(packet.Proposal, selectedStack)
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode compose apply-plan: %v\n%s", err, rawApply)
-	}
-	if !applied.RemainingChanges || !applied.AcceptedSubset || applied.NextAction != "gx compose" {
-		t.Fatalf("selected-stack apply fields = remaining:%t subset:%t next:%q\n%s", applied.RemainingChanges, applied.AcceptedSubset, applied.NextAction, rawApply)
-	}
-	assertCurrentBranch(t, h, "main")
-	assertStack(t, h, selectedStack, "draft", h.bookmarkTargets()[selectedStack], "")
-	assertStackInStacksJSON(t, h, selectedStack, 1)
-
-	rawNext := h.gx("compose", "--json", "--intent", "multi compose followup")
-	var next struct {
-		State    string               `json:"state"`
-		Proposal demuxProposalPayload `json:"proposal"`
-	}
-	if err := json.Unmarshal([]byte(rawNext), &next); err != nil {
-		t.Fatalf("decode followup compose packet: %v\n%s", err, rawNext)
-	}
-	if next.State != "ready_to_apply" || len(next.Proposal.Revisions) != 2 {
-		t.Fatalf("followup compose = state %q revisions %#v\n%s", next.State, next.Proposal.Revisions, rawNext)
-	}
-	h.gx("compose", "apply", next.Proposal.ID, "--json")
-	assertCurrentBranch(t, h, "main")
-	assertStackInStacksJSON(t, h, "feature/demux-routing", 1)
-	assertStackInStacksJSON(t, h, "test/e2e-tests", 1)
-}
-
-func TestGXComposeApplyPlanAppendsToExistingJJBookmark(t *testing.T) {
+func TestGXGenerateAppendsToExistingJJBookmark(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -495,21 +329,11 @@ func TestGXComposeApplyPlanAppendsToExistingJJBookmark(t *testing.T) {
 	h.run("jj", "new", "main")
 	assertCurrentBranch(t, h, "main")
 
-	h.writeMultiStackComposeFiles()
-	rawProposal := h.gx("compose", "--json", "--intent", "append existing compose")
-	var packet struct {
-		State    string               `json:"state"`
-		Proposal demuxProposalPayload `json:"proposal"`
-	}
-	if err := json.Unmarshal([]byte(rawProposal), &packet); err != nil {
-		t.Fatalf("decode compose packet: %v\n%s", err, rawProposal)
-	}
-	planFile := h.writeDemuxPlanForStack(packet.Proposal, existingStack)
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
+	h.writeMultiStackGenerateFiles()
+	rawApply := h.gx("generate", "--json", "--intent", "append existing generate", "internal/storage")
 	var applied demuxApplyPayload
 	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode compose apply-plan: %v\n%s", err, rawApply)
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
 	if len(applied.Revisions) != 1 || applied.Revisions[0].Stack.BookmarkName != existingStack {
 		t.Fatalf("applied revisions = %#v, want one revision appended to %s", applied.Revisions, existingStack)
@@ -531,26 +355,22 @@ func TestGXSyncPullsCloudBookmarkForThrowawayMarkdownChange(t *testing.T) {
 	source.writeTrackedFile(fileName, fileContents)
 	source.run("jj", "describe", "-m", "throwaway sync markdown")
 
-	rawProposal := source.gx("compose", "--json", "--intent", "update throwaway sync markdown")
-	var packet struct {
-		State    string               `json:"state"`
-		Proposal demuxProposalPayload `json:"proposal"`
+	rawApply := source.gx("generate", "--json", "--intent", "update throwaway sync markdown")
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
-	if err := json.Unmarshal([]byte(rawProposal), &packet); err != nil {
-		t.Fatalf("decode compose packet: %v\n%s", err, rawProposal)
+	if len(applied.Proposal.Revisions) != 1 || len(applied.Revisions) != 1 {
+		t.Fatalf("generate result revisions = proposal:%#v applied:%#v\n%s", applied.Proposal.Revisions, applied.Revisions, rawApply)
 	}
-	if packet.State != "ready_to_apply" || len(packet.Proposal.Revisions) != 1 {
-		t.Fatalf("compose packet = state %q revisions %#v\n%s", packet.State, packet.Proposal.Revisions, rawProposal)
-	}
-	branch := packet.Proposal.Revisions[0].TargetStack
+	branch := applied.Proposal.Revisions[0].TargetStack
 	if branch == "" || strings.HasPrefix(branch, "gx/") {
-		t.Fatalf("compose target_stack = %q, want conventional public branch", branch)
+		t.Fatalf("generate target_stack = %q, want conventional public branch", branch)
 	}
 
-	source.gx("compose", "apply", packet.Proposal.ID, "--json")
 	assertCurrentBranch(t, source, "main")
 	assertStackInStacksJSON(t, source, branch, 1)
-	source.gx("publish", branch)
+	source.gx("push", branch)
 	assertRemoteBranchExists(t, source, branch)
 	remoteHead := strings.TrimSpace(source.run("git", "--git-dir", source.remote, "rev-parse", "refs/heads/"+branch))
 	if remoteHead == "" {
@@ -569,7 +389,7 @@ func TestGXSyncPullsCloudBookmarkForThrowawayMarkdownChange(t *testing.T) {
 
 	apiURL := startBookmarkCloudAPI(t, branch, remoteHead)
 	output := target.gxWithEnv([]string{"GX_CLOUD_URL=" + apiURL + "/gx/pr"}, "sync")
-	if !strings.Contains(output, "Cloud catch-up 1 bookmark(s) fetched from remote") {
+	if !strings.Contains(output, "Remote catch-up 1 bookmark(s) fetched from remote") {
 		t.Fatalf("gx sync output missing cloud catch-up:\n%s", output)
 	}
 	assertCurrentBranch(t, target, "main")
@@ -582,62 +402,7 @@ func TestGXSyncPullsCloudBookmarkForThrowawayMarkdownChange(t *testing.T) {
 	}
 }
 
-func TestGXDemuxWorkflowHappyPathAppliesReviewedProposal(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.insertSession("session-alpha")
-	h.writeTrackedFile("alpha.txt", "alpha\n")
-	h.writeTrackedFile("beta.txt", "beta\n")
-	h.run("jj", "describe", "-m", "messy workflow")
-
-	rawPacket := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "compose", "--plan", "--json", "--intent", "workflow")
-	var packet demuxWorkflowPayload
-	if err := json.Unmarshal([]byte(rawPacket), &packet); err != nil {
-		t.Fatalf("decode demux packet: %v\n%s", err, rawPacket)
-	}
-	if packet.Action != "demux_changes" || packet.State != "ready_to_apply" || packet.NextTool != "gx_apply_revision_plan" || packet.FinalTool != "gx_apply_revision_plan" {
-		t.Fatalf("demux state = %#v, want ready-to-apply packet", packet)
-	}
-	if len(packet.Workflow) == 0 || packet.RevisionShape["intent"] == nil {
-		t.Fatalf("demux packet missing workflow guidance: %#v", packet)
-	}
-	if !packet.Review.Valid || len(packet.Review.Errors) != 0 {
-		t.Fatalf("demux changes review = %#v, want valid", packet.Review)
-	}
-	if len(packet.Review.Proposal.Revisions) != 2 {
-		t.Fatalf("reviewed proposal revisions = %#v, want 2", packet.Review.Proposal.Revisions)
-	}
-
-	planData, err := json.Marshal(packet.Review.Proposal)
-	if err != nil {
-		t.Fatalf("marshal reviewed proposal: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "reviewed-plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		t.Fatalf("write reviewed proposal: %v", err)
-	}
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply-plan: %v\n%s", err, rawApply)
-	}
-	if len(applied.Revisions) != 2 {
-		t.Fatalf("applied revisions = %#v, want 2", applied.Revisions)
-	}
-	assertChangeSessions(t, h, map[string][]string{
-		"workflow: alpha.txt": {"session-alpha"},
-		"workflow: beta.txt":  {"session-alpha"},
-	})
-	assertDemuxEvidence(t, h, packet.Proposal.ID, []demuxEvidenceRow{
-		{RevisionProposalID: "u1", Intent: "workflow: alpha.txt", HunkIDsJSON: `["h1"]`, ProvenanceStatus: "explicit"},
-		{RevisionProposalID: "u2", Intent: "workflow: beta.txt", HunkIDsJSON: `["h2"]`, ProvenanceStatus: "explicit"},
-	})
-}
-
-func TestGXDemuxAttachesRepoLocalSessionWithoutEnv(t *testing.T) {
+func TestGXGenerateAttachesRepoLocalSessionWithoutEnv(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -646,650 +411,27 @@ func TestGXDemuxAttachesRepoLocalSessionWithoutEnv(t *testing.T) {
 	h.writeTrackedFile("alpha.txt", "alpha\n")
 	h.run("jj", "describe", "-m", "messy cursor work")
 
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "cursor demux")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
+	rawApply := h.gx("generate", "--json", "--intent", "cursor generate")
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
+	proposal := applied.Proposal
 	if len(proposal.Revisions) != 1 {
 		t.Fatalf("proposal revisions = %#v, want 1", proposal.Revisions)
 	}
 	if proposal.Revisions[0].ProvenanceStatus != "repo_local" || !reflect.DeepEqual(proposal.Revisions[0].SessionIDs, []string{"cursor-session"}) {
 		t.Fatalf("proposal provenance = %#v, want repo-local cursor session", proposal.Revisions[0])
 	}
-
-	h.gx("compose", "apply", proposal.ID, "--json")
-	assertChangeSessions(t, h, map[string][]string{
-		"cursor demux: alpha.txt": {"cursor-session"},
-	})
-}
-
-func TestGXDemuxReviewPlanReportsRepairableErrorsWithoutApplying(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("alpha.txt", numberedLines(20, nil))
-	h.run("jj", "describe", "-m", "seed alpha")
-	h.gx("add", "-m", "seed alpha")
-	h.gx("base", "--set", "feature/seed-alpha")
-
-	h.writeTrackedFile("alpha.txt", numberedLines(20, map[int]string{
-		2:  "line 02 changed",
-		18: "line 18 changed",
-	}))
-	h.run("jj", "describe", "-m", "messy alpha")
-
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "review alpha")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-	if len(proposal.Hunks) < 2 {
-		t.Fatalf("proposal hunks = %#v, want at least 2", proposal.Hunks)
-	}
-
-	plan := map[string]any{
-		"id":                 proposal.ID,
-		"repo_root":          proposal.RepoRoot,
-		"proposed_change_id": proposal.ProposedChangeID,
-		"proposed_commit_id": proposal.ProposedCommitID,
-		"status":             "pending",
-		"hunks":              proposal.Hunks,
-		"revisions": []map[string]any{{
-			"id":        "r1",
-			"intent":    "only first hunk",
-			"use_hunks": true,
-			"hunk_ids":  []string{proposal.Hunks[0].ID},
-		}},
-	}
-	planData, err := json.Marshal(plan)
-	if err != nil {
-		t.Fatalf("marshal invalid plan: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		t.Fatalf("write invalid plan: %v", err)
-	}
-
-	rawReview := h.gx("compose", "review-plan", "--json", "--plan-file", planFile)
-	var reviewed demuxReviewPayload
-	if err := json.Unmarshal([]byte(rawReview), &reviewed); err != nil {
-		t.Fatalf("decode demux review-plan: %v\n%s", err, rawReview)
-	}
-	if reviewed.Valid || len(reviewed.Errors) != 1 || !strings.Contains(reviewed.Errors[0], "is not assigned to any revision") {
-		t.Fatalf("review payload = %#v, want repairable unassigned hunk error", reviewed)
-	}
-	assertChangeSessions(t, h, nil)
-	assertDemuxEvidence(t, h, proposal.ID, nil)
-}
-
-func TestGXDemuxApplyPlanResolvesHunkIDs(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("alpha.txt", numberedLines(20, nil))
-	h.run("jj", "describe", "-m", "seed alpha")
-	h.gx("add", "-m", "seed alpha")
-	h.gx("base", "--set", "feature/seed-alpha")
-
-	h.insertSession("session-alpha")
-	h.writeTrackedFile("alpha.txt", numberedLines(20, map[int]string{
-		2:  "line 02 changed",
-		18: "line 18 changed",
-	}))
-	h.run("jj", "describe", "-m", "messy alpha")
-
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "compose", "--plan", "--json", "--intent", "split alpha")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-	if len(proposal.Hunks) < 2 {
-		t.Fatalf("proposal hunks = %#v, want at least 2", proposal.Hunks)
-	}
-
-	plan := map[string]any{
-		"id":                 proposal.ID,
-		"repo_root":          proposal.RepoRoot,
-		"proposed_change_id": proposal.ProposedChangeID,
-		"proposed_commit_id": proposal.ProposedCommitID,
-		"status":             "pending",
-		"hunks":              proposal.Hunks,
-		"revisions": []map[string]any{{
-			"id":                "r1",
-			"intent":            "split alpha hunks",
-			"use_hunks":         true,
-			"hunk_ids":          []string{proposal.Hunks[0].ID, proposal.Hunks[1].ID},
-			"provenance_status": "explicit",
-			"session_ids":       []string{"session-alpha"},
-			"confidence":        0.8,
-		}},
-	}
-	planData, err := json.Marshal(plan)
-	if err != nil {
-		t.Fatalf("marshal hunk plan: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		t.Fatalf("write hunk plan: %v", err)
-	}
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply-plan: %v\n%s", err, rawApply)
-	}
 	if len(applied.Revisions) != 1 {
 		t.Fatalf("applied revisions = %#v, want 1", applied.Revisions)
 	}
-	assertChangeSessions(t, h, map[string][]string{"split alpha hunks": {"session-alpha"}})
-	assertDemuxEvidence(t, h, proposal.ID, []demuxEvidenceRow{
-		{RevisionProposalID: "r1", Intent: "split alpha hunks", HunkIDsJSON: `["` + proposal.Hunks[0].ID + `","` + proposal.Hunks[1].ID + `"]`, ProvenanceStatus: "explicit"},
-	})
-}
-
-func TestGXDemuxApplyPlanRoutesRevisionToExistingStack(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("target-anchor.txt", "target\n")
-	h.run("jj", "describe", "-m", "target stack")
-	h.gx("add", "-m", "target stack")
-	targetBookmark := "feature/target-stack"
-	targetBefore := h.bookmarkTargets()[targetBookmark]
-	if targetBefore == "" {
-		t.Fatalf("missing target bookmark before routed demux: %#v", h.bookmarkTargets())
-	}
-
-	h.run("git", "switch", "main")
-	h.writeTrackedFile("source-anchor.txt", "source\n")
-	h.run("jj", "describe", "-m", "source stack")
-	h.gx("add", "-m", "source stack")
-	sourceBookmark := "feature/source-stack"
-	h.gx("base", "--set", sourceBookmark)
-
-	h.insertSession("session-route")
-	h.writeTrackedFile("routed.txt", "routed\n")
-	h.writeTrackedFile("local.txt", "local\n")
-	h.run("jj", "describe", "-m", "messy routed source")
-
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-route"}, "compose", "--plan", "--json", "--intent", "route e2e")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-
-	plan := map[string]any{
-		"id":                 proposal.ID,
-		"repo_root":          proposal.RepoRoot,
-		"proposed_change_id": proposal.ProposedChangeID,
-		"proposed_commit_id": proposal.ProposedCommitID,
-		"status":             "pending",
-		"revisions": []map[string]any{
-			{
-				"id":                "r1",
-				"intent":            "route e2e routed file",
-				"files":             []string{"routed.txt"},
-				"target_stack":      targetBookmark,
-				"route_source":      "user",
-				"route_reason":      "e2e routes this file to an existing stack",
-				"route_confidence":  1.0,
-				"provenance_status": "explicit",
-				"session_ids":       []string{"session-route"},
-				"confidence":        0.9,
-			},
-			{
-				"id":                "r2",
-				"intent":            "route e2e local file",
-				"files":             []string{"local.txt"},
-				"provenance_status": "explicit",
-				"session_ids":       []string{"session-route"},
-				"confidence":        0.9,
-			},
-		},
-	}
-	planData, err := json.Marshal(plan)
-	if err != nil {
-		t.Fatalf("marshal routed plan: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "routed-plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		t.Fatalf("write routed plan: %v", err)
-	}
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply-plan: %v\n%s", err, rawApply)
-	}
-	if len(applied.Revisions) != 2 {
-		t.Fatalf("applied revisions = %#v, want 2", applied.Revisions)
-	}
-	targetAfter := h.bookmarkTargets()[targetBookmark]
-	sourceAfter := h.bookmarkTargets()[sourceBookmark]
-	if targetAfter == "" || targetAfter == targetBefore {
-		t.Fatalf("target bookmark after routed demux = %q, before %q", targetAfter, targetBefore)
-	}
-	if sourceAfter == "" {
-		t.Fatalf("missing source bookmark after routed demux: %#v", h.bookmarkTargets())
-	}
-	assertCurrentBranch(t, h, "main")
 	assertChangeSessions(t, h, map[string][]string{
-		"route e2e local file":  {"session-route"},
-		"route e2e routed file": {"session-route"},
-	})
-	assertDemuxEvidence(t, h, proposal.ID, []demuxEvidenceRow{
-		{RevisionProposalID: "r1", Intent: "route e2e routed file", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
-		{RevisionProposalID: "r2", Intent: "route e2e local file", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
+		"cursor generate: alpha.txt": {"cursor-session"},
 	})
 }
 
-func TestGXDemuxFixPlanRepairsStackRoutes(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("target-anchor.txt", "target\n")
-	h.run("jj", "describe", "-m", "target stack")
-	h.gx("add", "-m", "target stack")
-	targetBookmark := "feature/target-stack"
-
-	h.run("git", "switch", "main")
-	h.writeTrackedFile("source-anchor.txt", "source\n")
-	h.run("jj", "describe", "-m", "source stack")
-	h.gx("add", "-m", "source stack")
-	sourceBookmark := "feature/source-stack"
-	h.gx("base", "--set", sourceBookmark)
-
-	h.writeTrackedFile("routed.txt", "routed\n")
-	h.writeTrackedFile("source-local.txt", "source local\n")
-	h.run("jj", "describe", "-m", "messy repair route")
-
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "repair route e2e")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-	planFile := h.writeDemuxPlan(proposal, []map[string]any{
-		{
-			"id":                "r1",
-			"intent":            "repair route e2e routed file",
-			"files":             []string{"routed.txt"},
-			"target_stack":      targetBookmark,
-			"route_source":      "user",
-			"route_reason":      "route to target stack",
-			"route_confidence":  1.0,
-			"provenance_status": "absent",
-			"confidence":        0.5,
-		},
-		{
-			"id":                "r2",
-			"intent":            "repair route e2e source file",
-			"files":             []string{"source-local.txt"},
-			"depends_on":        []string{"r1"},
-			"target_stack":      "s1",
-			"route_source":      "user",
-			"route_reason":      "alias route missing base stack",
-			"route_confidence":  1.0,
-			"provenance_status": "absent",
-			"confidence":        0.5,
-		},
-	})
-
-	result := runCommandAllowError(h.t, h.repo, h.env(), h.bin, "compose", "apply-plan", "--json", "--plan-file", planFile)
-	if result.exitCode == 0 || !strings.Contains(result.output, "invalid route") {
-		t.Fatalf("bad routed apply-plan = exit %d:\n%s", result.exitCode, result.output)
-	}
-
-	rawFix := h.gx("compose", "fix", proposal.ID, "--plan", "--json")
-	var fixed demuxFixPayload
-	if err := json.Unmarshal([]byte(rawFix), &fixed); err != nil {
-		t.Fatalf("decode demux fix: %v\n%s", err, rawFix)
-	}
-	if !fixed.Updated || fixed.Model != "deterministic" || fixed.State != "ready_to_apply" || !fixed.Review.Valid {
-		t.Fatalf("demux fix = %#v, want deterministic ready repair", fixed)
-	}
-	if len(fixed.Review.RepairHints) != 0 {
-		t.Fatalf("demux fix repair hints = %#v, want none", fixed.Review.RepairHints)
-	}
-	if len(fixed.Proposal.Revisions) != 2 {
-		t.Fatalf("fixed revisions = %#v, want 2", fixed.Proposal.Revisions)
-	}
-	if fixed.Proposal.Revisions[0].TargetStack != targetBookmark {
-		t.Fatalf("r1 target_stack = %q, want %q", fixed.Proposal.Revisions[0].TargetStack, targetBookmark)
-	}
-	if fixed.Proposal.Revisions[1].TargetStack != sourceBookmark {
-		t.Fatalf("r2 target_stack = %q, want %q", fixed.Proposal.Revisions[1].TargetStack, sourceBookmark)
-	}
-	if fixed.Proposal.Revisions[1].BaseStack != targetBookmark {
-		t.Fatalf("r2 base_stack = %q, want %q", fixed.Proposal.Revisions[1].BaseStack, targetBookmark)
-	}
-}
-
-func TestGXDemuxApplyPlanRoutesRevisionToNewStack(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("source-anchor.txt", "source\n")
-	h.run("jj", "describe", "-m", "source stack")
-	h.gx("add", "-m", "source stack")
-	sourceBookmark := "feature/source-stack"
-	h.gx("base", "--set", sourceBookmark)
-
-	h.insertSession("session-new-route")
-	h.writeTrackedFile("new-stack.txt", "new stack\n")
-	h.writeTrackedFile("source-local.txt", "source local\n")
-	h.run("jj", "describe", "-m", "messy new stack route")
-
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-new-route"}, "compose", "--plan", "--json", "--intent", "new route e2e")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-
-	newBookmark := "feature/new-routed-stack"
-	plan := map[string]any{
-		"id":                 proposal.ID,
-		"repo_root":          proposal.RepoRoot,
-		"proposed_change_id": proposal.ProposedChangeID,
-		"proposed_commit_id": proposal.ProposedCommitID,
-		"status":             "pending",
-		"revisions": []map[string]any{
-			{
-				"id":                "r1",
-				"intent":            "new route e2e new stack file",
-				"files":             []string{"new-stack.txt"},
-				"target_stack":      newBookmark,
-				"base_stack":        "main",
-				"route_source":      "user",
-				"route_reason":      "e2e creates a new routed stack",
-				"route_confidence":  1.0,
-				"provenance_status": "explicit",
-				"session_ids":       []string{"session-new-route"},
-				"confidence":        0.9,
-			},
-			{
-				"id":                "r2",
-				"intent":            "new route e2e source file",
-				"files":             []string{"source-local.txt"},
-				"provenance_status": "explicit",
-				"session_ids":       []string{"session-new-route"},
-				"confidence":        0.9,
-			},
-		},
-	}
-	planData, err := json.Marshal(plan)
-	if err != nil {
-		t.Fatalf("marshal new route plan: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "new-route-plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		t.Fatalf("write new route plan: %v", err)
-	}
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply-plan: %v\n%s", err, rawApply)
-	}
-	if len(applied.Revisions) != 2 {
-		t.Fatalf("applied revisions = %#v, want 2", applied.Revisions)
-	}
-	bookmarks := h.bookmarkTargets()
-	if bookmarks[newBookmark] == "" {
-		t.Fatalf("missing new routed bookmark after demux: %#v", bookmarks)
-	}
-	if bookmarks[sourceBookmark] == "" {
-		t.Fatalf("missing source bookmark after demux: %#v", bookmarks)
-	}
-	assertCurrentBranch(t, h, "main")
-	assertChangeSessions(t, h, map[string][]string{
-		"new route e2e new stack file": {"session-new-route"},
-		"new route e2e source file":    {"session-new-route"},
-	})
-	assertDemuxEvidence(t, h, proposal.ID, []demuxEvidenceRow{
-		{RevisionProposalID: "r1", Intent: "new route e2e new stack file", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
-		{RevisionProposalID: "r2", Intent: "new route e2e source file", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
-	})
-}
-
-func TestGXDemuxApplyPlanRoutesBaseRevisionToNewStacks(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.insertSession("session-base-route")
-	h.writeTrackedFile("first-stack.txt", "first stack\n")
-	h.writeTrackedFile("second-stack.txt", "second stack\n")
-	h.run("jj", "describe", "-m", "messy base route")
-
-	rawStatus := h.gx("status", "--agent")
-	if !strings.Contains(rawStatus, `stack=""`) {
-		t.Fatalf("status before routed apply = %s, want anonymous base source", rawStatus)
-	}
-
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-base-route"}, "compose", "--plan", "--json", "--intent", "base route e2e")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-
-	firstBookmark := "feature/base-routed-first"
-	secondBookmark := "feature/base-routed-second"
-	planFile := h.writeDemuxPlan(proposal, []map[string]any{
-		{
-			"id":                "r1",
-			"intent":            "base route e2e first stack",
-			"files":             []string{"first-stack.txt"},
-			"target_stack":      firstBookmark,
-			"base_stack":        "main",
-			"route_source":      "user",
-			"route_reason":      "e2e creates first stack from base source",
-			"route_confidence":  1.0,
-			"provenance_status": "explicit",
-			"session_ids":       []string{"session-base-route"},
-			"confidence":        0.9,
-		},
-		{
-			"id":                "r2",
-			"intent":            "base route e2e second stack",
-			"files":             []string{"second-stack.txt"},
-			"target_stack":      secondBookmark,
-			"base_stack":        "main",
-			"route_source":      "user",
-			"route_reason":      "e2e creates second stack from base source",
-			"route_confidence":  1.0,
-			"provenance_status": "explicit",
-			"session_ids":       []string{"session-base-route"},
-			"confidence":        0.9,
-		},
-	})
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply-plan: %v\n%s", err, rawApply)
-	}
-	if len(applied.Revisions) != 2 {
-		t.Fatalf("applied revisions = %#v, want 2", applied.Revisions)
-	}
-	bookmarks := h.bookmarkTargets()
-	if bookmarks[firstBookmark] == "" || bookmarks[secondBookmark] == "" {
-		t.Fatalf("missing routed bookmarks after base demux: %#v", bookmarks)
-	}
-	status := h.gx("status", "--agent")
-	if !strings.Contains(status, "files=0") {
-		t.Fatalf("source status after base routed apply = %s, want no remaining files", status)
-	}
-	assertChangeSessions(t, h, map[string][]string{
-		"base route e2e first stack":  {"session-base-route"},
-		"base route e2e second stack": {"session-base-route"},
-	})
-	assertDemuxEvidence(t, h, proposal.ID, []demuxEvidenceRow{
-		{RevisionProposalID: "r1", Intent: "base route e2e first stack", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
-		{RevisionProposalID: "r2", Intent: "base route e2e second stack", HunkIDsJSON: `null`, ProvenanceStatus: "explicit"},
-	})
-}
-
-func TestGXDemuxRoutedApplyCopiesFilesAbsentFromTargetTree(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("target-anchor.txt", "target\n")
-	h.run("jj", "describe", "-m", "target stack")
-	h.gx("add", "-m", "target stack")
-	targetBookmark := "feature/target-stack"
-
-	h.run("git", "switch", "main")
-	h.writeTrackedFile("source-anchor.txt", "source\n")
-	h.run("jj", "describe", "-m", "source stack")
-	h.gx("add", "-m", "source stack")
-	sourceBookmark := "feature/source-stack"
-	h.gx("base", "--set", sourceBookmark)
-
-	if err := os.MkdirAll(filepath.Join(h.repo, "internal", "hooks"), 0o755); err != nil {
-		t.Fatalf("mkdir internal/hooks: %v", err)
-	}
-	h.writeTrackedFile("internal/hooks/run.go", "package hooks\n")
-	h.writeTrackedFile("internal/hooks/run_test.go", "package hooks\n")
-	h.run("jj", "describe", "-m", "messy hook route")
-
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "hook route")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
-	}
-	planFile := h.writeDemuxPlan(proposal, []map[string]any{{
-		"id":                "r1",
-		"intent":            "hook route files",
-		"files":             []string{"internal/hooks/run.go", "internal/hooks/run_test.go"},
-		"target_stack":      targetBookmark,
-		"route_source":      "user",
-		"route_reason":      "target stack lacks hook files",
-		"route_confidence":  1.0,
-		"provenance_status": "absent",
-		"confidence":        0.5,
-	}})
-
-	rawApply := h.gx("compose", "apply-plan", "--json", "--plan-file", planFile)
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode routed apply: %v\n%s", err, rawApply)
-	}
-	if len(applied.Revisions) != 1 || applied.Revisions[0].Change.Description != "hook route files" {
-		t.Fatalf("applied revisions = %#v, want routed hook revision", applied.Revisions)
-	}
-	status := h.gx("status")
-	if strings.Contains(status, "internal/hooks/run.go") || strings.Contains(status, "internal/hooks/run_test.go") {
-		t.Fatalf("source status after routed apply still includes hook files:\n%s", status)
-	}
-}
-
-func TestGXComposeRoutedApplyRestoresSourceStackOnTargetRecordFailure(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("target-anchor.txt", "target\n")
-	h.run("jj", "describe", "-m", "target stack")
-	h.gx("add", "-m", "target stack")
-	targetBookmark := "feature/target-stack"
-	targetBefore := h.bookmarkTargets()[targetBookmark]
-
-	h.run("git", "switch", "main")
-	h.writeTrackedFile("source-anchor.txt", "source\n")
-	h.run("jj", "describe", "-m", "source stack")
-	h.gx("add", "-m", "source stack")
-	sourceBookmark := "feature/source-stack"
-	h.gx("base", "--set", sourceBookmark)
-
-	h.writeTrackedFile("record-fail.txt", "record fail\n")
-	h.run("jj", "describe", "-m", "messy record failure route")
-
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "record failure route")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode compose proposal: %v\n%s", err, rawProposal)
-	}
-	planFile := h.writeDemuxPlan(proposal, []map[string]any{{
-		"id":                "r1",
-		"intent":            "(no description set)",
-		"files":             []string{"record-fail.txt"},
-		"target_stack":      targetBookmark,
-		"route_source":      "user",
-		"route_reason":      "force target record validation failure",
-		"route_confidence":  1.0,
-		"provenance_status": "absent",
-		"confidence":        0.5,
-	}})
-
-	result := runCommandAllowError(h.t, h.repo, h.env(), h.bin, "compose", "apply-plan", "--json", "--plan-file", planFile)
-	if result.exitCode == 0 || !strings.Contains(result.output, "(no description set)") {
-		t.Fatalf("routed apply result = exit %d:\n%s", result.exitCode, result.output)
-	}
-	if got := h.bookmarkTargets()[targetBookmark]; got != targetBefore {
-		t.Fatalf("target bookmark moved after failed routed record: got %q want %q", got, targetBefore)
-	}
-	assertCurrentBranch(t, h, "main")
-	status := h.gx("status")
-	if !strings.Contains(status, "record-fail.txt") {
-		t.Fatalf("source status after rollback missing record-fail.txt:\n%s", status)
-	}
-}
-
-func TestGXComposeRoutedApplyRestoresMainOnTargetRecordFailure(t *testing.T) {
-	h := newHarness(t)
-	h.initGitRepo(false)
-	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
-
-	h.writeTrackedFile("target-anchor.txt", "target\n")
-	h.run("jj", "describe", "-m", "target stack")
-	h.gx("add", "-m", "target stack")
-	targetBookmark := "feature/target-stack"
-	targetBefore := h.bookmarkTargets()[targetBookmark]
-
-	h.run("git", "switch", "main")
-	assertCurrentBranch(t, h, "main")
-	h.writeTrackedFile("record-fail-main.txt", "record fail\n")
-	h.run("jj", "describe", "-m", "messy main record failure route")
-
-	rawProposal := h.gx("compose", "--plan", "--json", "--intent", "main record failure route")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode compose proposal: %v\n%s", err, rawProposal)
-	}
-	planFile := h.writeDemuxPlan(proposal, []map[string]any{{
-		"id":                "r1",
-		"intent":            "(no description set)",
-		"files":             []string{"record-fail-main.txt"},
-		"target_stack":      targetBookmark,
-		"route_source":      "user",
-		"route_reason":      "force target record validation failure",
-		"route_confidence":  1.0,
-		"provenance_status": "absent",
-		"confidence":        0.5,
-	}})
-
-	result := runCommandAllowError(h.t, h.repo, h.env(), h.bin, "compose", "apply-plan", "--json", "--plan-file", planFile)
-	if result.exitCode == 0 || !strings.Contains(result.output, "(no description set)") {
-		t.Fatalf("routed apply result = exit %d:\n%s", result.exitCode, result.output)
-	}
-	if got := h.bookmarkTargets()[targetBookmark]; got != targetBefore {
-		t.Fatalf("target bookmark moved after failed routed record: got %q want %q", got, targetBefore)
-	}
-	assertCurrentBranch(t, h, "main")
-	status := h.gx("status")
-	if !strings.Contains(status, "record-fail-main.txt") {
-		t.Fatalf("source status after rollback missing record-fail-main.txt:\n%s", status)
-	}
-}
-
-func TestGXDemuxProposesSymbolLevelRevisions(t *testing.T) {
+func TestGXGeneratePreservesSymbolLevelHunks(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -1303,22 +445,17 @@ func TestGXDemuxProposesSymbolLevelRevisions(t *testing.T) {
 	h.writeTrackedFile("app.go", symbolFixture("ONE", "TWO"))
 	h.run("jj", "describe", "-m", "messy symbols")
 
-	rawProposal := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "compose", "--plan", "--json", "--intent", "split symbols")
-	var proposal demuxProposalPayload
-	if err := json.Unmarshal([]byte(rawProposal), &proposal); err != nil {
-		t.Fatalf("decode demux proposal: %v\n%s", err, rawProposal)
+	rawApply := h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "generate", "--json", "--intent", "split symbols")
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
 	}
+	proposal := applied.Proposal
 	if len(proposal.Revisions) != 1 {
 		t.Fatalf("proposal revisions = %#v, want one hunk-level symbol revision", proposal.Revisions)
 	}
 	if !proposal.Revisions[0].UseHunks || len(proposal.Revisions[0].HunkIDs) != 2 {
 		t.Fatalf("symbol revision = %#v, want both symbol hunks preserved", proposal.Revisions[0])
-	}
-
-	rawApply := h.gx("compose", "apply", proposal.ID, "--json")
-	var applied demuxApplyPayload
-	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
-		t.Fatalf("decode demux apply: %v\n%s", err, rawApply)
 	}
 	if len(applied.Revisions) != 1 {
 		t.Fatalf("applied revisions = %#v, want 1", applied.Revisions)
@@ -1326,7 +463,7 @@ func TestGXDemuxProposesSymbolLevelRevisions(t *testing.T) {
 	assertChangeSessions(t, h, map[string][]string{proposal.Revisions[0].Intent: {"session-alpha"}})
 }
 
-func TestGXPublishAllPublishesEveryStack(t *testing.T) {
+func TestGXPushAllPublishesEveryStack(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(true)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -1351,9 +488,9 @@ func TestGXPublishAllPublishesEveryStack(t *testing.T) {
 	assertRemoteBranchMissing(t, h, alphaBookmark)
 	assertRemoteBranchMissing(t, h, betaBookmark)
 
-	output := h.gx("publish")
-	if !strings.Contains(output, "Published") || !strings.Contains(output, "2 stacks") {
-		t.Fatalf("publish output = %q, want published 2 stacks", output)
+	output := h.gx("push")
+	if !strings.Contains(output, "Pushed") || !strings.Contains(output, "2 stacks") {
+		t.Fatalf("push output = %q, want pushed 2 stacks", output)
 	}
 	assertCurrentBranch(t, h, "main")
 	assertRemoteBranchExists(t, h, alphaBookmark)
@@ -1364,20 +501,20 @@ func TestGXPublishAllPublishesEveryStack(t *testing.T) {
 	assertChangeBookmark(t, h, "feat beta", betaBookmark)
 }
 
-func TestGXPublishNoStacksIsNoopOnMain(t *testing.T) {
+func TestGXPushNoStacksIsNoopOnMain(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(true)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
 
-	output := h.gx("publish")
+	output := h.gx("push")
 
-	if !strings.Contains(output, "Published") || !strings.Contains(output, "0 stacks") {
-		t.Fatalf("publish output = %q, want published 0 stacks", output)
+	if !strings.Contains(output, "Pushed") || !strings.Contains(output, "0 stacks") {
+		t.Fatalf("push output = %q, want pushed 0 stacks", output)
 	}
 	assertCurrentBranch(t, h, "main")
 }
 
-func TestGXStacksHidesStackMergedIntoBase(t *testing.T) {
+func TestGXStatusHidesStackMergedIntoBase(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(true)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -1393,9 +530,9 @@ func TestGXStacksHidesStackMergedIntoBase(t *testing.T) {
 
 	assertCurrentBranch(t, h, "main")
 	assertStackNotInStacksJSON(t, h, alphaBookmark)
-	output := h.gx("publish")
-	if !strings.Contains(output, "Published") || !strings.Contains(output, "0 stacks") {
-		t.Fatalf("publish output = %q, want published 0 stacks", output)
+	output := h.gx("push")
+	if !strings.Contains(output, "Pushed") || !strings.Contains(output, "0 stacks") {
+		t.Fatalf("push output = %q, want pushed 0 stacks", output)
 	}
 }
 
@@ -1425,7 +562,7 @@ func TestGXBaseSetRefusesDirtyEditCheckout(t *testing.T) {
 	}
 }
 
-func TestGXStacksShowsImplicitStackAliases(t *testing.T) {
+func TestGXStatusShowsImplicitStackAliases(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 	h.gx("init", "--name", "Joe Example", "--email", "joe@example.com")
@@ -1441,26 +578,13 @@ func TestGXStacksShowsImplicitStackAliases(t *testing.T) {
 	h.insertSession("session-beta")
 	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "add", "-m", "feat beta")
 
-	stacks := h.gx("stacks")
-	if !strings.Contains(stacks, "feat beta  s1") {
-		t.Fatalf("stacks missing beta alias:\n%s", stacks)
+	status := h.gx("status")
+	if !strings.Contains(status, "feat beta  s1") {
+		t.Fatalf("status missing beta alias:\n%s", status)
 	}
-	if !strings.Contains(stacks, "feat alpha  s2") {
-		t.Fatalf("stacks missing alpha alias:\n%s", stacks)
+	if !strings.Contains(status, "feat alpha  s2") {
+		t.Fatalf("status missing alpha alias:\n%s", status)
 	}
-}
-
-func numberedLines(count int, replacements map[int]string) string {
-	var b strings.Builder
-	for i := 1; i <= count; i++ {
-		line := fmt.Sprintf("line %02d", i)
-		if replacement, ok := replacements[i]; ok {
-			line = replacement
-		}
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 func symbolFixture(first, second string) string {
@@ -1635,58 +759,7 @@ func (h *harness) gxWithEnv(extra []string, args ...string) string {
 	return runCommand(h.t, h.repo, h.env(extra...), h.bin, args...)
 }
 
-func (h *harness) gxWithInput(input string, args ...string) commandResult {
-	h.t.Helper()
-	return runCommandAllowErrorWithInput(h.t, h.repo, h.env(), input, h.bin, args...)
-}
-
-func (h *harness) writeDemuxPlan(proposal demuxProposalPayload, revisions []map[string]any) string {
-	h.t.Helper()
-	plan := map[string]any{
-		"id":                 proposal.ID,
-		"repo_root":          proposal.RepoRoot,
-		"proposed_change_id": proposal.ProposedChangeID,
-		"proposed_commit_id": proposal.ProposedCommitID,
-		"status":             "pending",
-		"revisions":          revisions,
-	}
-	planData, err := json.Marshal(plan)
-	if err != nil {
-		h.t.Fatalf("marshal demux plan: %v", err)
-	}
-	planFile := filepath.Join(h.t.TempDir(), "demux-plan.json")
-	if err := os.WriteFile(planFile, planData, 0o644); err != nil {
-		h.t.Fatalf("write demux plan: %v", err)
-	}
-	return planFile
-}
-
-func (h *harness) writeDemuxPlanForStack(proposal demuxProposalPayload, targetStack string) string {
-	h.t.Helper()
-	var revisions []map[string]any
-	for _, revision := range proposal.Revisions {
-		if revision.TargetStack != targetStack {
-			continue
-		}
-		revisions = append(revisions, map[string]any{
-			"id":                revision.ID,
-			"intent":            revision.Intent,
-			"files":             revision.Files,
-			"target_stack":      revision.TargetStack,
-			"route_source":      "user",
-			"route_reason":      "selected stack from compose",
-			"route_confidence":  1.0,
-			"provenance_status": revision.ProvenanceStatus,
-			"confidence":        1.0,
-		})
-	}
-	if len(revisions) == 0 {
-		h.t.Fatalf("proposal has no revisions for stack %q: %#v", targetStack, proposal.Revisions)
-	}
-	return h.writeDemuxPlan(proposal, revisions)
-}
-
-func (h *harness) writeMultiStackComposeFiles() {
+func (h *harness) writeMultiStackGenerateFiles() {
 	h.t.Helper()
 	for _, dir := range []string{
 		filepath.Join(h.repo, "internal", "authoring"),
@@ -1700,7 +773,7 @@ func (h *harness) writeMultiStackComposeFiles() {
 	h.writeTrackedFile("internal/authoring/demux.go", "package authoring\n")
 	h.writeTrackedFile("internal/storage/schema.sql", "CREATE TABLE compose_route(id INTEGER);\n")
 	h.writeTrackedFile("test/e2e/gx_e2e_test.go", "package e2e\n")
-	h.run("jj", "describe", "-m", "multi compose source")
+	h.run("jj", "describe", "-m", "multi generate source")
 }
 
 func (h *harness) run(name string, args ...string) string {
@@ -1857,7 +930,7 @@ func assertStack(t *testing.T, h *harness, bookmark, status, headChangeID, remot
 
 func assertStackInStacksJSON(t *testing.T, h *harness, bookmark string, revisions int) {
 	t.Helper()
-	rawStacks := h.gx("stacks", "--json")
+	rawStacks := h.gx("status", "--json")
 	var summary struct {
 		Stacks []struct {
 			BookmarkName  string `json:"BookmarkName"`
@@ -1881,7 +954,7 @@ func assertStackInStacksJSON(t *testing.T, h *harness, bookmark string, revision
 
 func assertStackNotInStacksJSON(t *testing.T, h *harness, bookmark string) {
 	t.Helper()
-	rawStacks := h.gx("stacks", "--json")
+	rawStacks := h.gx("status", "--json")
 	var summary struct {
 		Stacks []struct {
 			BookmarkName string `json:"BookmarkName"`
