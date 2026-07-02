@@ -1,6 +1,9 @@
 package authoring
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
 	proposal := DemuxProposal{
@@ -35,6 +38,51 @@ func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
 	}
 	if len(got.Confidence.LogicReasons) < 2 {
 		t.Fatalf("logic reasons = %#v, want hunk and dependency risks", got.Confidence.LogicReasons)
+	}
+	for _, reason := range got.Confidence.LogicReasons {
+		if reason.Severity == "positive" {
+			continue
+		}
+		if strings.TrimSpace(reason.Suggestion) == "" {
+			t.Fatalf("logic reason missing suggestion: %#v", reason)
+		}
+	}
+}
+
+func TestGenerateConfidenceLogIncludesActionAndSuggestions(t *testing.T) {
+	proposal := annotateGenerateLogicConfidence(DemuxProposal{
+		Revisions: []RevisionProposal{
+			{ID: "u1", Intent: "first", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h1"}},
+			{ID: "u2", Intent: "second", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h2"}},
+		},
+	})
+
+	got := appendGenerateConfidenceLog(proposal, "skip_llm_repair_medium_confidence", DemuxWorkflowReadyToApply)
+
+	if len(got.Warnings) == 0 {
+		t.Fatal("warnings empty, want confidence log")
+	}
+	warning := got.Warnings[len(got.Warnings)-1]
+	for _, want := range []string{
+		"generate confidence logic=",
+		"state=ready_to_apply",
+		"action=skip_llm_repair_medium_confidence",
+		"merge shared-file edits",
+	} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("confidence warning missing %q:\n%s", want, warning)
+		}
+	}
+}
+
+func TestGenerateLLMRepairDefaultsOff(t *testing.T) {
+	t.Setenv("GX_GENERATE_LLM_REPAIR", "")
+	if generateLLMRepairEnabled() {
+		t.Fatal("generate LLM repair default = true, want false")
+	}
+	t.Setenv("GX_GENERATE_LLM_REPAIR", "1")
+	if !generateLLMRepairEnabled() {
+		t.Fatal("GX_GENERATE_LLM_REPAIR=1 did not enable LLM repair")
 	}
 }
 
