@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Sparkle
 
 private let pollInterval: TimeInterval = 60
 private let releaseCheckInterval: TimeInterval = 60 * 60
@@ -622,6 +623,11 @@ private enum DoctorClient {
 private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let worker = DispatchQueue(label: "dev.gx.menubar.worker", qos: .utility)
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
     private var timer: Timer?
     private var refreshing = false
     private var updatingCLI = false
@@ -739,6 +745,7 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
         }
         menu.addItem(actionItem("Check for Updates", #selector(checkForUpdates)))
         menu.addItem(actionItem("Install Bundled CLI", #selector(installCLI)))
+        menu.addItem(actionItem("Check for App Updates", #selector(checkForAppUpdates)))
         menu.addItem(.separator())
 
         menu.addItem(actionItem("Open https://gx.run", #selector(openConsole)))
@@ -1053,6 +1060,10 @@ private final class GXMenuBarApp: NSObject, NSApplicationDelegate {
     @objc private func checkForUpdates() {
         updateMessage = "Checking for updates..."
         refreshAll(installCLI: false, forceReleaseCheck: true)
+    }
+
+    @objc private func checkForAppUpdates() {
+        updaterController.checkForUpdates(nil)
     }
 
     @objc private func updateCLIFromGitHub() {
