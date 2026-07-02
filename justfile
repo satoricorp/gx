@@ -28,7 +28,9 @@ install-completions:
 install:
   mkdir -p ~/.local/bin
   just build
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./gx || true
   cp ./gx ~/.local/bin/gx
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/gx || true
   just install-completions
   just verify-bake ./gx
   just verify-bake ~/.local/bin/gx
