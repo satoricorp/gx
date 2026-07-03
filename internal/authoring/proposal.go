@@ -107,10 +107,11 @@ type PlanConfidence struct {
 }
 
 type ConfidenceReason struct {
-	Kind     string  `json:"kind"`
-	Severity string  `json:"severity"`
-	Message  string  `json:"message"`
-	Delta    float64 `json:"delta,omitempty"`
+	Kind       string  `json:"kind"`
+	Severity   string  `json:"severity"`
+	Message    string  `json:"message"`
+	Suggestion string  `json:"suggestion,omitempty"`
+	Delta      float64 `json:"delta,omitempty"`
 }
 
 type DemuxProposal struct {
