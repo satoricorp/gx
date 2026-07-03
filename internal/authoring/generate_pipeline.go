@@ -101,17 +101,43 @@ func (p generatePipeline) refineDraft(ctx context.Context, proposal DemuxProposa
 	}
 	proposal = reviewedProposalOrFallback(review, proposal)
 	proposal = annotateGenerateLogicConfidence(proposal)
-	needsRepair := demuxWorkflowState(review, proposal) != DemuxWorkflowReadyToApply ||
-		proposal.Confidence.EffectiveConfidence < generateHighLogicConfidence
-	if needsRepair {
+	state := demuxWorkflowState(review, proposal)
+	if state != DemuxWorkflowReadyToApply ||
+		proposal.Confidence.EffectiveConfidence < generateMediumLogicConfidence {
+		proposal = appendGenerateConfidenceLog(proposal, "deterministic_simplify", state)
+		proposal = conservativeGenerateProposal(proposal, opts.Intent, "simplified generate plan because confidence or review did not clear the default gate")
+		saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal)
+		if saveErr != nil {
+			return proposal, saveErr
+		}
+		proposal = saved
+		review, err = p.engine.ReviewDemuxPlan(ctx, proposal)
+		if err != nil {
+			return proposal, err
+		}
+		proposal = reviewedProposalOrFallback(review, proposal)
+		return proposal, nil
+	}
+	if proposal.Confidence.EffectiveConfidence < generateHighLogicConfidence {
+		if !generateLLMRepairEnabled() {
+			proposal = appendGenerateConfidenceLog(proposal, "skip_llm_repair_medium_confidence", state)
+			if saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal); saveErr == nil {
+				proposal = saved
+			}
+			return proposal, nil
+		}
+		proposal = appendGenerateConfidenceLog(proposal, "attempt_llm_repair", state)
 		result, repairErr := p.repairLowConfidenceDraft(ctx, proposal, review, opts)
 		if repairErr == nil && strings.TrimSpace(result.Proposal.ID) != "" {
 			proposal = annotateGenerateLogicConfidence(result.Proposal)
 			review = result.Review
+		} else if repairErr != nil {
+			proposal = appendGeneratePipelineWarning(proposal, fmt.Sprintf("generate llm repair failed: %v", repairErr))
 		}
 	}
 	if demuxWorkflowState(review, proposal) != DemuxWorkflowReadyToApply ||
 		proposal.Confidence.EffectiveConfidence < generateMediumLogicConfidence {
+		proposal = appendGenerateConfidenceLog(proposal, "deterministic_simplify_after_repair", demuxWorkflowState(review, proposal))
 		proposal = conservativeGenerateProposal(proposal, opts.Intent, "simplified generate plan because confidence or review did not clear the default gate")
 		saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal)
 		if saveErr != nil {
@@ -214,6 +240,15 @@ func generateApplyPreflightEnabled() bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_GENERATE_VERIFY"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func generateLLMRepairEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_GENERATE_LLM_REPAIR"))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
@@ -524,12 +559,12 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 	routeRisks := 0
 	hunkSplitCount := 0
 	sharedFileRisks := 0
-	add := func(kind, severity, message string, delta float64) {
-		reasons = append(reasons, ConfidenceReason{Kind: kind, Severity: severity, Message: message, Delta: delta})
+	add := func(kind, severity, message, suggestion string, delta float64) {
+		reasons = append(reasons, ConfidenceReason{Kind: kind, Severity: severity, Message: message, Suggestion: suggestion, Delta: delta})
 		score += delta
 	}
 	if len(proposal.Revisions) == 0 {
-		add("empty_plan", "risk", "proposal contains no revisions", -0.95)
+		add("empty_plan", "risk", "proposal contains no revisions", "create at least one revision that covers the changed files", -0.95)
 	}
 	fileOwners := map[string]string{}
 	for _, revision := range proposal.Revisions {
@@ -537,7 +572,7 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 			hunkSplitCount++
 		}
 		if len(revision.Files) == 0 {
-			add("empty_revision", "risk", fmt.Sprintf("revision %s has no files", revision.ID), -0.30)
+			add("empty_revision", "risk", fmt.Sprintf("revision %s has no files", revision.ID), "drop empty revisions or assign covered files/hunks to them", -0.30)
 		}
 		if strings.TrimSpace(revision.TargetStack) != "" && revision.RouteConfidence > 0 && revision.RouteConfidence < generateMediumLogicConfidence {
 			routeRisks++
@@ -555,13 +590,13 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 		}
 	}
 	if hunkSplitCount > 0 {
-		add("hunk_split", "caution", fmt.Sprintf("%d revision(s) use hunk-level splitting", hunkSplitCount), -0.05)
+		add("hunk_split", "caution", fmt.Sprintf("%d revision(s) use hunk-level splitting", hunkSplitCount), "prefer whole-file revisions unless the split is necessary for reviewability", -0.05)
 	}
 	if routeRisks > 0 {
-		add("low_confidence_route", "caution", fmt.Sprintf("%d revision route(s) have low heuristic confidence", routeRisks), -0.08)
+		add("low_confidence_route", "caution", fmt.Sprintf("%d revision route(s) have low heuristic confidence", routeRisks), "choose a stronger target_stack from file ownership, labels, or prior stack history", -0.08)
 	}
 	if sharedFileRisks > 0 {
-		add("shared_file", "risk", fmt.Sprintf("%d file assignment(s) are split across multiple revisions", sharedFileRisks), -0.18)
+		add("shared_file", "risk", fmt.Sprintf("%d file assignment(s) are split across multiple revisions", sharedFileRisks), "merge shared-file edits into one revision or use explicit non-overlapping hunks", -0.18)
 	}
 	for _, warning := range proposal.FeasibilityWarnings {
 		if strings.EqualFold(strings.TrimSpace(warning.Severity), "info") {
@@ -569,11 +604,11 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 		}
 		switch warning.Source {
 		case "structural_dependency", "inferred_dependency":
-			add(warning.Source, "risk", warning.Message, -0.14)
+			add(warning.Source, "risk", warning.Message, "reorder dependent revisions, add depends_on, or merge tightly coupled edits", -0.14)
 		case "apply_preflight":
-			add("apply_preflight", "risk", warning.Message, -0.35)
+			add("apply_preflight", "risk", warning.Message, "repair the apply failure before trusting this stack plan", -0.35)
 		default:
-			add(warning.Source, "caution", warning.Message, -0.08)
+			add(warning.Source, "caution", warning.Message, "tighten file grouping, route labels, or coverage metadata for this warning", -0.08)
 		}
 	}
 	if len(reasons) == 0 {
@@ -593,6 +628,62 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 		LogicConfidence:     roundConfidence(score),
 		EffectiveConfidence: roundConfidence(score),
 		LogicReasons:        reasons,
+	}
+}
+
+func appendGenerateConfidenceLog(proposal DemuxProposal, action string, state DemuxWorkflowState) DemuxProposal {
+	proposal = annotateGenerateLogicConfidence(proposal)
+	return appendGeneratePipelineWarning(proposal, fmt.Sprintf(
+		"generate confidence logic=%.2f effective=%.2f state=%s action=%s suggestions=%q",
+		proposal.Confidence.LogicConfidence,
+		proposal.Confidence.EffectiveConfidence,
+		state,
+		action,
+		strings.Join(generateConfidenceSuggestions(proposal), "; "),
+	))
+}
+
+func generateConfidenceSuggestions(proposal DemuxProposal) []string {
+	seen := map[string]struct{}{}
+	var suggestions []string
+	for _, reason := range proposal.Confidence.LogicReasons {
+		if strings.EqualFold(strings.TrimSpace(reason.Severity), "positive") {
+			continue
+		}
+		suggestion := strings.TrimSpace(reason.Suggestion)
+		if suggestion == "" {
+			suggestion = defaultGenerateConfidenceSuggestion(reason)
+		}
+		if suggestion == "" {
+			continue
+		}
+		if _, ok := seen[suggestion]; ok {
+			continue
+		}
+		seen[suggestion] = struct{}{}
+		suggestions = append(suggestions, suggestion)
+		if len(suggestions) >= 5 {
+			break
+		}
+	}
+	if len(suggestions) == 0 && proposal.Confidence.EffectiveConfidence < generateHighLogicConfidence {
+		suggestions = append(suggestions, "collect more deterministic route evidence before using LLM repair")
+	}
+	return suggestions
+}
+
+func defaultGenerateConfidenceSuggestion(reason ConfidenceReason) string {
+	switch strings.TrimSpace(reason.Kind) {
+	case "hunk_split":
+		return "prefer whole-file revisions unless the split is necessary for reviewability"
+	case "low_confidence_route":
+		return "choose a stronger target_stack from file ownership, labels, or prior stack history"
+	case "shared_file":
+		return "merge shared-file edits into one revision or use explicit non-overlapping hunks"
+	case "structural_dependency", "inferred_dependency":
+		return "reorder dependent revisions, add depends_on, or merge tightly coupled edits"
+	default:
+		return ""
 	}
 }
 
