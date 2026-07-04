@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,9 +79,6 @@ type Report struct {
 	ContextSnippets   int
 	Verbose           bool
 	Color             bool
-	Triage            ChangeTriage
-	RiskTags          []string
-	NoFindingsMessage string
 }
 
 type FilePresence struct {
@@ -103,11 +101,7 @@ func RenderMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
-		message := strings.TrimSpace(report.NoFindingsMessage)
-		if message == "" {
-			message = "No recommendations yet."
-		}
-		fmt.Fprintf(&b, "- %s\n", message)
+		fmt.Fprintln(&b, "- No recommendations yet.")
 	} else {
 		for index, finding := range report.Findings {
 			fmt.Fprintf(&b, "%s\n", reviewTitle(report, fmt.Sprintf("### %d. %s", index+1, finding.Title)))
@@ -121,7 +115,7 @@ func RenderMarkdown(report Report) string {
 			fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Do next:**"), finding.Recommendation)
 			if attributions := renderFindingAttributions(report, finding); len(attributions) > 0 {
 				fmt.Fprintln(&b)
-				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Attribution:**"), strings.Join(attributions, " · "))
+				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Informed by:**"), strings.Join(attributions, " · "))
 			}
 			if report.Verbose && len(finding.Evidence) > 0 {
 				fmt.Fprintln(&b)
@@ -135,23 +129,23 @@ func RenderMarkdown(report Report) string {
 	}
 	fmt.Fprintln(&b)
 
-	if len(report.Sources) > 0 {
-		fmt.Fprintln(&b, reviewTitle(report, "## Sources"))
-		for _, source := range report.Sources {
-			fmt.Fprintf(&b, "- %s\n", renderSourceCatalogEntry(source))
-		}
-		fmt.Fprintln(&b)
-	}
-
-	if len(report.SourceRefs) > 0 {
-		fmt.Fprintln(&b, reviewTitle(report, "## Context Sources"))
-		for _, sourceRef := range report.SourceRefs {
-			fmt.Fprintf(&b, "- %s\n", renderSourceRef(sourceRef))
-		}
-		fmt.Fprintln(&b)
-	}
-
 	if report.Verbose {
+		if len(report.Sources) > 0 {
+			fmt.Fprintln(&b, reviewTitle(report, "## Sources"))
+			for _, source := range report.Sources {
+				fmt.Fprintf(&b, "- %s\n", renderSourceCatalogEntry(source))
+			}
+			fmt.Fprintln(&b)
+		}
+
+		if len(report.SourceRefs) > 0 {
+			fmt.Fprintln(&b, reviewTitle(report, "## Context Sources"))
+			for _, sourceRef := range report.SourceRefs {
+				fmt.Fprintf(&b, "- %s\n", renderSourceRef(sourceRef))
+			}
+			fmt.Fprintln(&b)
+		}
+
 		fmt.Fprintln(&b, reviewTitle(report, "## Repo Facts"))
 		fmt.Fprintf(&b, "- Tracked/source files scanned: `%d`\n", report.TrackedFileCount)
 		fmt.Fprintf(&b, "- Test files: `%d`\n", report.TestFileCount)
@@ -192,32 +186,53 @@ func RenderMarkdown(report Report) string {
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {
+	if len(finding.SourcePublishers) > 0 {
+		return dedupeNonEmptyStrings(finding.SourcePublishers)
+	}
 	if len(finding.SourceIDs) == 0 {
 		return nil
 	}
-	sources := sourceMap(report.Sources)
+	sourcePublishers := sourcePublisherMap(report.Sources)
 	var out []string
 	for _, id := range finding.SourceIDs {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
-		if source, ok := sources[id]; ok {
-			out = append(out, renderSourceCatalogEntry(source))
+		if publisher := strings.TrimSpace(sourcePublishers[id]); publisher != "" {
+			out = append(out, publisher)
+		}
+	}
+	return dedupeNonEmptyStrings(out)
+}
+
+func sourcePublisherMap(sources []Source) map[string]string {
+	out := make(map[string]string, len(sources))
+	for _, source := range sources {
+		id := strings.TrimSpace(source.ID)
+		publisher := strings.TrimSpace(source.Publisher)
+		if id == "" || publisher == "" {
 			continue
 		}
-		out = append(out, fmt.Sprintf("`%s`", id))
+		out[id] = publisher
 	}
 	return out
 }
 
-func sourceMap(sources []Source) map[string]Source {
-	out := make(map[string]Source, len(sources))
-	for _, source := range sources {
-		if strings.TrimSpace(source.ID) == "" {
+func dedupeNonEmptyStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
 			continue
 		}
-		out[source.ID] = source
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
 	}
 	return out
 }
@@ -269,7 +284,42 @@ func renderSourceRef(ref SourceRef) string {
 	if ref.Source != "" && ref.Source != "local" {
 		details = append(details, fmt.Sprintf("source=%s", ref.Source))
 	}
+	if ref.Publisher != "" {
+		details = append(details, fmt.Sprintf("publisher=%s", ref.Publisher))
+	}
 	return fmt.Sprintf("`%s` %s", label, strings.Join(details, " · "))
+}
+
+func publisherFromURLHost(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	switch {
+	case host == "owasp.org" || strings.HasSuffix(host, ".owasp.org") || host == "cheatsheetseries.owasp.org" || host == "mas.owasp.org":
+		return "OWASP"
+	case host == "csrc.nist.gov" || host == "nist.gov" || strings.HasSuffix(host, ".nist.gov"):
+		return "NIST"
+	case host == "openssf.org" || host == "scorecard.dev" || strings.HasSuffix(host, ".openssf.org"):
+		return "OpenSSF"
+	case host == "slsa.dev" || strings.HasSuffix(host, ".slsa.dev"):
+		return "SLSA"
+	case host == "google.github.io" || host == "developers.google.com" || strings.HasSuffix(host, ".google.com"):
+		return "Google"
+	case host == "go.dev" || strings.HasSuffix(host, ".go.dev"):
+		return "Go project"
+	case host == "writethedocs.org" || strings.HasSuffix(host, ".writethedocs.org"):
+		return "Write the Docs"
+	case host == "diataxis.fr" || strings.HasSuffix(host, ".diataxis.fr"):
+		return "Diátaxis"
+	case host == "martinfowler.com" || strings.HasSuffix(host, ".martinfowler.com"):
+		return "Martin Fowler"
+	case host == "web.dev" || strings.HasSuffix(host, ".web.dev"):
+		return "web.dev"
+	default:
+		return host
+	}
 }
 
 func reviewTitle(report Report, text string) string {
