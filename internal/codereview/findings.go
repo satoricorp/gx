@@ -9,15 +9,16 @@ import (
 )
 
 type Finding struct {
-	ID             string
-	Scopes         []string
-	Title          string
-	Summary        string
-	Benefit        string
-	Evidence       []Evidence
-	Recommendation string
-	Strength       string
-	SourceIDs      []string
+	ID               string
+	Scopes           []string
+	Title            string
+	Summary          string
+	Benefit          string
+	Evidence         []Evidence
+	Recommendation   string
+	Strength         string
+	SourceIDs        []string
+	SourcePublishers []string
 }
 
 type Evidence struct {
@@ -314,6 +315,7 @@ func evaluateFindings(ctx ReviewContext, rules []Rule) []Finding {
 				continue
 			}
 			finding.SourceIDs = filterSourceIDs(finding.SourceIDs, knownSources)
+			finding.SourcePublishers = sourcePublishersForIDs(finding.SourceIDs, ctx.Sources)
 			out = append(out, finding)
 		}
 	}
@@ -429,6 +431,17 @@ func filterSourceIDs(ids []string, known map[string]struct{}) []string {
 		}
 	}
 	return out
+}
+
+func sourcePublishersForIDs(ids []string, sources []Source) []string {
+	publishers := sourcePublisherMap(sources)
+	var out []string
+	for _, id := range ids {
+		if publisher := strings.TrimSpace(publishers[strings.TrimSpace(id)]); publisher != "" {
+			out = append(out, publisher)
+		}
+	}
+	return dedupeNonEmptyStrings(out)
 }
 
 func strengthRank(strength string) int {

@@ -23,7 +23,6 @@ type ReviewBrief struct {
 	ReviewProfile string             `json:"review_profile"`
 	Focus         string             `json:"focus,omitempty"`
 	ReviewPrompt  string             `json:"review_prompt,omitempty"`
-	Triage        ChangeTriage       `json:"triage,omitempty"`
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
 	Context       []ContextSnippet   `json:"context"`
@@ -78,6 +77,7 @@ type ContextSnippet struct {
 	Text        string `json:"text"`
 	Source      string `json:"source,omitempty"`
 	SourceLabel string `json:"source_label,omitempty"`
+	Publisher   string `json:"publisher,omitempty"`
 	Title       string `json:"title,omitempty"`
 	URL         string `json:"url,omitempty"`
 	File        string `json:"file,omitempty"`
@@ -91,13 +91,15 @@ type ContextSnippet struct {
 }
 
 type SourceBrief struct {
-	ID     string   `json:"id"`
-	Scopes []string `json:"scopes"`
+	ID        string   `json:"id"`
+	Publisher string   `json:"publisher,omitempty"`
+	Scopes    []string `json:"scopes"`
 }
 
 type SourceRef struct {
 	ID         string `json:"id"`
 	Kind       string `json:"kind"`
+	Publisher  string `json:"publisher,omitempty"`
 	Title      string `json:"title,omitempty"`
 	URL        string `json:"url,omitempty"`
 	Source     string `json:"source,omitempty"`
@@ -119,12 +121,12 @@ type ArchitectureRubric struct {
 }
 
 type ContextRetriever interface {
-	Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error)
+	Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error)
 }
 
 type LocalContextRetriever struct{}
 
-func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever, inputs ...RetrieveInput) (ReviewBrief, error) {
+func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
 	hints := reviewHints(facts)
 	policy := opts.ReviewPolicy
 	if policy == nil {
@@ -132,50 +134,13 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		policy = &loaded
 		opts.ReviewPolicy = policy
 	}
-	input := RetrieveInput{
-		RepoRoot: repoRoot,
-		Options:  opts,
-		Facts:    facts,
-		Hints:    hints,
-		Plan: ReviewExecutionPlan{
-			Triage:             TriageChange(nil, nil, opts),
-			ActiveScopes:       activeScopeList(opts),
-			RunStaticTools:     true,
-			RunAI:              true,
-			RunReviewResources: true,
-			RiskTags:           riskTagsForReview(nil, facts.DependencyFiles, opts),
-		},
-	}
-	hoisted := len(inputs) > 0
-	if hoisted {
-		input = inputs[0]
-		input.RepoRoot = repoRoot
-		input.Options = opts
-		input.Facts = facts
-		input.Hints = hints
-		if input.Plan.Triage.Class == "" {
-			input.Plan.Triage = TriageChange(input.ChangedFiles, input.DiffSnippets, opts)
-		}
-		if input.Plan.ActiveScopes == nil {
-			input.Plan.ActiveScopes = activeScopeListForTriage(opts, input.Plan.Triage)
-		}
-	} else {
-		input.ChangedFiles = reviewChangedFiles(ctx, repoRoot)
-		input.DiffSnippets = collectDiffSnippets(ctx, repoRoot, input.ChangedFiles, opts.Deep)
-	}
-	if input.Plan.RiskTags == nil {
-		input.Plan.RiskTags = riskTagsForReview(input.ChangedFiles, facts.DependencyFiles, opts)
-	}
-	contextSnippets, err := retriever.Retrieve(ctx, input)
+	contextSnippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
 	if err != nil {
 		return ReviewBrief{}, err
 	}
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	contextSnippets = labelContextSnippets(contextSnippets)
-	var staticTools []StaticToolResult
-	if input.Plan.RunStaticTools {
-		staticTools = collectStaticToolResults(ctx, repoRoot, facts, opts)
-	}
+	changed := reviewChangedFiles(ctx, repoRoot)
 	return ReviewBrief{
 		RepoRoot:      repoRoot,
 		Scope:         opts.Scope,
@@ -183,7 +148,6 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		ReviewProfile: reviewProfile(opts),
 		Focus:         strings.TrimSpace(opts.Focus),
 		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
-		Triage:        input.Plan.Triage,
 		Static: StaticSnapshot{
 			FileCount:       facts.TrackedFileCount,
 			TestFileCount:   facts.TestFileCount,
@@ -191,9 +155,9 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 			Docs:            facts.Docs,
 			ADRFiles:        facts.ADRFiles,
 			Modules:         moduleSummaries(facts),
-			ChangedFiles:    input.ChangedFiles,
-			DiffSnippets:    input.DiffSnippets,
-			ToolResults:     staticTools,
+			ChangedFiles:    changed,
+			DiffSnippets:    collectDiffSnippets(ctx, repoRoot, changed, opts.Deep),
+			ToolResults:     collectStaticToolResults(ctx, repoRoot, facts, opts),
 			CodeQuality:     collectCodeQualityHints(repoRoot, facts, opts),
 		},
 		Hints:         hints,
@@ -240,11 +204,7 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 	return hints
 }
 
-func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]ContextSnippet, error) {
-	repoRoot := in.RepoRoot
-	opts := in.Options
-	facts := in.Facts
-	hints := in.Hints
+func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
 	var snippets []ContextSnippet
 	for _, doc := range []struct {
 		path string
@@ -343,13 +303,16 @@ func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 	if len(text) > maxContextSnippetBytes {
 		text = text[:maxContextSnippetBytes] + "\n[truncated]\n"
 	}
-	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local"}, true
+	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local", Publisher: "this repo"}, true
 }
 
 func labelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
 	counts := map[string]int{}
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
+		if strings.TrimSpace(snippet.Publisher) == "" {
+			snippet.Publisher = contextSnippetPublisher(snippet)
+		}
 		prefix := contextLabelPrefix(snippet)
 		counts[prefix]++
 		label := fmt.Sprintf("%s%d", prefix, counts[prefix])
@@ -502,7 +465,7 @@ func qualityFiles(hints []CodeQualityHint, deep bool) []string {
 func sourceBriefs(sources []Source) []SourceBrief {
 	out := make([]SourceBrief, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, SourceBrief{ID: source.ID, Scopes: source.Scopes})
+		out = append(out, SourceBrief{ID: source.ID, Publisher: strings.TrimSpace(source.Publisher), Scopes: source.Scopes})
 	}
 	return out
 }
@@ -535,6 +498,7 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 	return SourceRef{
 		ID:         id,
 		Kind:       sourceRefKind(snippet),
+		Publisher:  strings.TrimSpace(firstNonEmpty(snippet.Publisher, contextSnippetPublisher(snippet))),
 		Title:      sourceRefTitle(snippet),
 		URL:        strings.TrimSpace(snippet.URL),
 		Source:     strings.TrimSpace(snippet.Source),
@@ -546,6 +510,31 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 		RequestID:  strings.TrimSpace(snippet.RequestID),
 		ResponseID: strings.TrimSpace(snippet.ResponseID),
 		ChunkHash:  strings.TrimSpace(snippet.ChunkHash),
+	}
+}
+
+func contextSnippetPublisher(snippet ContextSnippet) string {
+	source := strings.TrimSpace(snippet.Source)
+	switch {
+	case strings.EqualFold(source, "local"):
+		return "this repo"
+	case strings.EqualFold(source, "gx-cloud:code-review-history"):
+		return "prior gx reviews"
+	case strings.EqualFold(source, "turbopuffer:code-review-history"):
+		return "prior gx reviews"
+	case strings.HasPrefix(source, "turbopuffer:"):
+		switch strings.TrimSpace(snippet.Kind) {
+		case "indexed_code", "indexed_session", "indexed_context":
+			return "this repo"
+		case "review_resource":
+			return publisherFromURLHost(snippet.URL)
+		default:
+			return ""
+		}
+	case strings.EqualFold(source, "review.md-url"):
+		return publisherFromURLHost(snippet.URL)
+	default:
+		return ""
 	}
 }
 
