@@ -191,7 +191,7 @@ func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
 			Summary:          finding.Summary,
 			Recommendation:   finding.Recommendation,
 			Evidence:         findingEvidenceStrings(finding.Evidence),
-			SourcePublishers: findingSourcePublishers(finding.SourceIDs, sourcePublishers),
+			SourcePublishers: uniqueStrings(append(append([]string{}, finding.SourcePublishers...), findingSourcePublishers(finding.SourceIDs, sourcePublishers)...)),
 		}
 		candidate.NamedFiles = namedFilesForFinding(ctx, finding)
 		candidate.FileContentSnippets = judgeFileContentSnippets(ctx.Brief.RepoRoot, candidate.NamedFiles)
@@ -274,7 +274,10 @@ func sourcePublisherMap(sources []Source) map[string]string {
 		if id == "" {
 			continue
 		}
-		publisher := strings.TrimSpace(source.Title)
+		publisher := strings.TrimSpace(source.Publisher)
+		if publisher == "" {
+			publisher = strings.TrimSpace(source.Title)
+		}
 		if publisher == "" {
 			publisher = id
 		}
@@ -484,6 +487,7 @@ func mergeNearDuplicateFindings(findings []Finding) []Finding {
 func mergeFindingMetadata(left Finding, right Finding) Finding {
 	left.Evidence = append(left.Evidence, right.Evidence...)
 	left.SourceIDs = uniqueStrings(append(left.SourceIDs, right.SourceIDs...))
+	left.SourcePublishers = uniqueStrings(append(left.SourcePublishers, right.SourcePublishers...))
 	if strengthRank(right.Strength) < strengthRank(left.Strength) {
 		left.Strength = right.Strength
 	}

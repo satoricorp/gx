@@ -153,15 +153,15 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 			{Path: "AGENTS.md", Present: false},
 		},
 		Findings: []Finding{{
-			ID:             "testing.no-tests",
-			Scopes:         []string{"testing", "maintainability"},
-			Title:          "No test files detected",
-			Summary:        "No test surface was detected.",
-			Benefit:        "Improves regression safety.",
-			Evidence:       []Evidence{{Label: "Test files", Value: "0"}},
-			Recommendation: "Add tests.",
-			Strength:       "Strong",
-			SourceIDs:      []string{"fowler-test-pyramid"},
+			ID:               "testing.no-tests",
+			Scopes:           []string{"testing", "maintainability"},
+			Title:            "No test files detected",
+			Summary:          "No test surface was detected.",
+			Benefit:          "Improves regression safety.",
+			Evidence:         []Evidence{{Label: "Test files", Value: "0"}},
+			Recommendation:   "Add tests.",
+			Strength:         "Strong",
+			SourcePublishers: []string{"Martin Fowler"},
 		}},
 	}
 
@@ -172,7 +172,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 		"**Why:** No test surface was detected.",
 		"**Benefit:** Improves regression safety.",
 		"**Do next:** Add tests.",
-		"**Attribution:** `fowler-test-pyramid`",
+		"**Informed by:** Martin Fowler",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
@@ -187,6 +187,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 
 func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 	report := Report{
+		Verbose: true,
 		Findings: []Finding{{
 			ID:             "architecture.generic-package-name",
 			Title:          "Generic package names reduce Interface clarity",
@@ -197,8 +198,8 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 			SourceIDs:      []string{"go-code-review-comments", "custom-source"},
 		}},
 		Sources: []Source{
-			{ID: "go-code-review-comments", Title: "Go Code Review Comments", URL: "https://go.dev/wiki/CodeReviewComments"},
-			{ID: "custom-source", Title: "Custom Reference"},
+			{ID: "go-code-review-comments", Title: "Go Code Review Comments", URL: "https://go.dev/wiki/CodeReviewComments", Publisher: "Go project"},
+			{ID: "custom-source", Title: "Custom Reference", Publisher: "Custom Reference"},
 		},
 		SourceRefs: []SourceRef{
 			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:gx"},
@@ -208,7 +209,7 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 
 	text := RenderMarkdown(report)
 	for _, want := range []string{
-		"**Attribution:** [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) · Custom Reference (`custom-source`)",
+		"**Informed by:** Go project · Custom Reference",
 		"## Sources",
 		"- [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)",
 		"- Custom Reference (`custom-source`)",
@@ -265,7 +266,7 @@ func TestRenderMarkdownVerboseIncludesAnchors(t *testing.T) {
 
 func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	root := t.TempDir()
-	report, err := Review(context.Background(), root, Options{Scope: "security"})
+	report, err := Review(context.Background(), root, Options{Scope: "security", Verbose: true})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -286,7 +287,7 @@ func TestParseAIReviewContentIncludesAnchors(t *testing.T) {
 		"recommendation":"Anchor recommendation",
 		"evidence":["internal/app/app.go:2 shows the issue"],
 		"anchors":[{"file":"internal/app/app.go","line":2}]
-	}]}`)
+	}]}`, nil)
 	if err != nil {
 		t.Fatalf("parseAIReviewContent() error = %v", err)
 	}
@@ -413,21 +414,21 @@ func TestAgenticToolsCanCallGrepListChangedHunksAndSearchKnowledge(t *testing.T)
 
 func TestJudgeFiltersAgenticCandidates(t *testing.T) {
 	root := initRepo(t)
-	writeFile(t, root, "README.md", "# old\n")
-	gitAdd(t, root, "README.md")
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	gitAdd(t, root, "internal/app/app.go")
 	gitCommit(t, root)
-	writeFile(t, root, "README.md", "# new\n")
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\nfunc More() {}\n")
 	facts := RepoFacts{
-		Files:            []string{"README.md"},
+		Files:            []string{"internal/app/app.go"},
 		TrackedFileCount: 1,
 	}
 	engine := NewEngineWithReviewer(fakeScanner{facts: facts}, fakeCatalog{}, nil, LocalContextRetriever{}, fakeReviewer{findings: []Finding{{
 		ID:             "ai.agentic.good",
 		Scopes:         []string{"maintainability"},
 		Title:          "Changed file finding",
-		Summary:        "README.md changed.",
+		Summary:        "internal/app/app.go changed.",
 		Benefit:        "Keeps patch review grounded.",
-		Recommendation: "Update README.md.",
+		Recommendation: "Update internal/app/app.go.",
 		Strength:       "Strong",
 	}, {
 		ID:             "ai.agentic.bad",
@@ -659,7 +660,7 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 		TrackedFileCount: 5,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -698,7 +699,7 @@ func TestPromptedReviewBriefUsesPromptDirectedProfile(t *testing.T) {
 		t.Fatalf("activeScopeList() = %q", got)
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), t.TempDir(), opts, RepoFacts{}, nil, fakeRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), t.TempDir(), opts, RepoFacts{}, nil, fakeRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -728,7 +729,7 @@ func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
 		TrackedFileCount: 2,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -741,7 +742,7 @@ func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
 }
 
 func TestBuildReviewBriefLabelsRetrievedContext(t *testing.T) {
-	brief, err := BuildReviewBrief(
+	brief, err := buildReviewBriefForTest(
 		context.Background(),
 		t.TempDir(),
 		normalizeOptions(Options{}),
@@ -770,7 +771,7 @@ func TestDeepReviewBriefUsesFullSpectrumRubric(t *testing.T) {
 	root := t.TempDir()
 	facts := RepoFacts{Docs: []FilePresence{{Path: "README.md", Present: false}}}
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{Deep: true}), facts, nil, LocalContextRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{Deep: true}), facts, nil, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief(deep) error = %v", err)
 	}
@@ -818,7 +819,7 @@ func TestBuildReviewBriefIncludesCodeQualityHints(t *testing.T) {
 		TrackedFileCount: 2,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), facts, nil, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -932,8 +933,20 @@ type fakeRetriever struct {
 	snippets []ContextSnippet
 }
 
-func (f fakeRetriever) Retrieve(context.Context, string, Options, RepoFacts, []ReviewHint) ([]ContextSnippet, error) {
+func (f fakeRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippet, error) {
 	return f.snippets, nil
+}
+
+func buildReviewBriefForTest(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
+	opts = normalizeOptions(opts)
+	return BuildReviewBrief(ctx, RetrieveInput{
+		RepoRoot:     repoRoot,
+		Options:      opts,
+		Facts:        facts,
+		Hints:        reviewHints(facts),
+		Plan:         reviewPlanFor(opts, ChangeTriage{}),
+		ChangedFiles: reviewChangedFiles(ctx, repoRoot),
+	}, sources, retriever)
 }
 
 type fakeReviewer struct {
@@ -974,7 +987,9 @@ func TestJavaScriptLockfileFinding(t *testing.T) {
 
 func TestArchitecturePackageFindings(t *testing.T) {
 	root := t.TempDir()
+	writeFile(t, root, "README.md", "# test repo\n")
 	writeFile(t, root, "internal/util/format.go", "package util\n")
+	writeFile(t, root, "internal/util/format_test.go", "package util\n")
 	writeFile(t, root, "internal/authoring/engine.go", "package authoring\n")
 	writeFile(t, root, "internal/authoring/proposal.go", "package authoring\n")
 	writeFile(t, root, "internal/orchestrator/a.go", "package orchestrator\n")
