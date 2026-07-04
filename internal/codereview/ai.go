@@ -14,6 +14,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/satoricorp/gx/internal/cloud"
@@ -21,10 +22,11 @@ import (
 )
 
 const (
-	defaultReviewModel           = "gpt-4.1-mini"
+	defaultReviewModel           = "gpt-5.5"
 	defaultReviewMaxOutputTokens = 6000
 	defaultOpenAIBaseURL         = "https://api.openai.com/v1"
 	maxAIContextSnippetBytes     = 1200
+	maxAIDiffSnippetBytes        = 6000
 	maxAIStaticToolOutputBytes   = 4000
 	maxAIContextSnippets         = 14
 	maxAIDeepContextSnippets     = 40
@@ -121,6 +123,7 @@ type aiRecommendation struct {
 	Recommendation string          `json:"recommendation"`
 	Strength       string          `json:"strength"`
 	Evidence       []string        `json:"evidence"`
+	Sources        []string        `json:"sources"`
 	Anchors        []FindingAnchor `json:"anchors"`
 }
 
@@ -254,34 +257,81 @@ func (r unavailableAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, 
 	return nil, fmt.Errorf("%s", r.reason)
 }
 
-func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	var out []Finding
-	var errors []string
-	seen := map[string]struct{}{}
+func (r unavailableAIReviewer) Available() bool { return false }
+
+func (r *responsesAIReviewer) Available() bool { return r != nil }
+
+func (r *bedrockAnthropicReviewer) Available() bool { return r != nil }
+
+func (r fallbackAIReviewer) Available() bool {
+	return reviewerAvailable(r.primary) || reviewerAvailable(r.fallback)
+}
+
+func (m multiAIReviewer) Available() bool {
 	for _, item := range m.reviewers {
-		findings, err := item.reviewer.Review(ctx, brief)
-		if err != nil {
-			errors = append(errors, item.label+": "+err.Error())
+		if reviewerAvailable(item.reviewer) {
+			return true
+		}
+	}
+	return false
+}
+
+type availabilityReporter interface {
+	Available() bool
+}
+
+func reviewerAvailable(reviewer AIReviewer) bool {
+	if reviewer == nil {
+		return false
+	}
+	if reporter, ok := reviewer.(availabilityReporter); ok {
+		return reporter.Available()
+	}
+	return true
+}
+
+func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	type reviewerResult struct {
+		item     namedAIReviewer
+		findings []Finding
+		err      error
+	}
+	results := make([]reviewerResult, len(m.reviewers))
+	var wg sync.WaitGroup
+	for i, item := range m.reviewers {
+		i, item := i, item
+		results[i] = reviewerResult{item: item}
+		if !reviewerAvailable(item.reviewer) {
+			results[i].err = fmt.Errorf("%s reviewer is not configured", item.label)
 			continue
 		}
-		for _, finding := range findings {
-			key := strings.ToLower(strings.TrimSpace(finding.Title + "\x00" + finding.Summary))
-			if key == "\x00" {
-				continue
-			}
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			findings, err := item.reviewer.Review(ctx, brief)
+			results[i] = reviewerResult{item: item, findings: findings, err: err}
+		}()
+	}
+	wg.Wait()
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].item.name < results[j].item.name
+	})
+	var out []Finding
+	var errors []string
+	for _, result := range results {
+		item := result.item
+		if result.err != nil {
+			errors = append(errors, item.label+": "+result.err.Error())
+			continue
+		}
+		for _, finding := range result.findings {
 			finding.ID = item.name + "." + finding.ID
 			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
 			out = append(out, finding)
 		}
 	}
+	out = mergeNearDuplicateFindings(out)
 	if len(out) > 0 {
-		if len(out) > 6 {
-			out = out[:6]
-		}
 		return out, nil
 	}
 	if len(errors) > 0 {
@@ -313,22 +363,31 @@ func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Fi
 
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	brief = compactReviewBriefForAI(brief)
+	resolver := newSourceResolver(brief)
+	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+	return parseAIReviewContent(content, resolver)
+}
+
+func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
 	payload := responseRequest{
 		Model:        r.model,
-		Instructions: reviewDeveloperPrompt(),
-		Input:        mustJSON(brief),
+		Instructions: instructions,
+		Input:        input,
 		Text: responseTextConfig{
 			Format: map[string]string{"type": "json_object"},
 		},
-		MaxOutputTokens: defaultReviewMaxOutputTokens,
+		MaxOutputTokens: maxOutputTokens,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal review request: %w", err)
+		return "", fmt.Errorf("marshal review request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create review request: %w", err)
+		return "", fmt.Errorf("create review request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+r.token)
 	req.Header.Set("Content-Type", "application/json")
@@ -341,33 +400,34 @@ func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request AI review: %w", err)
+		return "", fmt.Errorf("request AI review: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
-			return nil, fmt.Errorf("AI review status %s: %s", resp.Status, detail)
+			return "", fmt.Errorf("AI review status %s: %s", resp.Status, detail)
 		}
-		return nil, fmt.Errorf("AI review status %s", resp.Status)
+		return "", fmt.Errorf("AI review status %s", resp.Status)
 	}
 	var completion responseResult
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return nil, fmt.Errorf("decode AI review response: %w", err)
+		return "", fmt.Errorf("decode AI review response: %w", err)
 	}
 	content := strings.TrimSpace(completion.OutputText)
 	if content == "" {
 		content = strings.TrimSpace(responseOutputText(completion))
 	}
 	if content == "" {
-		return nil, fmt.Errorf("AI review response returned empty output")
+		return "", fmt.Errorf("AI review response returned empty output")
 	}
-	return parseAIReviewContent(content)
+	return content, nil
 }
 
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	brief = compactReviewBriefForAI(brief)
+	resolver := newSourceResolver(brief)
 	body, err := json.Marshal(map[string]any{
 		"anthropic_version": "bedrock-2023-05-31",
 		"max_tokens":        defaultReviewMaxOutputTokens,
@@ -429,7 +489,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 	if text == "" {
 		return nil, fmt.Errorf("Bedrock review response returned empty output")
 	}
-	return parseAIReviewContent(text)
+	return parseAIReviewContent(text, resolver)
 }
 
 func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []byte, requestPath string) {
@@ -473,12 +533,12 @@ func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []
 	req.Header.Set("X-Amz-Date", amzDate)
 }
 
-func parseAIReviewContent(content string) ([]Finding, error) {
+func parseAIReviewContent(content string, resolver sourceResolver) ([]Finding, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return nil, fmt.Errorf("decode AI review JSON: %w", err)
 	}
-	return aiRecommendationsToFindings(parsed.Recommendations), nil
+	return aiRecommendationsToFindings(parsed.Recommendations, resolver), nil
 }
 
 func sha256Hex(value []byte) string {
@@ -534,7 +594,7 @@ func compactDiffSnippets(snippets []DiffSnippet, limit int) []DiffSnippet {
 	}
 	out := make([]DiffSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
-		snippet.Diff = truncateReviewText(snippet.Diff, maxAIContextSnippetBytes)
+		snippet.Diff = truncateAtHunkBoundary(snippet.Diff, maxAIDiffSnippetBytes)
 		if strings.TrimSpace(snippet.File) == "" || strings.TrimSpace(snippet.Diff) == "" {
 			continue
 		}
@@ -635,7 +695,60 @@ func truncateReviewText(text string, limit int) string {
 	return text[:limit] + "\n[truncated]\n"
 }
 
-func aiRecommendationsToFindings(recommendations []aiRecommendation) []Finding {
+func truncateAtHunkBoundary(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if limit <= 0 || len(text) <= limit {
+		return text
+	}
+	cut := limit
+	if newline := strings.LastIndex(text[:limit], "\n"); newline > 0 {
+		cut = newline
+	}
+	if hunk := strings.LastIndex(text[:cut], "\n@@"); hunk > limit/2 {
+		cut = hunk
+	}
+	return strings.TrimSpace(text[:cut]) + "\n[truncated]\n"
+}
+
+type sourceResolver map[string]string
+
+func newSourceResolver(brief ReviewBrief) sourceResolver {
+	resolver := sourceResolver{}
+	for _, snippet := range brief.Context {
+		label := strings.TrimSpace(snippet.SourceLabel)
+		publisher := strings.TrimSpace(snippet.Publisher)
+		if label != "" && publisher != "" {
+			resolver[label] = publisher
+		}
+	}
+	for _, source := range brief.SourceCatalog {
+		id := strings.TrimSpace(source.ID)
+		publisher := strings.TrimSpace(source.Publisher)
+		if id != "" && publisher != "" {
+			resolver[id] = publisher
+		}
+	}
+	return resolver
+}
+
+func (r sourceResolver) resolve(ids []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, id := range ids {
+		publisher := strings.TrimSpace(r[strings.TrimSpace(id)])
+		if publisher == "" {
+			continue
+		}
+		if _, ok := seen[publisher]; ok {
+			continue
+		}
+		seen[publisher] = struct{}{}
+		out = append(out, publisher)
+	}
+	return out
+}
+
+func aiRecommendationsToFindings(recommendations []aiRecommendation, resolver sourceResolver) []Finding {
 	var out []Finding
 	for i, rec := range recommendations {
 		title := strings.TrimSpace(rec.Title)
@@ -657,15 +770,16 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation) []Finding {
 			}
 		}
 		out = append(out, Finding{
-			ID:             fmt.Sprintf("ai.review.%d", i+1),
-			Scopes:         []string{"architecture", "dependencies", "testing", "maintainability"},
-			Title:          title,
-			Summary:        summary,
-			Benefit:        benefit,
-			Evidence:       evidence,
-			Anchors:        rec.Anchors,
-			Recommendation: recommendation,
-			Strength:       strength,
+			ID:               fmt.Sprintf("ai.review.%d", i+1),
+			Scopes:           []string{"architecture", "dependencies", "testing", "maintainability"},
+			Title:            title,
+			Summary:          summary,
+			Benefit:          benefit,
+			Evidence:         evidence,
+			Anchors:          rec.Anchors,
+			Recommendation:   recommendation,
+			Strength:         strength,
+			SourcePublishers: resolver.resolve(rec.Sources),
 		})
 	}
 	return out
@@ -675,6 +789,7 @@ func reviewDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You are GX Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
+		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
 		"For patch_focused reviews, prioritize concrete bugs, security/auth issues, data correctness, race/idempotency, error handling, missing tests, observability, deploy/CI risks, and dependency regressions introduced or exposed by static.diff_snippets.",
 		"For patch_focused reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
@@ -700,7 +815,7 @@ func reviewDeveloperPrompt() string {
 		"Only produce recommendations tied to the provided repo context. Reject generic best-practice advice.",
 		"If no concrete issue meets the active profile, return an empty recommendations array.",
 		"When a finding has a precise file location, include anchors as objects like {\"file\":\"internal/example.go\",\"line\":123}. Anchors must point to the most relevant current file line, preferably a changed line or hunk context line.",
-		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"anchors\":[{\"file\":\"string\",\"line\":123}]}]}.",
+		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"sources\":[string],\"anchors\":[{\"file\":\"string\",\"line\":123}]}]}. Use sources for context labels or source_catalog IDs that materially informed the recommendation; use an empty array when none did.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")
 }
