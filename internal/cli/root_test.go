@@ -1883,9 +1883,10 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 			SourceIDs:      []string{"go-code-review-comments"},
 		}},
 		Sources: []codereview.Source{{
-			ID:    "go-code-review-comments",
-			Title: "Go Code Review Comments",
-			URL:   "https://go.dev/wiki/CodeReviewComments",
+			ID:        "go-code-review-comments",
+			Title:     "Go Code Review Comments",
+			URL:       "https://go.dev/wiki/CodeReviewComments",
+			Publisher: "Go project",
 		}},
 	}
 	var stderr bytes.Buffer
@@ -1897,9 +1898,14 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	if gotCommentBody == "" {
 		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "## Sources", "Go Code Review Comments"} {
+	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
+		}
+	}
+	for _, unwanted := range []string{"## Sources", "Go Code Review Comments", "https://go.dev/wiki/CodeReviewComments"} {
+		if strings.Contains(gotCommentBody, unwanted) {
+			t.Fatalf("comment body leaked %q:\n%s", unwanted, gotCommentBody)
 		}
 	}
 	if stderr.Len() != 0 {
