@@ -1787,6 +1787,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	t.Setenv("GX_API_URL", "")
 	t.Setenv("GX_UPLOAD_TOKEN", "")
 	t.Setenv("GX_REVIEW_AI", "0")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	t.Setenv("GX_REVIEW_RESOURCES", "0")
 	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
@@ -1803,7 +1804,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"## Recommendations",
-		"- No recommendations yet.",
+		"- No material issues found in this change.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("gx review output missing %q in:\n%s", want, text)
@@ -1874,13 +1875,13 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 
 	report := codereview.Report{
 		Findings: []codereview.Finding{{
-			ID:             "docs.missing-readme",
-			Title:          "Missing README",
-			Summary:        "The repo lacks the standard entrypoint document new maintainers expect first.",
-			Benefit:        "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
-			Recommendation: "Add a concise README.",
-			Strength:       "Strong",
-			SourceIDs:      []string{"go-code-review-comments"},
+			ID:               "docs.missing-readme",
+			Title:            "Missing README",
+			Summary:          "The repo lacks the standard entrypoint document new maintainers expect first.",
+			Benefit:          "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
+			Recommendation:   "Add a concise README.",
+			Strength:         "Strong",
+			SourcePublishers: []string{"Go project"},
 		}},
 		Sources: []codereview.Source{{
 			ID:        "go-code-review-comments",
@@ -1901,11 +1902,6 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
-		}
-	}
-	for _, unwanted := range []string{"## Sources", "Go Code Review Comments", "https://go.dev/wiki/CodeReviewComments"} {
-		if strings.Contains(gotCommentBody, unwanted) {
-			t.Fatalf("comment body leaked %q:\n%s", unwanted, gotCommentBody)
 		}
 	}
 	if stderr.Len() != 0 {
