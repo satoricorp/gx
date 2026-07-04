@@ -50,6 +50,7 @@ func (r *agenticResponsesAIReviewer) Review(ctx context.Context, brief ReviewBri
 		return nil, fmt.Errorf("agentic reviewer is not configured")
 	}
 	brief = compactReviewBriefForAI(brief)
+	resolver := newSourceResolver(brief)
 	input := any(mustJSON(brief))
 	previousID := ""
 	for step := 0; step <= maxAgenticToolCalls; step++ {
@@ -62,7 +63,7 @@ func (r *agenticResponsesAIReviewer) Review(ctx context.Context, brief ReviewBri
 			content = strings.TrimSpace(responseOutputText(result))
 		}
 		if content != "" {
-			return parseAIReviewContent(content)
+			return parseAIReviewContent(content, resolver)
 		}
 		calls := agenticToolCalls(result)
 		if len(calls) == 0 {

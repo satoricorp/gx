@@ -1,5 +1,10 @@
 package codereview
 
+import (
+	"net/url"
+	"strings"
+)
+
 type Source struct {
 	ID        string
 	Title     string
@@ -150,4 +155,40 @@ func (StaticCatalog) SourcesForScopes(scopes []string) []Source {
 
 func sourcesForScopes(scopes []string) []Source {
 	return StaticCatalog{}.SourcesForScopes(scopes)
+}
+
+func publisherFromURLHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimPrefix(parsed.Hostname(), "www."))
+	switch {
+	case host == "owasp.org" || strings.HasSuffix(host, ".owasp.org"):
+		return "OWASP"
+	case host == "csrc.nist.gov" || strings.HasSuffix(host, ".nist.gov"):
+		return "NIST"
+	case strings.Contains(host, "openssf.org") || strings.Contains(host, "scorecard.dev"):
+		return "OpenSSF"
+	case host == "slsa.dev" || strings.HasSuffix(host, ".slsa.dev"):
+		return "SLSA"
+	case host == "go.dev" || strings.HasSuffix(host, ".golang.org"):
+		return "Go project"
+	case strings.Contains(host, "google"):
+		return "Google"
+	case strings.Contains(host, "writethedocs.org"):
+		return "Write the Docs"
+	case strings.Contains(host, "diataxis.fr"):
+		return "Diátaxis"
+	case strings.Contains(host, "martinfowler.com"):
+		return "Martin Fowler"
+	case strings.Contains(host, "web.dev"):
+		return "web.dev"
+	default:
+		return ""
+	}
 }

@@ -23,6 +23,7 @@ type ReviewBrief struct {
 	ReviewProfile string             `json:"review_profile"`
 	Focus         string             `json:"focus,omitempty"`
 	ReviewPrompt  string             `json:"review_prompt,omitempty"`
+	Triage        ChangeTriage       `json:"triage,omitempty"`
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
 	Context       []ContextSnippet   `json:"context"`
@@ -77,6 +78,7 @@ type ContextSnippet struct {
 	Text        string `json:"text"`
 	Source      string `json:"source,omitempty"`
 	SourceLabel string `json:"source_label,omitempty"`
+	Publisher   string `json:"publisher,omitempty"`
 	Title       string `json:"title,omitempty"`
 	URL         string `json:"url,omitempty"`
 	File        string `json:"file,omitempty"`
@@ -90,8 +92,9 @@ type ContextSnippet struct {
 }
 
 type SourceBrief struct {
-	ID     string   `json:"id"`
-	Scopes []string `json:"scopes"`
+	ID        string   `json:"id"`
+	Publisher string   `json:"publisher,omitempty"`
+	Scopes    []string `json:"scopes"`
 }
 
 type SourceRef struct {
@@ -100,6 +103,7 @@ type SourceRef struct {
 	Title      string `json:"title,omitempty"`
 	URL        string `json:"url,omitempty"`
 	Source     string `json:"source,omitempty"`
+	Publisher  string `json:"publisher,omitempty"`
 	File       string `json:"file,omitempty"`
 	StartLine  int    `json:"start_line,omitempty"`
 	EndLine    int    `json:"end_line,omitempty"`
@@ -118,44 +122,59 @@ type ArchitectureRubric struct {
 }
 
 type ContextRetriever interface {
-	Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error)
+	Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error)
 }
 
 type LocalContextRetriever struct{}
 
-func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
-	hints := reviewHints(facts)
+func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
+	hints := in.Hints
+	if hints == nil {
+		hints = reviewHints(in.Facts)
+		in.Hints = hints
+	}
+	opts := in.Options
 	policy := opts.ReviewPolicy
 	if policy == nil {
-		loaded := LoadReviewPolicy(ctx, repoRoot)
+		loaded := LoadReviewPolicy(ctx, in.RepoRoot)
 		policy = &loaded
 		opts.ReviewPolicy = policy
+		in.Options = opts
 	}
-	contextSnippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
+	contextSnippets, err := retriever.Retrieve(ctx, in)
 	if err != nil {
 		return ReviewBrief{}, err
 	}
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	contextSnippets = labelContextSnippets(contextSnippets)
-	changed := reviewChangedFiles(ctx, repoRoot)
+	changed := normalizedChangedFiles(in.ChangedFiles)
+	diffSnippets := in.DiffSnippets
+	if diffSnippets == nil {
+		diffSnippets = collectDiffSnippets(ctx, in.RepoRoot, changed, opts.Deep)
+	}
+	toolResults := []StaticToolResult(nil)
+	if in.Plan.RunStaticTools || !reviewExecutionPlanConfigured(in.Plan) {
+		toolResults = collectStaticToolResults(ctx, in.RepoRoot, in.Facts, opts)
+	}
 	return ReviewBrief{
-		RepoRoot:      repoRoot,
+		RepoRoot:      in.RepoRoot,
 		Scope:         opts.Scope,
 		Depth:         depthLabel(opts.Deep),
 		ReviewProfile: reviewProfile(opts),
 		Focus:         strings.TrimSpace(opts.Focus),
 		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
+		Triage:        in.Plan.Triage,
 		Static: StaticSnapshot{
-			FileCount:       facts.TrackedFileCount,
-			TestFileCount:   facts.TestFileCount,
-			DependencyFiles: facts.DependencyFiles,
-			Docs:            facts.Docs,
-			ADRFiles:        facts.ADRFiles,
-			Modules:         moduleSummaries(facts),
+			FileCount:       in.Facts.TrackedFileCount,
+			TestFileCount:   in.Facts.TestFileCount,
+			DependencyFiles: in.Facts.DependencyFiles,
+			Docs:            in.Facts.Docs,
+			ADRFiles:        in.Facts.ADRFiles,
+			Modules:         moduleSummaries(in.Facts),
 			ChangedFiles:    changed,
-			DiffSnippets:    collectDiffSnippets(ctx, repoRoot, changed, opts.Deep),
-			ToolResults:     collectStaticToolResults(ctx, repoRoot, facts, opts),
-			CodeQuality:     collectCodeQualityHints(repoRoot, facts, opts),
+			DiffSnippets:    diffSnippets,
+			ToolResults:     toolResults,
+			CodeQuality:     collectCodeQualityHints(in.RepoRoot, in.Facts, opts),
 		},
 		Hints:         hints,
 		Context:       contextSnippets,
@@ -201,7 +220,11 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 	return hints
 }
 
-func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	repoRoot := in.RepoRoot
+	opts := in.Options
+	facts := in.Facts
+	hints := in.Hints
 	var snippets []ContextSnippet
 	for _, doc := range []struct {
 		path string
@@ -264,6 +287,10 @@ func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, d
 	return snippets
 }
 
+func truncateDiffText(text string, limit int) string {
+	return truncateAtHunkBoundary(text, limit)
+}
+
 func fileDiff(ctx context.Context, repoRoot, file string) string {
 	var parts []string
 	for _, args := range [][]string{
@@ -300,7 +327,7 @@ func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 	if len(text) > maxContextSnippetBytes {
 		text = text[:maxContextSnippetBytes] + "\n[truncated]\n"
 	}
-	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local"}, true
+	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local", Publisher: "this repo"}, true
 }
 
 func labelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
@@ -459,7 +486,7 @@ func qualityFiles(hints []CodeQualityHint, deep bool) []string {
 func sourceBriefs(sources []Source) []SourceBrief {
 	out := make([]SourceBrief, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, SourceBrief{ID: source.ID, Scopes: source.Scopes})
+		out = append(out, SourceBrief{ID: source.ID, Publisher: strings.TrimSpace(source.Publisher), Scopes: source.Scopes})
 	}
 	return out
 }
@@ -495,6 +522,7 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 		Title:      sourceRefTitle(snippet),
 		URL:        strings.TrimSpace(snippet.URL),
 		Source:     strings.TrimSpace(snippet.Source),
+		Publisher:  strings.TrimSpace(snippet.Publisher),
 		File:       firstNonEmpty(snippet.File, snippet.Ref),
 		StartLine:  snippet.StartLine,
 		EndLine:    snippet.EndLine,

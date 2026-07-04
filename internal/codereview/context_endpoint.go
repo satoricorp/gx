@@ -23,7 +23,7 @@ func contextRetrieverFromEnv() ContextRetriever {
 	return CompositeContextRetriever{Retrievers: retrievers}
 }
 
-func (r CompositeContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r CompositeContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	results := make([][]ContextSnippet, len(r.Retrievers))
 	var wg sync.WaitGroup
 	for i, retriever := range r.Retrievers {
@@ -34,7 +34,7 @@ func (r CompositeContextRetriever) Retrieve(ctx context.Context, repoRoot string
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			snippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
+			snippets, err := retriever.Retrieve(ctx, in)
 			if err != nil {
 				return
 			}

@@ -11,7 +11,7 @@ func TestCompositeContextRetrieverIgnoresRetrieverFailures(t *testing.T) {
 	snippets, err := (CompositeContextRetriever{Retrievers: []ContextRetriever{
 		fakeRetriever{snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "README.md", Source: "local", Text: "readme"}}},
 		failingRetriever{},
-	}}).Retrieve(context.Background(), "/repo", Options{}, RepoFacts{}, nil)
+	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo", Options: Options{}})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -24,7 +24,7 @@ func TestCompositeContextRetrieverHandlesFailureAndSuccessConcurrently(t *testin
 	snippets, err := (CompositeContextRetriever{Retrievers: []ContextRetriever{
 		delayedContextRetriever{delay: 80 * time.Millisecond, snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "README.md", Source: "local", Text: "readme"}}},
 		delayedFailingRetriever{delay: 80 * time.Millisecond},
-	}}).Retrieve(context.Background(), "/repo", Options{}, RepoFacts{}, nil)
+	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo", Options: Options{}})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCompositeContextRetrieverOutputOrderIsDeterministic(t *testing.T) {
 		delayedContextRetriever{delay: 80 * time.Millisecond, snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "first", Source: "local", Text: "first"}}},
 		delayedContextRetriever{delay: 10 * time.Millisecond, snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "second", Source: "local", Text: "second"}}},
 		delayedContextRetriever{delay: 5 * time.Millisecond, snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "first", Source: "local", Text: "duplicate"}}},
-	}}).Retrieve(context.Background(), "/repo", Options{}, RepoFacts{}, nil)
+	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo", Options: Options{}})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -49,7 +49,7 @@ func TestCompositeContextRetrieverOutputOrderIsDeterministic(t *testing.T) {
 
 type failingRetriever struct{}
 
-func (failingRetriever) Retrieve(context.Context, string, Options, RepoFacts, []ReviewHint) ([]ContextSnippet, error) {
+func (failingRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippet, error) {
 	return nil, errors.New("boom")
 }
 
@@ -58,7 +58,7 @@ type delayedContextRetriever struct {
 	snippets []ContextSnippet
 }
 
-func (r delayedContextRetriever) Retrieve(ctx context.Context, _ string, _ Options, _ RepoFacts, _ []ReviewHint) ([]ContextSnippet, error) {
+func (r delayedContextRetriever) Retrieve(ctx context.Context, _ RetrieveInput) ([]ContextSnippet, error) {
 	timer := time.NewTimer(r.delay)
 	defer timer.Stop()
 	select {
@@ -73,7 +73,7 @@ type delayedFailingRetriever struct {
 	delay time.Duration
 }
 
-func (r delayedFailingRetriever) Retrieve(ctx context.Context, _ string, _ Options, _ RepoFacts, _ []ReviewHint) ([]ContextSnippet, error) {
+func (r delayedFailingRetriever) Retrieve(ctx context.Context, _ RetrieveInput) ([]ContextSnippet, error) {
 	timer := time.NewTimer(r.delay)
 	defer timer.Stop()
 	select {
