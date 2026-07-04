@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zalando/go-keyring"
+
 	"github.com/satoricorp/gx/internal/buildconfig"
 )
 
 func TestLoginDeviceFlowAndComplete(t *testing.T) {
+	keyring.MockInit()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
@@ -96,14 +99,14 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if creds.Login != "joe" || creds.GitHubAccessToken != "ghu_test" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
+	if creds.Login != "joe" || creds.GitHubAccessToken != "" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
 	if gotComplete.GitHubAccessToken != "ghu_test" {
 		t.Fatalf("github token = %q", gotComplete.GitHubAccessToken)
 	}
-	if creds.GitHubAccessTokenExpiresAt.IsZero() || creds.GitHubRefreshToken != "ghr_test" || creds.GitHubRefreshTokenExpiresAt.IsZero() {
-		t.Fatalf("missing github token refresh metadata: %+v", creds)
+	if creds.GitHubKeychainAccount == "" {
+		t.Fatalf("missing github keychain account: %+v", creds)
 	}
 	if gotComplete.MachineName != "work-laptop" {
 		t.Fatalf("machine name = %q", gotComplete.MachineName)
@@ -119,12 +122,20 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCloudCredentials() error = %v", err)
 	}
-	if loaded == nil || loaded.GitHubAccessToken != "ghu_test" || loaded.GitHubRefreshToken != "ghr_test" || loaded.CLISessionToken != "gxcs_login" {
+	if loaded == nil || loaded.GitHubAccessToken != "" || loaded.GitHubRefreshToken != "" || loaded.CLISessionToken != "gxcs_login" || loaded.GitHubKeychainAccount == "" {
 		t.Fatalf("saved credentials = %+v", loaded)
+	}
+	token, source, err := GitHubAccessTokenWithSource()
+	if err != nil {
+		t.Fatalf("GitHubAccessTokenWithSource() error = %v", err)
+	}
+	if token != "ghu_test" || source != "keychain" {
+		t.Fatalf("GitHubAccessTokenWithSource() = (%q, %q), want keychain token", token, source)
 	}
 }
 
 func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
+	keyring.MockInit()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
@@ -182,6 +193,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 }
 
 func TestLoginPollsUntilAuthorized(t *testing.T) {
+	keyring.MockInit()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
@@ -231,6 +243,7 @@ func TestLoginPollsUntilAuthorized(t *testing.T) {
 }
 
 func TestLoginUsesBakedDefaults(t *testing.T) {
+	keyring.MockInit()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "")
@@ -301,6 +314,7 @@ func TestLoginNotConfiguredInDevBuild(t *testing.T) {
 }
 
 func TestLogoutRevokesAndClears(t *testing.T) {
+	keyring.MockInit()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", home)
 	t.Setenv("CONVEX_SITE_URL", "")
