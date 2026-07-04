@@ -2,6 +2,7 @@ package cursor_test
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -46,6 +47,39 @@ func TestParseCursor_Golden(t *testing.T) {
 	}
 	if edits[1].FilePath != "README.md" || edits[1].NewText == "" {
 		t.Fatalf("write edit mismatch: path=%q newText empty=%v", edits[1].FilePath, edits[1].NewText == "")
+	}
+}
+
+func TestParseCursorTranscriptJSONL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript-1.jsonl")
+	line := `{"timestamp":"2026-07-03T20:00:00Z","role":"assistant","message":{"model":"gpt-test","content":[{"type":"tool_use","name":"StrReplace","input":{"path":"/tmp/repo/internal/foo.go","old_string":"return 1","new_string":"return 2"}},{"type":"tool_use","name":"Write","input":{"path":"/tmp/repo/README.md","content":"hello"}}]}}`
+	if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	parser := &cursor.Parser{}
+	events, err := parser.ParseFile(path, "/tmp/repo")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	var edits []capture.SessionEvent
+	for _, ev := range events {
+		if ev.IsEditEvent() {
+			edits = append(edits, ev)
+		}
+	}
+	if len(edits) != 2 {
+		t.Fatalf("edit events = %d, want 2: %#v", len(edits), edits)
+	}
+	if edits[0].Tool != capture.ToolCursor || edits[0].SessionID != "cursor:transcript-1" {
+		t.Fatalf("first edit provenance = %s/%s", edits[0].Tool, edits[0].SessionID)
+	}
+	if edits[0].FilePath != "internal/foo.go" || edits[0].NewText != "return 2" {
+		t.Fatalf("strreplace edit = path %q new %q", edits[0].FilePath, edits[0].NewText)
+	}
+	if edits[1].FilePath != "README.md" || edits[1].NewText != "hello" {
+		t.Fatalf("patch edit = path %q new %q", edits[1].FilePath, edits[1].NewText)
 	}
 }
 
