@@ -2225,9 +2225,11 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 	if len(stacks) == 0 {
 		return []PushResult{}, nil
 	}
+	stacks = s.orderStacksForPublish(ctx, repo, stacks)
 	results := make([]PushResult, 0, len(stacks))
 	var firstErr error
 	err = withRepoLock(lockRoot, func() error {
+		publishedThisRun := map[string]struct{}{}
 		for _, stack := range stacks {
 			publishable, err := s.stackHasUnpublishedRevisions(ctx, stack)
 			if err != nil {
@@ -2239,7 +2241,7 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 			if !publishable {
 				continue
 			}
-			result, err := s.pushStackUnlocked(ctx, repo, args, opts, stack)
+			result, err := s.pushStackUnlockedWithContext(ctx, repo, args, opts, stack, stacks, publishedThisRun)
 			if err == nil {
 				err = publishResult(ctx, result, hook)
 			}
@@ -2252,6 +2254,7 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 				}
 				continue
 			}
+			markStackPublishedThisRun(publishedThisRun, stack)
 			results = append(results, result)
 		}
 		return nil
@@ -2389,6 +2392,10 @@ func (s *Service) pushUnlocked(ctx context.Context, args []string, opts PushOpti
 }
 
 func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []string, opts PushOptions, body StackInfo) (PushResult, error) {
+	return s.pushStackUnlockedWithContext(ctx, repo, args, opts, body, nil, nil)
+}
+
+func (s *Service) pushStackUnlockedWithContext(ctx context.Context, repo RepoInfo, args []string, opts PushOptions, body StackInfo, stacks []StackInfo, publishedThisRun map[string]struct{}) (PushResult, error) {
 	remoteName := repo.DefaultRemote
 	if remoteName == nil || strings.TrimSpace(*remoteName) == "" {
 		remoteName = ptr("origin")
@@ -2397,6 +2404,9 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 		repo.RemoteURL = &remoteURL
 	}
 	if err := s.requireRecordedAddsForPublish(ctx, body); err != nil {
+		return PushResult{}, err
+	}
+	if err := s.requireParentStackPublishedForPublish(ctx, repo, body, stacks, publishedThisRun); err != nil {
 		return PushResult{}, err
 	}
 	refName := publishRefFromArgs(args)
@@ -2466,6 +2476,157 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 		Warnings:             warnings,
 		GitHubPullRequestURL: githubPRURL,
 	}, nil
+}
+
+func (s *Service) requireParentStackPublishedForPublish(ctx context.Context, repo RepoInfo, stack StackInfo, stacks []StackInfo, publishedThisRun map[string]struct{}) error {
+	if len(stacks) == 0 {
+		var err error
+		stacks, err = s.storedStacksForRepo(ctx, repo)
+		if err != nil {
+			return err
+		}
+	}
+	parent, ok := s.parentStackForPublish(ctx, repo, stacks, stack)
+	if !ok {
+		return nil
+	}
+	if stackPublishedThisRun(publishedThisRun, parent) {
+		return nil
+	}
+	publishable, err := s.stackHasUnpublishedRevisions(ctx, parent)
+	if err != nil {
+		return fmt.Errorf("check parent stack %s before pushing %s: %w", publishRefForStack(parent), publishRefForStack(stack), err)
+	}
+	if !publishable {
+		return nil
+	}
+	return fmt.Errorf("cannot push %s before parent stack %s; run `gx push %s` first or `gx push --all` to publish parent stacks in order", publishRefForStack(stack), publishRefForStack(parent), publishRefForStack(parent))
+}
+
+func (s *Service) storedStacksForRepo(ctx context.Context, repo RepoInfo) ([]StackInfo, error) {
+	if strings.TrimSpace(repo.RootPath) == "" {
+		return nil, nil
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	storedRepo, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	if storedRepo == nil {
+		return nil, nil
+	}
+	stored, err := store.ListStacksByRepoID(ctx, storedRepo.ID)
+	if err != nil {
+		return nil, err
+	}
+	stacks := make([]StackInfo, 0, len(stored))
+	for _, stack := range stored {
+		stacks = append(stacks, stackInfoFromStorage(stack))
+	}
+	return stacks, nil
+}
+
+func (s *Service) orderStacksForPublish(ctx context.Context, repo RepoInfo, stacks []StackInfo) []StackInfo {
+	if len(stacks) < 2 {
+		return stacks
+	}
+	ordered := make([]StackInfo, 0, len(stacks))
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(StackInfo)
+	visit = func(stack StackInfo) {
+		key := stackPublishOrderKey(stack)
+		if key == "" {
+			ordered = append(ordered, stack)
+			return
+		}
+		if visited[key] {
+			return
+		}
+		if visiting[key] {
+			ordered = append(ordered, stack)
+			visited[key] = true
+			return
+		}
+		visiting[key] = true
+		if parent, ok := s.parentStackForPublish(ctx, repo, stacks, stack); ok {
+			visit(parent)
+		}
+		visiting[key] = false
+		if !visited[key] {
+			visited[key] = true
+			ordered = append(ordered, stack)
+		}
+	}
+	for _, stack := range stacks {
+		visit(stack)
+	}
+	return ordered
+}
+
+func (s *Service) parentStackForPublish(ctx context.Context, repo RepoInfo, stacks []StackInfo, stack StackInfo) (StackInfo, bool) {
+	baseRef := s.publicStackBaseRef(ctx, repo, stack.BaseRef)
+	if baseRef == "" || baseRef == repo.defaultBaseBranch() {
+		return StackInfo{}, false
+	}
+	for _, candidate := range stacks {
+		if sameStackForPublish(candidate, stack) {
+			continue
+		}
+		if stackPublishRefMatches(candidate, baseRef) {
+			return candidate, true
+		}
+	}
+	return StackInfo{}, false
+}
+
+func sameStackForPublish(a, b StackInfo) bool {
+	if a.ID != 0 && b.ID != 0 {
+		return a.ID == b.ID
+	}
+	aRef := publishRefForStack(a)
+	bRef := publishRefForStack(b)
+	return aRef != "" && aRef == bRef
+}
+
+func stackPublishOrderKey(stack StackInfo) string {
+	if stack.ID != 0 {
+		return fmt.Sprintf("id:%d", stack.ID)
+	}
+	if ref := publishRefForStack(stack); ref != "" {
+		return "ref:" + ref
+	}
+	return ""
+}
+
+func markStackPublishedThisRun(published map[string]struct{}, stack StackInfo) {
+	if published == nil {
+		return
+	}
+	for _, ref := range []string{publishRefForStack(stack), strings.TrimSpace(stack.BookmarkName)} {
+		if ref != "" {
+			published[ref] = struct{}{}
+		}
+	}
+}
+
+func stackPublishedThisRun(published map[string]struct{}, stack StackInfo) bool {
+	if published == nil {
+		return false
+	}
+	for _, ref := range []string{publishRefForStack(stack), strings.TrimSpace(stack.BookmarkName)} {
+		if ref == "" {
+			continue
+		}
+		if _, ok := published[ref]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) requireGitHubPullRequestAuth(ctx context.Context, repo RepoInfo, stack StackInfo) error {

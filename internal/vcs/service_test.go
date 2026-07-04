@@ -3388,6 +3388,73 @@ func TestPushRecordedStackUsesHydratedRevisions(t *testing.T) {
 	}
 }
 
+func TestOrderStacksForPublishParentsBeforeChildren(t *testing.T) {
+	svc := NewServiceWithRunner(&fakeRunner{})
+	repo := RepoInfo{DefaultBranch: ptr("main")}
+	stacks := []StackInfo{
+		{ID: 3, Name: "child", BookmarkName: "feature/child", BaseRef: "feature/parent"},
+		{ID: 1, Name: "root", BookmarkName: "feature/root", BaseRef: "main"},
+		{ID: 2, Name: "parent", BookmarkName: "feature/parent", BaseRef: "feature/root"},
+	}
+
+	ordered := svc.orderStacksForPublish(context.Background(), repo, stacks)
+	got := make([]string, 0, len(ordered))
+	for _, stack := range ordered {
+		got = append(got, stack.BookmarkName)
+	}
+	want := []string{"feature/root", "feature/parent", "feature/child"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("orderStacksForPublish() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRequireParentStackPublishedForPublishRejectsUnpublishedParent(t *testing.T) {
+	svc := NewServiceWithRunner(&fakeRunner{})
+	repo := RepoInfo{DefaultBranch: ptr("main")}
+	parent := StackInfo{
+		ID:           1,
+		Name:         "parent",
+		BookmarkName: "feature/parent",
+		BaseRef:      "main",
+		Revisions: []RevisionSummary{{
+			ChangeID:    "parent-change",
+			CommitID:    "parent-commit",
+			Description: "parent change",
+			Published:   false,
+		}},
+	}
+	child := StackInfo{
+		ID:           2,
+		Name:         "child",
+		BookmarkName: "feature/child",
+		BaseRef:      "feature/parent",
+		Revisions: []RevisionSummary{{
+			ChangeID:    "child-change",
+			CommitID:    "child-commit",
+			Description: "child change",
+			Published:   false,
+		}},
+	}
+	stacks := []StackInfo{child, parent}
+
+	err := svc.requireParentStackPublishedForPublish(context.Background(), repo, child, stacks, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot push feature/child before parent stack feature/parent") {
+		t.Fatalf("requireParentStackPublishedForPublish() error = %v, want parent guidance", err)
+	}
+
+	publishedThisRun := map[string]struct{}{}
+	markStackPublishedThisRun(publishedThisRun, parent)
+	if err := svc.requireParentStackPublishedForPublish(context.Background(), repo, child, stacks, publishedThisRun); err != nil {
+		t.Fatalf("requireParentStackPublishedForPublish() with parent published this run error = %v", err)
+	}
+
+	parent.Revisions[0].Published = true
+	stacks = []StackInfo{child, parent}
+	if err := svc.requireParentStackPublishedForPublish(context.Background(), repo, child, stacks, nil); err != nil {
+		t.Fatalf("requireParentStackPublishedForPublish() with published parent error = %v", err)
+	}
+}
+
 func TestPublishResultRecordsLocalMetadataBeforeHook(t *testing.T) {
 	repoRoot := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())
