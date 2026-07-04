@@ -61,6 +61,17 @@ type IssueCommentOptions struct {
 	Marker string
 }
 
+type PullRequestReviewCommentOptions struct {
+	Owner    string
+	Repo     string
+	Number   int
+	Body     string
+	CommitID string
+	Path     string
+	Line     int
+	Side     string
+}
+
 func NewClient(host string) (*Client, error) {
 	token, err := accessToken()
 	if err != nil {
@@ -383,6 +394,38 @@ func (c *Client) UpsertIssueComment(ctx context.Context, opts IssueCommentOption
 		}
 	}
 	return c.CreateIssueComment(ctx, opts)
+}
+
+func (c *Client) CreatePullRequestReviewComment(ctx context.Context, opts PullRequestReviewCommentOptions) error {
+	if c == nil {
+		return fmt.Errorf("github client is required")
+	}
+	if strings.TrimSpace(opts.Owner) == "" || strings.TrimSpace(opts.Repo) == "" || opts.Number <= 0 {
+		return fmt.Errorf("github pull request target is required")
+	}
+	if strings.TrimSpace(opts.CommitID) == "" || strings.TrimSpace(opts.Path) == "" || opts.Line <= 0 {
+		return fmt.Errorf("github pull request review comment target is required")
+	}
+	side := strings.TrimSpace(opts.Side)
+	if side == "" {
+		side = "RIGHT"
+	}
+	body, err := json.Marshal(map[string]any{
+		"body":      opts.Body,
+		"commit_id": strings.TrimSpace(opts.CommitID),
+		"path":      strings.TrimSpace(opts.Path),
+		"line":      opts.Line,
+		"side":      side,
+	})
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d/comments", url.PathEscape(opts.Owner), url.PathEscape(opts.Repo), opts.Number)
+	req, err := c.request(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	return c.do(req, nil)
 }
 
 func (c *Client) request(ctx context.Context, method, endpoint string, body io.Reader) (*http.Request, error) {
