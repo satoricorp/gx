@@ -9,16 +9,17 @@ import (
 )
 
 type Finding struct {
-	ID             string
-	Scopes         []string
-	Title          string
-	Summary        string
-	Benefit        string
-	Evidence       []Evidence
-	Anchors        []FindingAnchor
-	Recommendation string
-	Strength       string
-	SourceIDs      []string
+	ID               string
+	Scopes           []string
+	Title            string
+	Summary          string
+	Benefit          string
+	Evidence         []Evidence
+	Anchors          []FindingAnchor
+	Recommendation   string
+	Strength         string
+	SourceIDs        []string
+	SourcePublishers []string
 }
 
 type FindingAnchor struct {
