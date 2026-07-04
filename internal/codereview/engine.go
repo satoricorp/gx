@@ -13,6 +13,7 @@ type Engine struct {
 	rules        []Rule
 	retriever    ContextRetriever
 	reviewer     AIReviewer
+	judge        FindingJudge
 	autoReviewer bool
 }
 
@@ -30,8 +31,6 @@ type ReviewContext struct {
 	Sources      []Source
 	ActiveScopes []string
 	Brief        ReviewBrief
-	Triage       ChangeTriage
-	RiskTags     []string
 }
 
 func NewEngine() *Engine {
@@ -57,7 +56,6 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if repoRoot == "" {
 		return Report{}, fmt.Errorf("repo root is required")
 	}
-	explicitScope := strings.TrimSpace(opts.Scope) != ""
 	opts = normalizeOptions(opts)
 	if err := ValidateOptions(opts); err != nil {
 		return Report{}, err
@@ -89,57 +87,10 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	}
 	policy := LoadReviewPolicy(ctx, repoRoot)
 	opts.ReviewPolicy = &policy
-	changed := reviewChangedFiles(ctx, repoRoot)
-	diffs := collectDiffSnippets(ctx, repoRoot, changed, opts.Deep)
-	var triage ChangeTriage
-	if triageEnabled() {
-		triage = TriageChange(changed, diffs, opts)
-	}
-	plan := reviewPlanFor(opts, triage)
-	if len(plan.RiskTags) == 0 {
-		plan.RiskTags = riskTagsForReview(changed, facts.DependencyFiles, opts)
-	}
-	active := plan.ActiveScopes
-	if len(active) == 0 {
-		active = activeScopeList(opts)
-		plan.ActiveScopes = active
-	}
-	if shouldShortCircuitDocsOnly(opts, explicitScope, plan) {
-		return Report{
-			RepoRoot:          repoRoot,
-			Scope:             opts.Scope,
-			Format:            opts.Format,
-			Deep:              opts.Deep,
-			Since:             strings.TrimSpace(opts.Since),
-			Focus:             strings.TrimSpace(opts.Focus),
-			Prompt:            strings.TrimSpace(opts.Prompt),
-			BaselineScopes:    baselineFor(opts.Scope),
-			Docs:              facts.Docs,
-			DependencyFiles:   facts.DependencyFiles,
-			TestFileCount:     facts.TestFileCount,
-			TrackedFileCount:  facts.TrackedFileCount,
-			ChangedFiles:      changed,
-			ObservationLabels: facts.observations(),
-			Findings:          nil,
-			Reviewer:          "triage",
-			Verbose:           opts.Verbose,
-			Color:             opts.Color,
-			Triage:            triage,
-			RiskTags:          plan.RiskTags,
-			NoFindingsMessage: "No material issues in this change (documentation-only).",
-		}, nil
-	}
+	active := activeScopeList(opts)
 	sources := catalog.SourcesForScopes(active)
 	reviewProgress(opts, "Building review context")
-	retrieveInput := RetrieveInput{
-		RepoRoot:     repoRoot,
-		Options:      opts,
-		Facts:        facts,
-		Plan:         plan,
-		ChangedFiles: changed,
-		DiffSnippets: diffs,
-	}
-	brief, err := BuildReviewBrief(ctx, repoRoot, opts, facts, sources, retriever, retrieveInput)
+	brief, err := BuildReviewBrief(ctx, repoRoot, opts, facts, sources, retriever)
 	if err != nil {
 		return Report{}, err
 	}
@@ -149,24 +100,39 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Sources:      sources,
 		ActiveScopes: active,
 		Brief:        brief,
-		Triage:       triage,
-		RiskTags:     plan.RiskTags,
 	}
 	reviewProgress(opts, "Checking fallback review rules")
-	findings := evaluateFindings(reviewContext, rules)
+	heuristicFindings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
 	reviewer := e.reviewer
 	if reviewer == nil && e.autoReviewer {
 		reviewer = reviewerFromEnvWithPolicy(&policy)
 	}
-	if reviewer != nil && plan.RunAI {
+	var aiFindings []Finding
+	if reviewerAvailable(reviewer) {
 		reviewProgress(opts, "Asking AI reviewer")
-		if aiFindings, err := reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
-			findings = mergeFindings(findings, aiFindings)
+		if reviewedFindings, err := reviewer.Review(ctx, brief); err == nil && len(reviewedFindings) > 0 {
+			aiFindings = reviewedFindings
 			reviewerLabel = "heuristic+ai"
 		}
 	}
+	findings := mergeFindings(heuristicFindings, aiFindings)
 	findings = filterPatchFocusedFindings(reviewContext, findings)
+	blockingFindings, advisoryFindings := splitBlockingToolFindings(findings)
+	advisoryFindings = prepareFindingsForJudge(reviewContext, advisoryFindings)
+	judge := e.judge
+	if judge == nil && e.autoReviewer {
+		judge = judgeFromEnvWithPolicy(&policy)
+	}
+	if !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisoryFindings) > 0 {
+		reviewProgress(opts, "Verifying recommendations")
+		judgeRequest := buildJudgeRequest(reviewContext, advisoryFindings)
+		if judgeResults, err := judge.Judge(ctx, judgeRequest); err == nil {
+			advisoryFindings = applyJudgeResults(advisoryFindings, judgeResults)
+		}
+	}
+	advisoryFindings = capAdvisoryFindings(advisoryFindings)
+	findings = append(blockingFindings, advisoryFindings...)
 
 	return Report{
 		RepoRoot:          repoRoot,
@@ -181,7 +147,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		DependencyFiles:   facts.DependencyFiles,
 		TestFileCount:     facts.TestFileCount,
 		TrackedFileCount:  facts.TrackedFileCount,
-		ChangedFiles:      changed,
+		ChangedFiles:      reviewChangedFiles(ctx, repoRoot),
 		ObservationLabels: facts.observations(),
 		Findings:          findings,
 		Sources:           sources,
@@ -190,8 +156,6 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		ContextSnippets:   len(brief.Context),
 		Verbose:           opts.Verbose,
 		Color:             opts.Color,
-		Triage:            triage,
-		RiskTags:          plan.RiskTags,
 	}, nil
 }
 

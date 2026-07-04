@@ -38,6 +38,10 @@ type AIReviewer interface {
 	Review(ctx context.Context, brief ReviewBrief) ([]Finding, error)
 }
 
+type availabilityReporter interface {
+	Available() bool
+}
+
 type responsesAIReviewer struct {
 	url    string
 	token  string
@@ -106,10 +110,7 @@ type aiRecommendation struct {
 	Recommendation string   `json:"recommendation"`
 	Strength       string   `json:"strength"`
 	Evidence       []string `json:"evidence"`
-	Sources        []string `json:"sources"`
 }
-
-type sourceResolver map[string]string
 
 func reviewerFromEnv() AIReviewer {
 	return reviewerFromEnvWithPolicy(nil)
@@ -241,6 +242,41 @@ func (r unavailableAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, 
 	return nil, fmt.Errorf("%s", r.reason)
 }
 
+func (r unavailableAIReviewer) Available() bool {
+	return false
+}
+
+func (r *responsesAIReviewer) Available() bool {
+	return true
+}
+
+func (r *bedrockAnthropicReviewer) Available() bool {
+	return true
+}
+
+func (r fallbackAIReviewer) Available() bool {
+	return reviewerAvailable(r.primary) || reviewerAvailable(r.fallback)
+}
+
+func (m multiAIReviewer) Available() bool {
+	for _, item := range m.reviewers {
+		if reviewerAvailable(item.reviewer) {
+			return true
+		}
+	}
+	return false
+}
+
+func reviewerAvailable(reviewer AIReviewer) bool {
+	if reviewer == nil {
+		return false
+	}
+	if reporter, ok := reviewer.(availabilityReporter); ok {
+		return reporter.Available()
+	}
+	return true
+}
+
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	var out []Finding
 	var errors []string
@@ -266,9 +302,6 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 		}
 	}
 	if len(out) > 0 {
-		if len(out) > 6 {
-			out = out[:6]
-		}
 		return out, nil
 	}
 	if len(errors) > 0 {
@@ -300,23 +333,30 @@ func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Fi
 
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	brief = compactReviewBriefForAI(brief)
-	resolver := newSourceResolver(brief)
+	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+	return parseAIReviewContent(content)
+}
+
+func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input string, maxOutputTokens int) (string, error) {
 	payload := responseRequest{
 		Model:        r.model,
-		Instructions: reviewDeveloperPrompt(),
-		Input:        mustJSON(brief),
+		Instructions: instructions,
+		Input:        input,
 		Text: responseTextConfig{
 			Format: map[string]string{"type": "json_object"},
 		},
-		MaxOutputTokens: defaultReviewMaxOutputTokens,
+		MaxOutputTokens: maxOutputTokens,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal review request: %w", err)
+		return "", fmt.Errorf("marshal review request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create review request: %w", err)
+		return "", fmt.Errorf("create review request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+r.token)
 	req.Header.Set("Content-Type", "application/json")
@@ -329,34 +369,33 @@ func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request AI review: %w", err)
+		return "", fmt.Errorf("request AI review: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
-			return nil, fmt.Errorf("AI review status %s: %s", resp.Status, detail)
+			return "", fmt.Errorf("AI review status %s: %s", resp.Status, detail)
 		}
-		return nil, fmt.Errorf("AI review status %s", resp.Status)
+		return "", fmt.Errorf("AI review status %s", resp.Status)
 	}
 	var completion responseResult
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return nil, fmt.Errorf("decode AI review response: %w", err)
+		return "", fmt.Errorf("decode AI review response: %w", err)
 	}
 	content := strings.TrimSpace(completion.OutputText)
 	if content == "" {
 		content = strings.TrimSpace(responseOutputText(completion))
 	}
 	if content == "" {
-		return nil, fmt.Errorf("AI review response returned empty output")
+		return "", fmt.Errorf("AI review response returned empty output")
 	}
-	return parseAIReviewContent(content, resolver)
+	return content, nil
 }
 
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	brief = compactReviewBriefForAI(brief)
-	resolver := newSourceResolver(brief)
 	body, err := json.Marshal(map[string]any{
 		"anthropic_version": "bedrock-2023-05-31",
 		"max_tokens":        defaultReviewMaxOutputTokens,
@@ -418,7 +457,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 	if text == "" {
 		return nil, fmt.Errorf("Bedrock review response returned empty output")
 	}
-	return parseAIReviewContent(text, resolver)
+	return parseAIReviewContent(text)
 }
 
 func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []byte, requestPath string) {
@@ -462,12 +501,12 @@ func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []
 	req.Header.Set("X-Amz-Date", amzDate)
 }
 
-func parseAIReviewContent(content string, resolver sourceResolver) ([]Finding, error) {
+func parseAIReviewContent(content string) ([]Finding, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return nil, fmt.Errorf("decode AI review JSON: %w", err)
 	}
-	return aiRecommendationsToFindings(parsed.Recommendations, resolver), nil
+	return aiRecommendationsToFindings(parsed.Recommendations), nil
 }
 
 func sha256Hex(value []byte) string {
@@ -624,7 +663,7 @@ func truncateReviewText(text string, limit int) string {
 	return text[:limit] + "\n[truncated]\n"
 }
 
-func aiRecommendationsToFindings(recommendations []aiRecommendation, resolver sourceResolver) []Finding {
+func aiRecommendationsToFindings(recommendations []aiRecommendation) []Finding {
 	var out []Finding
 	for i, rec := range recommendations {
 		title := strings.TrimSpace(rec.Title)
@@ -646,68 +685,17 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation, resolver so
 			}
 		}
 		out = append(out, Finding{
-			ID:               fmt.Sprintf("ai.review.%d", i+1),
-			Scopes:           []string{"architecture", "dependencies", "testing", "maintainability"},
-			Title:            title,
-			Summary:          summary,
-			Benefit:          benefit,
-			Evidence:         evidence,
-			Recommendation:   recommendation,
-			Strength:         strength,
-			SourcePublishers: resolver.Resolve(rec.Sources),
+			ID:             fmt.Sprintf("ai.review.%d", i+1),
+			Scopes:         []string{"architecture", "dependencies", "testing", "maintainability"},
+			Title:          title,
+			Summary:        summary,
+			Benefit:        benefit,
+			Evidence:       evidence,
+			Recommendation: recommendation,
+			Strength:       strength,
 		})
 	}
 	return out
-}
-
-func newSourceResolver(brief ReviewBrief) sourceResolver {
-	resolver := sourceResolver{}
-	for _, snippet := range brief.Context {
-		publisher := strings.TrimSpace(firstNonEmpty(snippet.Publisher, contextSnippetPublisher(snippet)))
-		if publisher == "" {
-			continue
-		}
-		for _, key := range []string{snippet.SourceLabel, snippet.Ref} {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				resolver[key] = publisher
-			}
-		}
-	}
-	for _, ref := range brief.SourceRefs {
-		publisher := strings.TrimSpace(ref.Publisher)
-		if publisher == "" {
-			continue
-		}
-		for _, key := range []string{ref.ID, ref.Source, ref.URL, ref.File} {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				resolver[key] = publisher
-			}
-		}
-	}
-	for _, source := range brief.SourceCatalog {
-		id := strings.TrimSpace(source.ID)
-		publisher := strings.TrimSpace(source.Publisher)
-		if id != "" && publisher != "" {
-			resolver[id] = publisher
-		}
-	}
-	return resolver
-}
-
-func (r sourceResolver) Resolve(sources []string) []string {
-	var out []string
-	for _, source := range sources {
-		source = strings.TrimSpace(source)
-		if source == "" {
-			continue
-		}
-		if publisher := strings.TrimSpace(r[source]); publisher != "" {
-			out = append(out, publisher)
-		}
-	}
-	return dedupeNonEmptyStrings(out)
 }
 
 func reviewDeveloperPrompt() string {
@@ -727,7 +715,7 @@ func reviewDeveloperPrompt() string {
 		"Use static_tool_results as hard evidence. Failed tests, vet warnings, compile errors, and linter-like diagnostics should outrank speculative architecture advice. Ignore skipped tool results unless the skipped reason itself is clearly actionable.",
 		"Use static.diff_snippets as the primary evidence for what changed. Prefer findings tied to changed lines over repo-wide advice.",
 		"Use code_quality_hints as concrete candidates. Confirm whether they matter from the provided snippets before recommending a fix.",
-		"Treat source_refs and source_catalog as the attribution set. AI output is synthesis, not evidence; every recommendation must be traceable to static facts, diff snippets, context snippets, source_refs, or source_catalog.",
+		"Treat source_refs as the attribution set. AI output is synthesis, not evidence; every recommendation must be traceable to static facts, diff snippets, context snippets, or source_refs.",
 		"Every recommendation must name at least one changed file path, Module, static tool result, code_quality_hint, or context source label. Do not produce coverage-only or structure-only recommendations without concrete evidence.",
 		"The recommendation field must be concrete work: name the specific files or Modules to touch, the first operation to perform, and the verification to run. Avoid vague verbs like assess, consider, clarify, improve, harden, or refactor unless followed by exact code actions.",
 		"The benefit field must state the expected payoff in concrete engineering terms: performance, readability, fewer lines of code, better error handling, better testability, lower coupling, faster onboarding, more reproducible dependencies, or better observability.",
@@ -736,10 +724,9 @@ func reviewDeveloperPrompt() string {
 		"Apply the deletion test: if deleting a Module removes complexity, call it shallow; if complexity spreads across callers, the Module is earning its keep.",
 		"Use dependency categories internally: in-process, local-substitutable, remote but owned, true external. Mention adapters only when the seam needs more than one adapter.",
 		"Use source_catalog and labeled context snippets internally. It is okay to mention source labels like R1 or L2 in evidence, but never output source titles or URLs.",
-		"Every recommendation must include sources as an array of source_catalog IDs or context/source_ref labels that directly informed it, such as R1, L2, or owasp-asvs. Use an empty sources array only when no provided source informed the recommendation.",
 		"Only produce recommendations tied to the provided repo context. Reject generic best-practice advice.",
 		"If no concrete issue meets the active profile, return an empty recommendations array.",
-		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"sources\":[string]}]}.",
+		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string]}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")
 }

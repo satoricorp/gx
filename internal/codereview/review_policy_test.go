@@ -108,12 +108,7 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
-		RepoRoot: t.TempDir(),
-		Options:  Options{ReviewPolicy: policy},
-		Facts:    RepoFacts{Files: []string{"internal/webhook/handler.go"}},
-		Plan:     ReviewExecutionPlan{RunReviewResources: true},
-	})
+	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/webhook/handler.go"}}, nil)
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -140,12 +135,7 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
-		RepoRoot: t.TempDir(),
-		Options:  Options{ReviewPolicy: policy},
-		Facts:    RepoFacts{Files: []string{"internal/session/replay.go"}},
-		Plan:     ReviewExecutionPlan{RunReviewResources: true},
-	})
+	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/session/replay.go"}}, nil)
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -188,7 +178,7 @@ func TestReviewerFromPolicyUsesOpenAIAndAnthropicModels(t *testing.T) {
 	}
 }
 
-func TestMultiReviewerCallsEveryProviderBeforeLimitingFindings(t *testing.T) {
+func TestMultiReviewerCallsEveryProviderWithoutTruncatingFindings(t *testing.T) {
 	openai := &countingReviewer{findings: []Finding{
 		{ID: "ai.review.1", Title: "one", Summary: "summary one"},
 		{ID: "ai.review.2", Title: "two", Summary: "summary two"},
@@ -213,8 +203,8 @@ func TestMultiReviewerCallsEveryProviderBeforeLimitingFindings(t *testing.T) {
 	if openai.calls != 1 || anthropic.calls != 1 {
 		t.Fatalf("calls = openai %d anthropic %d, want both called once", openai.calls, anthropic.calls)
 	}
-	if len(findings) != 6 {
-		t.Fatalf("findings = %d, want result limit applied after both reviewers run", len(findings))
+	if len(findings) != 8 {
+		t.Fatalf("findings = %d, want all provider findings", len(findings))
 	}
 }
 
