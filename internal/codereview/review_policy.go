@@ -93,11 +93,12 @@ func (p ReviewPolicy) ContextSnippets() []ContextSnippet {
 	var snippets []ContextSnippet
 	if strings.TrimSpace(p.Text) != "" {
 		snippets = append(snippets, ContextSnippet{
-			Kind:   "review_policy",
-			Ref:    p.Path,
-			Text:   p.Text,
-			Source: "local",
-			File:   p.Path,
+			Kind:      "review_policy",
+			Ref:       p.Path,
+			Text:      p.Text,
+			Source:    "local",
+			Publisher: "this repo",
+			File:      p.Path,
 		})
 	}
 	for _, ref := range p.References {
@@ -105,12 +106,13 @@ func (p ReviewPolicy) ContextSnippets() []ContextSnippet {
 			continue
 		}
 		snippets = append(snippets, ContextSnippet{
-			Kind:   "review_reference",
-			Ref:    ref.URL,
-			Text:   ref.Summary,
-			Source: "review.md-url",
-			URL:    ref.URL,
-			Title:  ref.URL,
+			Kind:      "review_reference",
+			Ref:       ref.URL,
+			Text:      ref.Summary,
+			Source:    "review.md-url",
+			Publisher: publisherFromURLHost(ref.URL),
+			URL:       ref.URL,
+			Title:     ref.URL,
 		})
 	}
 	return snippets
