@@ -11,6 +11,7 @@ import (
 
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GX_REVIEW_AI", "0")
+	_ = os.Setenv("GX_REVIEW_JUDGE", "0")
 	_ = os.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	os.Exit(m.Run())
 }
@@ -150,16 +151,15 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 			{Path: "AGENTS.md", Present: false},
 		},
 		Findings: []Finding{{
-			ID:               "testing.no-tests",
-			Scopes:           []string{"testing", "maintainability"},
-			Title:            "No test files detected",
-			Summary:          "No test surface was detected.",
-			Benefit:          "Improves regression safety.",
-			Evidence:         []Evidence{{Label: "Test files", Value: "0"}},
-			Recommendation:   "Add tests.",
-			Strength:         "Strong",
-			SourceIDs:        []string{"fowler-test-pyramid"},
-			SourcePublishers: []string{"Martin Fowler"},
+			ID:             "testing.no-tests",
+			Scopes:         []string{"testing", "maintainability"},
+			Title:          "No test files detected",
+			Summary:        "No test surface was detected.",
+			Benefit:        "Improves regression safety.",
+			Evidence:       []Evidence{{Label: "Test files", Value: "0"}},
+			Recommendation: "Add tests.",
+			Strength:       "Strong",
+			SourceIDs:      []string{"fowler-test-pyramid"},
 		}},
 	}
 
@@ -170,7 +170,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 		"**Why:** No test surface was detected.",
 		"**Benefit:** Improves regression safety.",
 		"**Do next:** Add tests.",
-		"**Informed by:** Martin Fowler",
+		"**Attribution:** `fowler-test-pyramid`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
@@ -183,9 +183,8 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 	}
 }
 
-func TestRenderMarkdownVerboseIncludesAttributionSections(t *testing.T) {
+func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 	report := Report{
-		Verbose: true,
 		Findings: []Finding{{
 			ID:             "architecture.generic-package-name",
 			Title:          "Generic package names reduce Interface clarity",
@@ -196,24 +195,24 @@ func TestRenderMarkdownVerboseIncludesAttributionSections(t *testing.T) {
 			SourceIDs:      []string{"go-code-review-comments", "custom-source"},
 		}},
 		Sources: []Source{
-			{ID: "go-code-review-comments", Title: "Go Code Review Comments", URL: "https://go.dev/wiki/CodeReviewComments", Publisher: "Go project"},
+			{ID: "go-code-review-comments", Title: "Go Code Review Comments", URL: "https://go.dev/wiki/CodeReviewComments"},
 			{ID: "custom-source", Title: "Custom Reference"},
 		},
 		SourceRefs: []SourceRef{
-			{ID: "R1", Kind: "indexed_code", Publisher: "this repo", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:gx"},
-			{ID: "L1", Kind: "local", Publisher: "this repo", File: "CONTEXT.md", StartLine: 12, Source: "local"},
+			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:gx"},
+			{ID: "L1", Kind: "local", File: "CONTEXT.md", StartLine: 12, Source: "local"},
 		},
 	}
 
 	text := RenderMarkdown(report)
 	for _, want := range []string{
-		"**Informed by:** Go project",
+		"**Attribution:** [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) · Custom Reference (`custom-source`)",
 		"## Sources",
 		"- [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)",
 		"- Custom Reference (`custom-source`)",
 		"## Context Sources",
-		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:gx · publisher=this repo",
-		"`L1` `CONTEXT.md:12` · publisher=this repo",
+		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:gx",
+		"`L1` `CONTEXT.md:12`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
@@ -243,7 +242,7 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 	}
 }
 
-func TestSourcesAreCollectedButRenderedOnlyWhenVerbose(t *testing.T) {
+func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	root := t.TempDir()
 	report, err := Review(context.Background(), root, Options{Scope: "security"})
 	if err != nil {
@@ -253,13 +252,8 @@ func TestSourcesAreCollectedButRenderedOnlyWhenVerbose(t *testing.T) {
 		t.Fatal("Review() did not collect internal sources")
 	}
 	text := RenderMarkdown(report)
-	if strings.Contains(text, "## Sources") {
-		t.Fatalf("RenderMarkdown() included sources by default:\n%s", text)
-	}
-	report.Verbose = true
-	verbose := RenderMarkdown(report)
-	if !strings.Contains(verbose, "## Sources") {
-		t.Fatalf("RenderMarkdown(verbose) missing sources section:\n%s", verbose)
+	if !strings.Contains(text, "## Sources") {
+		t.Fatalf("RenderMarkdown() missing sources section:\n%s", text)
 	}
 }
 
@@ -475,7 +469,7 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 		TrackedFileCount: 5,
 	}
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Publisher: "Go project", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
+	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), facts, []Source{{ID: "go-package-names", Title: "hidden", URL: "https://example.com", Scopes: []string{"architecture"}}}, LocalContextRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -499,9 +493,6 @@ func TestBuildReviewBriefUsesArchitectureRubricAndContext(t *testing.T) {
 	}
 	if len(brief.SourceCatalog) != 1 || brief.SourceCatalog[0].ID != "go-package-names" {
 		t.Fatalf("SourceCatalog = %#v", brief.SourceCatalog)
-	}
-	if brief.SourceCatalog[0].Publisher != "Go project" {
-		t.Fatalf("SourceCatalog[0].Publisher = %q, want Go project", brief.SourceCatalog[0].Publisher)
 	}
 }
 
@@ -617,53 +608,9 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"observability",
 		"broad architecture",
 		"empty recommendations array",
-		"\"sources\":[string]",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("review prompt missing %q in:\n%s", want, prompt)
-		}
-	}
-}
-
-func TestAIReviewSourceResolutionRendersUsedPublishersOnly(t *testing.T) {
-	brief := ReviewBrief{
-		Context: []ContextSnippet{{
-			Kind:        "review_resource",
-			Ref:         "owasp-asvs#2",
-			SourceLabel: "R1",
-			Publisher:   "OWASP",
-		}},
-		SourceCatalog: []SourceBrief{{
-			ID:        "owasp-asvs",
-			Publisher: "OWASP",
-		}},
-	}
-	content := `{"recommendations":[{"title":"Verify authz checks","summary":"internal/auth/session.go changes a guarded path.","benefit":"Prevents authorization regressions.","recommendation":"Update internal/auth/session.go and run go test ./internal/auth.","strength":"Strong","evidence":["internal/auth/session.go"],"sources":["R1","owasp-asvs","unknown-source","R1"]},{"title":"No source case","summary":"internal/auth/session.go should get a narrow test.","benefit":"Improves regression safety.","recommendation":"Add a focused test and run go test ./internal/auth.","strength":"Worth exploring","evidence":["internal/auth/session.go"],"sources":[]}]}`
-
-	findings, err := parseAIReviewContent(content, newSourceResolver(brief))
-	if err != nil {
-		t.Fatalf("parseAIReviewContent() error = %v", err)
-	}
-	if len(findings) != 2 {
-		t.Fatalf("findings = %#v, want two", findings)
-	}
-	if got := strings.Join(findings[0].SourcePublishers, ","); got != "OWASP" {
-		t.Fatalf("SourcePublishers = %q, want OWASP", got)
-	}
-	if len(findings[1].SourcePublishers) != 0 {
-		t.Fatalf("empty sources produced publishers: %#v", findings[1].SourcePublishers)
-	}
-
-	text := RenderMarkdown(Report{Findings: findings})
-	if !strings.Contains(text, "**Informed by:** OWASP") {
-		t.Fatalf("RenderMarkdown() missing publisher attribution:\n%s", text)
-	}
-	if count := strings.Count(text, "**Informed by:**"); count != 1 {
-		t.Fatalf("RenderMarkdown() rendered %d attribution lines, want one:\n%s", count, text)
-	}
-	for _, unwanted := range []string{"unknown-source", "owasp-asvs", "R1", "## Sources", "## Context Sources", "**Attribution:**"} {
-		if strings.Contains(text, unwanted) {
-			t.Fatalf("RenderMarkdown() leaked %q:\n%s", unwanted, text)
 		}
 	}
 }
@@ -837,8 +784,10 @@ func TestJavaScriptLockfileFinding(t *testing.T) {
 
 func TestArchitecturePackageFindings(t *testing.T) {
 	root := t.TempDir()
+	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "internal/util/format.go", "package util\n")
 	writeFile(t, root, "internal/authoring/engine.go", "package authoring\n")
+	writeFile(t, root, "internal/authoring/engine_test.go", "package authoring\n")
 	writeFile(t, root, "internal/authoring/proposal.go", "package authoring\n")
 	writeFile(t, root, "internal/orchestrator/a.go", "package orchestrator\n")
 	writeFile(t, root, "internal/orchestrator/b.go", "package orchestrator\n")
