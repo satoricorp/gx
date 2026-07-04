@@ -11,7 +11,6 @@ import (
 
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GX_REVIEW_AI", "0")
-	_ = os.Setenv("GX_REVIEW_JUDGE", "0")
 	_ = os.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	os.Exit(m.Run())
 }
@@ -392,6 +391,67 @@ func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
 	}
 }
 
+func TestOpenAIReviewerModelDefaultAndEnvPrecedence(t *testing.T) {
+	tests := []struct {
+		name          string
+		policyModel   string
+		openAIModel   string
+		gxReviewModel string
+		envModel      string
+		want          string
+	}{
+		{name: "default", want: "gpt-5.5"},
+		{name: "openai env", openAIModel: "gpt-openai", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-openai"},
+		{name: "gx review env", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-gx"},
+		{name: "openai model env", envModel: "gpt-env", want: "gpt-env"},
+		{name: "policy hint", policyModel: "gpt-policy", openAIModel: "gpt-openai", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-policy"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GX_OPENAI_PROXY_URL", "")
+			t.Setenv("GX_CLOUD_URL", "off")
+			t.Setenv("OPENAI_API_KEY", "openai-key")
+			t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
+			t.Setenv("GX_OPENAI_API_KEY", "")
+			t.Setenv("GX_OPENAI_BASE_URL", "")
+			t.Setenv("GX_REVIEW_OPENAI_MODEL", tt.openAIModel)
+			t.Setenv("GX_REVIEW_MODEL", tt.gxReviewModel)
+			t.Setenv("OPENAI_MODEL", tt.envModel)
+			t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
+
+			reviewer := openAIReviewerFromEnvWithModel(tt.policyModel)
+			got, ok := reviewer.(*responsesAIReviewer)
+			if !ok {
+				t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
+			}
+			if got.model != tt.want {
+				t.Fatalf("model = %q, want %q", got.model, tt.want)
+			}
+			if got.judgeModel != tt.want {
+				t.Fatalf("judgeModel = %q, want same as review model %q", got.judgeModel, tt.want)
+			}
+		})
+	}
+}
+
+func TestOpenAIReviewerJudgeModelOverride(t *testing.T) {
+	t.Setenv("GX_OPENAI_PROXY_URL", "")
+	t.Setenv("GX_CLOUD_URL", "off")
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
+	t.Setenv("GX_REVIEW_OPENAI_MODEL", "gpt-review")
+	t.Setenv("GX_REVIEW_JUDGE_MODEL", "gpt-judge")
+
+	reviewer := openAIReviewerFromEnv()
+	got, ok := reviewer.(*responsesAIReviewer)
+	if !ok {
+		t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
+	}
+	if got.model != "gpt-review" || got.judgeModel != "gpt-judge" {
+		t.Fatalf("models = review %q judge %q", got.model, got.judgeModel)
+	}
+}
+
 func TestStaticToolFailureBeatsSpeculativeFindings(t *testing.T) {
 	findings := evaluateFindings(ReviewContext{
 		ActiveScopes: []string{"architecture", "testing", "maintainability", "dependencies"},
@@ -547,6 +607,45 @@ func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
 	}
 	if !strings.Contains(brief.Static.DiffSnippets[0].Diff, "+func NewBehavior()") {
 		t.Fatalf("DiffSnippets[0] = %#v, want added function diff", brief.Static.DiffSnippets[0])
+	}
+}
+
+func TestDiffTruncationKeepsCompleteLines(t *testing.T) {
+	diff := strings.Join([]string{
+		"diff --git a/app.go b/app.go",
+		"@@ -1 +1 @@",
+		"-old line",
+		"+new line",
+	}, "\n")
+
+	truncated := truncateDiffText(diff, strings.Index(diff, "-old line")+3)
+	if strings.Contains(truncated, "-ol") {
+		t.Fatalf("truncateDiffText() cut mid-line:\n%s", truncated)
+	}
+	if !strings.Contains(truncated, "[truncated]") {
+		t.Fatalf("truncateDiffText() = %q, want truncation marker", truncated)
+	}
+}
+
+func TestDiffTruncationPrefersHunkBoundaries(t *testing.T) {
+	diff := strings.Join([]string{
+		"diff --git a/app.go b/app.go",
+		"@@ -1,3 +1,4 @@",
+		" line one",
+		"+line two",
+		" line three",
+		"@@ -20,3 +21,4 @@",
+		" line twenty",
+		"+line twenty one",
+	}, "\n")
+	limit := strings.Index(diff, "@@ -20") + len("@@ -20")
+
+	truncated := truncateDiffText(diff, limit)
+	if strings.Contains(truncated, "@@ -20") || strings.Contains(truncated, "line twenty") {
+		t.Fatalf("truncateDiffText() did not stop before next hunk:\n%s", truncated)
+	}
+	if !strings.Contains(truncated, "+line two") {
+		t.Fatalf("truncateDiffText() lost useful first hunk:\n%s", truncated)
 	}
 }
 
@@ -784,10 +883,8 @@ func TestJavaScriptLockfileFinding(t *testing.T) {
 
 func TestArchitecturePackageFindings(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "internal/util/format.go", "package util\n")
 	writeFile(t, root, "internal/authoring/engine.go", "package authoring\n")
-	writeFile(t, root, "internal/authoring/engine_test.go", "package authoring\n")
 	writeFile(t, root, "internal/authoring/proposal.go", "package authoring\n")
 	writeFile(t, root, "internal/orchestrator/a.go", "package orchestrator\n")
 	writeFile(t, root, "internal/orchestrator/b.go", "package orchestrator\n")

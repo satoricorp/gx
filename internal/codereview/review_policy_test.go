@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) {
@@ -178,7 +179,7 @@ func TestReviewerFromPolicyUsesOpenAIAndAnthropicModels(t *testing.T) {
 	}
 }
 
-func TestMultiReviewerCallsEveryProviderWithoutTruncatingFindings(t *testing.T) {
+func TestMultiReviewerCallsEveryProviderBeforeLimitingFindings(t *testing.T) {
 	openai := &countingReviewer{findings: []Finding{
 		{ID: "ai.review.1", Title: "one", Summary: "summary one"},
 		{ID: "ai.review.2", Title: "two", Summary: "summary two"},
@@ -203,8 +204,43 @@ func TestMultiReviewerCallsEveryProviderWithoutTruncatingFindings(t *testing.T) 
 	if openai.calls != 1 || anthropic.calls != 1 {
 		t.Fatalf("calls = openai %d anthropic %d, want both called once", openai.calls, anthropic.calls)
 	}
-	if len(findings) != 8 {
-		t.Fatalf("findings = %d, want all provider findings", len(findings))
+	if len(findings) != 6 {
+		t.Fatalf("findings = %d, want result limit applied after both reviewers run", len(findings))
+	}
+}
+
+func TestMultiReviewerRunsProvidersConcurrently(t *testing.T) {
+	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "slow-a", label: "Slow A", reviewer: delayedReviewer{delay: 120 * time.Millisecond, finding: Finding{ID: "one", Title: "one", Summary: "summary one"}}},
+		{name: "slow-b", label: "Slow B", reviewer: delayedReviewer{delay: 120 * time.Millisecond, finding: Finding{ID: "two", Title: "two", Summary: "summary two"}}},
+	}}
+
+	start := time.Now()
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("findings = %#v, want two findings", findings)
+	}
+	if elapsed >= 220*time.Millisecond {
+		t.Fatalf("Review() took %s, want roughly one child duration", elapsed)
+	}
+}
+
+func TestMultiReviewerOutputOrderIsDeterministic(t *testing.T) {
+	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "first", label: "First", reviewer: delayedReviewer{delay: 80 * time.Millisecond, finding: Finding{ID: "one", Title: "one", Summary: "summary one"}}},
+		{name: "second", label: "Second", reviewer: delayedReviewer{delay: 10 * time.Millisecond, finding: Finding{ID: "two", Title: "two", Summary: "summary two"}}},
+	}}
+
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if got := []string{findings[0].ID, findings[1].ID}; strings.Join(got, ",") != "first.one,second.two" {
+		t.Fatalf("finding order = %#v, want provider order", got)
 	}
 }
 
@@ -239,4 +275,20 @@ type countingReviewer struct {
 func (r *countingReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	r.calls++
 	return r.findings, nil
+}
+
+type delayedReviewer struct {
+	delay   time.Duration
+	finding Finding
+}
+
+func (r delayedReviewer) Review(ctx context.Context, _ ReviewBrief) ([]Finding, error) {
+	timer := time.NewTimer(r.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return []Finding{r.finding}, nil
+	}
 }
