@@ -14,6 +14,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/satoricorp/gx/internal/cloud"
@@ -21,16 +22,19 @@ import (
 )
 
 const (
-	defaultReviewModel           = "gpt-4.1-mini"
+	defaultReviewModel           = "gpt-5.5"
 	defaultReviewMaxOutputTokens = 6000
 	defaultOpenAIBaseURL         = "https://api.openai.com/v1"
 	maxAIContextSnippetBytes     = 1200
+	maxAIDiffSnippetBytes        = 6000
 	maxAIStaticToolOutputBytes   = 4000
 	maxAIContextSnippets         = 14
 	maxAIDeepContextSnippets     = 40
 	maxAICodeQualityHints        = 20
 	maxAIModuleSummaries         = 12
 	maxAIChangedFiles            = 60
+	maxAIBriefBytes              = 120 * 1024
+	maxAIDeepBriefBytes          = 300 * 1024
 	bedrockReviewModel           = "anthropic.claude-sonnet-4-6"
 )
 
@@ -38,15 +42,12 @@ type AIReviewer interface {
 	Review(ctx context.Context, brief ReviewBrief) ([]Finding, error)
 }
 
-type availabilityReporter interface {
-	Available() bool
-}
-
 type responsesAIReviewer struct {
-	url    string
-	token  string
-	model  string
-	client *http.Client
+	url        string
+	token      string
+	model      string
+	judgeModel string
+	client     *http.Client
 }
 
 type namedAIReviewer struct {
@@ -171,18 +172,20 @@ func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
 }
 
 func cloudOpenAIReviewerFromEnv(model string) AIReviewer {
+	judgeModel := reviewJudgeModel(model)
 	if url := strings.TrimSpace(os.Getenv("GX_OPENAI_PROXY_URL")); url != "" {
 		if token, err := cloud.CloudAPIToken(); err == nil {
-			return &responsesAIReviewer{url: url, token: token, model: model, client: &http.Client{Timeout: 120 * time.Second}}
+			return &responsesAIReviewer{url: url, token: token, model: model, judgeModel: judgeModel, client: &http.Client{Timeout: 120 * time.Second}}
 		}
 	}
 	if baseURL := cloud.CloudBaseURL(); baseURL != "" {
 		if token, err := cloud.CloudAPIToken(); err == nil {
 			return &responsesAIReviewer{
-				url:    strings.TrimRight(baseURL, "/") + "/gx/openai/responses",
-				token:  token,
-				model:  model,
-				client: &http.Client{Timeout: 120 * time.Second},
+				url:        strings.TrimRight(baseURL, "/") + "/gx/openai/responses",
+				token:      token,
+				model:      model,
+				judgeModel: judgeModel,
+				client:     &http.Client{Timeout: 120 * time.Second},
 			}
 		}
 	}
@@ -207,11 +210,16 @@ func directOpenAIReviewerFromEnv(model string) (AIReviewer, error) {
 		return nil, fmt.Errorf("OpenAI base URL is invalid: %w", err)
 	}
 	return &responsesAIReviewer{
-		url:    baseURL + "/responses",
-		token:  apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 120 * time.Second},
+		url:        baseURL + "/responses",
+		token:      apiKey,
+		model:      model,
+		judgeModel: reviewJudgeModel(model),
+		client:     &http.Client{Timeout: 120 * time.Second},
 	}, nil
+}
+
+func reviewJudgeModel(reviewModel string) string {
+	return firstNonEmpty(os.Getenv("GX_REVIEW_JUDGE_MODEL"), reviewModel)
 }
 
 func bedrockAnthropicReviewerFromEnv() AIReviewer {
@@ -242,52 +250,39 @@ func (r unavailableAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, 
 	return nil, fmt.Errorf("%s", r.reason)
 }
 
-func (r unavailableAIReviewer) Available() bool {
-	return false
-}
-
-func (r *responsesAIReviewer) Available() bool {
-	return true
-}
-
-func (r *bedrockAnthropicReviewer) Available() bool {
-	return true
-}
-
-func (r fallbackAIReviewer) Available() bool {
-	return reviewerAvailable(r.primary) || reviewerAvailable(r.fallback)
-}
-
-func (m multiAIReviewer) Available() bool {
-	for _, item := range m.reviewers {
-		if reviewerAvailable(item.reviewer) {
-			return true
-		}
-	}
-	return false
-}
-
-func reviewerAvailable(reviewer AIReviewer) bool {
-	if reviewer == nil {
-		return false
-	}
-	if reporter, ok := reviewer.(availabilityReporter); ok {
-		return reporter.Available()
-	}
-	return true
-}
-
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	type reviewResult struct {
+		item     namedAIReviewer
+		findings []Finding
+		err      error
+	}
+	results := make([]reviewResult, len(m.reviewers))
+	var wg sync.WaitGroup
+	for i, item := range m.reviewers {
+		i, item := i, item
+		results[i].item = item
+		if item.reviewer == nil {
+			results[i].err = fmt.Errorf("reviewer is not configured")
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			findings, err := item.reviewer.Review(ctx, brief)
+			results[i] = reviewResult{item: item, findings: findings, err: err}
+		}()
+	}
+	wg.Wait()
+
 	var out []Finding
 	var errors []string
 	seen := map[string]struct{}{}
-	for _, item := range m.reviewers {
-		findings, err := item.reviewer.Review(ctx, brief)
-		if err != nil {
-			errors = append(errors, item.label+": "+err.Error())
+	for _, result := range results {
+		if result.err != nil {
+			errors = append(errors, result.item.label+": "+result.err.Error())
 			continue
 		}
-		for _, finding := range findings {
+		for _, finding := range result.findings {
 			key := strings.ToLower(strings.TrimSpace(finding.Title + "\x00" + finding.Summary))
 			if key == "\x00" {
 				continue
@@ -296,12 +291,15 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 				continue
 			}
 			seen[key] = struct{}{}
-			finding.ID = item.name + "." + finding.ID
-			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
+			finding.ID = result.item.name + "." + finding.ID
+			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: result.item.label}}, finding.Evidence...)
 			out = append(out, finding)
 		}
 	}
 	if len(out) > 0 {
+		if len(out) > 6 {
+			out = out[:6]
+		}
 		return out, nil
 	}
 	if len(errors) > 0 {
@@ -333,30 +331,22 @@ func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Fi
 
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	brief = compactReviewBriefForAI(brief)
-	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
-	if err != nil {
-		return nil, err
-	}
-	return parseAIReviewContent(content)
-}
-
-func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input string, maxOutputTokens int) (string, error) {
 	payload := responseRequest{
 		Model:        r.model,
-		Instructions: instructions,
-		Input:        input,
+		Instructions: reviewDeveloperPrompt(),
+		Input:        mustJSON(brief),
 		Text: responseTextConfig{
 			Format: map[string]string{"type": "json_object"},
 		},
-		MaxOutputTokens: maxOutputTokens,
+		MaxOutputTokens: defaultReviewMaxOutputTokens,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("marshal review request: %w", err)
+		return nil, fmt.Errorf("marshal review request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("create review request: %w", err)
+		return nil, fmt.Errorf("create review request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+r.token)
 	req.Header.Set("Content-Type", "application/json")
@@ -369,29 +359,29 @@ func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions str
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("request AI review: %w", err)
+		return nil, fmt.Errorf("request AI review: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
-			return "", fmt.Errorf("AI review status %s: %s", resp.Status, detail)
+			return nil, fmt.Errorf("AI review status %s: %s", resp.Status, detail)
 		}
-		return "", fmt.Errorf("AI review status %s", resp.Status)
+		return nil, fmt.Errorf("AI review status %s", resp.Status)
 	}
 	var completion responseResult
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return "", fmt.Errorf("decode AI review response: %w", err)
+		return nil, fmt.Errorf("decode AI review response: %w", err)
 	}
 	content := strings.TrimSpace(completion.OutputText)
 	if content == "" {
 		content = strings.TrimSpace(responseOutputText(completion))
 	}
 	if content == "" {
-		return "", fmt.Errorf("AI review response returned empty output")
+		return nil, fmt.Errorf("AI review response returned empty output")
 	}
-	return content, nil
+	return parseAIReviewContent(content)
 }
 
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
@@ -553,7 +543,11 @@ func compactReviewBriefForAI(brief ReviewBrief) ReviewBrief {
 	brief.Static.ToolResults = compactStaticToolResults(brief.Static.ToolResults)
 	brief.Static.CodeQuality = limitCodeQualityHints(brief.Static.CodeQuality, maxAICodeQualityHints)
 	brief.Context = compactContextSnippets(brief.Context, contextLimit)
-	return brief
+	budget := maxAIBriefBytes
+	if deep {
+		budget = maxAIDeepBriefBytes
+	}
+	return enforceReviewBriefBudget(brief, budget)
 }
 
 func compactDiffSnippets(snippets []DiffSnippet, limit int) []DiffSnippet {
@@ -562,7 +556,7 @@ func compactDiffSnippets(snippets []DiffSnippet, limit int) []DiffSnippet {
 	}
 	out := make([]DiffSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
-		snippet.Diff = truncateReviewText(snippet.Diff, maxAIContextSnippetBytes)
+		snippet.Diff = truncateDiffText(snippet.Diff, maxAIDiffSnippetBytes)
 		if strings.TrimSpace(snippet.File) == "" || strings.TrimSpace(snippet.Diff) == "" {
 			continue
 		}
@@ -589,6 +583,8 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 	if limit > 0 && len(snippets) > limit {
 		snippets = prioritizeContextSnippets(snippets)
 		snippets = snippets[:limit]
+	} else {
+		snippets = prioritizeContextSnippets(snippets)
 	}
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
@@ -596,6 +592,32 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 		out = append(out, snippet)
 	}
 	return out
+}
+
+func enforceReviewBriefBudget(brief ReviewBrief, budget int) ReviewBrief {
+	if budget <= 0 {
+		return brief
+	}
+	for len(mustJSON(brief)) > budget {
+		switch {
+		case len(brief.Context) > 0:
+			brief.Context = brief.Context[:len(brief.Context)-1]
+			brief.SourceRefs = sourceRefsFromContextSnippets(brief.Context)
+		case len(brief.Static.DiffSnippets) > 1:
+			brief.Static.DiffSnippets = brief.Static.DiffSnippets[:len(brief.Static.DiffSnippets)-1]
+		case len(brief.Static.ToolResults) > 0:
+			brief.Static.ToolResults = brief.Static.ToolResults[:len(brief.Static.ToolResults)-1]
+		case len(brief.Static.CodeQuality) > 0:
+			brief.Static.CodeQuality = brief.Static.CodeQuality[:len(brief.Static.CodeQuality)-1]
+		case len(brief.Static.Modules) > 0:
+			brief.Static.Modules = brief.Static.Modules[:len(brief.Static.Modules)-1]
+		case len(brief.SourceCatalog) > 0:
+			brief.SourceCatalog = brief.SourceCatalog[:len(brief.SourceCatalog)-1]
+		default:
+			return brief
+		}
+	}
+	return brief
 }
 
 func prioritizeContextSnippets(snippets []ContextSnippet) []ContextSnippet {
@@ -660,7 +682,62 @@ func truncateReviewText(text string, limit int) string {
 	if limit <= 0 || len(text) <= limit {
 		return text
 	}
-	return text[:limit] + "\n[truncated]\n"
+	return text[:truncateAtLineBoundary(text, limit)] + "\n[truncated]\n"
+}
+
+func truncateDiffText(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if limit <= 0 || len(text) <= limit {
+		return text
+	}
+	end := truncateAtHunkBoundary(text, limit)
+	return strings.TrimRight(text[:end], "\n") + "\n[truncated]\n"
+}
+
+func truncateAtHunkBoundary(text string, limit int) int {
+	if limit <= 0 || len(text) <= limit {
+		return len(text)
+	}
+	cut := limit
+	if cut > len(text) {
+		cut = len(text)
+	}
+	prefix := text[:cut]
+	hunks := hunkMarkerIndexes(prefix)
+	if len(hunks) > 1 {
+		return hunks[len(hunks)-1]
+	}
+	return truncateAtLineBoundary(text, cut)
+}
+
+func hunkMarkerIndexes(text string) []int {
+	var indexes []int
+	if strings.HasPrefix(text, "@@ ") {
+		indexes = append(indexes, 0)
+	}
+	offset := 0
+	for {
+		idx := strings.Index(text[offset:], "\n@@ ")
+		if idx < 0 {
+			break
+		}
+		indexes = append(indexes, offset+idx+1)
+		offset += idx + len("\n@@ ")
+	}
+	return indexes
+}
+
+func truncateAtLineBoundary(text string, limit int) int {
+	if limit <= 0 || len(text) <= limit {
+		return len(text)
+	}
+	if limit > len(text) {
+		limit = len(text)
+	}
+	if idx := strings.LastIndex(text[:limit], "\n"); idx > 0 {
+		return idx
+	}
+	return limit
 }
 
 func aiRecommendationsToFindings(recommendations []aiRecommendation) []Finding {
