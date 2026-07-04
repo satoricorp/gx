@@ -3943,6 +3943,223 @@ func TestSplitCommitHunkRequiresPatchFile(t *testing.T) {
 	}
 }
 
+func TestSplitCommitByHunkPatchDescribesEmptyRemainderBeforeEditingAway(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	prev, _ := os.Getwd()
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	defer os.Chdir(prev)
+
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: repoRoot, Backend: "jj"})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "chg-default"
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "authoring",
+		BookmarkName: "feature/authoring",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+
+	patchFile := filepath.Join(t.TempDir(), "selected.patch")
+	if err := os.WriteFile(patchFile, []byte("diff --git a/app.go b/app.go\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	changeTemplate := `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "root"): {repoRoot + "\n"},
+			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", changeTemplate): {
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"child-change|child-commit||selected-change\n",
+			},
+			runnerKey(repoRoot, "jj", "diff", "-r", "@", "--name-only"): {
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+			},
+			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                {""},
+			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                             {""},
+			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                      {""},
+			runnerKey(repoRoot, "jj", "split", "-m", "split selected hunk", "app.go", "app_test.go"):   {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", "gx: pending remainder", "-r", "child-change"): {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", "gx: pending remainder", "-r", "work-change"):  {""},
+			runnerKey(repoRoot, "jj", "edit", "@-"):                                                    {""},
+		},
+		errors: map[string][]error{
+			runnerKey(repoRoot, "jj", "edit", "child-change"): {fmt.Errorf("child unexpectedly abandoned")},
+			runnerKey(repoRoot, "jj", "edit", "work-change"):  {fmt.Errorf("child unexpectedly abandoned")},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	_, err = svc.SplitCommitByHunkPatch(ctx, SplitCommitOptions{
+		Message:   "split selected hunk",
+		Hunk:      true,
+		PatchFile: patchFile,
+	})
+	if err == nil || !strings.Contains(err.Error(), "child unexpectedly abandoned") {
+		t.Fatalf("SplitCommitByHunkPatch() error = %v, want injected child edit failure; calls=%#v", err, runner.calls)
+	}
+	editParentCall := runnerKey(repoRoot, "jj", "edit", "@-")
+	describeIndex, editIndex := -1, -1
+	for index, call := range runner.calls {
+		if strings.Contains(call, "|jj|describe -m gx: pending remainder -r ") {
+			describeIndex = index
+		}
+		if call == editParentCall {
+			editIndex = index
+		}
+	}
+	if describeIndex < 0 || editIndex < 0 || describeIndex > editIndex {
+		t.Fatalf("calls = %#v, want child describe before editing @-", runner.calls)
+	}
+}
+
+func TestReattachRecordedContainerAtRevUsesExplicitTargetForBookmarkAndGit(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: repoRoot, Backend: "jj"})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "selected-change"
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "authoring",
+		BookmarkName: "feature/authoring",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "root"): {repoRoot + "\n"},
+			runnerKey(repoRoot, "jj", "log", "-r", "selected-commit", "--no-graph", "-T", "change_id"):                      {head + "\n"},
+			runnerKey(repoRoot, "jj", "log", "-r", "selected-commit", "--no-graph", "-T", "commit_id"):                      {"selected-commit\n"},
+			runnerKey(repoRoot, "jj", "bookmark", "set", "feature/authoring", "-r", "selected-commit", "--allow-backwards"): {""},
+			runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/authoring", "selected-commit"):                     {""},
+			runnerKey(repoRoot, "git", "symbolic-ref", "HEAD", "refs/heads/feature/authoring"):                              {""},
+			runnerKey(repoRoot, "git", "reset", "--mixed", "HEAD"):                                                          {""},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	if _, err := svc.reattachRecordedContainerAtRev(ctx, repoRoot, "feature/authoring", "feature/authoring", "selected-commit"); err != nil {
+		t.Fatalf("reattachRecordedContainerAtRev() error = %v; calls=%#v", err, runner.calls)
+	}
+	assertRunnerCalled(t, runner.calls, runnerKey(repoRoot, "jj", "bookmark", "set", "feature/authoring", "-r", "selected-commit", "--allow-backwards"))
+	assertRunnerCalled(t, runner.calls, runnerKey(repoRoot, "git", "update-ref", "refs/heads/feature/authoring", "selected-commit"))
+	assertRunnerNotCalled(t, runner.calls, runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"))
+}
+
+func TestResolveCurrentStackForAuthoringGateDoesNotUseLatestFallback(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: repoRoot, Backend: "jj"})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "stack-head"
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "latest",
+		BookmarkName: "feature/latest",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+	branch := "feature/random"
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", "empty"): {"false\n"},
+			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
+				"unrelated-work|unrelated-commit|work|unrelated-parent\n",
+			},
+			runnerKey(repoRoot, "jj", "diff", "-r", "@", "--name-only"):             {"README.md\n"},
+			runnerKey(repoRoot, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {""},
+			runnerKey(repoRoot, "jj", "log", "-r", "@-", "--no-graph", "-T", "change_id"): {
+				"unrelated-parent\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+	repo := RepoInfo{RootPath: repoRoot, Backend: "jj", BranchName: &branch}
+
+	if stack, found, err := svc.resolveCurrentStackForAuthoringGate(ctx, repo); err != nil || found {
+		t.Fatalf("strict stack gate = (%#v, %v, %v), want no stack", stack, found, err)
+	}
+}
+
 func TestSyncDefaultsToOrigin(t *testing.T) {
 	repoRoot := t.TempDir()
 	prev, _ := os.Getwd()

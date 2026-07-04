@@ -169,20 +169,22 @@ type CommitResult struct {
 }
 
 type SplitCommitOptions struct {
-	Message     string
-	Filesets    []string
-	Interactive bool
-	Hunk        bool
-	PatchFile   string
+	Message                string
+	Filesets               []string
+	Interactive            bool
+	Hunk                   bool
+	PatchFile              string
+	BookmarkRecordedCommit bool
 }
 
 type RevisionOptions struct {
-	Message             string
-	Filesets            []string
-	Interactive         bool
-	Hunk                bool
-	PatchFile           string
-	PreferredSessionIDs []string
+	Message                string
+	Filesets               []string
+	Interactive            bool
+	Hunk                   bool
+	PatchFile              string
+	PreferredSessionIDs    []string
+	BookmarkRecordedCommit bool
 }
 
 type ModifyResult struct {
@@ -423,11 +425,12 @@ func (s *Service) RecordRevision(ctx context.Context, opts RevisionOptions) (Com
 	var err error
 	if opts.Hunk || opts.Interactive || len(opts.Filesets) > 0 {
 		result, err = s.SplitCommit(ctx, SplitCommitOptions{
-			Message:     opts.Message,
-			Filesets:    opts.Filesets,
-			Interactive: opts.Interactive,
-			Hunk:        opts.Hunk,
-			PatchFile:   opts.PatchFile,
+			Message:                opts.Message,
+			Filesets:               opts.Filesets,
+			Interactive:            opts.Interactive,
+			Hunk:                   opts.Hunk,
+			PatchFile:              opts.PatchFile,
+			BookmarkRecordedCommit: opts.BookmarkRecordedCommit,
 		})
 	} else {
 		result, err = s.Commit(ctx, opts.Message)
@@ -818,7 +821,11 @@ func (s *Service) splitCommitUnlocked(ctx context.Context, repo RepoInfo, opts S
 	if err != nil {
 		return CommitResult{}, err
 	}
-	repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	if opts.BookmarkRecordedCommit {
+		repo, err = s.reattachRecordedContainerAtRev(ctx, repo.RootPath, body.BookmarkName, checkoutBranch, change.CommitID)
+	} else {
+		repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	}
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -903,6 +910,9 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "gx: pending remainder", "-r", childChange.ChangeID); err != nil {
+		return CommitResult{}, err
+	}
 	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "edit", "@-"); err != nil {
 		return CommitResult{}, err
 	}
@@ -918,12 +928,26 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 		if _, err := s.runner.Run(ctx, repo.RootPath, "git", "apply", "--whitespace=nowarn", remainingPatchPath); err != nil {
 			return CommitResult{}, err
 		}
+		childAfterRemainder, err := s.CurrentChange(ctx, repo.RootPath, "@")
+		if err != nil {
+			return CommitResult{}, err
+		}
+		if len(childAfterRemainder.Files) == 0 {
+			return CommitResult{}, fmt.Errorf("remaining hunk patch applied but jj working copy has no changes")
+		}
+	}
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "", "-r", "@"); err != nil {
+		return CommitResult{}, err
 	}
 	change, err := s.CurrentChange(ctx, repo.RootPath, "@-")
 	if err != nil {
 		return CommitResult{}, err
 	}
-	repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	if opts.BookmarkRecordedCommit {
+		repo, err = s.reattachRecordedContainerAtRev(ctx, repo.RootPath, body.BookmarkName, checkoutBranch, change.CommitID)
+	} else {
+		repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	}
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -1765,6 +1789,11 @@ func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, co
 	}
 	if result.OnBase {
 		return result.BaseRef, "base", nil
+	}
+	if stack, found, stackErr := s.resolveCurrentStackForAuthoringGate(ctx, repo); stackErr != nil {
+		return "", "", stackErr
+	} else if found && strings.TrimSpace(stack.BookmarkName) != "" {
+		return stack.BookmarkName, "stack", nil
 	}
 	change, changeErr := s.CurrentChange(ctx, repo.RootPath, "@")
 	if changeErr == nil && len(change.Files) > 0 {
@@ -3046,6 +3075,39 @@ func (s *Service) CurrentOperation(ctx context.Context, repoRoot string) (string
 	return s.runStdoutTrimmed(ctx, repoRoot, "jj", "op", "log", "-n", "1", "--no-graph", "-T", "id")
 }
 
+func (s *Service) RestoreOperation(ctx context.Context, repoRoot, opID string) error {
+	opID = strings.TrimSpace(opID)
+	if opID == "" {
+		return fmt.Errorf("operation id is required")
+	}
+	_, err := s.runner.Run(ctx, repoRoot, "jj", "op", "restore", opID)
+	return err
+}
+
+func (s *Service) CommitIDsForChangeID(ctx context.Context, repoRoot, changeID string) ([]string, error) {
+	changeID = strings.TrimSpace(changeID)
+	if changeID == "" {
+		return nil, nil
+	}
+	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", "change_id("+changeID+")", "--no-graph", "-T", "commit_id ++ \"\\n\"")
+	if err != nil {
+		return nil, err
+	}
+	return splitLines(out), nil
+}
+
+func (s *Service) DivergentChangeID(ctx context.Context, repoRoot, changeID string) (bool, []string, error) {
+	commitIDs, err := s.CommitIDsForChangeID(ctx, repoRoot, changeID)
+	if err != nil {
+		return false, nil, err
+	}
+	return len(commitIDs) > 1, commitIDs, nil
+}
+
+func (s *Service) RevisionEmpty(ctx context.Context, repoRoot, rev string) (bool, error) {
+	return s.isRevisionEmpty(ctx, repoRoot, rev)
+}
+
 func (s *Service) WorkRev(ctx context.Context, repoRoot string) (string, error) {
 	return s.currentWorkRev(ctx, repoRoot)
 }
@@ -3981,6 +4043,55 @@ func (s *Service) resolveCurrentStackForRead(ctx context.Context, repo RepoInfo)
 	return s.resolveCurrentStackForReadWithStore(ctx, store, repo, repoRow.ID)
 }
 
+func (s *Service) resolveCurrentStackForAuthoringGate(ctx context.Context, repo RepoInfo) (StackInfo, bool, error) {
+	store, err := openStore(ctx)
+	if err != nil {
+		return StackInfo{}, false, err
+	}
+	defer store.Close()
+
+	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return StackInfo{}, false, err
+	}
+	if repoRow == nil {
+		return StackInfo{}, false, nil
+	}
+	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoRow.ID); err != nil {
+		return StackInfo{}, false, err
+	}
+	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
+		return StackInfo{}, false, err
+	}
+	if s.isOnBaseBranch(repo) || s.onAuthoringCheckout(ctx, repo) {
+		return StackInfo{}, false, nil
+	}
+	if current, err := s.stackFromCurrentBookmark(ctx, store, repoRow.ID, repo.RootPath); err == nil && current != nil {
+		return stackInfoFromStorage(*current), true, nil
+	} else if err != nil {
+		return StackInfo{}, false, err
+	}
+	if headChangeID, err := s.currentWorkChangeID(ctx, repo.RootPath); err == nil && strings.TrimSpace(headChangeID) != "" {
+		stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, headChangeID)
+		if err != nil {
+			return StackInfo{}, false, err
+		}
+		if stack != nil {
+			return stackInfoFromStorage(*stack), true, nil
+		}
+	}
+	if parentChangeID, err := s.changeIDForRev(ctx, repo.RootPath, "@-"); err == nil && strings.TrimSpace(parentChangeID) != "" {
+		stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, parentChangeID)
+		if err != nil {
+			return StackInfo{}, false, err
+		}
+		if stack != nil {
+			return stackInfoFromStorage(*stack), true, nil
+		}
+	}
+	return StackInfo{}, false, nil
+}
+
 func (s *Service) resolveCurrentStackForReadWithStore(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64) (StackInfo, bool, error) {
 	if s.isOnBaseBranch(repo) || s.onAuthoringCheckout(ctx, repo) {
 		return StackInfo{}, false, nil
@@ -4360,6 +4471,31 @@ func (s *Service) reattachRecordedContainer(ctx context.Context, repoRoot, stack
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
 }
 
+func (s *Service) reattachRecordedContainerAtRev(ctx context.Context, repoRoot, stackBookmark, checkoutBranch, targetRev string) (RepoInfo, error) {
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return RepoInfo{}, fmt.Errorf("recorded container target revision is empty")
+	}
+	repo, err := s.updateContainerBookmarkAtRev(ctx, repoRoot, stackBookmark, targetRev)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	checkoutBranch = strings.TrimSpace(checkoutBranch)
+	stackBookmark = strings.TrimSpace(stackBookmark)
+	branch := firstNonEmpty(checkoutBranch, stackBookmark)
+	if branch == "" {
+		return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+	}
+	commitID, err := s.commitIDForRev(ctx, repoRoot, targetRev)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
+		return RepoInfo{}, err
+	}
+	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+}
+
 func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) (RepoInfo, error) {
 	repo, err := s.updateContainerBookmark(ctx, repoRoot, name)
 	if err != nil {
@@ -4373,6 +4509,40 @@ func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) 
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+}
+
+func (s *Service) updateContainerBookmarkAtRev(ctx context.Context, repoRoot, name, targetRev string) (RepoInfo, error) {
+	if strings.TrimSpace(name) == "" {
+		return RepoInfo{}, fmt.Errorf("container name is empty")
+	}
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return RepoInfo{}, fmt.Errorf("container target revision is empty")
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	defer store.Close()
+	repoRow, err := store.FindRepoByRoot(ctx, repoRoot)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	if repoRow != nil {
+		if err := s.repairSharedStackBookmarks(ctx, store, repoRoot, repoRow.ID, name); err != nil {
+			return RepoInfo{}, err
+		}
+		if err := s.relocateKnownStackBookmarksFromChange(ctx, store, repoRow.ID, repoRoot, name, targetRev); err != nil {
+			return RepoInfo{}, err
+		}
+		if err := s.assertBookmarkTargetAvailable(ctx, store, repoRow.ID, repoRoot, name, targetRev); err != nil {
+			return RepoInfo{}, err
+		}
+	}
+	if err := s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev); err != nil {
+		return RepoInfo{}, err
+	}
+	return s.ResolveJJRepoAtPath(ctx, repoRoot)
 }
 
 func (s *Service) updateContainerBookmark(ctx context.Context, repoRoot, name string) (RepoInfo, error) {
@@ -4446,7 +4616,15 @@ func (s *Service) setBookmarkTarget(ctx context.Context, repoRoot, name string) 
 	if err != nil {
 		return err
 	}
-	_, err = s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
+	return s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev)
+}
+
+func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, targetRev string) error {
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return fmt.Errorf("container target revision is empty")
+	}
+	_, err := s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
 	return err
 }
 
