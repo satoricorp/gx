@@ -88,11 +88,15 @@ func reviewResourceRetrieverFromEnv() ContextRetriever {
 	}
 }
 
-func (r ReviewResourceRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	opts := in.Options
+	if !in.Plan.RunReviewResources {
+		return nil, nil
+	}
 	if r.Embedder == nil || r.Store == nil {
 		return nil, nil
 	}
-	signals := reviewResourceSignals(ctx, repoRoot, opts, facts, hints)
+	signals := reviewResourceSignals(in)
 	queryText := reviewResourceQueryText(opts, signals)
 	if strings.TrimSpace(queryText) == "" {
 		return nil, nil
@@ -211,8 +215,11 @@ type reviewResourceSignalSet struct {
 	PolicyQuery string
 }
 
-func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) reviewResourceSignalSet {
-	files := reviewChangedFiles(ctx, repoRoot)
+func reviewResourceSignals(in RetrieveInput) reviewResourceSignalSet {
+	opts := in.Options
+	facts := in.Facts
+	hints := in.Hints
+	files := normalizedChangedFiles(in.ChangedFiles)
 	if len(files) == 0 {
 		files = facts.Files
 	}
@@ -226,11 +233,15 @@ func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, f
 		files = focused
 	}
 	files = limitStrings(files, 80)
+	riskTags := in.Plan.RiskTags
+	if len(riskTags) == 0 {
+		riskTags = riskTagsForReview(files, facts.DependencyFiles, opts)
+	}
 	signals := reviewResourceSignalSet{
 		Files:       files,
 		Languages:   languageTagsForFiles(files),
 		Frameworks:  frameworkTagsForFiles(files, facts.DependencyFiles),
-		RiskTags:    riskTagsForReview(files, facts.DependencyFiles, opts),
+		RiskTags:    riskTags,
 		Categories:  categoriesForReview(opts),
 		Intents:     reviewResourceIntents(opts),
 		PolicyQuery: reviewPolicyQueryText(opts.ReviewPolicy),
@@ -667,11 +678,16 @@ func indexedContextRetrieverFromEnv() ContextRetriever {
 	}
 }
 
-func (r IndexedContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r IndexedContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	opts := in.Options
+	repoRoot := in.RepoRoot
+	if !in.Plan.RunReviewResources {
+		return nil, nil
+	}
 	if r.Embedder == nil || r.Store == nil {
 		return nil, nil
 	}
-	signals := reviewResourceSignals(ctx, repoRoot, opts, facts, hints)
+	signals := reviewResourceSignals(in)
 	queryText := strings.Join([]string{
 		"GX indexed codebase and session context query",
 		reviewResourceQueryText(opts, signals),

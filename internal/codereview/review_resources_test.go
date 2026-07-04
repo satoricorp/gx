@@ -32,10 +32,15 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 		Limit:     6,
 	}
 
-	snippets, err := retriever.Retrieve(context.Background(), "/missing-repo", Options{Scope: "security"}, RepoFacts{
-		Files:           []string{"internal/auth/session.go", "db/migrations/001_add_users.sql"},
-		DependencyFiles: []string{"package.json"},
-	}, nil)
+	snippets, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot: "/missing-repo",
+		Options:  Options{Scope: "security"},
+		Facts: RepoFacts{
+			Files:           []string{"internal/auth/session.go", "db/migrations/001_add_users.sql"},
+			DependencyFiles: []string{"package.json"},
+		},
+		Plan: ReviewExecutionPlan{RunReviewResources: true},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}

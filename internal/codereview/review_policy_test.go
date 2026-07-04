@@ -108,7 +108,12 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/webhook/handler.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot: t.TempDir(),
+		Options:  Options{ReviewPolicy: policy},
+		Facts:    RepoFacts{Files: []string{"internal/webhook/handler.go"}},
+		Plan:     ReviewExecutionPlan{RunReviewResources: true},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -135,7 +140,12 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/session/replay.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot: t.TempDir(),
+		Options:  Options{ReviewPolicy: policy},
+		Facts:    RepoFacts{Files: []string{"internal/session/replay.go"}},
+		Plan:     ReviewExecutionPlan{RunReviewResources: true},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
