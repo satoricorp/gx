@@ -12,7 +12,7 @@ import (
 )
 
 const maxContextSnippetBytes = 3200
-const maxDiffSnippetBytes = 5000
+const maxDiffSnippetBytes = 20000
 const maxDiffSnippetFiles = 10
 const maxDeepDiffSnippetFiles = 24
 
@@ -77,7 +77,6 @@ type ContextSnippet struct {
 	Text        string `json:"text"`
 	Source      string `json:"source,omitempty"`
 	SourceLabel string `json:"source_label,omitempty"`
-	Publisher   string `json:"publisher,omitempty"`
 	Title       string `json:"title,omitempty"`
 	URL         string `json:"url,omitempty"`
 	File        string `json:"file,omitempty"`
@@ -91,15 +90,13 @@ type ContextSnippet struct {
 }
 
 type SourceBrief struct {
-	ID        string   `json:"id"`
-	Publisher string   `json:"publisher,omitempty"`
-	Scopes    []string `json:"scopes"`
+	ID     string   `json:"id"`
+	Scopes []string `json:"scopes"`
 }
 
 type SourceRef struct {
 	ID         string `json:"id"`
 	Kind       string `json:"kind"`
-	Publisher  string `json:"publisher,omitempty"`
 	Title      string `json:"title,omitempty"`
 	URL        string `json:"url,omitempty"`
 	Source     string `json:"source,omitempty"`
@@ -258,7 +255,7 @@ func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, d
 		if strings.TrimSpace(diff) == "" {
 			diff = fileContentSnippet(repoRoot, file)
 		}
-		diff = truncateReviewText(diff, maxDiffSnippetBytes)
+		diff = truncateDiffText(diff, maxDiffSnippetBytes)
 		if strings.TrimSpace(diff) == "" {
 			continue
 		}
@@ -303,16 +300,13 @@ func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 	if len(text) > maxContextSnippetBytes {
 		text = text[:maxContextSnippetBytes] + "\n[truncated]\n"
 	}
-	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local", Publisher: "this repo"}, true
+	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local"}, true
 }
 
 func labelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
 	counts := map[string]int{}
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
-		if strings.TrimSpace(snippet.Publisher) == "" {
-			snippet.Publisher = contextSnippetPublisher(snippet)
-		}
 		prefix := contextLabelPrefix(snippet)
 		counts[prefix]++
 		label := fmt.Sprintf("%s%d", prefix, counts[prefix])
@@ -465,7 +459,7 @@ func qualityFiles(hints []CodeQualityHint, deep bool) []string {
 func sourceBriefs(sources []Source) []SourceBrief {
 	out := make([]SourceBrief, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, SourceBrief{ID: source.ID, Publisher: strings.TrimSpace(source.Publisher), Scopes: source.Scopes})
+		out = append(out, SourceBrief{ID: source.ID, Scopes: source.Scopes})
 	}
 	return out
 }
@@ -498,7 +492,6 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 	return SourceRef{
 		ID:         id,
 		Kind:       sourceRefKind(snippet),
-		Publisher:  strings.TrimSpace(firstNonEmpty(snippet.Publisher, contextSnippetPublisher(snippet))),
 		Title:      sourceRefTitle(snippet),
 		URL:        strings.TrimSpace(snippet.URL),
 		Source:     strings.TrimSpace(snippet.Source),
@@ -510,31 +503,6 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 		RequestID:  strings.TrimSpace(snippet.RequestID),
 		ResponseID: strings.TrimSpace(snippet.ResponseID),
 		ChunkHash:  strings.TrimSpace(snippet.ChunkHash),
-	}
-}
-
-func contextSnippetPublisher(snippet ContextSnippet) string {
-	source := strings.TrimSpace(snippet.Source)
-	switch {
-	case strings.EqualFold(source, "local"):
-		return "this repo"
-	case strings.EqualFold(source, "gx-cloud:code-review-history"):
-		return "prior gx reviews"
-	case strings.EqualFold(source, "turbopuffer:code-review-history"):
-		return "prior gx reviews"
-	case strings.HasPrefix(source, "turbopuffer:"):
-		switch strings.TrimSpace(snippet.Kind) {
-		case "indexed_code", "indexed_session", "indexed_context":
-			return "this repo"
-		case "review_resource":
-			return publisherFromURLHost(snippet.URL)
-		default:
-			return ""
-		}
-	case strings.EqualFold(source, "review.md-url"):
-		return publisherFromURLHost(snippet.URL)
-	default:
-		return ""
 	}
 }
 
