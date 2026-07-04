@@ -169,20 +169,22 @@ type CommitResult struct {
 }
 
 type SplitCommitOptions struct {
-	Message     string
-	Filesets    []string
-	Interactive bool
-	Hunk        bool
-	PatchFile   string
+	Message                string
+	Filesets               []string
+	Interactive            bool
+	Hunk                   bool
+	PatchFile              string
+	BookmarkRecordedCommit bool
 }
 
 type RevisionOptions struct {
-	Message             string
-	Filesets            []string
-	Interactive         bool
-	Hunk                bool
-	PatchFile           string
-	PreferredSessionIDs []string
+	Message                string
+	Filesets               []string
+	Interactive            bool
+	Hunk                   bool
+	PatchFile              string
+	PreferredSessionIDs    []string
+	BookmarkRecordedCommit bool
 }
 
 type ModifyResult struct {
@@ -423,11 +425,12 @@ func (s *Service) RecordRevision(ctx context.Context, opts RevisionOptions) (Com
 	var err error
 	if opts.Hunk || opts.Interactive || len(opts.Filesets) > 0 {
 		result, err = s.SplitCommit(ctx, SplitCommitOptions{
-			Message:     opts.Message,
-			Filesets:    opts.Filesets,
-			Interactive: opts.Interactive,
-			Hunk:        opts.Hunk,
-			PatchFile:   opts.PatchFile,
+			Message:                opts.Message,
+			Filesets:               opts.Filesets,
+			Interactive:            opts.Interactive,
+			Hunk:                   opts.Hunk,
+			PatchFile:              opts.PatchFile,
+			BookmarkRecordedCommit: opts.BookmarkRecordedCommit,
 		})
 	} else {
 		result, err = s.Commit(ctx, opts.Message)
@@ -818,7 +821,11 @@ func (s *Service) splitCommitUnlocked(ctx context.Context, repo RepoInfo, opts S
 	if err != nil {
 		return CommitResult{}, err
 	}
-	repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	if opts.BookmarkRecordedCommit {
+		repo, err = s.reattachRecordedContainerAtRev(ctx, repo.RootPath, body.BookmarkName, checkoutBranch, change.CommitID)
+	} else {
+		repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	}
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -903,6 +910,9 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "gx: pending remainder", "-r", childChange.ChangeID); err != nil {
+		return CommitResult{}, err
+	}
 	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "edit", "@-"); err != nil {
 		return CommitResult{}, err
 	}
@@ -918,12 +928,26 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 		if _, err := s.runner.Run(ctx, repo.RootPath, "git", "apply", "--whitespace=nowarn", remainingPatchPath); err != nil {
 			return CommitResult{}, err
 		}
+		childAfterRemainder, err := s.CurrentChange(ctx, repo.RootPath, "@")
+		if err != nil {
+			return CommitResult{}, err
+		}
+		if len(childAfterRemainder.Files) == 0 {
+			return CommitResult{}, fmt.Errorf("remaining hunk patch applied but jj working copy has no changes")
+		}
+	}
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "", "-r", "@"); err != nil {
+		return CommitResult{}, err
 	}
 	change, err := s.CurrentChange(ctx, repo.RootPath, "@-")
 	if err != nil {
 		return CommitResult{}, err
 	}
-	repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	if opts.BookmarkRecordedCommit {
+		repo, err = s.reattachRecordedContainerAtRev(ctx, repo.RootPath, body.BookmarkName, checkoutBranch, change.CommitID)
+	} else {
+		repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
+	}
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -1766,6 +1790,11 @@ func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, co
 	if result.OnBase {
 		return result.BaseRef, "base", nil
 	}
+	if stack, found, stackErr := s.resolveCurrentStackForAuthoringGate(ctx, repo); stackErr != nil {
+		return "", "", stackErr
+	} else if found && strings.TrimSpace(stack.BookmarkName) != "" {
+		return stack.BookmarkName, "stack", nil
+	}
 	change, changeErr := s.CurrentChange(ctx, repo.RootPath, "@")
 	if changeErr == nil && len(change.Files) > 0 {
 		if _, ok, reattachErr := s.reattachAuthoringBaseGitIfParent(ctx, repo, result.BaseRef); reattachErr != nil {
@@ -2196,9 +2225,11 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 	if len(stacks) == 0 {
 		return []PushResult{}, nil
 	}
+	stacks = s.orderStacksForPublish(ctx, repo, stacks)
 	results := make([]PushResult, 0, len(stacks))
 	var firstErr error
 	err = withRepoLock(lockRoot, func() error {
+		publishedThisRun := map[string]struct{}{}
 		for _, stack := range stacks {
 			publishable, err := s.stackHasUnpublishedRevisions(ctx, stack)
 			if err != nil {
@@ -2210,7 +2241,7 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 			if !publishable {
 				continue
 			}
-			result, err := s.pushStackUnlocked(ctx, repo, args, opts, stack)
+			result, err := s.pushStackUnlockedWithContext(ctx, repo, args, opts, stack, stacks, publishedThisRun)
 			if err == nil {
 				err = publishResult(ctx, result, hook)
 			}
@@ -2223,6 +2254,7 @@ func (s *Service) PublishAllStacks(ctx context.Context, args []string, opts Push
 				}
 				continue
 			}
+			markStackPublishedThisRun(publishedThisRun, stack)
 			results = append(results, result)
 		}
 		return nil
@@ -2360,6 +2392,10 @@ func (s *Service) pushUnlocked(ctx context.Context, args []string, opts PushOpti
 }
 
 func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []string, opts PushOptions, body StackInfo) (PushResult, error) {
+	return s.pushStackUnlockedWithContext(ctx, repo, args, opts, body, nil, nil)
+}
+
+func (s *Service) pushStackUnlockedWithContext(ctx context.Context, repo RepoInfo, args []string, opts PushOptions, body StackInfo, stacks []StackInfo, publishedThisRun map[string]struct{}) (PushResult, error) {
 	remoteName := repo.DefaultRemote
 	if remoteName == nil || strings.TrimSpace(*remoteName) == "" {
 		remoteName = ptr("origin")
@@ -2368,6 +2404,9 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 		repo.RemoteURL = &remoteURL
 	}
 	if err := s.requireRecordedAddsForPublish(ctx, body); err != nil {
+		return PushResult{}, err
+	}
+	if err := s.requireParentStackPublishedForPublish(ctx, repo, body, stacks, publishedThisRun); err != nil {
 		return PushResult{}, err
 	}
 	refName := publishRefFromArgs(args)
@@ -2437,6 +2476,157 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 		Warnings:             warnings,
 		GitHubPullRequestURL: githubPRURL,
 	}, nil
+}
+
+func (s *Service) requireParentStackPublishedForPublish(ctx context.Context, repo RepoInfo, stack StackInfo, stacks []StackInfo, publishedThisRun map[string]struct{}) error {
+	if len(stacks) == 0 {
+		var err error
+		stacks, err = s.storedStacksForRepo(ctx, repo)
+		if err != nil {
+			return err
+		}
+	}
+	parent, ok := s.parentStackForPublish(ctx, repo, stacks, stack)
+	if !ok {
+		return nil
+	}
+	if stackPublishedThisRun(publishedThisRun, parent) {
+		return nil
+	}
+	publishable, err := s.stackHasUnpublishedRevisions(ctx, parent)
+	if err != nil {
+		return fmt.Errorf("check parent stack %s before pushing %s: %w", publishRefForStack(parent), publishRefForStack(stack), err)
+	}
+	if !publishable {
+		return nil
+	}
+	return fmt.Errorf("cannot push %s before parent stack %s; run `gx push %s` first or `gx push --all` to publish parent stacks in order", publishRefForStack(stack), publishRefForStack(parent), publishRefForStack(parent))
+}
+
+func (s *Service) storedStacksForRepo(ctx context.Context, repo RepoInfo) ([]StackInfo, error) {
+	if strings.TrimSpace(repo.RootPath) == "" {
+		return nil, nil
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	storedRepo, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	if storedRepo == nil {
+		return nil, nil
+	}
+	stored, err := store.ListStacksByRepoID(ctx, storedRepo.ID)
+	if err != nil {
+		return nil, err
+	}
+	stacks := make([]StackInfo, 0, len(stored))
+	for _, stack := range stored {
+		stacks = append(stacks, stackInfoFromStorage(stack))
+	}
+	return stacks, nil
+}
+
+func (s *Service) orderStacksForPublish(ctx context.Context, repo RepoInfo, stacks []StackInfo) []StackInfo {
+	if len(stacks) < 2 {
+		return stacks
+	}
+	ordered := make([]StackInfo, 0, len(stacks))
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(StackInfo)
+	visit = func(stack StackInfo) {
+		key := stackPublishOrderKey(stack)
+		if key == "" {
+			ordered = append(ordered, stack)
+			return
+		}
+		if visited[key] {
+			return
+		}
+		if visiting[key] {
+			ordered = append(ordered, stack)
+			visited[key] = true
+			return
+		}
+		visiting[key] = true
+		if parent, ok := s.parentStackForPublish(ctx, repo, stacks, stack); ok {
+			visit(parent)
+		}
+		visiting[key] = false
+		if !visited[key] {
+			visited[key] = true
+			ordered = append(ordered, stack)
+		}
+	}
+	for _, stack := range stacks {
+		visit(stack)
+	}
+	return ordered
+}
+
+func (s *Service) parentStackForPublish(ctx context.Context, repo RepoInfo, stacks []StackInfo, stack StackInfo) (StackInfo, bool) {
+	baseRef := s.publicStackBaseRef(ctx, repo, stack.BaseRef)
+	if baseRef == "" || baseRef == repo.defaultBaseBranch() {
+		return StackInfo{}, false
+	}
+	for _, candidate := range stacks {
+		if sameStackForPublish(candidate, stack) {
+			continue
+		}
+		if stackPublishRefMatches(candidate, baseRef) {
+			return candidate, true
+		}
+	}
+	return StackInfo{}, false
+}
+
+func sameStackForPublish(a, b StackInfo) bool {
+	if a.ID != 0 && b.ID != 0 {
+		return a.ID == b.ID
+	}
+	aRef := publishRefForStack(a)
+	bRef := publishRefForStack(b)
+	return aRef != "" && aRef == bRef
+}
+
+func stackPublishOrderKey(stack StackInfo) string {
+	if stack.ID != 0 {
+		return fmt.Sprintf("id:%d", stack.ID)
+	}
+	if ref := publishRefForStack(stack); ref != "" {
+		return "ref:" + ref
+	}
+	return ""
+}
+
+func markStackPublishedThisRun(published map[string]struct{}, stack StackInfo) {
+	if published == nil {
+		return
+	}
+	for _, ref := range []string{publishRefForStack(stack), strings.TrimSpace(stack.BookmarkName)} {
+		if ref != "" {
+			published[ref] = struct{}{}
+		}
+	}
+}
+
+func stackPublishedThisRun(published map[string]struct{}, stack StackInfo) bool {
+	if published == nil {
+		return false
+	}
+	for _, ref := range []string{publishRefForStack(stack), strings.TrimSpace(stack.BookmarkName)} {
+		if ref == "" {
+			continue
+		}
+		if _, ok := published[ref]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) requireGitHubPullRequestAuth(ctx context.Context, repo RepoInfo, stack StackInfo) error {
@@ -3044,6 +3234,39 @@ func (s *Service) DiffGit(ctx context.Context, repoRoot, rev string) (string, er
 
 func (s *Service) CurrentOperation(ctx context.Context, repoRoot string) (string, error) {
 	return s.runStdoutTrimmed(ctx, repoRoot, "jj", "op", "log", "-n", "1", "--no-graph", "-T", "id")
+}
+
+func (s *Service) RestoreOperation(ctx context.Context, repoRoot, opID string) error {
+	opID = strings.TrimSpace(opID)
+	if opID == "" {
+		return fmt.Errorf("operation id is required")
+	}
+	_, err := s.runner.Run(ctx, repoRoot, "jj", "op", "restore", opID)
+	return err
+}
+
+func (s *Service) CommitIDsForChangeID(ctx context.Context, repoRoot, changeID string) ([]string, error) {
+	changeID = strings.TrimSpace(changeID)
+	if changeID == "" {
+		return nil, nil
+	}
+	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", "change_id("+changeID+")", "--no-graph", "-T", "commit_id ++ \"\\n\"")
+	if err != nil {
+		return nil, err
+	}
+	return splitLines(out), nil
+}
+
+func (s *Service) DivergentChangeID(ctx context.Context, repoRoot, changeID string) (bool, []string, error) {
+	commitIDs, err := s.CommitIDsForChangeID(ctx, repoRoot, changeID)
+	if err != nil {
+		return false, nil, err
+	}
+	return len(commitIDs) > 1, commitIDs, nil
+}
+
+func (s *Service) RevisionEmpty(ctx context.Context, repoRoot, rev string) (bool, error) {
+	return s.isRevisionEmpty(ctx, repoRoot, rev)
 }
 
 func (s *Service) WorkRev(ctx context.Context, repoRoot string) (string, error) {
@@ -3981,6 +4204,55 @@ func (s *Service) resolveCurrentStackForRead(ctx context.Context, repo RepoInfo)
 	return s.resolveCurrentStackForReadWithStore(ctx, store, repo, repoRow.ID)
 }
 
+func (s *Service) resolveCurrentStackForAuthoringGate(ctx context.Context, repo RepoInfo) (StackInfo, bool, error) {
+	store, err := openStore(ctx)
+	if err != nil {
+		return StackInfo{}, false, err
+	}
+	defer store.Close()
+
+	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return StackInfo{}, false, err
+	}
+	if repoRow == nil {
+		return StackInfo{}, false, nil
+	}
+	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoRow.ID); err != nil {
+		return StackInfo{}, false, err
+	}
+	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
+		return StackInfo{}, false, err
+	}
+	if s.isOnBaseBranch(repo) || s.onAuthoringCheckout(ctx, repo) {
+		return StackInfo{}, false, nil
+	}
+	if current, err := s.stackFromCurrentBookmark(ctx, store, repoRow.ID, repo.RootPath); err == nil && current != nil {
+		return stackInfoFromStorage(*current), true, nil
+	} else if err != nil {
+		return StackInfo{}, false, err
+	}
+	if headChangeID, err := s.currentWorkChangeID(ctx, repo.RootPath); err == nil && strings.TrimSpace(headChangeID) != "" {
+		stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, headChangeID)
+		if err != nil {
+			return StackInfo{}, false, err
+		}
+		if stack != nil {
+			return stackInfoFromStorage(*stack), true, nil
+		}
+	}
+	if parentChangeID, err := s.changeIDForRev(ctx, repo.RootPath, "@-"); err == nil && strings.TrimSpace(parentChangeID) != "" {
+		stack, err := store.FindStackByHeadChange(ctx, repoRow.ID, parentChangeID)
+		if err != nil {
+			return StackInfo{}, false, err
+		}
+		if stack != nil {
+			return stackInfoFromStorage(*stack), true, nil
+		}
+	}
+	return StackInfo{}, false, nil
+}
+
 func (s *Service) resolveCurrentStackForReadWithStore(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64) (StackInfo, bool, error) {
 	if s.isOnBaseBranch(repo) || s.onAuthoringCheckout(ctx, repo) {
 		return StackInfo{}, false, nil
@@ -4360,6 +4632,31 @@ func (s *Service) reattachRecordedContainer(ctx context.Context, repoRoot, stack
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
 }
 
+func (s *Service) reattachRecordedContainerAtRev(ctx context.Context, repoRoot, stackBookmark, checkoutBranch, targetRev string) (RepoInfo, error) {
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return RepoInfo{}, fmt.Errorf("recorded container target revision is empty")
+	}
+	repo, err := s.updateContainerBookmarkAtRev(ctx, repoRoot, stackBookmark, targetRev)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	checkoutBranch = strings.TrimSpace(checkoutBranch)
+	stackBookmark = strings.TrimSpace(stackBookmark)
+	branch := firstNonEmpty(checkoutBranch, stackBookmark)
+	if branch == "" {
+		return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+	}
+	commitID, err := s.commitIDForRev(ctx, repoRoot, targetRev)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
+		return RepoInfo{}, err
+	}
+	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+}
+
 func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) (RepoInfo, error) {
 	repo, err := s.updateContainerBookmark(ctx, repoRoot, name)
 	if err != nil {
@@ -4373,6 +4670,40 @@ func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) 
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+}
+
+func (s *Service) updateContainerBookmarkAtRev(ctx context.Context, repoRoot, name, targetRev string) (RepoInfo, error) {
+	if strings.TrimSpace(name) == "" {
+		return RepoInfo{}, fmt.Errorf("container name is empty")
+	}
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return RepoInfo{}, fmt.Errorf("container target revision is empty")
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	defer store.Close()
+	repoRow, err := store.FindRepoByRoot(ctx, repoRoot)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	if repoRow != nil {
+		if err := s.repairSharedStackBookmarks(ctx, store, repoRoot, repoRow.ID, name); err != nil {
+			return RepoInfo{}, err
+		}
+		if err := s.relocateKnownStackBookmarksFromChange(ctx, store, repoRow.ID, repoRoot, name, targetRev); err != nil {
+			return RepoInfo{}, err
+		}
+		if err := s.assertBookmarkTargetAvailable(ctx, store, repoRow.ID, repoRoot, name, targetRev); err != nil {
+			return RepoInfo{}, err
+		}
+	}
+	if err := s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev); err != nil {
+		return RepoInfo{}, err
+	}
+	return s.ResolveJJRepoAtPath(ctx, repoRoot)
 }
 
 func (s *Service) updateContainerBookmark(ctx context.Context, repoRoot, name string) (RepoInfo, error) {
@@ -4446,7 +4777,15 @@ func (s *Service) setBookmarkTarget(ctx context.Context, repoRoot, name string) 
 	if err != nil {
 		return err
 	}
-	_, err = s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
+	return s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev)
+}
+
+func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, targetRev string) error {
+	targetRev = strings.TrimSpace(targetRev)
+	if targetRev == "" {
+		return fmt.Errorf("container target revision is empty")
+	}
+	_, err := s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
 	return err
 }
 
