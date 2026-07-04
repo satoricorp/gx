@@ -23,6 +23,7 @@ type ReviewBrief struct {
 	ReviewProfile string             `json:"review_profile"`
 	Focus         string             `json:"focus,omitempty"`
 	ReviewPrompt  string             `json:"review_prompt,omitempty"`
+	Triage        ChangeTriage       `json:"triage,omitempty"`
 	Static        StaticSnapshot     `json:"static"`
 	Hints         []ReviewHint       `json:"hints"`
 	Context       []ContextSnippet   `json:"context"`
@@ -118,12 +119,12 @@ type ArchitectureRubric struct {
 }
 
 type ContextRetriever interface {
-	Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error)
+	Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error)
 }
 
 type LocalContextRetriever struct{}
 
-func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
+func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever, inputs ...RetrieveInput) (ReviewBrief, error) {
 	hints := reviewHints(facts)
 	policy := opts.ReviewPolicy
 	if policy == nil {
@@ -131,13 +132,50 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		policy = &loaded
 		opts.ReviewPolicy = policy
 	}
-	contextSnippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
+	input := RetrieveInput{
+		RepoRoot: repoRoot,
+		Options:  opts,
+		Facts:    facts,
+		Hints:    hints,
+		Plan: ReviewExecutionPlan{
+			Triage:             TriageChange(nil, nil, opts),
+			ActiveScopes:       activeScopeList(opts),
+			RunStaticTools:     true,
+			RunAI:              true,
+			RunReviewResources: true,
+			RiskTags:           riskTagsForReview(nil, facts.DependencyFiles, opts),
+		},
+	}
+	hoisted := len(inputs) > 0
+	if hoisted {
+		input = inputs[0]
+		input.RepoRoot = repoRoot
+		input.Options = opts
+		input.Facts = facts
+		input.Hints = hints
+		if input.Plan.Triage.Class == "" {
+			input.Plan.Triage = TriageChange(input.ChangedFiles, input.DiffSnippets, opts)
+		}
+		if input.Plan.ActiveScopes == nil {
+			input.Plan.ActiveScopes = activeScopeListForTriage(opts, input.Plan.Triage)
+		}
+	} else {
+		input.ChangedFiles = reviewChangedFiles(ctx, repoRoot)
+		input.DiffSnippets = collectDiffSnippets(ctx, repoRoot, input.ChangedFiles, opts.Deep)
+	}
+	if input.Plan.RiskTags == nil {
+		input.Plan.RiskTags = riskTagsForReview(input.ChangedFiles, facts.DependencyFiles, opts)
+	}
+	contextSnippets, err := retriever.Retrieve(ctx, input)
 	if err != nil {
 		return ReviewBrief{}, err
 	}
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	contextSnippets = labelContextSnippets(contextSnippets)
-	changed := reviewChangedFiles(ctx, repoRoot)
+	var staticTools []StaticToolResult
+	if input.Plan.RunStaticTools {
+		staticTools = collectStaticToolResults(ctx, repoRoot, facts, opts)
+	}
 	return ReviewBrief{
 		RepoRoot:      repoRoot,
 		Scope:         opts.Scope,
@@ -145,6 +183,7 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 		ReviewProfile: reviewProfile(opts),
 		Focus:         strings.TrimSpace(opts.Focus),
 		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
+		Triage:        input.Plan.Triage,
 		Static: StaticSnapshot{
 			FileCount:       facts.TrackedFileCount,
 			TestFileCount:   facts.TestFileCount,
@@ -152,9 +191,9 @@ func BuildReviewBrief(ctx context.Context, repoRoot string, opts Options, facts 
 			Docs:            facts.Docs,
 			ADRFiles:        facts.ADRFiles,
 			Modules:         moduleSummaries(facts),
-			ChangedFiles:    changed,
-			DiffSnippets:    collectDiffSnippets(ctx, repoRoot, changed, opts.Deep),
-			ToolResults:     collectStaticToolResults(ctx, repoRoot, facts, opts),
+			ChangedFiles:    input.ChangedFiles,
+			DiffSnippets:    input.DiffSnippets,
+			ToolResults:     staticTools,
 			CodeQuality:     collectCodeQualityHints(repoRoot, facts, opts),
 		},
 		Hints:         hints,
@@ -201,7 +240,11 @@ func reviewHints(facts RepoFacts) []ReviewHint {
 	return hints
 }
 
-func (LocalContextRetriever) Retrieve(_ context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	repoRoot := in.RepoRoot
+	opts := in.Options
+	facts := in.Facts
+	hints := in.Hints
 	var snippets []ContextSnippet
 	for _, doc := range []struct {
 		path string

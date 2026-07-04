@@ -10,7 +10,7 @@ func TestCompositeContextRetrieverIgnoresRetrieverFailures(t *testing.T) {
 	snippets, err := (CompositeContextRetriever{Retrievers: []ContextRetriever{
 		fakeRetriever{snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "README.md", Source: "local", Text: "readme"}}},
 		failingRetriever{},
-	}}).Retrieve(context.Background(), "/repo", Options{}, RepoFacts{}, nil)
+	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo"})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -21,6 +21,6 @@ func TestCompositeContextRetrieverIgnoresRetrieverFailures(t *testing.T) {
 
 type failingRetriever struct{}
 
-func (failingRetriever) Retrieve(context.Context, string, Options, RepoFacts, []ReviewHint) ([]ContextSnippet, error) {
+func (failingRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippet, error) {
 	return nil, errors.New("boom")
 }

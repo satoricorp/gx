@@ -602,6 +602,10 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"deep_full_spectrum",
 		"review_prompt",
 		"static.diff_snippets",
+		"triage.class",
+		"triage.risk_tags",
+		"Security-sensitive changes",
+		"mechanical changes",
 		"security/auth",
 		"race/idempotency",
 		"observability",
@@ -741,7 +745,7 @@ type fakeRetriever struct {
 	snippets []ContextSnippet
 }
 
-func (f fakeRetriever) Retrieve(context.Context, string, Options, RepoFacts, []ReviewHint) ([]ContextSnippet, error) {
+func (f fakeRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippet, error) {
 	return f.snippets, nil
 }
 

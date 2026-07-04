@@ -78,6 +78,9 @@ type Report struct {
 	ContextSnippets   int
 	Verbose           bool
 	Color             bool
+	Triage            ChangeTriage
+	RiskTags          []string
+	NoFindingsMessage string
 }
 
 type FilePresence struct {
@@ -100,7 +103,11 @@ func RenderMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
-		fmt.Fprintln(&b, "- No recommendations yet.")
+		message := strings.TrimSpace(report.NoFindingsMessage)
+		if message == "" {
+			message = "No recommendations yet."
+		}
+		fmt.Fprintf(&b, "- %s\n", message)
 	} else {
 		for index, finding := range report.Findings {
 			fmt.Fprintf(&b, "%s\n", reviewTitle(report, fmt.Sprintf("### %d. %s", index+1, finding.Title)))

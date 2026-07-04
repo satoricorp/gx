@@ -20,13 +20,13 @@ func contextRetrieverFromEnv() ContextRetriever {
 	return CompositeContextRetriever{Retrievers: retrievers}
 }
 
-func (r CompositeContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r CompositeContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	var out []ContextSnippet
 	for _, retriever := range r.Retrievers {
 		if retriever == nil {
 			continue
 		}
-		snippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
+		snippets, err := retriever.Retrieve(ctx, in)
 		if err != nil {
 			continue
 		}
