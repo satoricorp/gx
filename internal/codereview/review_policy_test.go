@@ -66,7 +66,7 @@ func TestBuildReviewBriefUsesPolicyAndReferenceContextWithoutRenderingPolicyText
 	root := t.TempDir()
 	writeFile(t, root, "REVIEW.md", "Always check tenant authorization.\n\n"+server.URL+"/rollback\n")
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), RepoFacts{}, nil, fakeRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), RepoFacts{}, nil, fakeRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -109,7 +109,13 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/webhook/handler.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot:     t.TempDir(),
+		Options:      normalizeOptions(Options{ReviewPolicy: policy}),
+		Facts:        RepoFacts{Files: []string{"internal/webhook/handler.go"}},
+		ChangedFiles: []string{"internal/webhook/handler.go"},
+		Plan:         ReviewExecutionPlan{RunReviewResources: true},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -136,7 +142,12 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/session/replay.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot:     t.TempDir(),
+		Options:      normalizeOptions(Options{ReviewPolicy: policy}),
+		Facts:        RepoFacts{Files: []string{"internal/session/replay.go"}},
+		ChangedFiles: []string{"internal/session/replay.go"},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -204,8 +215,8 @@ func TestMultiReviewerCallsEveryProviderBeforeLimitingFindings(t *testing.T) {
 	if openai.calls != 1 || anthropic.calls != 1 {
 		t.Fatalf("calls = openai %d anthropic %d, want both called once", openai.calls, anthropic.calls)
 	}
-	if len(findings) != 6 {
-		t.Fatalf("findings = %d, want result limit applied after both reviewers run", len(findings))
+	if len(findings) != 8 {
+		t.Fatalf("findings = %d, want both reviewers' findings before engine cap", len(findings))
 	}
 }
 

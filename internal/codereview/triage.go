@@ -88,6 +88,15 @@ func reviewPlanFor(opts Options, triage ChangeTriage) ReviewExecutionPlan {
 	return plan
 }
 
+func reviewExecutionPlanConfigured(plan ReviewExecutionPlan) bool {
+	return plan.Triage.Class != "" ||
+		len(plan.ActiveScopes) > 0 ||
+		len(plan.RiskTags) > 0 ||
+		plan.RunStaticTools ||
+		plan.RunAI ||
+		plan.RunReviewResources
+}
+
 func activeScopeListForTriage(opts Options, triage ChangeTriage) []string {
 	if !opts.PatchFocused {
 		return activeScopeList(opts)

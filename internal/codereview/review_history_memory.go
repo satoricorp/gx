@@ -28,10 +28,14 @@ func reviewHistoryRetrieverFromEnv() ContextRetriever {
 	return ReviewHistoryRetriever{Client: client, Limit: limit}
 }
 
-func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Client == nil {
 		return nil, nil
 	}
+	repoRoot := in.RepoRoot
+	opts := in.Options
+	facts := in.Facts
+	hints := in.Hints
 	repoFullName := reviewHistoryRepoFullName(ctx, repoRoot)
 	if repoFullName == "" {
 		return nil, nil
