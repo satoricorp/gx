@@ -220,13 +220,13 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	}); err != nil {
 		return CloudCredentials{}, fmt.Errorf("store GitHub token in keychain: %w", err)
 	}
-	if err := SaveCloudCredentials(creds); err != nil {
-		return CloudCredentials{}, err
-	}
 	creds.GitHubAccessToken = ""
 	creds.GitHubAccessTokenExpiresAt = time.Time{}
 	creds.GitHubRefreshToken = ""
 	creds.GitHubRefreshTokenExpiresAt = time.Time{}
+	if err := SaveCloudCredentials(creds); err != nil {
+		return CloudCredentials{}, err
+	}
 	if opts.Out != nil && strings.TrimSpace(complete.GitHubAppInstallURL) != "" {
 		fmt.Fprintf(opts.Out, "Install the GX GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
 	}
