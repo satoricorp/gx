@@ -15,9 +15,15 @@ type Finding struct {
 	Summary        string
 	Benefit        string
 	Evidence       []Evidence
+	Anchors        []FindingAnchor
 	Recommendation string
 	Strength       string
 	SourceIDs      []string
+}
+
+type FindingAnchor struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
 }
 
 type Evidence struct {

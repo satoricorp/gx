@@ -272,6 +272,45 @@ func TestUpsertIssueCommentUpdatesExistingMarker(t *testing.T) {
 	}
 }
 
+func TestCreatePullRequestReviewCommentUsesGitHubAPI(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/repos/satoricorp/gx/pulls/8/comments" {
+			t.Fatalf("path = %q, want /repos/satoricorp/gx/pulls/8/comments", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":44}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	client := NewClientWithToken("github.com", "token-one", server.Client())
+	err := client.CreatePullRequestReviewComment(context.Background(), PullRequestReviewCommentOptions{
+		Owner:    "satoricorp",
+		Repo:     "gx",
+		Number:   8,
+		Body:     "review body",
+		CommitID: "abc123",
+		Path:     "main.go",
+		Line:     12,
+	})
+	if err != nil {
+		t.Fatalf("CreatePullRequestReviewComment() error = %v", err)
+	}
+	if payload["body"] != "review body" ||
+		payload["commit_id"] != "abc123" ||
+		payload["path"] != "main.go" ||
+		int(payload["line"].(float64)) != 12 ||
+		payload["side"] != "RIGHT" {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func TestGitHubAuthError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token", http.StatusUnauthorized)
