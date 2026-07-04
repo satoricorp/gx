@@ -1875,18 +1875,19 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 
 	report := codereview.Report{
 		Findings: []codereview.Finding{{
-			ID:             "docs.missing-readme",
-			Title:          "Missing README",
-			Summary:        "The repo lacks the standard entrypoint document new maintainers expect first.",
-			Benefit:        "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
-			Recommendation: "Add a concise README.",
-			Strength:       "Strong",
-			SourceIDs:      []string{"go-code-review-comments"},
+			ID:               "docs.missing-readme",
+			Title:            "Missing README",
+			Summary:          "The repo lacks the standard entrypoint document new maintainers expect first.",
+			Benefit:          "Improves onboarding speed by giving humans and agents one place to find setup, purpose, and common commands.",
+			Recommendation:   "Add a concise README.",
+			Strength:         "Strong",
+			SourcePublishers: []string{"Go project"},
 		}},
 		Sources: []codereview.Source{{
-			ID:    "go-code-review-comments",
-			Title: "Go Code Review Comments",
-			URL:   "https://go.dev/wiki/CodeReviewComments",
+			ID:        "go-code-review-comments",
+			Title:     "Go Code Review Comments",
+			URL:       "https://go.dev/wiki/CodeReviewComments",
+			Publisher: "Go project",
 		}},
 	}
 	var stderr bytes.Buffer
@@ -1898,7 +1899,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	if gotCommentBody == "" {
 		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "## Sources", "Go Code Review Comments"} {
+	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
 		}
