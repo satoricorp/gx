@@ -41,6 +41,7 @@ class Document:
     id: str
     title: str
     url: str
+    publisher: str
     category: str
     authority: str
     evidence_level: str
@@ -224,6 +225,7 @@ def parse_document(item: dict[str, Any]) -> Document:
         id=clean_token(item["id"]),
         title=str(item["title"]).strip(),
         url=str(item["url"]).strip(),
+        publisher=str(item.get("publisher") or publisher_from_url(str(item["url"]))).strip(),
         category=clean_token(item["category"]),
         authority=clean_token(item["authority"]),
         evidence_level=clean_token(item["evidence_level"]),
@@ -247,7 +249,7 @@ def print_plan(manifest_path: str, namespace: str, docs: list[Document]) -> None
     print("categories=" + ", ".join(f"{key}:{value}" for key, value in sorted(categories.items())))
     print("authorities=" + ", ".join(f"{key}:{value}" for key, value in sorted(authorities.items())))
     for doc in docs:
-        print(f"- {doc.id} [{doc.category}/{doc.evidence_level}] {doc.url}")
+        print(f"- {doc.id} [{doc.publisher}; {doc.category}/{doc.evidence_level}] {doc.url}")
 
 
 def build_chunks(
@@ -279,6 +281,7 @@ def render_seed_text(doc: Document) -> str:
     lines = [
         "GX review knowledge seed",
         f"title: {doc.title}",
+        f"publisher: {doc.publisher}",
         f"url: {doc.url}",
         f"category: {doc.category}",
         f"authority: {doc.authority}",
@@ -301,6 +304,7 @@ def make_chunk(doc: Document, chunk_kind: str, index: int, text: str, fetched_at
         "text": normalized,
         "source_kind": "review_knowledge",
         "source_id": doc.id,
+        "publisher": doc.publisher,
         "url": doc.url,
         "title": doc.title,
         "category": doc.category,
@@ -471,6 +475,7 @@ def review_knowledge_schema(dimensions: int) -> dict[str, Any]:
         "text": string_search,
         "source_kind": string_filter,
         "source_id": string_filter,
+        "publisher": string_filter,
         "url": string_filter,
         "title": string_search,
         "category": string_filter,
@@ -510,6 +515,32 @@ def clean_token(value: Any) -> str:
 
 def join_values(values: tuple[str, ...]) -> str:
     return ",".join(value for value in values if value)
+
+
+def publisher_from_url(raw: str) -> str:
+    host = urllib.parse.urlparse(raw.strip()).hostname or ""
+    host = host.lower().removeprefix("www.")
+    if host == "owasp.org" or host.endswith(".owasp.org") or host in {"cheatsheetseries.owasp.org", "mas.owasp.org"}:
+        return "OWASP"
+    if host in {"csrc.nist.gov", "nist.gov"} or host.endswith(".nist.gov"):
+        return "NIST"
+    if host in {"openssf.org", "scorecard.dev"} or host.endswith(".openssf.org"):
+        return "OpenSSF"
+    if host == "slsa.dev" or host.endswith(".slsa.dev"):
+        return "SLSA"
+    if host in {"google.github.io", "developers.google.com"} or host.endswith(".google.com"):
+        return "Google"
+    if host == "go.dev" or host.endswith(".go.dev"):
+        return "Go project"
+    if host == "writethedocs.org" or host.endswith(".writethedocs.org"):
+        return "Write the Docs"
+    if host == "diataxis.fr" or host.endswith(".diataxis.fr"):
+        return "Diátaxis"
+    if host == "martinfowler.com" or host.endswith(".martinfowler.com"):
+        return "Martin Fowler"
+    if host == "web.dev" or host.endswith(".web.dev"):
+        return "web.dev"
+    return host
 
 
 def sha1(text: str) -> str:
