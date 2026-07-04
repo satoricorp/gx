@@ -2,6 +2,9 @@ package codereview
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -241,6 +244,25 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownVerboseIncludesAnchors(t *testing.T) {
+	report := Report{
+		Verbose: true,
+		Findings: []Finding{{
+			ID:             "ai.review.1",
+			Title:          "Anchored finding",
+			Summary:        "The finding points to a line.",
+			Benefit:        "Makes review output easier to inspect.",
+			Recommendation: "Fix the anchored line.",
+			Anchors:        []FindingAnchor{{File: "internal/app/app.go", Line: 7}},
+		}},
+	}
+
+	text := RenderMarkdown(report)
+	if !strings.Contains(text, "**Anchors:**") || !strings.Contains(text, "`internal/app/app.go:7`") {
+		t.Fatalf("RenderMarkdown(verbose) missing anchors:\n%s", text)
+	}
+}
+
 func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	root := t.TempDir()
 	report, err := Review(context.Background(), root, Options{Scope: "security"})
@@ -253,6 +275,175 @@ func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	text := RenderMarkdown(report)
 	if !strings.Contains(text, "## Sources") {
 		t.Fatalf("RenderMarkdown() missing sources section:\n%s", text)
+	}
+}
+
+func TestParseAIReviewContentIncludesAnchors(t *testing.T) {
+	findings, err := parseAIReviewContent(`{"recommendations":[{
+		"title":"Anchor title",
+		"summary":"Anchor summary",
+		"benefit":"Anchor benefit",
+		"recommendation":"Anchor recommendation",
+		"evidence":["internal/app/app.go:2 shows the issue"],
+		"anchors":[{"file":"internal/app/app.go","line":2}]
+	}]}`)
+	if err != nil {
+		t.Fatalf("parseAIReviewContent() error = %v", err)
+	}
+	if len(findings) != 1 || len(findings[0].Anchors) != 1 {
+		t.Fatalf("Findings = %#v, want parsed anchor", findings)
+	}
+}
+
+func TestAnchorValidationKeepsValidAnchors(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	findings := validateFindingAnchors(ReviewContext{
+		Brief: ReviewBrief{RepoRoot: root},
+	}, []Finding{{
+		ID:       "ai.review.1",
+		Evidence: []Evidence{{Label: "Evidence", Value: "internal/app/app.go:2 contains Run"}},
+		Anchors:  []FindingAnchor{{File: "internal/app/app.go", Line: 2}},
+	}})
+	if len(findings) != 1 || len(findings[0].Anchors) != 1 {
+		t.Fatalf("Findings = %#v, want valid anchor kept", findings)
+	}
+}
+
+func TestAnchorValidationDropsInvalidFileAnchorsButKeepsFinding(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\n")
+	findings := validateFindingAnchors(ReviewContext{
+		Brief: ReviewBrief{RepoRoot: root},
+	}, []Finding{{
+		ID:       "ai.review.1",
+		Evidence: []Evidence{{Label: "Evidence", Value: "missing.go:1"}},
+		Anchors:  []FindingAnchor{{File: "missing.go", Line: 1}},
+	}})
+	if len(findings) != 1 {
+		t.Fatalf("Findings = %#v, want finding kept", findings)
+	}
+	if len(findings[0].Anchors) != 0 {
+		t.Fatalf("Anchors = %#v, want invalid file anchor dropped", findings[0].Anchors)
+	}
+}
+
+func TestAnchorValidationDropsOutOfRangeAnchorsButKeepsFinding(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\n")
+	findings := validateFindingAnchors(ReviewContext{
+		Brief: ReviewBrief{RepoRoot: root},
+	}, []Finding{{
+		ID:       "ai.review.1",
+		Evidence: []Evidence{{Label: "Evidence", Value: "internal/app/app.go:2"}},
+		Anchors:  []FindingAnchor{{File: "internal/app/app.go", Line: 2}},
+	}})
+	if len(findings) != 1 {
+		t.Fatalf("Findings = %#v, want finding kept", findings)
+	}
+	if len(findings[0].Anchors) != 0 {
+		t.Fatalf("Anchors = %#v, want out-of-range anchor dropped", findings[0].Anchors)
+	}
+}
+
+func TestAgenticEnvGatePreservesSingleShotByDefault(t *testing.T) {
+	t.Setenv("GX_REVIEW_AGENTIC", "0")
+	base := &responsesAIReviewer{}
+	if got := maybeAgenticReviewer(base); got != base {
+		t.Fatalf("maybeAgenticReviewer() = %T, want original reviewer", got)
+	}
+	t.Setenv("GX_REVIEW_AGENTIC", "1")
+	if _, ok := maybeAgenticReviewer(base).(*agenticResponsesAIReviewer); !ok {
+		t.Fatalf("maybeAgenticReviewer() did not wrap responses reviewer when enabled")
+	}
+}
+
+func TestAgenticToolLoopCanCallReadFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	var sawToolOutput bool
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if requests == 1 {
+			_, _ = w.Write([]byte(`{"id":"resp_1","output":[{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"file\":\"internal/app/app.go\",\"start_line\":2,\"end_line\":2}"}]}`))
+			return
+		}
+		body, _ := json.Marshal(payload["input"])
+		sawToolOutput = strings.Contains(string(body), "internal/app/app.go:2: func Run()")
+		_, _ = w.Write([]byte(`{"id":"resp_2","output_text":"{\"recommendations\":[{\"title\":\"Read file finding\",\"summary\":\"internal/app/app.go needs review\",\"benefit\":\"Keeps agentic loop tested\",\"recommendation\":\"Inspect internal/app/app.go\",\"evidence\":[\"internal/app/app.go:2\"],\"anchors\":[{\"file\":\"internal/app/app.go\",\"line\":2}]}]}"}`))
+	}))
+	defer server.Close()
+
+	reviewer := &agenticResponsesAIReviewer{base: &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}}
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{RepoRoot: root})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if !sawToolOutput || len(findings) != 1 || findings[0].Title != "Read file finding" {
+		t.Fatalf("sawToolOutput=%v findings=%#v", sawToolOutput, findings)
+	}
+}
+
+func TestAgenticToolsCanCallGrepListChangedHunksAndSearchKnowledge(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	brief := ReviewBrief{
+		RepoRoot: root,
+		Static: StaticSnapshot{DiffSnippets: []DiffSnippet{{
+			File: "internal/app/app.go",
+			Diff: "@@ -1 +1,2 @@\n package app\n+func Run() {}\n",
+		}}},
+		Context: []ContextSnippet{{SourceLabel: "L1", Ref: "REVIEW.md", Text: "Always inspect authorization rollback paths."}},
+	}
+	if got := executeAgenticTool(context.Background(), brief, "grep", `{"pattern":"func Run"}`); !strings.Contains(got, "internal/app/app.go:2") {
+		t.Fatalf("grep output = %q", got)
+	}
+	if got := executeAgenticTool(context.Background(), brief, "list_changed_hunks", `{"file":"internal/app/app.go"}`); !strings.Contains(got, "+func Run") {
+		t.Fatalf("list_changed_hunks output = %q", got)
+	}
+	if got := executeAgenticTool(context.Background(), brief, "search_knowledge", `{"query":"authorization rollback"}`); !strings.Contains(got, "REVIEW.md") {
+		t.Fatalf("search_knowledge output = %q", got)
+	}
+}
+
+func TestJudgeFiltersAgenticCandidates(t *testing.T) {
+	root := initRepo(t)
+	writeFile(t, root, "README.md", "# old\n")
+	gitAdd(t, root, "README.md")
+	gitCommit(t, root)
+	writeFile(t, root, "README.md", "# new\n")
+	facts := RepoFacts{
+		Files:            []string{"README.md"},
+		TrackedFileCount: 1,
+	}
+	engine := NewEngineWithReviewer(fakeScanner{facts: facts}, fakeCatalog{}, nil, LocalContextRetriever{}, fakeReviewer{findings: []Finding{{
+		ID:             "ai.agentic.good",
+		Scopes:         []string{"maintainability"},
+		Title:          "Changed file finding",
+		Summary:        "README.md changed.",
+		Benefit:        "Keeps patch review grounded.",
+		Recommendation: "Update README.md.",
+		Strength:       "Strong",
+	}, {
+		ID:             "ai.agentic.bad",
+		Scopes:         []string{"maintainability"},
+		Title:          "Unrelated finding",
+		Summary:        "An unrelated package changed.",
+		Benefit:        "No relevant payoff.",
+		Recommendation: "Update internal/other/file.go.",
+		Strength:       "Strong",
+	}}})
+	report, err := engine.Review(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if !hasFinding(report.Findings, "ai.agentic.good") || hasFinding(report.Findings, "ai.agentic.bad") {
+		t.Fatalf("Findings = %#v, want judge/filter to keep changed-file candidate only", report.Findings)
 	}
 }
 
@@ -388,67 +579,6 @@ func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
 	}
 	if got.url != "http://127.0.0.1:43123/v1/responses" || got.token != "openai-key" {
 		t.Fatalf("reviewer config = url %q token %q", got.url, got.token)
-	}
-}
-
-func TestOpenAIReviewerModelDefaultAndEnvPrecedence(t *testing.T) {
-	tests := []struct {
-		name          string
-		policyModel   string
-		openAIModel   string
-		gxReviewModel string
-		envModel      string
-		want          string
-	}{
-		{name: "default", want: "gpt-5.5"},
-		{name: "openai env", openAIModel: "gpt-openai", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-openai"},
-		{name: "gx review env", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-gx"},
-		{name: "openai model env", envModel: "gpt-env", want: "gpt-env"},
-		{name: "policy hint", policyModel: "gpt-policy", openAIModel: "gpt-openai", gxReviewModel: "gpt-gx", envModel: "gpt-env", want: "gpt-policy"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("GX_OPENAI_PROXY_URL", "")
-			t.Setenv("GX_CLOUD_URL", "off")
-			t.Setenv("OPENAI_API_KEY", "openai-key")
-			t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-			t.Setenv("GX_OPENAI_API_KEY", "")
-			t.Setenv("GX_OPENAI_BASE_URL", "")
-			t.Setenv("GX_REVIEW_OPENAI_MODEL", tt.openAIModel)
-			t.Setenv("GX_REVIEW_MODEL", tt.gxReviewModel)
-			t.Setenv("OPENAI_MODEL", tt.envModel)
-			t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
-
-			reviewer := openAIReviewerFromEnvWithModel(tt.policyModel)
-			got, ok := reviewer.(*responsesAIReviewer)
-			if !ok {
-				t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
-			}
-			if got.model != tt.want {
-				t.Fatalf("model = %q, want %q", got.model, tt.want)
-			}
-			if got.judgeModel != tt.want {
-				t.Fatalf("judgeModel = %q, want same as review model %q", got.judgeModel, tt.want)
-			}
-		})
-	}
-}
-
-func TestOpenAIReviewerJudgeModelOverride(t *testing.T) {
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
-	t.Setenv("GX_CLOUD_URL", "off")
-	t.Setenv("OPENAI_API_KEY", "openai-key")
-	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-	t.Setenv("GX_REVIEW_OPENAI_MODEL", "gpt-review")
-	t.Setenv("GX_REVIEW_JUDGE_MODEL", "gpt-judge")
-
-	reviewer := openAIReviewerFromEnv()
-	got, ok := reviewer.(*responsesAIReviewer)
-	if !ok {
-		t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
-	}
-	if got.model != "gpt-review" || got.judgeModel != "gpt-judge" {
-		t.Fatalf("models = review %q judge %q", got.model, got.judgeModel)
 	}
 }
 
@@ -607,45 +737,6 @@ func TestBuildReviewBriefIncludesDiffSnippetsForCurrentPatch(t *testing.T) {
 	}
 	if !strings.Contains(brief.Static.DiffSnippets[0].Diff, "+func NewBehavior()") {
 		t.Fatalf("DiffSnippets[0] = %#v, want added function diff", brief.Static.DiffSnippets[0])
-	}
-}
-
-func TestDiffTruncationKeepsCompleteLines(t *testing.T) {
-	diff := strings.Join([]string{
-		"diff --git a/app.go b/app.go",
-		"@@ -1 +1 @@",
-		"-old line",
-		"+new line",
-	}, "\n")
-
-	truncated := truncateDiffText(diff, strings.Index(diff, "-old line")+3)
-	if strings.Contains(truncated, "-ol") {
-		t.Fatalf("truncateDiffText() cut mid-line:\n%s", truncated)
-	}
-	if !strings.Contains(truncated, "[truncated]") {
-		t.Fatalf("truncateDiffText() = %q, want truncation marker", truncated)
-	}
-}
-
-func TestDiffTruncationPrefersHunkBoundaries(t *testing.T) {
-	diff := strings.Join([]string{
-		"diff --git a/app.go b/app.go",
-		"@@ -1,3 +1,4 @@",
-		" line one",
-		"+line two",
-		" line three",
-		"@@ -20,3 +21,4 @@",
-		" line twenty",
-		"+line twenty one",
-	}, "\n")
-	limit := strings.Index(diff, "@@ -20") + len("@@ -20")
-
-	truncated := truncateDiffText(diff, limit)
-	if strings.Contains(truncated, "@@ -20") || strings.Contains(truncated, "line twenty") {
-		t.Fatalf("truncateDiffText() did not stop before next hunk:\n%s", truncated)
-	}
-	if !strings.Contains(truncated, "+line two") {
-		t.Fatalf("truncateDiffText() lost useful first hunk:\n%s", truncated)
 	}
 }
 

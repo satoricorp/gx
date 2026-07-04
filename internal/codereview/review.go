@@ -100,7 +100,7 @@ func RenderMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
-		fmt.Fprintln(&b, "- No material issues found in this change.")
+		fmt.Fprintln(&b, "- No recommendations yet.")
 	} else {
 		for index, finding := range report.Findings {
 			fmt.Fprintf(&b, "%s\n", reviewTitle(report, fmt.Sprintf("### %d. %s", index+1, finding.Title)))
@@ -121,6 +121,13 @@ func RenderMarkdown(report Report) string {
 				fmt.Fprintln(&b, reviewLabel(report, "**Evidence:**"))
 				for _, evidence := range finding.Evidence {
 					fmt.Fprintf(&b, "- %s: %s\n", evidence.Label, evidence.Value)
+				}
+			}
+			if report.Verbose && len(finding.Anchors) > 0 {
+				fmt.Fprintln(&b)
+				fmt.Fprintln(&b, reviewLabel(report, "**Anchors:**"))
+				for _, anchor := range finding.Anchors {
+					fmt.Fprintf(&b, "- `%s:%d`\n", anchor.File, anchor.Line)
 				}
 			}
 			fmt.Fprintln(&b)
