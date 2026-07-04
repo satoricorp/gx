@@ -28,6 +28,7 @@ type CloudCredentials struct {
 	GitHubAccessTokenExpiresAt  time.Time `json:"github_access_token_expires_at,omitempty"`
 	GitHubRefreshToken          string    `json:"github_refresh_token,omitempty"`
 	GitHubRefreshTokenExpiresAt time.Time `json:"github_refresh_token_expires_at,omitempty"`
+	GitHubKeychainAccount       string    `json:"github_keychain_account,omitempty"`
 	CLISessionToken             string    `json:"cli_session_token,omitempty"`
 	CLISessionExpiresAt         time.Time `json:"cli_session_expires_at,omitempty"`
 	UserID                      string    `json:"user_id"`
@@ -143,6 +144,10 @@ func ClearCloudCredentials() error {
 
 func GitHubAccessToken() (string, error) {
 	return authstore.GitHubAccessToken()
+}
+
+func GitHubAccessTokenWithSource() (string, string, error) {
+	return authstore.GitHubAccessTokenWithSource()
 }
 
 // CloudAPIToken returns the bearer token used by consolidated gx-cloud HTTP APIs.
