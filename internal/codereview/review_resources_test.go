@@ -14,7 +14,7 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 		rows: []reviewResourceRow{{
 			"source_id":       "owasp-sql-injection",
 			"title":           "OWASP SQL Injection Prevention Cheat Sheet",
-			"url":             "https://example.test/sql",
+			"url":             "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
 			"category":        "database",
 			"authority":       "standard",
 			"evidence_level":  "E1",
@@ -32,20 +32,18 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 		Limit:     6,
 	}
 
-	snippets, err := retriever.Retrieve(context.Background(), RetrieveInput{
-		RepoRoot: "/missing-repo",
-		Options:  Options{Scope: "security"},
-		Facts: RepoFacts{
-			Files:           []string{"internal/auth/session.go", "db/migrations/001_add_users.sql"},
-			DependencyFiles: []string{"package.json"},
-		},
-		Plan: ReviewExecutionPlan{RunReviewResources: true},
-	})
+	snippets, err := retriever.Retrieve(context.Background(), "/missing-repo", Options{Scope: "security"}, RepoFacts{
+		Files:           []string{"internal/auth/session.go", "db/migrations/001_add_users.sql"},
+		DependencyFiles: []string{"package.json"},
+	}, nil)
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
 	if len(store.requests) != 2 {
 		t.Fatalf("queries = %d, want broad + filtered", len(store.requests))
+	}
+	if !containsString(store.requests[0].IncludeAttributes, "publisher") {
+		t.Fatalf("include attributes = %#v, want publisher", store.requests[0].IncludeAttributes)
 	}
 	if !filterContains(store.requests[0].Filters, `"source_kind","Eq","review_knowledge"`) {
 		t.Fatalf("broad filter = %#v", store.requests[0].Filters)
@@ -69,6 +67,9 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	snippet := snippets[0]
 	if snippet.Kind != "review_resource" || snippet.Source != "turbopuffer:gx-review-knowledge" {
 		t.Fatalf("snippet = %#v", snippet)
+	}
+	if snippet.Publisher != "OWASP" {
+		t.Fatalf("snippet publisher = %q, want OWASP", snippet.Publisher)
 	}
 	if !strings.Contains(snippet.Text, "OWASP SQL Injection") || !strings.Contains(snippet.Text, "parameterized queries") {
 		t.Fatalf("snippet text = %q", snippet.Text)
@@ -241,6 +242,15 @@ func (s *recordingReviewResourceStore) Query(_ context.Context, req reviewResour
 
 func filterContains(filter any, want string) bool {
 	return strings.Contains(mustReviewResourceJSON(filter), want)
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func mustReviewResourceJSON(value any) string {

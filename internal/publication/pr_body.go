@@ -486,6 +486,7 @@ func readPRContextSnippet(root, rel, kind string) (codereview.ContextSnippet, bo
 		Ref:         rel,
 		Source:      "local",
 		SourceLabel: rel,
+		Publisher:   "this repo",
 		Text:        limitText(string(data), maxPRContextSnippetSize),
 	}, true
 }
@@ -503,6 +504,7 @@ func sessionPRContextSnippets(artifact reviewbundle.Artifact) []codereview.Conte
 			Ref:         ref,
 			Source:      "artifact",
 			SourceLabel: "linked session",
+			Publisher:   "this repo",
 			Text:        limitText(chunk.Text, maxPRContextSnippetSize),
 		})
 		if len(out) >= 4 {
@@ -599,6 +601,7 @@ func rowsToPRContextSnippets(rows []map[string]any, source string) []codereview.
 			Ref:         ref,
 			Source:      source,
 			SourceLabel: ref,
+			Publisher:   firstNonEmpty(stringAny(row["publisher"]), "this repo"),
 			Text:        limitText(text, maxPRContextSnippetSize),
 			URL:         stringAny(row["url"]),
 		})
