@@ -2030,8 +2030,8 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	if !summaryAttempted {
 		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "Could not post GX inline review comment") {
+		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
 	}
 }
 

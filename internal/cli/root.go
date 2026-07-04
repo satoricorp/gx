@@ -2024,7 +2024,9 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if pr == nil || pr.Number == 0 {
 		return
 	}
-	postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report)
+	if err := postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX inline review comment: %v", err)))
+	}
 	commentBody := reviewCommentMarker + "\n" + codereview.RenderMarkdown(report)
 	_, err = client.UpsertIssueComment(ctx, github.IssueCommentOptions{
 		Owner:  owner,
@@ -2038,9 +2040,9 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	}
 }
 
-func postReviewInlineComments(ctx context.Context, client *github.Client, repo vcs.RepoInfo, owner string, repoName string, prNumber int, report codereview.Report) {
+func postReviewInlineComments(ctx context.Context, client *github.Client, repo vcs.RepoInfo, owner string, repoName string, prNumber int, report codereview.Report) error {
 	if client == nil || prNumber <= 0 || len(report.Findings) == 0 {
-		return
+		return nil
 	}
 	repoRoot := strings.TrimSpace(repo.RootPath)
 	if repoRoot == "" {
@@ -2048,12 +2050,13 @@ func postReviewInlineComments(ctx context.Context, client *github.Client, repo v
 	}
 	commitID := currentHeadCommit(ctx, repoRoot)
 	if strings.TrimSpace(commitID) == "" {
-		return
+		return nil
 	}
 	seen := map[string]struct{}{}
+	var firstErr error
 	for _, finding := range report.Findings {
 		for _, anchor := range finding.Anchors {
-			if !codereview.AnchorMapsToChangedHunk(ctx, report.RepoRoot, anchor) {
+			if !codereview.AnchorMapsToChangedHunk(ctx, repoRoot, anchor) {
 				continue
 			}
 			key := fmt.Sprintf("%s:%d:%s", anchor.File, anchor.Line, finding.ID)
@@ -2061,7 +2064,7 @@ func postReviewInlineComments(ctx context.Context, client *github.Client, repo v
 				continue
 			}
 			seen[key] = struct{}{}
-			_ = client.CreatePullRequestReviewComment(ctx, github.PullRequestReviewCommentOptions{
+			if err := client.CreatePullRequestReviewComment(ctx, github.PullRequestReviewCommentOptions{
 				Owner:    owner,
 				Repo:     repoName,
 				Number:   prNumber,
@@ -2070,9 +2073,12 @@ func postReviewInlineComments(ctx context.Context, client *github.Client, repo v
 				Path:     anchor.File,
 				Line:     anchor.Line,
 				Side:     "RIGHT",
-			})
+			}); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
+	return firstErr
 }
 
 func renderInlineReviewComment(finding codereview.Finding) string {
