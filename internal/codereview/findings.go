@@ -9,16 +9,21 @@ import (
 )
 
 type Finding struct {
-	ID               string
-	Scopes           []string
-	Title            string
-	Summary          string
-	Benefit          string
-	Evidence         []Evidence
-	Recommendation   string
-	Strength         string
-	SourceIDs        []string
-	SourcePublishers []string
+	ID             string
+	Scopes         []string
+	Title          string
+	Summary        string
+	Benefit        string
+	Evidence       []Evidence
+	Anchors        []FindingAnchor
+	Recommendation string
+	Strength       string
+	SourceIDs      []string
+}
+
+type FindingAnchor struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
 }
 
 type Evidence struct {
@@ -315,7 +320,6 @@ func evaluateFindings(ctx ReviewContext, rules []Rule) []Finding {
 				continue
 			}
 			finding.SourceIDs = filterSourceIDs(finding.SourceIDs, knownSources)
-			finding.SourcePublishers = sourcePublishersForIDs(finding.SourceIDs, ctx.Sources)
 			out = append(out, finding)
 		}
 	}
@@ -373,6 +377,7 @@ func findingMentionsChangedFile(finding Finding, changed []string) bool {
 		finding.Benefit,
 		finding.Recommendation,
 		evidenceText(finding.Evidence),
+		anchorsText(finding.Anchors),
 	}, "\n")
 	text = filepath.ToSlash(text)
 	for _, file := range changed {
@@ -381,6 +386,17 @@ func findingMentionsChangedFile(finding Finding, changed []string) bool {
 		}
 	}
 	return false
+}
+
+func anchorsText(anchors []FindingAnchor) string {
+	var b strings.Builder
+	for _, anchor := range anchors {
+		if strings.TrimSpace(anchor.File) == "" || anchor.Line <= 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "%s:%d\n", filepath.ToSlash(strings.TrimSpace(anchor.File)), anchor.Line)
+	}
+	return b.String()
 }
 
 func evidenceText(evidence []Evidence) string {
@@ -431,17 +447,6 @@ func filterSourceIDs(ids []string, known map[string]struct{}) []string {
 		}
 	}
 	return out
-}
-
-func sourcePublishersForIDs(ids []string, sources []Source) []string {
-	publishers := sourcePublisherMap(sources)
-	var out []string
-	for _, id := range ids {
-		if publisher := strings.TrimSpace(publishers[strings.TrimSpace(id)]); publisher != "" {
-			out = append(out, publisher)
-		}
-	}
-	return dedupeNonEmptyStrings(out)
 }
 
 func strengthRank(strength string) int {

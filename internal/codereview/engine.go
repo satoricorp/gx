@@ -13,7 +13,6 @@ type Engine struct {
 	rules        []Rule
 	retriever    ContextRetriever
 	reviewer     AIReviewer
-	judge        FindingJudge
 	autoReviewer bool
 }
 
@@ -102,37 +101,21 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Brief:        brief,
 	}
 	reviewProgress(opts, "Checking fallback review rules")
-	heuristicFindings := evaluateFindings(reviewContext, rules)
+	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
 	reviewer := e.reviewer
 	if reviewer == nil && e.autoReviewer {
 		reviewer = reviewerFromEnvWithPolicy(&policy)
 	}
-	var aiFindings []Finding
-	if reviewerAvailable(reviewer) {
+	if reviewer != nil {
 		reviewProgress(opts, "Asking AI reviewer")
-		if reviewedFindings, err := reviewer.Review(ctx, brief); err == nil && len(reviewedFindings) > 0 {
-			aiFindings = reviewedFindings
+		if aiFindings, err := reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
+			findings = mergeFindings(findings, aiFindings)
 			reviewerLabel = "heuristic+ai"
 		}
 	}
-	findings := mergeFindings(heuristicFindings, aiFindings)
+	findings = validateFindingAnchors(reviewContext, findings)
 	findings = filterPatchFocusedFindings(reviewContext, findings)
-	blockingFindings, advisoryFindings := splitBlockingToolFindings(findings)
-	advisoryFindings = prepareFindingsForJudge(reviewContext, advisoryFindings)
-	judge := e.judge
-	if judge == nil && e.autoReviewer {
-		judge = judgeFromEnvWithPolicy(&policy)
-	}
-	if !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisoryFindings) > 0 {
-		reviewProgress(opts, "Verifying recommendations")
-		judgeRequest := buildJudgeRequest(reviewContext, advisoryFindings)
-		if judgeResults, err := judge.Judge(ctx, judgeRequest); err == nil {
-			advisoryFindings = applyJudgeResults(advisoryFindings, judgeResults)
-		}
-	}
-	advisoryFindings = capAdvisoryFindings(advisoryFindings)
-	findings = append(blockingFindings, advisoryFindings...)
 
 	return Report{
 		RepoRoot:          repoRoot,
