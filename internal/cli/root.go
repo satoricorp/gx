@@ -2024,6 +2024,9 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if pr == nil || pr.Number == 0 {
 		return
 	}
+	if err := postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX inline review comment: %v", err)))
+	}
 	commentBody := reviewCommentMarker + "\n" + codereview.RenderMarkdown(report)
 	_, err = client.UpsertIssueComment(ctx, github.IssueCommentOptions{
 		Owner:  owner,
@@ -2035,6 +2038,63 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if err != nil {
 		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX review comment: %v", err)))
 	}
+}
+
+func postReviewInlineComments(ctx context.Context, client *github.Client, repo vcs.RepoInfo, owner string, repoName string, prNumber int, report codereview.Report) error {
+	if client == nil || prNumber <= 0 || len(report.Findings) == 0 {
+		return nil
+	}
+	repoRoot := strings.TrimSpace(repo.RootPath)
+	if repoRoot == "" {
+		repoRoot = strings.TrimSpace(report.RepoRoot)
+	}
+	commitID := currentHeadCommit(ctx, repoRoot)
+	if strings.TrimSpace(commitID) == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var firstErr error
+	for _, finding := range report.Findings {
+		for _, anchor := range finding.Anchors {
+			if !codereview.AnchorMapsToChangedHunk(ctx, repoRoot, anchor) {
+				continue
+			}
+			key := fmt.Sprintf("%s:%d:%s", anchor.File, anchor.Line, finding.ID)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			if err := client.CreatePullRequestReviewComment(ctx, github.PullRequestReviewCommentOptions{
+				Owner:    owner,
+				Repo:     repoName,
+				Number:   prNumber,
+				Body:     renderInlineReviewComment(finding),
+				CommitID: commitID,
+				Path:     anchor.File,
+				Line:     anchor.Line,
+				Side:     "RIGHT",
+			}); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func renderInlineReviewComment(finding codereview.Finding) string {
+	var b strings.Builder
+	title := strings.TrimSpace(finding.Title)
+	if title == "" {
+		title = "GX review finding"
+	}
+	fmt.Fprintf(&b, "**%s**\n\n", title)
+	if summary := strings.TrimSpace(finding.Summary); summary != "" {
+		fmt.Fprintf(&b, "%s\n\n", summary)
+	}
+	if recommendation := strings.TrimSpace(finding.Recommendation); recommendation != "" {
+		fmt.Fprintf(&b, "**Do next:** %s\n", recommendation)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, prompt string, scopeExplicit bool, deep bool, stderr io.Writer) {

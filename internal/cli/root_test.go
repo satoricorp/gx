@@ -1909,6 +1909,134 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	}
 }
 
+func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.T) {
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Test User")
+	runGitTest(t, root, "config", "user.email", "test@example.com")
+	writeTestFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	gitAddTestFiles(t, root, "main.go")
+	runGitTest(t, root, "commit", "-m", "initial")
+	writeTestFile(t, root, "main.go", "package main\nfunc main() { println(\"hi\") }\n")
+	gitAddTestFiles(t, root, "main.go")
+	runGitTest(t, root, "commit", "-m", "change")
+
+	remote := "https://github.com/acme/gx.git"
+	branch := "feature/demo"
+	var inlineAttempted bool
+	var summaryAttempted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/pulls/7/comments":
+			inlineAttempted = true
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode inline comment body: %v", err)
+			}
+			if payload["path"] != "main.go" || int(payload["line"].(float64)) != 2 {
+				t.Fatalf("inline payload = %#v", payload)
+			}
+			_, _ = w.Write([]byte(`{"id":99}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			summaryAttempted = true
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+
+	report := codereview.Report{
+		RepoRoot: root,
+		Findings: []codereview.Finding{{
+			ID:             "ai.review.1",
+			Title:          "Inline finding",
+			Summary:        "main.go changed.",
+			Benefit:        "Keeps comments anchored.",
+			Recommendation: "Fix main.go.",
+			Anchors:        []codereview.FindingAnchor{{File: "main.go", Line: 2}},
+		}},
+	}
+	var stderr bytes.Buffer
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+		RootPath:   root,
+		RemoteURL:  &remote,
+		BranchName: &branch,
+	}, report, &stderr)
+	if !inlineAttempted {
+		t.Fatal("postReviewSummaryComment() did not attempt inline comment")
+	}
+	if !summaryAttempted {
+		t.Fatal("postReviewSummaryComment() did not post summary fallback")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+	}
+}
+
+func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Test User")
+	runGitTest(t, root, "config", "user.email", "test@example.com")
+	writeTestFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	gitAddTestFiles(t, root, "main.go")
+	runGitTest(t, root, "commit", "-m", "initial")
+	writeTestFile(t, root, "main.go", "package main\nfunc main() { println(\"hi\") }\n")
+	gitAddTestFiles(t, root, "main.go")
+	runGitTest(t, root, "commit", "-m", "change")
+
+	remote := "https://github.com/acme/gx.git"
+	branch := "feature/demo"
+	var summaryAttempted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/pulls/7/comments":
+			http.Error(w, "line cannot be commented", http.StatusUnprocessableEntity)
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			summaryAttempted = true
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+
+	report := codereview.Report{
+		RepoRoot: root,
+		Findings: []codereview.Finding{{
+			ID:             "ai.review.1",
+			Title:          "Inline finding",
+			Summary:        "main.go changed.",
+			Benefit:        "Keeps comments anchored.",
+			Recommendation: "Fix main.go.",
+			Anchors:        []codereview.FindingAnchor{{File: "main.go", Line: 2}},
+		}},
+	}
+	var stderr bytes.Buffer
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+		RootPath:   root,
+		RemoteURL:  &remote,
+		BranchName: &branch,
+	}, report, &stderr)
+	if !summaryAttempted {
+		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
+	}
+	if !strings.Contains(stderr.String(), "Could not post GX inline review comment") {
+		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
+	}
+}
+
 func TestAutoReportFailurePostsCommandError(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
@@ -1974,9 +2102,14 @@ func writeTestFile(t *testing.T, root, rel, content string) {
 func gitAddTestFiles(t *testing.T, root string, files ...string) {
 	t.Helper()
 	args := append([]string{"add"}, files...)
+	runGitTest(t, root, args...)
+}
+
+func runGitTest(t *testing.T, root string, args ...string) {
+	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add error = %v\n%s", err, out)
+		t.Fatalf("git %s error = %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
