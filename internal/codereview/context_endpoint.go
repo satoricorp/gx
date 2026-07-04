@@ -1,6 +1,9 @@
 package codereview
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type CompositeContextRetriever struct {
 	Retrievers []ContextRetriever
@@ -20,16 +23,28 @@ func contextRetrieverFromEnv() ContextRetriever {
 	return CompositeContextRetriever{Retrievers: retrievers}
 }
 
-func (r CompositeContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
-	var out []ContextSnippet
-	for _, retriever := range r.Retrievers {
+func (r CompositeContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	results := make([][]ContextSnippet, len(r.Retrievers))
+	var wg sync.WaitGroup
+	for i, retriever := range r.Retrievers {
+		i, retriever := i, retriever
 		if retriever == nil {
 			continue
 		}
-		snippets, err := retriever.Retrieve(ctx, repoRoot, opts, facts, hints)
-		if err != nil {
-			continue
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			snippets, err := retriever.Retrieve(ctx, in)
+			if err != nil {
+				return
+			}
+			results[i] = snippets
+		}()
+	}
+	wg.Wait()
+
+	var out []ContextSnippet
+	for _, snippets := range results {
 		out = append(out, snippets...)
 	}
 	return dedupeContextSnippets(out), nil

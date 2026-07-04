@@ -78,6 +78,8 @@ type Report struct {
 	ContextSnippets   int
 	Verbose           bool
 	Color             bool
+	Triage            ChangeTriage
+	NoFindingsMessage string
 }
 
 type FilePresence struct {
@@ -100,7 +102,11 @@ func RenderMarkdown(report Report) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
-		fmt.Fprintln(&b, "- No recommendations yet.")
+		message := strings.TrimSpace(report.NoFindingsMessage)
+		if message == "" {
+			message = "No material issues found in this change."
+		}
+		fmt.Fprintf(&b, "- %s\n", message)
 	} else {
 		for index, finding := range report.Findings {
 			fmt.Fprintf(&b, "%s\n", reviewTitle(report, fmt.Sprintf("### %d. %s", index+1, finding.Title)))
@@ -114,7 +120,7 @@ func RenderMarkdown(report Report) string {
 			fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Do next:**"), finding.Recommendation)
 			if attributions := renderFindingAttributions(report, finding); len(attributions) > 0 {
 				fmt.Fprintln(&b)
-				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Attribution:**"), strings.Join(attributions, " · "))
+				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Informed by:**"), strings.Join(attributions, " · "))
 			}
 			if report.Verbose && len(finding.Evidence) > 0 {
 				fmt.Fprintln(&b)
@@ -123,28 +129,35 @@ func RenderMarkdown(report Report) string {
 					fmt.Fprintf(&b, "- %s: %s\n", evidence.Label, evidence.Value)
 				}
 			}
+			if report.Verbose && len(finding.Anchors) > 0 {
+				fmt.Fprintln(&b)
+				fmt.Fprintln(&b, reviewLabel(report, "**Anchors:**"))
+				for _, anchor := range finding.Anchors {
+					fmt.Fprintf(&b, "- `%s:%d`\n", anchor.File, anchor.Line)
+				}
+			}
 			fmt.Fprintln(&b)
 		}
 	}
 	fmt.Fprintln(&b)
 
-	if len(report.Sources) > 0 {
-		fmt.Fprintln(&b, reviewTitle(report, "## Sources"))
-		for _, source := range report.Sources {
-			fmt.Fprintf(&b, "- %s\n", renderSourceCatalogEntry(source))
-		}
-		fmt.Fprintln(&b)
-	}
-
-	if len(report.SourceRefs) > 0 {
-		fmt.Fprintln(&b, reviewTitle(report, "## Context Sources"))
-		for _, sourceRef := range report.SourceRefs {
-			fmt.Fprintf(&b, "- %s\n", renderSourceRef(sourceRef))
-		}
-		fmt.Fprintln(&b)
-	}
-
 	if report.Verbose {
+		if len(report.Sources) > 0 {
+			fmt.Fprintln(&b, reviewTitle(report, "## Sources"))
+			for _, source := range report.Sources {
+				fmt.Fprintf(&b, "- %s\n", renderSourceCatalogEntry(source))
+			}
+			fmt.Fprintln(&b)
+		}
+
+		if len(report.SourceRefs) > 0 {
+			fmt.Fprintln(&b, reviewTitle(report, "## Context Sources"))
+			for _, sourceRef := range report.SourceRefs {
+				fmt.Fprintf(&b, "- %s\n", renderSourceRef(sourceRef))
+			}
+			fmt.Fprintln(&b)
+		}
+
 		fmt.Fprintln(&b, reviewTitle(report, "## Repo Facts"))
 		fmt.Fprintf(&b, "- Tracked/source files scanned: `%d`\n", report.TrackedFileCount)
 		fmt.Fprintf(&b, "- Test files: `%d`\n", report.TestFileCount)
@@ -185,21 +198,28 @@ func RenderMarkdown(report Report) string {
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {
-	if len(finding.SourceIDs) == 0 {
+	publishers := append([]string(nil), finding.SourcePublishers...)
+	sources := sourceMap(report.Sources)
+	for _, id := range finding.SourceIDs {
+		if source, ok := sources[strings.TrimSpace(id)]; ok {
+			publishers = append(publishers, firstNonEmpty(source.Publisher, source.Title, source.ID))
+		}
+	}
+	if len(publishers) == 0 {
 		return nil
 	}
-	sources := sourceMap(report.Sources)
+	seen := map[string]struct{}{}
 	var out []string
-	for _, id := range finding.SourceIDs {
-		id = strings.TrimSpace(id)
-		if id == "" {
+	for _, publisher := range publishers {
+		publisher = strings.TrimSpace(publisher)
+		if publisher == "" {
 			continue
 		}
-		if source, ok := sources[id]; ok {
-			out = append(out, renderSourceCatalogEntry(source))
+		if _, ok := seen[publisher]; ok {
 			continue
 		}
-		out = append(out, fmt.Sprintf("`%s`", id))
+		seen[publisher] = struct{}{}
+		out = append(out, publisher)
 	}
 	return out
 }
@@ -261,6 +281,9 @@ func renderSourceRef(ref SourceRef) string {
 	}
 	if ref.Source != "" && ref.Source != "local" {
 		details = append(details, fmt.Sprintf("source=%s", ref.Source))
+	}
+	if ref.Publisher != "" {
+		details = append(details, fmt.Sprintf("publisher=%s", ref.Publisher))
 	}
 	return fmt.Sprintf("`%s` %s", label, strings.Join(details, " · "))
 }

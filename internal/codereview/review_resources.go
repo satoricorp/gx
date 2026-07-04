@@ -88,11 +88,15 @@ func reviewResourceRetrieverFromEnv() ContextRetriever {
 	}
 }
 
-func (r ReviewResourceRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Embedder == nil || r.Store == nil {
 		return nil, nil
 	}
-	signals := reviewResourceSignals(ctx, repoRoot, opts, facts, hints)
+	if !in.Plan.RunReviewResources && in.Plan.Triage.Class != "" {
+		return nil, nil
+	}
+	opts := in.Options
+	signals := reviewResourceSignals(in)
 	queryText := reviewResourceQueryText(opts, signals)
 	if strings.TrimSpace(queryText) == "" {
 		return nil, nil
@@ -114,6 +118,7 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, repoRoot string, 
 	}
 	include := []string{
 		"source_id",
+		"publisher",
 		"url",
 		"title",
 		"category",
@@ -211,8 +216,10 @@ type reviewResourceSignalSet struct {
 	PolicyQuery string
 }
 
-func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) reviewResourceSignalSet {
-	files := reviewChangedFiles(ctx, repoRoot)
+func reviewResourceSignals(in RetrieveInput) reviewResourceSignalSet {
+	opts := in.Options
+	facts := in.Facts
+	files := normalizedChangedFiles(in.ChangedFiles)
 	if len(files) == 0 {
 		files = facts.Files
 	}
@@ -230,12 +237,15 @@ func reviewResourceSignals(ctx context.Context, repoRoot string, opts Options, f
 		Files:       files,
 		Languages:   languageTagsForFiles(files),
 		Frameworks:  frameworkTagsForFiles(files, facts.DependencyFiles),
-		RiskTags:    riskTagsForReview(files, facts.DependencyFiles, opts),
+		RiskTags:    in.Plan.RiskTags,
 		Categories:  categoriesForReview(opts),
 		Intents:     reviewResourceIntents(opts),
 		PolicyQuery: reviewPolicyQueryText(opts.ReviewPolicy),
 	}
-	for _, hint := range hints {
+	if len(signals.RiskTags) == 0 {
+		signals.RiskTags = riskTagsForReview(files, facts.DependencyFiles, opts)
+	}
+	for _, hint := range in.Hints {
 		if title := strings.TrimSpace(hint.Title); title != "" {
 			signals.Hints = append(signals.Hints, title)
 		}
@@ -325,17 +335,19 @@ func reviewResourceSnippets(rows []reviewResourceRow, limit int, namespace strin
 		}
 		seen[key] = struct{}{}
 		title := stringValue(row["title"])
+		publisher := firstNonEmpty(stringValue(row["publisher"]), publisherFromURLHost(stringValue(row["url"])))
 		ref := sourceID
 		if chunkIndex != "" {
 			ref += "#" + chunkIndex
 		}
 		snippets = append(snippets, ContextSnippet{
-			Kind:   "review_resource",
-			Ref:    ref,
-			Source: "turbopuffer:" + namespace,
-			Title:  title,
-			URL:    stringValue(row["url"]),
-			Text:   reviewResourceSnippetText(title, row, text),
+			Kind:      "review_resource",
+			Ref:       ref,
+			Source:    "turbopuffer:" + namespace,
+			Publisher: publisher,
+			Title:     title,
+			URL:       stringValue(row["url"]),
+			Text:      reviewResourceSnippetText(title, row, text),
 		})
 		if len(snippets) >= limit {
 			break
@@ -351,7 +363,7 @@ func reviewResourceSnippetText(title string, row reviewResourceRow, text string)
 		b.WriteString(title)
 		b.WriteString("\n")
 	}
-	for _, key := range []string{"url", "category", "authority", "evidence_level", "language_tags", "framework_tags", "risk_tag_values", "review_tag_values"} {
+	for _, key := range []string{"publisher", "url", "category", "authority", "evidence_level", "language_tags", "framework_tags", "risk_tag_values", "review_tag_values"} {
 		value := displayAttribute(row[key])
 		if value == "" {
 			continue
@@ -667,11 +679,13 @@ func indexedContextRetrieverFromEnv() ContextRetriever {
 	}
 }
 
-func (r IndexedContextRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r IndexedContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Embedder == nil || r.Store == nil {
 		return nil, nil
 	}
-	signals := reviewResourceSignals(ctx, repoRoot, opts, facts, hints)
+	opts := in.Options
+	repoRoot := in.RepoRoot
+	signals := reviewResourceSignals(in)
 	queryText := strings.Join([]string{
 		"GX indexed codebase and session context query",
 		reviewResourceQueryText(opts, signals),
@@ -831,6 +845,7 @@ func indexedContextSnippet(row indexedContextRow, namespace string) (ContextSnip
 		Kind:       "indexed_context",
 		Ref:        ref,
 		Source:     "turbopuffer:" + strings.TrimSpace(namespace),
+		Publisher:  "this repo",
 		Title:      firstNonEmpty(stringValue(row["revision_title"]), stringValue(row["symbol"]), ref),
 		Text:       indexedContextSnippetText(row, text),
 		File:       stringValue(row["file_path"]),

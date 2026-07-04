@@ -28,10 +28,14 @@ func reviewHistoryRetrieverFromEnv() ContextRetriever {
 	return ReviewHistoryRetriever{Client: client, Limit: limit}
 }
 
-func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, hints []ReviewHint) ([]ContextSnippet, error) {
+func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Client == nil {
 		return nil, nil
 	}
+	repoRoot := in.RepoRoot
+	opts := in.Options
+	facts := in.Facts
+	hints := in.Hints
 	repoFullName := reviewHistoryRepoFullName(ctx, repoRoot)
 	if repoFullName == "" {
 		return nil, nil
@@ -105,6 +109,7 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 			Kind:      "code_review_history",
 			Ref:       firstNonEmpty(finding.Fingerprint, finding.ID),
 			Source:    "gx-cloud:code-review-history",
+			Publisher: "prior gx reviews",
 			Title:     finding.Title,
 			Text:      text,
 			File:      finding.FilePath,
@@ -118,11 +123,12 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 	}
 	for _, summary := range result.Summaries {
 		snippets = append(snippets, ContextSnippet{
-			Kind:   "code_review_summary",
-			Ref:    summary.ID,
-			Source: "gx-cloud:code-review-history",
-			Title:  fmt.Sprintf("Prior %s summary", firstNonEmpty(summary.SummaryKind, "review")),
-			Text:   strings.TrimSpace(summary.SummaryText),
+			Kind:      "code_review_summary",
+			Ref:       summary.ID,
+			Source:    "gx-cloud:code-review-history",
+			Publisher: "prior gx reviews",
+			Title:     fmt.Sprintf("Prior %s summary", firstNonEmpty(summary.SummaryKind, "review")),
+			Text:      strings.TrimSpace(summary.SummaryText),
 		})
 		if len(snippets) >= limit {
 			return snippets
@@ -137,6 +143,7 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 			Kind:      "code_review_history",
 			Ref:       firstNonEmpty(match.ID, stringAttribute(match.Attributes, "review_fingerprint")),
 			Source:    "turbopuffer:code-review-history",
+			Publisher: "prior gx reviews",
 			Title:     firstNonEmpty(stringAttribute(match.Attributes, "review_category"), "Code review history"),
 			Text:      text,
 			File:      stringAttribute(match.Attributes, "file"),

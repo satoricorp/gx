@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) {
@@ -65,7 +66,7 @@ func TestBuildReviewBriefUsesPolicyAndReferenceContextWithoutRenderingPolicyText
 	root := t.TempDir()
 	writeFile(t, root, "REVIEW.md", "Always check tenant authorization.\n\n"+server.URL+"/rollback\n")
 
-	brief, err := BuildReviewBrief(context.Background(), root, normalizeOptions(Options{}), RepoFacts{}, nil, fakeRetriever{})
+	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), RepoFacts{}, nil, fakeRetriever{})
 	if err != nil {
 		t.Fatalf("BuildReviewBrief() error = %v", err)
 	}
@@ -108,7 +109,13 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/webhook/handler.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot:     t.TempDir(),
+		Options:      normalizeOptions(Options{ReviewPolicy: policy}),
+		Facts:        RepoFacts{Files: []string{"internal/webhook/handler.go"}},
+		ChangedFiles: []string{"internal/webhook/handler.go"},
+		Plan:         ReviewExecutionPlan{RunReviewResources: true},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -135,7 +142,12 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 		Limit:     2,
 	}
 
-	_, err := retriever.Retrieve(context.Background(), t.TempDir(), Options{ReviewPolicy: policy}, RepoFacts{Files: []string{"internal/session/replay.go"}}, nil)
+	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot:     t.TempDir(),
+		Options:      normalizeOptions(Options{ReviewPolicy: policy}),
+		Facts:        RepoFacts{Files: []string{"internal/session/replay.go"}},
+		ChangedFiles: []string{"internal/session/replay.go"},
+	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
@@ -203,8 +215,43 @@ func TestMultiReviewerCallsEveryProviderBeforeLimitingFindings(t *testing.T) {
 	if openai.calls != 1 || anthropic.calls != 1 {
 		t.Fatalf("calls = openai %d anthropic %d, want both called once", openai.calls, anthropic.calls)
 	}
-	if len(findings) != 6 {
-		t.Fatalf("findings = %d, want result limit applied after both reviewers run", len(findings))
+	if len(findings) != 8 {
+		t.Fatalf("findings = %d, want both reviewers' findings before engine cap", len(findings))
+	}
+}
+
+func TestMultiReviewerRunsProvidersConcurrently(t *testing.T) {
+	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "slow-a", label: "Slow A", reviewer: delayedReviewer{delay: 120 * time.Millisecond, finding: Finding{ID: "one", Title: "one", Summary: "summary one"}}},
+		{name: "slow-b", label: "Slow B", reviewer: delayedReviewer{delay: 120 * time.Millisecond, finding: Finding{ID: "two", Title: "two", Summary: "summary two"}}},
+	}}
+
+	start := time.Now()
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("findings = %#v, want two findings", findings)
+	}
+	if elapsed >= 220*time.Millisecond {
+		t.Fatalf("Review() took %s, want roughly one child duration", elapsed)
+	}
+}
+
+func TestMultiReviewerOutputOrderIsDeterministic(t *testing.T) {
+	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "first", label: "First", reviewer: delayedReviewer{delay: 80 * time.Millisecond, finding: Finding{ID: "one", Title: "one", Summary: "summary one"}}},
+		{name: "second", label: "Second", reviewer: delayedReviewer{delay: 10 * time.Millisecond, finding: Finding{ID: "two", Title: "two", Summary: "summary two"}}},
+	}}
+
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if got := []string{findings[0].ID, findings[1].ID}; strings.Join(got, ",") != "first.one,second.two" {
+		t.Fatalf("finding order = %#v, want provider order", got)
 	}
 }
 
@@ -239,4 +286,20 @@ type countingReviewer struct {
 func (r *countingReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	r.calls++
 	return r.findings, nil
+}
+
+type delayedReviewer struct {
+	delay   time.Duration
+	finding Finding
+}
+
+func (r delayedReviewer) Review(ctx context.Context, _ ReviewBrief) ([]Finding, error) {
+	timer := time.NewTimer(r.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return []Finding{r.finding}, nil
+	}
 }

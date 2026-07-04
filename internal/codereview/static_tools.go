@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,10 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	if !hasDependencyFile(facts.DependencyFiles, "go.mod") {
 		return nil
 	}
+	pkgs, ok := changedGoPackageArgs(ctx, repoRoot)
+	if !ok {
+		return nil
+	}
 	timeout := 90 * time.Second
 	if opts.Deep {
 		timeout = 180 * time.Second
@@ -38,8 +43,8 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		name     string
 		command  []string
 	}{
-		{progress: "Running go test", name: "go test", command: []string{"go", "test", "./..."}},
-		{progress: "Running go vet", name: "go vet", command: []string{"go", "vet", "./..."}},
+		{progress: "Running go test", name: "go test", command: append([]string{"go", "test"}, pkgs...)},
+		{progress: "Running go vet", name: "go vet", command: append([]string{"go", "vet"}, pkgs...)},
 	}
 	out := make([]StaticToolResult, len(tools))
 	if !opts.Deep {
@@ -62,6 +67,66 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	}
 	wg.Wait()
 	return out
+}
+
+func changedGoPackageArgs(ctx context.Context, repoRoot string) ([]string, bool) {
+	return goPackageArgsForChangedFiles(repoRoot, reviewChangedFiles(ctx, repoRoot))
+}
+
+func goPackageArgsForChangedFiles(repoRoot string, files []string) ([]string, bool) {
+	files = normalizedChangedFiles(files)
+	if len(files) == 0 {
+		return nil, false
+	}
+	dirs := map[string]struct{}{}
+	for _, file := range files {
+		if goStaticToolsRequireRepoWide(file) {
+			return []string{"./..."}, true
+		}
+		if !strings.HasSuffix(file, ".go") {
+			continue
+		}
+		dir := filepath.ToSlash(filepath.Dir(file))
+		if dir == "" {
+			return []string{"./..."}, true
+		}
+		if dir == "." {
+			dirs["."] = struct{}{}
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(dir))); err != nil {
+			return []string{"./..."}, true
+		}
+		dirs[dir] = struct{}{}
+	}
+	if len(dirs) == 0 {
+		return nil, false
+	}
+	if len(dirs) > 20 {
+		return []string{"./..."}, true
+	}
+	out := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		if dir == "." {
+			out = append(out, ".")
+		} else {
+			out = append(out, "./"+dir)
+		}
+	}
+	sort.Strings(out)
+	return out, true
+}
+
+func goStaticToolsRequireRepoWide(file string) bool {
+	file = filepath.ToSlash(strings.TrimSpace(file))
+	base := filepath.Base(file)
+	switch base {
+	case "go.mod", "go.sum", "go.work", "go.work.sum", "Makefile", "Taskfile.yml", "Taskfile.yaml", "Dockerfile", "magefile.go":
+		return true
+	}
+	return strings.HasPrefix(file, ".github/workflows/") ||
+		strings.HasPrefix(file, "build/") ||
+		strings.HasPrefix(file, "scripts/")
 }
 
 func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, name string, command ...string) StaticToolResult {
