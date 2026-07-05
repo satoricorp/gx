@@ -11,13 +11,13 @@ import (
 )
 
 func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) { return nil, codereview.ReviewerInfo{} }
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
 	}
@@ -61,10 +61,10 @@ func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
 }
 
 func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
 	findings := make([]codereview.Finding, 0, 12)
@@ -77,8 +77,8 @@ func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
 			Strength:       "Strong",
 		})
 	}
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer {
-		return fakePRSummaryReviewer{findings: findings}
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{findings: findings}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil

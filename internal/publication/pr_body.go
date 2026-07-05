@@ -34,7 +34,9 @@ const (
 
 var hunkHeaderRE = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
 
-var prSummaryReviewerFromEnv = codereview.ReviewerFromEnv
+var prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+	return codereview.ReviewerFromEnvWithInfo()
+}
 var collectPRSummaryContext = collectDefaultPRSummaryContext
 
 type prRevisionSummary struct {
@@ -381,14 +383,18 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 }
 
 func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) []codereview.Finding {
-	if prSummaryReviewerFromEnv == nil {
-		return nil
-	}
-	reviewer := prSummaryReviewerFromEnv()
+	reviewer, _ := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
 		return nil
 	}
-	findings, err := reviewer.Review(ctx, prReviewBrief(artifact, catalog, summaryContext))
+	brief := prReviewBrief(artifact, catalog, summaryContext)
+	var findings []codereview.Finding
+	var err error
+	if withOverview, ok := reviewer.(codereview.AIReviewerWithOverview); ok {
+		_, findings, err = withOverview.ReviewWithOverview(ctx, brief)
+	} else {
+		findings, err = reviewer.Review(ctx, brief)
+	}
 	if err != nil {
 		return nil
 	}
@@ -403,11 +409,12 @@ func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summar
 			break
 		}
 	}
+	labeled := codereview.LabelContextSnippets(summaryContext.Snippets)
 	return codereview.ReviewBrief{
 		RepoRoot:      artifact.Bundle.Repo.RootPath,
 		Scope:         "maintainability",
 		Depth:         "shallow",
-		ReviewProfile: "patch_focused",
+		ReviewProfile: "pr_summary",
 		Focus:         strings.Join(catalog.Files, " "),
 		Static: codereview.StaticSnapshot{
 			FileCount:     catalog.Stats.FileCount,
@@ -416,7 +423,9 @@ func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summar
 			CodeQuality:   warningQualityHints(artifact),
 			TestFileCount: countTestFiles(catalog.Files),
 		},
-		Context: summaryContext.Snippets,
+		Context:       labeled,
+		SourceRefs:    codereview.SourceRefsFromContextSnippets(labeled),
+		SourceCatalog: codereview.SourceBriefs(codereview.SourcesForScopes([]string{"maintainability", "security", "testing", "architecture", "dependencies"})),
 		Rubric: codereview.ArchitectureRubric{
 			Goal: "Identify the changed hunks a human should review before merging this PR.",
 			Questions: []string{

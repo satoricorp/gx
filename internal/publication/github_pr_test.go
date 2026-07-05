@@ -16,13 +16,13 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer {
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
 		return fakePRSummaryReviewer{findings: []codereview.Finding{{
 			Title:          "Verify GitHub PR summary update ordering",
 			Summary:        "internal/publication/publication.go updates the GitHub PR body around publish side effects, so failures could leave reviewers without the important review targets.",
@@ -30,7 +30,7 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 			Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
 			Strength:       "Strong",
 			SourceIDs:      []string{"google-eng-practices"},
-		}}}
+		}}}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{
@@ -103,13 +103,13 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) { return nil, codereview.ReviewerInfo{} }
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
 	}
@@ -161,6 +161,10 @@ type fakePRSummaryReviewer struct {
 
 func (f fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
 	return f.findings, nil
+}
+
+func (f fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {
+	return "", f.findings, nil
 }
 
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
