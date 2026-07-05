@@ -811,6 +811,18 @@ func TestRenderMarkdownShowsResolvedSourcesAttribution(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownDoesNotRenderOverview(t *testing.T) {
+	overview := "This overview explains why the change was made."
+	findings, err := parseAIReviewContent(`{"overview":"`+overview+`","recommendations":[{"title":"Review auth","summary":"Check tokens.","benefit":"Safer auth.","recommendation":"Verify expiry.","strength":"Strong","evidence":["Changed hunk"]}]}`, ReviewBrief{})
+	if err != nil {
+		t.Fatalf("parseAIReviewContent() error = %v", err)
+	}
+	text := RenderMarkdown(Report{Findings: findings})
+	if strings.Contains(text, overview) {
+		t.Fatalf("RenderMarkdown() should not render overview for patch_focused output:\n%s", text)
+	}
+}
+
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 	prompt := reviewDeveloperPrompt()
 	for _, want := range []string{
