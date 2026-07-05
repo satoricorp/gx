@@ -40,6 +40,15 @@ type AIReviewer interface {
 	Review(ctx context.Context, brief ReviewBrief) ([]Finding, error)
 }
 
+type AIReviewerWithOverview interface {
+	AIReviewer
+	ReviewWithOverview(ctx context.Context, brief ReviewBrief) (overview string, findings []Finding, err error)
+}
+
+type ReviewerInfo struct {
+	Models []string
+}
+
 type responsesAIReviewer struct {
 	url    string
 	token  string
@@ -113,7 +122,13 @@ type responseResult struct {
 }
 
 type aiReviewResponse struct {
+	Overview        string             `json:"overview"`
 	Recommendations []aiRecommendation `json:"recommendations"`
+}
+
+type aiReviewOutput struct {
+	Overview  string
+	Findings  []Finding
 }
 
 type aiRecommendation struct {
@@ -123,8 +138,11 @@ type aiRecommendation struct {
 	Recommendation string          `json:"recommendation"`
 	Strength       string          `json:"strength"`
 	Evidence       []string        `json:"evidence"`
-	Sources        []string        `json:"sources"`
+	File           string          `json:"file"`
+	Line           json.RawMessage `json:"line"`
+	SourceLabels   []string        `json:"source_labels"`
 	Anchors        []FindingAnchor `json:"anchors"`
+	Sources        []string        `json:"sources"`
 }
 
 func reviewerFromEnv() AIReviewer {
@@ -132,7 +150,55 @@ func reviewerFromEnv() AIReviewer {
 }
 
 func ReviewerFromEnv() AIReviewer {
-	return reviewerFromEnv()
+	reviewer, _ := ReviewerFromEnvWithInfo()
+	return reviewer
+}
+
+func ReviewerFromEnvWithInfo() (AIReviewer, ReviewerInfo) {
+	reviewer := reviewerFromEnvWithPolicy(nil)
+	return reviewer, reviewerInfoFromReviewer(reviewer)
+}
+
+func reviewerInfoFromReviewer(reviewer AIReviewer) ReviewerInfo {
+	if reviewer == nil {
+		return ReviewerInfo{}
+	}
+	if multi, ok := reviewer.(multiAIReviewer); ok {
+		var models []string
+		for _, item := range multi.reviewers {
+			if model := reviewerModelName(item.reviewer); model != "" {
+				models = append(models, model)
+			}
+		}
+		return ReviewerInfo{Models: models}
+	}
+	if model := reviewerModelName(reviewer); model != "" {
+		return ReviewerInfo{Models: []string{model}}
+	}
+	return ReviewerInfo{}
+}
+
+func reviewerModelName(reviewer AIReviewer) string {
+	switch r := reviewer.(type) {
+	case *responsesAIReviewer:
+		if r != nil {
+			return strings.TrimSpace(r.model)
+		}
+	case *bedrockAnthropicReviewer:
+		if r != nil {
+			return strings.TrimSpace(r.model)
+		}
+	case fallbackAIReviewer:
+		if model := reviewerModelName(r.primary); model != "" {
+			return model
+		}
+		return reviewerModelName(r.fallback)
+	case *agenticResponsesAIReviewer:
+		if r != nil && r.base != nil {
+			return strings.TrimSpace(r.base.model)
+		}
+	}
+	return ""
 }
 
 func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
@@ -291,8 +357,15 @@ func reviewerAvailable(reviewer AIReviewer) bool {
 }
 
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	overview, findings, err := m.ReviewWithOverview(ctx, brief)
+	_ = overview
+	return findings, err
+}
+
+func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
 	type reviewerResult struct {
 		item     namedAIReviewer
+		overview string
 		findings []Finding
 		err      error
 	}
@@ -308,6 +381,11 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if withOverview, ok := item.reviewer.(AIReviewerWithOverview); ok {
+				overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
+				results[i] = reviewerResult{item: item, overview: overview, findings: findings, err: err}
+				return
+			}
 			findings, err := item.reviewer.Review(ctx, brief)
 			results[i] = reviewerResult{item: item, findings: findings, err: err}
 		}()
@@ -317,12 +395,18 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 		return results[i].item.name < results[j].item.name
 	})
 	var out []Finding
+	var overview string
 	var errors []string
+	parsed := false
 	for _, result := range results {
 		item := result.item
 		if result.err != nil {
 			errors = append(errors, item.label+": "+result.err.Error())
 			continue
+		}
+		parsed = true
+		if overview == "" && strings.TrimSpace(result.overview) != "" {
+			overview = strings.TrimSpace(result.overview)
 		}
 		for _, finding := range result.findings {
 			finding.ID = item.name + "." + finding.ID
@@ -331,44 +415,53 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 		}
 	}
 	out = mergeNearDuplicateFindings(out)
-	if len(out) > 0 {
-		return out, nil
+	if parsed {
+		return overview, out, nil
 	}
 	if len(errors) > 0 {
-		return nil, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
+		return "", nil, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
 	}
-	return nil, fmt.Errorf("AI reviewers returned no findings")
+	return "", nil, fmt.Errorf("AI reviewers failed")
 }
 
 func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	findings, err := r.primary.Review(ctx, brief)
-	if err == nil && len(findings) > 0 {
-		return findings, nil
+	overview, findings, err := r.ReviewWithOverview(ctx, brief)
+	_ = overview
+	return findings, err
+}
+
+func (r fallbackAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+	if withOverview, ok := r.primary.(AIReviewerWithOverview); ok {
+		overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
+		if err == nil {
+			return overview, findings, nil
+		}
+	} else if findings, err := r.primary.Review(ctx, brief); err == nil {
+		return "", findings, nil
 	}
-	fallbackFindings, fallbackErr := r.fallback.Review(ctx, brief)
-	if fallbackErr == nil && len(fallbackFindings) > 0 {
-		return fallbackFindings, nil
+	if withFallback, ok := r.fallback.(AIReviewerWithOverview); ok {
+		return withFallback.ReviewWithOverview(ctx, brief)
 	}
-	if err != nil && fallbackErr != nil {
-		return nil, fmt.Errorf("%w; fallback reviewer failed: %v", err, fallbackErr)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if fallbackErr != nil {
-		return nil, fallbackErr
-	}
-	return nil, fmt.Errorf("AI reviewers returned no findings")
+	findings, err := r.fallback.Review(ctx, brief)
+	return "", findings, err
 }
 
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	_, findings, err := r.ReviewWithOverview(ctx, brief)
+	return findings, err
+}
+
+func (r *responsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
 	brief = compactReviewBriefForAI(brief)
-	resolver := newSourceResolver(brief)
 	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return parseAIReviewContent(content, resolver)
+	output, err := parseAIReviewOutput(content, brief)
+	if err != nil {
+		return "", nil, err
+	}
+	return output.Overview, output.Findings, nil
 }
 
 func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
@@ -424,8 +517,12 @@ func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions str
 }
 
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	_, findings, err := r.ReviewWithOverview(ctx, brief)
+	return findings, err
+}
+
+func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
 	brief = compactReviewBriefForAI(brief)
-	resolver := newSourceResolver(brief)
 	body, err := json.Marshal(map[string]any{
 		"anthropic_version": "bedrock-2023-05-31",
 		"max_tokens":        defaultReviewMaxOutputTokens,
@@ -436,14 +533,14 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 		}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal Bedrock review request: %w", err)
+		return "", nil, fmt.Errorf("marshal Bedrock review request: %w", err)
 	}
 
 	requestPath := "/model/" + url.PathEscape(r.model) + "/invoke"
 	endpoint := "https://bedrock-runtime." + r.region + ".amazonaws.com" + requestPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create Bedrock review request: %w", err)
+		return "", nil, fmt.Errorf("create Bedrock review request: %w", err)
 	}
 	r.signBedrockRequest(req, body, requestPath)
 	req.Header.Set("Accept", "application/json")
@@ -456,16 +553,16 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request Bedrock review: %w", err)
+		return "", nil, fmt.Errorf("request Bedrock review: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
-			return nil, fmt.Errorf("Bedrock review status %s: %s", resp.Status, detail)
+			return "", nil, fmt.Errorf("Bedrock review status %s: %s", resp.Status, detail)
 		}
-		return nil, fmt.Errorf("Bedrock review status %s", resp.Status)
+		return "", nil, fmt.Errorf("Bedrock review status %s", resp.Status)
 	}
 
 	var completion struct {
@@ -475,7 +572,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return nil, fmt.Errorf("decode Bedrock review response: %w", err)
+		return "", nil, fmt.Errorf("decode Bedrock review response: %w", err)
 	}
 	var content strings.Builder
 	for _, part := range completion.Content {
@@ -485,9 +582,32 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 	}
 	text := strings.TrimSpace(content.String())
 	if text == "" {
-		return nil, fmt.Errorf("Bedrock review response returned empty output")
+		return "", nil, fmt.Errorf("Bedrock review response returned empty output")
 	}
-	return parseAIReviewContent(text, resolver)
+	output, err := parseAIReviewOutput(text, brief)
+	if err != nil {
+		return "", nil, err
+	}
+	return output.Overview, output.Findings, nil
+}
+
+func parseAIReviewContent(content string, brief ReviewBrief) ([]Finding, error) {
+	output, err := parseAIReviewOutput(content, brief)
+	if err != nil {
+		return nil, err
+	}
+	return output.Findings, nil
+}
+
+func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
+	var parsed aiReviewResponse
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
+	}
+	return aiReviewOutput{
+		Overview: strings.TrimSpace(parsed.Overview),
+		Findings: aiRecommendationsToFindings(parsed.Recommendations, brief),
+	}, nil
 }
 
 func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []byte, requestPath string) {
@@ -529,14 +649,6 @@ func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []
 
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("X-Amz-Date", amzDate)
-}
-
-func parseAIReviewContent(content string, resolver sourceResolver) ([]Finding, error) {
-	var parsed aiReviewResponse
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return nil, fmt.Errorf("decode AI review JSON: %w", err)
-	}
-	return aiRecommendationsToFindings(parsed.Recommendations, resolver), nil
 }
 
 func sha256Hex(value []byte) string {
@@ -708,45 +820,7 @@ func truncateAtHunkBoundary(text string, limit int) string {
 	return strings.TrimSpace(text[:cut]) + "\n[truncated]\n"
 }
 
-type sourceResolver map[string]string
-
-func newSourceResolver(brief ReviewBrief) sourceResolver {
-	resolver := sourceResolver{}
-	for _, snippet := range brief.Context {
-		label := strings.TrimSpace(snippet.SourceLabel)
-		publisher := strings.TrimSpace(snippet.Publisher)
-		if label != "" && publisher != "" {
-			resolver[label] = publisher
-		}
-	}
-	for _, source := range brief.SourceCatalog {
-		id := strings.TrimSpace(source.ID)
-		publisher := strings.TrimSpace(source.Publisher)
-		if id != "" && publisher != "" {
-			resolver[id] = publisher
-		}
-	}
-	return resolver
-}
-
-func (r sourceResolver) resolve(ids []string) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, id := range ids {
-		publisher := strings.TrimSpace(r[strings.TrimSpace(id)])
-		if publisher == "" {
-			continue
-		}
-		if _, ok := seen[publisher]; ok {
-			continue
-		}
-		seen[publisher] = struct{}{}
-		out = append(out, publisher)
-	}
-	return out
-}
-
-func aiRecommendationsToFindings(recommendations []aiRecommendation, resolver sourceResolver) []Finding {
+func aiRecommendationsToFindings(recommendations []aiRecommendation, brief ReviewBrief) []Finding {
 	var out []Finding
 	for i, rec := range recommendations {
 		title := strings.TrimSpace(rec.Title)
@@ -767,20 +841,71 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation, resolver so
 				evidence = append(evidence, Evidence{Label: "Evidence", Value: item})
 			}
 		}
+		file, line := recommendationFileLine(rec)
+		labels := append([]string(nil), rec.SourceLabels...)
+		if len(labels) == 0 {
+			labels = append(labels, rec.Sources...)
+		}
+		var anchors []FindingAnchor
+		if file != "" && line > 0 {
+			anchors = []FindingAnchor{{File: file, Line: line}}
+		} else if len(rec.Anchors) > 0 {
+			anchors = rec.Anchors
+			if file == "" && len(rec.Anchors) > 0 {
+				file = strings.TrimSpace(rec.Anchors[0].File)
+				line = rec.Anchors[0].Line
+			}
+		}
 		out = append(out, Finding{
-			ID:               fmt.Sprintf("ai.review.%d", i+1),
-			Scopes:           []string{"architecture", "dependencies", "testing", "maintainability"},
-			Title:            title,
-			Summary:          summary,
-			Benefit:          benefit,
-			Evidence:         evidence,
-			Anchors:          rec.Anchors,
-			Recommendation:   recommendation,
-			Strength:         strength,
-			SourcePublishers: resolver.resolve(rec.Sources),
+			ID:              fmt.Sprintf("ai.review.%d", i+1),
+			Scopes:          []string{"architecture", "dependencies", "testing", "maintainability"},
+			Title:           title,
+			Summary:         summary,
+			Benefit:         benefit,
+			Evidence:        evidence,
+			File:            file,
+			Line:            line,
+			Anchors:         anchors,
+			Recommendation:  recommendation,
+			Strength:        strength,
+			ResolvedSources: resolveSourceLabels(brief, labels),
 		})
 	}
 	return out
+}
+
+func recommendationFileLine(rec aiRecommendation) (string, int) {
+	file := strings.TrimSpace(rec.File)
+	line := parseRecommendationLine(rec.Line)
+	if file != "" && line > 0 {
+		return file, line
+	}
+	if len(rec.Anchors) > 0 {
+		anchor := rec.Anchors[0]
+		return strings.TrimSpace(anchor.File), anchor.Line
+	}
+	return file, line
+}
+
+func parseRecommendationLine(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var asInt int
+	if err := json.Unmarshal(raw, &asInt); err == nil {
+		return asInt
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		asString = strings.TrimSpace(asString)
+		if asString == "" {
+			return 0
+		}
+		var parsed int
+		_, _ = fmt.Sscanf(asString, "%d", &parsed)
+		return parsed
+	}
+	return 0
 }
 
 func reviewDeveloperPrompt() string {
@@ -789,8 +914,8 @@ func reviewDeveloperPrompt() string {
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
-		"For patch_focused reviews, prioritize concrete bugs, security/auth issues, data correctness, race/idempotency, error handling, missing tests, observability, deploy/CI risks, and dependency regressions introduced or exposed by static.diff_snippets.",
-		"For patch_focused reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
+		"For patch_focused and pr_summary reviews, prioritize concrete bugs, security/auth issues, data correctness, race/idempotency, error handling, missing tests, observability, deploy/CI risks, and dependency regressions introduced or exposed by static.diff_snippets.",
+		"For patch_focused and pr_summary reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
 		"For prompt_directed reviews, prioritize findings where review_prompt, the current diff, and broader repo context intersect. Do not limit yourself to changed lines, but do not emit generic repo-wide advice unrelated to review_prompt.",
 		"For deep_full_spectrum reviews, check security, bugs, data integrity, concurrency, idempotency, architecture, testing, observability, performance, dependencies, docs, and operability while still grounding every finding in changed files, tool output, local policy, or retrieved context.",
 		"Treat REVIEW.md review_policy snippets as repo-local review instructions. Follow them unless they conflict with the explicit review_prompt, hard evidence in the changed patch, or safety/security requirements.",
@@ -812,8 +937,11 @@ func reviewDeveloperPrompt() string {
 		"Use source_catalog and labeled context snippets internally. It is okay to mention source labels like R1 or L2 in evidence, but never output source titles or URLs.",
 		"Only produce recommendations tied to the provided repo context. Reject generic best-practice advice.",
 		"If no concrete issue meets the active profile, return an empty recommendations array.",
-		"When a finding has a precise file location, include anchors as objects like {\"file\":\"internal/example.go\",\"line\":123}. Anchors must point to the most relevant current file line, preferably a changed line or hunk context line.",
-		"Return JSON only with shape {\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"sources\":[string],\"anchors\":[{\"file\":\"string\",\"line\":123}]}]}. Use sources for context labels or source_catalog IDs that materially informed the recommendation; use an empty array when none did.",
+		"Set file to the exact changed file path from static.diff_snippets and line to a changed line number inside that hunk. If a recommendation cannot be tied to a specific changed file, omit file and line.",
+		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
+		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions and session_transcript context; no file lists, no URLs, no praise. For all other profiles, omit overview.",
+		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview rule.",
+		"Return JSON only with shape {\"overview\":string(optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")
 }
