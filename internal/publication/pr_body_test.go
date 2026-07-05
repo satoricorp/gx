@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
-func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
+func TestGitHubPullRequestBodyOmitsNotableChangesWhenEmpty(t *testing.T) {
 	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
@@ -35,15 +36,6 @@ func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
 		},
 		Stack: []reviewbundle.StackPayload{{
 			BranchName: "docs/demo",
-			Patch: strings.Join([]string{
-				"diff --git a/docs/demo.md b/docs/demo.md",
-				"--- a/docs/demo.md",
-				"+++ b/docs/demo.md",
-				"@@ -1,2 +1,3 @@",
-				" # Demo",
-				"+Small docs clarification.",
-				"",
-			}, "\n"),
 			Change: reviewbundle.ChangePayload{
 				CurrentCommitID: "abc123",
 				Description:     "clarify docs",
@@ -58,15 +50,18 @@ func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
 	if !strings.Contains(body, "> 👀 **Quick scan** — standard change; AI review unavailable.") {
 		t.Fatalf("body missing quick scan verdict banner for unavailable AI:\n%s", body)
 	}
-	if !strings.Contains(body, "No specific high-impact review targets surfaced") {
-		t.Fatalf("body did not render zero-target state:\n%s", body)
+	if strings.Contains(body, "## Notable Changes") {
+		t.Fatalf("body should omit Notable Changes when nothing is notable:\n%s", body)
+	}
+	if strings.Contains(body, "No specific high-impact review targets surfaced") {
+		t.Fatalf("body should not render legacy filler line:\n%s", body)
 	}
 	if strings.Contains(body, "Attribution:") {
 		t.Fatalf("zero-target body unexpectedly rendered attribution:\n%s", body)
 	}
 }
 
-func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
+func TestGitHubPullRequestBodyCapsNotableChanges(t *testing.T) {
 	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
@@ -82,7 +77,7 @@ func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
 			Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/github/client.go"}},
 			Strength:       "Strong",
 			File:           "internal/github/client.go",
-			Line:           2,
+			Line:           i + 2,
 		})
 	}
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
@@ -106,9 +101,20 @@ func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
 				"diff --git a/internal/github/client.go b/internal/github/client.go",
 				"--- a/internal/github/client.go",
 				"+++ b/internal/github/client.go",
-				"@@ -1,2 +1,3 @@",
+				"@@ -1,2 +1,14 @@",
 				" package github",
-				"+func UpdatePullRequest() {}",
+				"+func UpdatePullRequest01() {}",
+				"+func UpdatePullRequest02() {}",
+				"+func UpdatePullRequest03() {}",
+				"+func UpdatePullRequest04() {}",
+				"+func UpdatePullRequest05() {}",
+				"+func UpdatePullRequest06() {}",
+				"+func UpdatePullRequest07() {}",
+				"+func UpdatePullRequest08() {}",
+				"+func UpdatePullRequest09() {}",
+				"+func UpdatePullRequest10() {}",
+				"+func UpdatePullRequest11() {}",
+				"+func UpdatePullRequest12() {}",
 				"",
 			}, "\n"),
 			Change: reviewbundle.ChangePayload{
@@ -122,8 +128,8 @@ func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
 	}
-	if count := strings.Count(body, "\n- "); count != maxPRReviewItems {
-		t.Fatalf("Needs Review item count = %d, want %d:\n%s", count, maxPRReviewItems, body)
+	if count := strings.Count(body, "\n- "); count != maxPRNotableChanges {
+		t.Fatalf("Notable Changes item count = %d, want %d:\n%s", count, maxPRNotableChanges, body)
 	}
 	if strings.Contains(body, "Verify GitHub publish behavior 11") {
 		t.Fatalf("body included item beyond cap:\n%s", body)
@@ -158,6 +164,205 @@ func TestHunkLinkForFindingValidatedLine(t *testing.T) {
 	want := githubHunkLineLink(prURL, "internal/github/client.go", 2)
 	if got != want {
 		t.Fatalf("hunkLinkForFinding() = %q, want %q", got, want)
+	}
+}
+
+func TestHunkLinkForFindingInvalidLineUsesHunkAnchor(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/1"
+	hunks := []prHunkSummary{{
+		File:        "internal/github/client.go",
+		NewStart:    1,
+		NewLines:    3,
+		ChangedLine: 1,
+		Link:        githubHunkLink(prURL, "internal/github/client.go", 1, 1, 3),
+	}}
+	finding := codereview.Finding{File: "internal/github/client.go", Line: 99}
+	got := hunkLinkForFinding(prURL, hunks, finding)
+	if got != hunks[0].Link {
+		t.Fatalf("hunkLinkForFinding() = %q, want hunk link %q", got, hunks[0].Link)
+	}
+	if strings.Contains(got, "#diff-") && !strings.Contains(got, "R") && !strings.Contains(got, "L") {
+		t.Fatalf("hunkLinkForFinding() = %q, want line-anchored link", got)
+	}
+}
+
+func TestPRBodyHasNoBareFileDiffLinks(t *testing.T) {
+	bareFileLinkRE := regexp.MustCompile(`#diff-[0-9a-f]{64}\)`)
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prURL := "https://github.com/satoricorp/gx/pull/20"
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
+			Title:    "Verify auth handling",
+			Summary:  "Session token validation changed.",
+			Strength: "Strong",
+			File:     "internal/auth/session.go",
+			Line:     99,
+		}}}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Description: "add session validation",
+				Files:       []string{"internal/auth/session.go"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if bareFileLinkRE.MatchString(body) {
+		t.Fatalf("body contains bare file-level diff link:\n%s", body)
+	}
+}
+
+func TestNotableChangesRendersPlainTextWithoutPRURL(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: strings.Join([]string{
+				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
+				"--- a/internal/app/handler.go",
+				"+++ b/internal/app/handler.go",
+				"@@ -1 +1,2 @@",
+				" package app",
+				"+func Handle() {}",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{
+				Description: "update handler",
+				Files:       []string{"internal/app/handler.go"},
+			},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "## Notable Changes") {
+		t.Fatalf("body missing Notable Changes section:\n%s", body)
+	}
+	if strings.Contains(body, "](http") {
+		t.Fatalf("body should not contain markdown links without PR URL:\n%s", body)
+	}
+}
+
+func TestNotableChangesIncludesTopHunkFill(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prURL := "https://github.com/satoricorp/gx/pull/21"
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: strings.Join([]string{
+				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
+				"--- a/internal/app/handler.go",
+				"+++ b/internal/app/handler.go",
+				"@@ -1 +1,2 @@",
+				" package app",
+				"+func Handle() {}",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{
+				Description: "update handler",
+				Files:       []string{"internal/app/handler.go"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "[update handler: handler.go](") {
+		t.Fatalf("body missing top-hunk fill item:\n%s", body)
+	}
+}
+
+func TestNotableChangesDropsUnanchoredAIEntry(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prURL := "https://github.com/satoricorp/gx/pull/22"
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{
+			notableChanges: []codereview.NotableChange{
+				{File: "internal/missing.go", Line: 1, Note: "This should not render"},
+				{File: "internal/app/handler.go", Line: 2, Note: "Adds request handling"},
+			},
+		}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: strings.Join([]string{
+				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
+				"--- a/internal/app/handler.go",
+				"+++ b/internal/app/handler.go",
+				"@@ -1 +1,2 @@",
+				" package app",
+				"+func Handle() {}",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{
+				Description: "update handler",
+				Files:       []string{"internal/app/handler.go"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if strings.Contains(body, "This should not render") {
+		t.Fatalf("unanchored notable change should be dropped:\n%s", body)
+	}
+	if !strings.Contains(body, "Adds request handling") {
+		t.Fatalf("anchored notable change missing:\n%s", body)
 	}
 }
 

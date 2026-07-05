@@ -195,7 +195,7 @@ func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testi
 		githubPRBodyMarker,
 		"This PR changes",
 		"> 🔴 **Requires Deep Review** — high-risk change signals.",
-		"## Needs Review",
+		"## Notable Changes",
 		"Verify GitHub PR summary update ordering",
 		"Attribution:",
 		"google-eng-practices",
@@ -284,6 +284,21 @@ func (f *fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) 
 		return nil, fmt.Errorf("transient reviewer failure")
 	}
 	return f.findings, nil
+}
+
+func (f *fakePRSummaryReviewer) ReviewForSummary(_ context.Context, _ codereview.ReviewBrief) (codereview.PRSummaryReview, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return codereview.PRSummaryReview{}, f.err
+		}
+		return codereview.PRSummaryReview{}, fmt.Errorf("transient reviewer failure")
+	}
+	return codereview.PRSummaryReview{
+		Overview:       f.overview,
+		NotableChanges: f.notableChanges,
+		Findings:       f.findings,
+	}, nil
 }
 
 func (f *fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {

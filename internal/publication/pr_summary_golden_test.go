@@ -242,6 +242,20 @@ func (r *goldenPRSummaryReviewer) Review(ctx context.Context, brief codereview.R
 	return findings, err
 }
 
+func (r *goldenPRSummaryReviewer) ReviewForSummary(ctx context.Context, brief codereview.ReviewBrief) (codereview.PRSummaryReview, error) {
+	r.attempts++
+	if r.attempts <= r.failCount {
+		if r.failErr != nil {
+			return codereview.PRSummaryReview{}, r.failErr
+		}
+		return codereview.PRSummaryReview{}, fmt.Errorf("model unavailable")
+	}
+	if len(r.aiResponse) == 0 {
+		return codereview.PRSummaryReview{}, nil
+	}
+	return codereview.ParsePRSummaryReview(string(r.aiResponse), brief)
+}
+
 func (r *goldenPRSummaryReviewer) ReviewWithOverview(ctx context.Context, brief codereview.ReviewBrief) (string, []codereview.Finding, error) {
 	r.attempts++
 	if r.attempts <= r.failCount {

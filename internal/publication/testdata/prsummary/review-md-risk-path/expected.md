@@ -4,9 +4,9 @@
 
 This PR changes `internal/billing`: add billing charge helper.
 
-## Needs Review
+## Notable Changes
 
-- [Verify change in charge.go](https://github.com/example/acme/pull/1/files#diff-646ce9f468adba34cd66264566857e4a9a1ab2374fe1e53982452bf790dbefadR2): billing changes can mischarge customers (matched `internal/billing/**` in internal/billing/charge.go).
+- ⚠ [Verify change in charge.go](https://github.com/example/acme/pull/1/files#diff-646ce9f468adba34cd66264566857e4a9a1ab2374fe1e53982452bf790dbefadR2) — billing changes can mischarge customers (matched `internal/billing/**` in internal/billing/charge.go).
   Attribution: codebase `internal/billing/charge.go`
 
 

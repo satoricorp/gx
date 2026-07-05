@@ -28,7 +28,7 @@ const (
 	githubPRBodyMarker        = "<!-- gx:pr-summary:v1 -->"
 	githubPRAuthorNotesMarker = "<!-- gx:author-notes -->"
 	githubPRAuthorNotesHeader = "## Author Notes"
-	maxPRReviewItems          = 10
+	maxPRNotableChanges       = 7
 	maxPRContextSnippetSize   = 1800
 	maxPROverviewLength       = 500
 
@@ -118,10 +118,11 @@ type prAttribution struct {
 	Opaque bool
 }
 
-type prNeedsReviewItem struct {
+type prNotableChange struct {
 	Title        string
 	Detail       string
 	Link         string
+	Flagged      bool
 	Score        int
 	Attributions []prAttribution
 }
@@ -135,52 +136,60 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	if err != nil {
 		return "", err
 	}
-	findings, overview, aiSucceeded, reviewerInfo := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach, policy)
-	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, overview, aiSucceeded, reach, policy, reviewerInfo), nil
+	summary, aiSucceeded, reviewerInfo := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach, policy)
+	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, summary, aiSucceeded, reach, policy, reviewerInfo), nil
 }
 
-func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, overview string, aiSucceeded bool, reach lexicalReach, policy codereview.ReviewPolicy, reviewerInfo codereview.ReviewerInfo) string {
+func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, summary codereview.PRSummaryReview, aiSucceeded bool, reach lexicalReach, policy codereview.ReviewPolicy, reviewerInfo codereview.ReviewerInfo) string {
 	triage := triageChangeFromCatalog(catalog)
-	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded, catalog.Files, catalog.Areas)
+	verdict, reason := reviewVerdict(triage, catalog.Stats, summary.Findings, aiSucceeded, catalog.Files, catalog.Areas)
 	includeHeuristics := verdict != verdictNoReview
-	items := needsReviewItems(artifact, catalog, findings, summaryContext, includeHeuristics, policy)
+	items := notableChanges(artifact, catalog, summary, summaryContext, includeHeuristics, policy)
 	var body strings.Builder
 	body.WriteString(githubPRBodyMarker)
 	body.WriteString("\n\n")
 	body.WriteString(renderVerdictBanner(verdict, reason))
 	body.WriteString("\n\n")
-	body.WriteString(openingSummary(artifact, catalog, overview, aiSucceeded))
+	body.WriteString(openingSummary(artifact, catalog, summary.Overview, aiSucceeded))
 	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
-	body.WriteString("\n\n## Needs Review\n\n")
-	if len(items) == 0 {
-		body.WriteString("- No specific high-impact review targets surfaced from the available GX context.\n")
-	} else {
-		for _, item := range items {
-			body.WriteString("- ")
-			if item.Link != "" {
-				body.WriteString("[")
-				body.WriteString(item.Title)
-				body.WriteString("](")
-				body.WriteString(item.Link)
-				body.WriteString(")")
-			} else {
-				body.WriteString(item.Title)
-			}
-			if item.Detail != "" {
-				body.WriteString(": ")
-				body.WriteString(item.Detail)
-			}
-			body.WriteByte('\n')
-			if attribution := renderAttributions(item.Attributions); attribution != "" {
-				body.WriteString("  Attribution: ")
-				body.WriteString(attribution)
-				body.WriteByte('\n')
-			}
-		}
-	}
+	body.WriteString(renderNotableChangesSection(items))
 	body.WriteString("\n\n")
 	body.WriteString(provenanceFooter(aiSucceeded, reviewerInfo, summaryContext))
 	return strings.TrimRight(body.String(), "\n")
+}
+
+func renderNotableChangesSection(items []prNotableChange) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n## Notable Changes\n\n")
+	for _, item := range items {
+		b.WriteString("- ")
+		if item.Flagged {
+			b.WriteString("⚠ ")
+		}
+		if item.Link != "" {
+			b.WriteString("[")
+			b.WriteString(item.Title)
+			b.WriteString("](")
+			b.WriteString(item.Link)
+			b.WriteString(")")
+		} else {
+			b.WriteString(item.Title)
+		}
+		if item.Detail != "" {
+			b.WriteString(" — ")
+			b.WriteString(item.Detail)
+		}
+		b.WriteByte('\n')
+		if attribution := renderAttributions(item.Attributions); attribution != "" {
+			b.WriteString("  Attribution: ")
+			b.WriteString(attribution)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func provenanceFooter(aiSucceeded bool, info codereview.ReviewerInfo, summaryContext prSummaryContext) string {
@@ -371,10 +380,10 @@ func hasStrongOrBlockingFinding(findings []codereview.Finding) bool {
 	return false
 }
 
-func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext, includeHeuristics bool, policy codereview.ReviewPolicy) []prNeedsReviewItem {
+func notableChanges(artifact reviewbundle.Artifact, catalog prBodyCatalog, summary codereview.PRSummaryReview, summaryContext prSummaryContext, includeHeuristics bool, policy codereview.ReviewPolicy) []prNotableChange {
 	prURL := pullRequestURL(artifact)
-	var items []prNeedsReviewItem
-	for _, finding := range findings {
+	var items []prNotableChange
+	for _, finding := range summary.Findings {
 		if isSpeculativePRFinding(finding) || !patchRelevantFinding(catalog, finding) || lowValuePRFinding(finding) {
 			continue
 		}
@@ -383,26 +392,104 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 			continue
 		}
 		detail := firstNonEmpty(strings.TrimSpace(finding.Summary), strings.TrimSpace(finding.Recommendation))
-		items = append(items, prNeedsReviewItem{
+		item := prNotableChange{
 			Title:        title,
 			Detail:       trimSentence(sanitizePRVisibleText(detail), 240),
 			Link:         hunkLinkForFinding(prURL, catalog.Hunks, finding),
+			Flagged:      true,
 			Score:        1000 + findingScore(catalog.Hunks, finding),
 			Attributions: findingAttributions(finding, summaryContext, artifact, catalog),
-		})
+		}
+		if includeNotableChangeItem(item, prURL) {
+			items = append(items, item)
+		}
 	}
 	if includeHeuristics {
-		items = append(items, heuristicNeedsReviewItems(artifact, catalog, policy)...)
+		items = append(items, heuristicNotableChangeItems(artifact, catalog, policy)...)
 	}
-	items = dedupeNeedsReviewItems(items)
+	for _, change := range summary.NotableChanges {
+		title := trimSentence(sanitizePRVisibleText(strings.TrimSpace(change.Note)), 120)
+		if title == "" {
+			continue
+		}
+		item := prNotableChange{
+			Title:  title,
+			Link:   lineLinkForAnchor(prURL, catalog.Hunks, change.File, change.Line),
+			Score:  800,
+			Flagged: false,
+		}
+		if includeNotableChangeItem(item, prURL) {
+			items = append(items, item)
+		}
+	}
+	items = dedupeNotableChanges(items)
+	sortNotableChanges(items)
+	if len(catalog.Hunks) > 0 && len(items) < 3 {
+		items = appendTopHunkFill(items, catalog, prURL)
+		items = dedupeNotableChanges(items)
+		sortNotableChanges(items)
+	}
+	if len(items) > maxPRNotableChanges {
+		items = items[:maxPRNotableChanges]
+	}
+	return items
+}
+
+func includeNotableChangeItem(item prNotableChange, prURL string) bool {
+	if prURL == "" {
+		return true
+	}
+	return item.Link != ""
+}
+
+func sortNotableChanges(items []prNotableChange) {
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Score == items[j].Score {
 			return items[i].Title < items[j].Title
 		}
 		return items[i].Score > items[j].Score
 	})
-	if len(items) > maxPRReviewItems {
-		items = items[:maxPRReviewItems]
+}
+
+func appendTopHunkFill(items []prNotableChange, catalog prBodyCatalog, prURL string) []prNotableChange {
+	usedLinks := map[string]struct{}{}
+	for _, item := range items {
+		if item.Link != "" {
+			usedLinks[item.Link] = struct{}{}
+		}
+	}
+	hunks := append([]prHunkSummary(nil), catalog.Hunks...)
+	sort.Slice(hunks, func(i, j int) bool {
+		return hunks[i].NewLines+hunks[i].OldLines > hunks[j].NewLines+hunks[j].OldLines
+	})
+	for _, hunk := range hunks {
+		if len(items) >= 3 {
+			break
+		}
+		if hunk.Link == "" && prURL != "" {
+			continue
+		}
+		if hunk.Link != "" {
+			if _, ok := usedLinks[hunk.Link]; ok {
+				continue
+			}
+		}
+		revision := firstNonEmpty(strings.TrimSpace(hunk.Revision), "change")
+		title := trimSentence(sanitizePRVisibleText(fmt.Sprintf("%s: %s", revision, path.Base(hunk.File))), 120)
+		items = append(items, prNotableChange{
+			Title:  title,
+			Link:   hunk.Link,
+			Score:  400,
+			Flagged: false,
+			Attributions: []prAttribution{{
+				Kind:  "codebase",
+				Label: "changed hunk",
+				Ref:   hunk.File,
+			}},
+		})
+		if hunk.Link != "" {
+			usedLinks[hunk.Link] = struct{}{}
+		}
 	}
 	return items
 }
@@ -473,8 +560,9 @@ func sanitizePRVisibleText(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, policy codereview.ReviewPolicy) []prNeedsReviewItem {
-	var candidates []prNeedsReviewItem
+func heuristicNotableChangeItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, policy codereview.ReviewPolicy) []prNotableChange {
+	prURL := pullRequestURL(artifact)
+	var candidates []prNotableChange
 	for _, warning := range reviewWarnings(artifact) {
 		file := firstNonEmpty(warning.FromFile, warning.ToFile)
 		hunk := firstHunk(catalog.Hunks, file)
@@ -489,53 +577,75 @@ func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCat
 		if hunk != nil && hunk.File != "" {
 			title += " in " + path.Base(hunk.File)
 		}
-		candidates = append(candidates, prNeedsReviewItem{
+		item := prNotableChange{
 			Title:  title,
 			Detail: trimSentence(firstNonEmpty(warning.Message, "GX found a feasibility or structural warning tied to this change."), 240),
 			Link:   hunkLink(hunk),
 			Score:  score,
+			Flagged: true,
 			Attributions: []prAttribution{{
 				Kind:  "heuristic",
 				Label: firstNonEmpty(warning.Source, "feasibility warning"),
 				Ref:   firstNonEmpty(file, warning.Symbol, warning.DependsOn),
 			}},
-		})
+		}
+		if includeNotableChangeItem(item, prURL) {
+			candidates = append(candidates, item)
+		}
 	}
 	for _, hunk := range catalog.Hunks {
 		score, title, detail := hunkImpact(catalog, hunk, policy)
 		if score == 0 {
 			continue
 		}
-		candidates = append(candidates, prNeedsReviewItem{
+		flagged := hunkMatchesRiskPath(hunk.File, policy)
+		item := prNotableChange{
 			Title:  title,
 			Detail: detail,
 			Link:   hunk.Link,
 			Score:  score,
+			Flagged: flagged,
 			Attributions: []prAttribution{{
 				Kind:  "codebase",
 				Label: "changed hunk",
 				Ref:   hunk.File,
 			}},
-		})
+		}
+		if includeNotableChangeItem(item, prURL) {
+			candidates = append(candidates, item)
+		}
 	}
 	if highRiskCatalog(catalog) {
 		if hunk := firstHunk(catalog.Hunks, ""); hunk != nil {
-			candidates = append(candidates, prNeedsReviewItem{
+			item := prNotableChange{
 				Title:  "Review the broadest behavioral change",
 				Detail: "GX scored this stack as high risk from breadth, structural dependencies, or warning signals. Start with this changed hunk and follow its call path.",
 				Link:   hunk.Link,
 				Score:  520,
+				Flagged: false,
 				Attributions: []prAttribution{{
 					Kind:  "heuristic",
 					Label: "risk signals",
 					Ref:   strings.Join(catalog.Stats.RiskSignals, ", "),
 				}},
-			})
+			}
+			if includeNotableChangeItem(item, prURL) {
+				candidates = append(candidates, item)
+			}
 		}
 	}
-	candidates = dedupeNeedsReviewItems(candidates)
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+	candidates = dedupeNotableChanges(candidates)
+	sortNotableChanges(candidates)
 	return candidates
+}
+
+func hunkMatchesRiskPath(file string, policy codereview.ReviewPolicy) bool {
+	for _, riskPath := range policy.RiskPaths {
+		if codereview.MatchRiskPathGlob(riskPath.Glob, file) {
+			return true
+		}
+	}
+	return false
 }
 
 func hunkImpact(catalog prBodyCatalog, hunk prHunkSummary, policy codereview.ReviewPolicy) (int, string, string) {
@@ -614,34 +724,34 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 	return catalog.Stats.MaxRiskLevel == "high" || containsAny(strings.Join(catalog.Stats.RiskSignals, " "), []string{"structural", "warning:", "many_files", "many_hunks"})
 }
 
-func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
+func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) (codereview.PRSummaryReview, bool, codereview.ReviewerInfo) {
 	reviewer, info := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
-		return nil, "", false, info
+		return codereview.PRSummaryReview{}, false, info
 	}
 	brief := prReviewBrief(artifact, catalog, summaryContext, reach, policy)
-	attemptReview := func() ([]codereview.Finding, string, error) {
-		var findings []codereview.Finding
-		var overview string
-		var err error
-		if withOverview, ok := reviewer.(codereview.AIReviewerWithOverview); ok {
-			overview, findings, err = withOverview.ReviewWithOverview(ctx, brief)
-		} else {
-			findings, err = reviewer.Review(ctx, brief)
+	attemptReview := func() (codereview.PRSummaryReview, error) {
+		if withSummary, ok := reviewer.(codereview.AIReviewerWithSummary); ok {
+			return withSummary.ReviewForSummary(ctx, brief)
 		}
-		return findings, overview, err
+		if withOverview, ok := reviewer.(codereview.AIReviewerWithOverview); ok {
+			overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
+			return codereview.PRSummaryReview{Overview: overview, Findings: findings}, err
+		}
+		findings, err := reviewer.Review(ctx, brief)
+		return codereview.PRSummaryReview{Findings: findings}, err
 	}
-	findings, overview, err := attemptReview()
+	summary, err := attemptReview()
 	if err != nil {
 		if waitErr := prSummaryReviewRetryWait(ctx, prSummaryReviewRetryDelay); waitErr != nil {
-			return nil, "", false, info
+			return codereview.PRSummaryReview{}, false, info
 		}
-		findings, overview, err = attemptReview()
+		summary, err = attemptReview()
 	}
 	if err != nil {
-		return nil, "", false, info
+		return codereview.PRSummaryReview{}, false, info
 	}
-	return findings, overview, true, info
+	return summary, true, info
 }
 
 func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) codereview.ReviewBrief {
@@ -1169,6 +1279,22 @@ func validatedHunkAnchor(hunks []prHunkSummary, finding codereview.Finding) bool
 	return false
 }
 
+func lineLinkForAnchor(prURL string, hunks []prHunkSummary, file string, line int) string {
+	file = strings.TrimSpace(file)
+	if file == "" {
+		return ""
+	}
+	if line > 0 && validatedHunkAnchor(hunks, codereview.Finding{File: file, Line: line}) {
+		return githubHunkLineLink(prURL, file, line)
+	}
+	for _, hunk := range hunks {
+		if hunk.File == file {
+			return hunk.Link
+		}
+	}
+	return ""
+}
+
 func hunkLinkForFinding(prURL string, hunks []prHunkSummary, finding codereview.Finding) string {
 	file := strings.TrimSpace(finding.File)
 	if file == "" {
@@ -1185,21 +1311,7 @@ func hunkLinkForFinding(prURL string, hunks []prHunkSummary, finding codereview.
 		}
 		return ""
 	}
-	line := findingAnchorLine(finding)
-	var matched bool
-	for _, hunk := range hunks {
-		if hunk.File != file {
-			continue
-		}
-		matched = true
-		if line > 0 && lineInHunkNewRange(hunk, line) {
-			return githubHunkLineLink(prURL, file, line)
-		}
-	}
-	if !matched {
-		return ""
-	}
-	return githubFileDiffLink(prURL, file)
+	return lineLinkForAnchor(prURL, hunks, file, findingAnchorLine(finding))
 }
 
 func firstHunk(hunks []prHunkSummary, filePrefix string) *prHunkSummary {
@@ -1452,12 +1564,7 @@ func renderPRResolvedSource(src codereview.ResolvedSource, artifact reviewbundle
 		if line > 0 && validatedHunkAnchor(catalog.Hunks, codereview.Finding{File: file, Line: line}) {
 			return prAttribution{Kind: kind, Label: label, URL: githubHunkLineLink(prURL, file, line)}
 		}
-		if link := githubFileDiffLink(prURL, file); link != "" {
-			return prAttribution{Kind: kind, Label: label, URL: link}
-		}
-		if prURL == "" {
-			return prAttribution{Kind: kind, Label: label}
-		}
+		return prAttribution{Kind: kind, Label: label}
 	}
 	if link := blobPermalink(prURL, headCommitSHA(artifact, catalog), file, line); link != "" {
 		return prAttribution{Kind: kind, Label: label, URL: link}
@@ -1696,11 +1803,14 @@ func countTestFiles(files []string) int {
 	return count
 }
 
-func dedupeNeedsReviewItems(items []prNeedsReviewItem) []prNeedsReviewItem {
+func dedupeNotableChanges(items []prNotableChange) []prNotableChange {
 	seen := map[string]struct{}{}
-	var out []prNeedsReviewItem
+	var out []prNotableChange
 	for _, item := range items {
-		key := strings.ToLower(item.Title) + "\x00" + item.Link
+		key := item.Link
+		if key == "" {
+			key = strings.ToLower(item.Title)
+		}
 		if _, ok := seen[key]; ok {
 			continue
 		}
