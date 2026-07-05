@@ -3,13 +3,48 @@ package hooks
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
 
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "init", "-b", "main"},
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+	readme := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(readme, []byte("# test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "add", "README.md")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+}
+
 func TestRunPushRespectsPauseFlag(t *testing.T) {
 	home := t.TempDir()
+	repo := t.TempDir()
+	initGitRepo(t, repo)
+
 	gxHome := filepath.Join(home, ".gx")
+	t.Setenv("GX_HOME", gxHome)
 	if err := os.MkdirAll(gxHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +53,7 @@ func TestRunPushRespectsPauseFlag(t *testing.T) {
 	}
 
 	result, err := RunPush(context.Background(), PushOptions{
-		RepoRoot: t.TempDir(),
+		RepoRoot: repo,
 		HomeDir:  home,
 	})
 	if err != nil {
