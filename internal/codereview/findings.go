@@ -59,6 +59,7 @@ func defaultRules() []Rule {
 	return []Rule{
 		ruleFunc{id: "tools.static-failure", scopes: []string{"testing", "maintainability", "dependencies", "security"}, evaluate: staticToolFailureFindings},
 		ruleFunc{id: "quality.ignored-results", scopes: []string{"maintainability", "testing", "architecture"}, evaluate: ignoredResultFindings},
+		ruleFunc{id: "security.quality-hints", scopes: []string{"security", "maintainability", "testing"}, evaluate: securityQualityHintFindings},
 		ruleFunc{id: "architecture.domain-language-drift", scopes: []string{"architecture", "maintainability", "docs"}, evaluate: domainLanguageDriftFindings},
 		ruleFunc{id: "architecture.implementation-heavy-module", scopes: []string{"architecture", "maintainability", "testing"}, evaluate: implementationHeavyModuleFindings},
 		ruleFunc{id: "architecture.generic-package-name", scopes: []string{"architecture", "maintainability"}, evaluate: genericPackageNameFindings},
@@ -263,6 +264,83 @@ func ignoredResultFindings(ctx ReviewContext) []Finding {
 		Strength:       "Worth exploring",
 		SourceIDs:      []string{"google-eng-practices"},
 	}}
+}
+
+func securityQualityHintFindings(ctx ReviewContext) []Finding {
+	changed := changedFileSet(ctx.Brief.Static.ChangedFiles)
+	if len(changed) == 0 {
+		return nil
+	}
+	var matched []CodeQualityHint
+	for _, hint := range ctx.Brief.Static.CodeQuality {
+		if !isSecurityQualityHintKind(hint.Kind) {
+			continue
+		}
+		file := filepath.ToSlash(strings.TrimSpace(hint.File))
+		if _, ok := changed[file]; !ok {
+			continue
+		}
+		matched = append(matched, hint)
+	}
+	if len(matched) == 0 {
+		return nil
+	}
+	limit := 3
+	if len(matched) < limit {
+		limit = len(matched)
+	}
+	var out []Finding
+	for index, hint := range matched[:limit] {
+		out = append(out, securityQualityHintFinding(hint, index+1))
+	}
+	return out
+}
+
+func isSecurityQualityHintKind(kind string) bool {
+	switch kind {
+	case "sql_interpolation", "shell_injection", "unsafe_regex", "hardcoded_secret":
+		return true
+	default:
+		return false
+	}
+}
+
+func securityQualityHintFinding(hint CodeQualityHint, index int) Finding {
+	title, recommendation := securityQualityHintCopy(hint.Kind)
+	summary := strings.TrimSpace(hint.Reason)
+	if summary == "" {
+		summary = fmt.Sprintf("`%s:%d` matches a security-sensitive code pattern.", hint.File, hint.Line)
+	}
+	return Finding{
+		ID:      fmt.Sprintf("security.quality-hints.%d", index),
+		Scopes:  []string{"security", "maintainability", "testing"},
+		Title:   title,
+		Summary: summary,
+		Benefit: "Reduces exploitability by catching common injection, secret exposure, and unsafe input handling in changed code without waiting for AI review.",
+		Evidence: []Evidence{{
+			Label: fmt.Sprintf("%s:%d", hint.File, hint.Line),
+			Value: hint.Text,
+		}},
+		Anchors:        []FindingAnchor{{File: hint.File, Line: hint.Line}},
+		Recommendation: recommendation,
+		Strength:       "Strong",
+		SourceIDs:      []string{"owasp-secure-coding"},
+	}
+}
+
+func securityQualityHintCopy(kind string) (title, recommendation string) {
+	switch kind {
+	case "sql_interpolation":
+		return "Avoid SQL string interpolation", "Replace interpolated SQL with parameterized queries or prepared statements, then add a test that proves user input cannot alter query structure."
+	case "shell_injection":
+		return "Avoid shell command injection", "Stop passing user input through a shell; use argv-based execution with an allowlisted command and arguments, then test malicious input cases."
+	case "unsafe_regex":
+		return "Validate regex patterns from user input", "Do not compile user-controlled patterns directly; validate length and syntax, use a safe matcher, or reject dangerous patterns before calling regexp.Compile."
+	case "hardcoded_secret":
+		return "Remove hardcoded secrets from source", "Move credentials to environment variables or a secret manager, rotate any exposed values, and add a scanner or test that fails on committed secrets."
+	default:
+		return "Review security-sensitive code in changed files", "Inspect the flagged line and replace the risky pattern with a safer alternative before merging."
+	}
 }
 
 func staticToolFailureFindings(ctx ReviewContext) []Finding {

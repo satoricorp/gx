@@ -373,12 +373,10 @@ func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]
 
 func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
 	payload := responseRequest{
-		Model:        r.model,
-		Instructions: instructions,
-		Input:        input,
-		Text: responseTextConfig{
-			Format: map[string]string{"type": "json_object"},
-		},
+		Model:           r.model,
+		Instructions:    ensureJSONReviewInstructions(instructions),
+		Input:           normalizeJSONReviewInput(input),
+		Text:            responseTextConfig{Format: map[string]string{"type": "json_object"}},
 		MaxOutputTokens: maxOutputTokens,
 	}
 	body, err := json.Marshal(payload)
@@ -835,4 +833,53 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func aiReviewRequestedFromEnv() bool {
+	value := strings.TrimSpace(os.Getenv("GX_REVIEW_AI"))
+	if value == "" {
+		return true
+	}
+	if strings.EqualFold(value, "0") || strings.EqualFold(value, "false") || strings.EqualFold(value, "no") {
+		return false
+	}
+	return true
+}
+
+func formatReviewerDegradation(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	msg := strings.TrimSpace(err.Error())
+	if msg == "" {
+		return "unknown error"
+	}
+	if len(msg) > 160 {
+		return msg[:157] + "..."
+	}
+	return msg
+}
+
+func ensureJSONReviewInstructions(instructions string) string {
+	if strings.Contains(strings.ToLower(instructions), "json") {
+		return instructions
+	}
+	return instructions + "\nRespond with valid json only."
+}
+
+func normalizeJSONReviewInput(input any) any {
+	switch value := input.(type) {
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if strings.Contains(strings.ToLower(trimmed), "json") {
+			return trimmed
+		}
+		return "Review this patch brief and return findings as json.\n\n" + trimmed
+	default:
+		body := mustJSON(input)
+		if strings.Contains(strings.ToLower(body), "json") {
+			return body
+		}
+		return "Review this patch brief and return findings as json.\n\n" + body
+	}
 }

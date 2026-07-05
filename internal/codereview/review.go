@@ -80,6 +80,7 @@ type Report struct {
 	Color             bool
 	Triage            ChangeTriage
 	NoFindingsMessage string
+	DegradedReasons   []string
 }
 
 type FilePresence struct {
@@ -100,6 +101,10 @@ func ValidateOptions(opts Options) error {
 
 func RenderMarkdown(report Report) string {
 	var b strings.Builder
+	if len(report.DegradedReasons) > 0 {
+		reason := strings.Join(report.DegradedReasons, "; ")
+		fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
+	}
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
 		message := strings.TrimSpace(report.NoFindingsMessage)

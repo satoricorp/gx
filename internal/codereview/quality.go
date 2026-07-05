@@ -3,6 +3,7 @@ package codereview
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -51,6 +52,16 @@ func qualityHintsForFile(repoRoot, rel string) []CodeQualityHint {
 		}
 		lineNo := i + 1
 		switch {
+		case shellInjectionPattern(language, trimmed):
+			hints = append(hints, qualityHint("shell_injection", rel, lineNo, trimmed, "Command execution with shell parsing or string-built commands can turn input into shell syntax; prefer argv arrays and strict allowlists."))
+		case unsafeHTMLPattern(language, trimmed):
+			hints = append(hints, qualityHint("unsafe_html", rel, lineNo, trimmed, "Direct HTML injection bypasses framework escaping and needs a trusted sanitization boundary."))
+		case sqlInterpolationPattern(language, trimmed):
+			hints = append(hints, qualityHint("sql_interpolation", rel, lineNo, trimmed, "SQL assembled with interpolation or concatenation is easy to turn into injection or quoting bugs; prefer parameterized queries."))
+		case unsafeRegexCompilePattern(language, trimmed):
+			hints = append(hints, qualityHint("unsafe_regex", rel, lineNo, trimmed, "Compiling a regular expression from user or request input can enable ReDoS or unexpected pattern behavior; validate and bound patterns first."))
+		case hardcodedSecretPattern(language, trimmed):
+			hints = append(hints, qualityHint("hardcoded_secret", rel, lineNo, trimmed, "Hardcoded credentials or private key material in source code can leak through repos, logs, and build artifacts."))
 		case language == "go" && ignoredNonCleanupResult(trimmed):
 			hints = append(hints, qualityHint("ignored_result", rel, lineNo, trimmed, "A discarded result or error in production code can hide malformed input, failed cleanup, or failed recovery paths."))
 		case language == "go" && strings.Contains(trimmed, "time.Sleep("):
@@ -59,12 +70,6 @@ func qualityHintsForFile(repoRoot, rel string) []CodeQualityHint {
 			hints = append(hints, qualityHint("direct_logging", rel, lineNo, trimmed, "Direct logging from a Module can make error handling and tests less observable than returning classified errors."))
 		case language == "go" && strings.Contains(trimmed, "panic("):
 			hints = append(hints, qualityHint("panic", rel, lineNo, trimmed, "Panic in production code should be justified by an invariant that callers cannot recover from."))
-		case shellInjectionPattern(language, trimmed):
-			hints = append(hints, qualityHint("shell_injection", rel, lineNo, trimmed, "Command execution with shell parsing or string-built commands can turn input into shell syntax; prefer argv arrays and strict allowlists."))
-		case unsafeHTMLPattern(language, trimmed):
-			hints = append(hints, qualityHint("unsafe_html", rel, lineNo, trimmed, "Direct HTML injection bypasses framework escaping and needs a trusted sanitization boundary."))
-		case sqlInterpolationPattern(language, trimmed):
-			hints = append(hints, qualityHint("sql_interpolation", rel, lineNo, trimmed, "SQL assembled with interpolation or concatenation is easy to turn into injection or quoting bugs; prefer parameterized queries."))
 		case rustPanicPattern(language, trimmed):
 			hints = append(hints, qualityHint("panic", rel, lineNo, trimmed, "Unwrap or expect in production Rust should be justified by an invariant that callers cannot recover from."))
 		case unsafeBufferPattern(language, trimmed):
@@ -124,6 +129,13 @@ func qualityLineIgnored(line string) bool {
 func shellInjectionPattern(language, line string) bool {
 	lower := strings.ToLower(line)
 	switch language {
+	case "go":
+		if !strings.Contains(line, "exec.Command(") {
+			return false
+		}
+		return strings.Contains(lower, `"bash"`) ||
+			strings.Contains(lower, `"sh"`) ||
+			strings.Contains(lower, "-c")
 	case "python":
 		return strings.Contains(lower, "shell=true") || strings.Contains(line, "os.system(") || strings.Contains(line, "os.popen(")
 	case "javascript", "typescript":
@@ -194,6 +206,54 @@ func asyncBlockingPattern(language, line string, hasAsyncDef bool) bool {
 	}
 }
 
+var (
+	awsAccessKeyPattern  = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	quotedSecretPattern  = regexp.MustCompile(`(?i)(password|secret|api[_-]?key|token)\s*=\s*["'][^"']{4,}["']`)
+)
+
+func unsafeRegexCompilePattern(language, line string) bool {
+	if language != "go" {
+		return false
+	}
+	call := ""
+	switch {
+	case strings.Contains(line, "regexp.MustCompile("):
+		call = "regexp.MustCompile("
+	case strings.Contains(line, "regexp.Compile("):
+		call = "regexp.Compile("
+	default:
+		return false
+	}
+	start := strings.Index(line, call) + len(call)
+	rest := strings.TrimSpace(line[start:])
+	if rest == "" {
+		return false
+	}
+	if strings.HasPrefix(rest, `"`) || strings.HasPrefix(rest, "`") {
+		return false
+	}
+	return true
+}
+
+func hardcodedSecretPattern(language, line string) bool {
+	if qualityLineIgnored(line) {
+		return false
+	}
+	if strings.Contains(line, "BEGIN RSA PRIVATE KEY") || strings.Contains(line, "BEGIN PRIVATE KEY") {
+		return true
+	}
+	if awsAccessKeyPattern.MatchString(line) {
+		return true
+	}
+	if quotedSecretPattern.MatchString(line) {
+		return true
+	}
+	if language == "go" && strings.Contains(strings.ToLower(line), "password") && strings.Contains(line, `"`) && !strings.Contains(line, `""`) {
+		return strings.Contains(line, "=")
+	}
+	return false
+}
+
 func ignoredNonCleanupResult(line string) bool {
 	if !strings.Contains(line, "_ =") && !strings.Contains(line, ", _ :=") && !strings.Contains(line, ", _ =") {
 		return false
@@ -229,7 +289,7 @@ func ignorableQualityFile(path string) bool {
 
 func qualityRank(kind string) int {
 	switch kind {
-	case "shell_injection", "sql_interpolation", "unsafe_buffer", "unsafe_html":
+	case "shell_injection", "sql_interpolation", "unsafe_buffer", "unsafe_html", "unsafe_regex", "hardcoded_secret":
 		return 0
 	case "panic":
 		return 1
