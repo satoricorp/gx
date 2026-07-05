@@ -13,6 +13,34 @@ func TestTriageDocsOnly(t *testing.T) {
 	}
 }
 
+func TestTriageTestsOnly(t *testing.T) {
+	triage := TriageChange([]string{"internal/app/app_test.go", "testdata/fixtures/input.json"}, nil, normalizeOptions(Options{}))
+	if triage.Class != "tests-only" {
+		t.Fatalf("Class = %q, want tests-only", triage.Class)
+	}
+}
+
+func TestTriageConfigOnly(t *testing.T) {
+	triage := TriageChange([]string{".github/workflows/ci.yml", "go.sum"}, nil, normalizeOptions(Options{}))
+	if triage.Class != "config-only" {
+		t.Fatalf("Class = %q, want config-only", triage.Class)
+	}
+}
+
+func TestTriageMechanicalGenerated(t *testing.T) {
+	triage := TriageChange([]string{"api/v1/service.pb.go"}, nil, normalizeOptions(Options{}))
+	if triage.Class != "mechanical" {
+		t.Fatalf("Class = %q, want mechanical", triage.Class)
+	}
+}
+
+func TestTriagePolicyDocsAreConfigNotDocs(t *testing.T) {
+	triage := TriageChange([]string{"REVIEW.md", "AGENTS.md", "SECURITY.md"}, nil, normalizeOptions(Options{}))
+	if triage.Class != "config-only" {
+		t.Fatalf("Class = %q, want config-only", triage.Class)
+	}
+}
+
 func TestTriageRegexDiffYieldsRegexAndInjection(t *testing.T) {
 	triage := TriageChange([]string{"internal/search/filter.go"}, []DiffSnippet{{
 		File: "internal/search/filter.go",

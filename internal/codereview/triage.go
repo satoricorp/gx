@@ -45,6 +45,9 @@ func TriageChange(changedFiles []string, diffSnippets []DiffSnippet, opts Option
 	if len(files) > 0 && allFiles(files, isDocsOnlyReviewFile) {
 		triage.Class = "docs-only"
 		rationale = append(rationale, "changed files are documentation, text, license, image, or CODEOWNERS files")
+	} else if len(files) > 0 && allFiles(files, isTestsOnlyReviewFile) {
+		triage.Class = "tests-only"
+		rationale = append(rationale, "changed files are test sources or test fixtures")
 	} else if len(files) > 0 && allFiles(files, isConfigOnlyReviewFile) {
 		triage.Class = "config-only"
 		rationale = append(rationale, "changed files are review policy, agent/security docs, CI, lockfile, or dot/editor configuration files")
@@ -153,6 +156,14 @@ func isDocsOnlyReviewFile(rel string) bool {
 	default:
 		return false
 	}
+}
+
+func isTestsOnlyReviewFile(rel string) bool {
+	if isTestFile(rel) {
+		return true
+	}
+	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(rel)))
+	return strings.HasPrefix(lower, "testdata/") || strings.Contains(lower, "/testdata/")
 }
 
 func isConfigOnlyReviewFile(rel string) bool {
