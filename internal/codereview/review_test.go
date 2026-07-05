@@ -14,6 +14,7 @@ import (
 
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GX_REVIEW_AI", "0")
+	_ = os.Setenv("GX_REVIEW_JUDGE", "0")
 	_ = os.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	os.Exit(m.Run())
 }

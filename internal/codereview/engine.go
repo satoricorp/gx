@@ -161,15 +161,31 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	reviewProgress(opts, "Checking fallback review rules")
 	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
+	var degradedReasons []string
 	reviewer := e.reviewer
+	autoLoadedReviewer := false
 	if reviewer == nil && e.autoReviewer {
 		reviewer = reviewerFromEnvWithPolicy(&policy)
+		autoLoadedReviewer = true
 	}
-	if plan.RunAI && reviewerAvailable(reviewer) {
-		reviewProgress(opts, "Asking AI reviewer")
-		if aiFindings, err := reviewer.Review(ctx, brief); err == nil && len(aiFindings) > 0 {
-			findings = mergeFindings(findings, aiFindings)
-			reviewerLabel = "heuristic+ai"
+	wantAIReview := plan.RunAI && (!autoLoadedReviewer || aiReviewRequestedFromEnv())
+	aiConfigured := aiReviewRequestedFromEnv()
+	if wantAIReview {
+		if !reviewerAvailable(reviewer) {
+			if aiConfigured {
+				degradedReasons = append(degradedReasons, "AI reviewer not configured")
+			}
+		} else {
+			reviewProgress(opts, "Asking AI reviewer")
+			aiFindings, err := reviewer.Review(ctx, brief)
+			if err != nil {
+				if aiConfigured {
+					degradedReasons = append(degradedReasons, formatReviewerDegradation(err))
+				}
+			} else if len(aiFindings) > 0 {
+				findings = mergeFindings(findings, aiFindings)
+				reviewerLabel = "heuristic+ai"
+			}
 		}
 	}
 	findings = validateFindingAnchors(reviewContext, findings)
@@ -214,6 +230,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Verbose:           opts.Verbose,
 		Color:             opts.Color,
 		Triage:            triage,
+		DegradedReasons:   degradedReasons,
 	}, nil
 }
 
