@@ -4,6 +4,11 @@
 
 This PR changes `internal/github`: update github client.
 
+## Blast Radius
+
+Blast radius is low (1 file(s), 1 area(s), +1/-0 lines).
+
+
 ## Notable Changes
 
 - [update github client: client.go](https://github.com/satoricorp/gx/pull/21/files#diff-0a204c1fb91cf173cb42c775119266781b45b7f4d326b6f1524fe5fd92a094deR2)

@@ -151,7 +151,7 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	body.WriteString(renderVerdictBanner(verdict, reason))
 	body.WriteString("\n\n")
 	body.WriteString(openingSummary(artifact, catalog, summary.Overview, aiSucceeded))
-	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
+	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach, policy, triage))
 	body.WriteString(renderNotableChangesSection(items))
 	body.WriteString("\n\n")
 	body.WriteString(provenanceFooter(aiSucceeded, reviewerInfo, summaryContext))
@@ -1159,7 +1159,9 @@ func parsePatchHunkHeader(header string) (int, int, int, int) {
 	return atoiDefault(match[1], 0), atoiDefault(match[2], 1), atoiDefault(match[3], 0), atoiDefault(match[4], 1)
 }
 
-func changedLineForHunk(hunk prHunkSummary) int {
+var anyAddedPatchLineRE = regexp.MustCompile(`^\+[^+]`)
+
+func lineOfPatchMatch(hunk prHunkSummary, re *regexp.Regexp) int {
 	line := hunk.NewStart
 	for _, patchLine := range strings.Split(hunk.Patch, "\n") {
 		if strings.HasPrefix(patchLine, "@@ ") {
@@ -1167,11 +1169,22 @@ func changedLineForHunk(hunk prHunkSummary) int {
 			continue
 		}
 		if strings.HasPrefix(patchLine, "+") && !strings.HasPrefix(patchLine, "+++") {
-			return line
+			if re == nil || re.MatchString(patchLine) {
+				return line
+			}
+			line++
+			continue
 		}
 		if strings.HasPrefix(patchLine, " ") || strings.HasPrefix(patchLine, "+") {
 			line++
 		}
+	}
+	return 0
+}
+
+func changedLineForHunk(hunk prHunkSummary) int {
+	if line := lineOfPatchMatch(hunk, anyAddedPatchLineRE); line > 0 {
+		return line
 	}
 	return hunk.NewStart
 }

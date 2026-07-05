@@ -76,6 +76,12 @@ func TestComputeLexicalReachCountsExternalReference(t *testing.T) {
 	if !strings.Contains(body, "## Blast Radius") {
 		t.Fatalf("body missing blast radius section:\n%s", body)
 	}
+	if !strings.Contains(body, "redefined in [lib.go:") {
+		t.Fatalf("body missing symbol definition hunk link:\n%s", body)
+	}
+	if !strings.Contains(body, "Reach is lexical (text search), not a dependency graph.") {
+		t.Fatalf("body missing lexical reach disclosure:\n%s", body)
+	}
 }
 
 func TestComputeLexicalReachSkipsShortSymbol(t *testing.T) {
@@ -210,6 +216,100 @@ func TestComputeLexicalReachTruncatedForCommonSymbol(t *testing.T) {
 	}
 	if reach.ReferenceCount != 0 {
 		t.Fatalf("reach = %#v, want common symbol excluded from counts", reach)
+	}
+}
+
+func TestRenderBlastRadiusCriticalPathLine(t *testing.T) {
+	reviewRoot := t.TempDir()
+	reviewMD := strings.Join([]string{
+		"## high-risk paths",
+		"risk-path: internal/billing/** — billing changes can mischarge customers",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(reviewRoot, "REVIEW.md"), []byte(reviewMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy := codereview.LoadReviewPolicy(context.Background(), reviewRoot)
+	prURL := "https://github.com/example/acme/pull/1"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Repo: reviewbundle.RepoPayload{RootPath: reviewRoot},
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/billing/charge.go b/internal/billing/charge.go\n--- a/internal/billing/charge.go\n+++ b/internal/billing/charge.go\n@@ -1 +1,2 @@\n package billing\n+func Charge() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Description: "add billing charge helper",
+				Files:       []string{"internal/billing/charge.go"},
+			},
+		}},
+	})
+	catalog := buildPRBodyCatalog(artifact)
+	triage := triageChangeFromCatalog(catalog)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, policy, triage)
+	if !strings.Contains(body, "**Critical path `internal/billing/**`**") {
+		t.Fatalf("body missing critical path line:\n%s", body)
+	}
+	if !strings.Contains(body, "billing changes can mischarge customers (REVIEW.md)") {
+		t.Fatalf("body missing REVIEW.md attribution:\n%s", body)
+	}
+	if !strings.Contains(body, "[changed here](") || !strings.Contains(body, "R") {
+		t.Fatalf("body missing line-anchored hunk link:\n%s", body)
+	}
+}
+
+func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
+	prURL := "https://github.com/example/acme/pull/1"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Description: "add handler",
+				Files:       []string{"internal/foo/handler.go"},
+			},
+		}},
+	})
+	catalog := buildPRBodyCatalog(artifact)
+	triage := triageChangeFromCatalog(catalog)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage)
+	if !strings.Contains(body, "## Blast Radius") {
+		t.Fatalf("body missing blast radius section:\n%s", body)
+	}
+	if !strings.Contains(body, "Blast radius is") {
+		t.Fatalf("body missing lead sentence:\n%s", body)
+	}
+	if strings.Contains(body, "**Critical path") {
+		t.Fatalf("body should not contain critical path lines:\n%s", body)
+	}
+	if strings.Contains(body, "Reach is lexical") {
+		t.Fatalf("body should not contain reach disclosure without reach lines:\n%s", body)
+	}
+}
+
+func TestRenderBlastRadiusAbsentForDocsOnly(t *testing.T) {
+	artifact := docsOnlyPRArtifact()
+	catalog := buildPRBodyCatalog(artifact)
+	triage := triageChangeFromCatalog(catalog)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage)
+	if body != "" {
+		t.Fatalf("body = %q, want empty for docs-only", body)
+	}
+}
+
+func TestRenderReachSymbolWithoutDefinitionHunk(t *testing.T) {
+	prURL := "https://github.com/example/reach/pull/1"
+	sha := "abc123"
+	sym := symbolReach{
+		Symbol: "HelloWorld",
+		References: []reachSite{
+			{File: "consumer.go", Line: 4},
+			{File: "consumer2.go", Line: 3},
+		},
+	}
+	line := renderReachSymbolLine(sym, prBodyCatalog{}, prURL, sha)
+	if strings.Contains(line, "redefined in") {
+		t.Fatalf("line should omit redefined clause without defining hunk:\n%s", line)
+	}
+	if !strings.Contains(line, "referenced 2× across 2 files") {
+		t.Fatalf("line = %q, want reference counts", line)
 	}
 }
 

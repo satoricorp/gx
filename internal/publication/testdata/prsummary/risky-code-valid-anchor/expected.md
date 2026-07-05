@@ -4,6 +4,11 @@
 
 This PR changes `internal/auth`: add session validation.
 
+## Blast Radius
+
+Blast radius is low (1 file(s), 1 area(s), +1/-0 lines).
+
+
 ## Notable Changes
 
 - ⚠ [Verify auth handling](https://github.com/satoricorp/gx/pull/20/files#diff-be705dc21842980d125a77b4c115d16d2d4bc3333bdb9e9fd7140083730e921fR2) — Session token validation changed and may affect login flows.

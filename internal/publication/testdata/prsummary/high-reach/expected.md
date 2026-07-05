@@ -7,7 +7,9 @@ This PR changes `.`: change HelloWorld.
 ## Blast Radius
 
 Blast radius is medium: 3 references to changed symbols (HelloWorld) across 3 other file(s); 1 file(s), +1/-1 lines.
-- **HelloWorld**: 3 references — [consumer.go:4](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer.go#L4), [consumer2.go:3](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer2.go#L3)
+- **`HelloWorld`** — redefined in [lib.go:3](https://github.com/example/reach/pull/1/files#diff-24ee2abbb4556b154f9bada8de5f7961a957bd2267b3cdeeeaf23e619769c5c7R3), referenced 3× across 3 files: [consumer.go:4](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer.go#L4), [consumer2.go:3](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer2.go#L3)
+
+Reach is lexical (text search), not a dependency graph.
 
 
 ## Notable Changes

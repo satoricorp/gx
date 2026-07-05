@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,6 +21,8 @@ const (
 	maxRefsPerSymbol        = 10
 	maxSymbolMatchCount     = 200
 	highReachRefsPerSymbol  = 25
+	maxBlastRadiusCritical  = 4
+	maxBlastRadiusSymbols   = 4
 )
 
 var goPatchSymbolRE = regexp.MustCompile(`^\+(?:func|type)\s+([A-Za-z_][A-Za-z0-9_]*)`)
@@ -285,8 +288,24 @@ func topReachSymbolNames(reach lexicalReach, limit int) []string {
 	return names
 }
 
-func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCatalog, reach lexicalReach) string {
-	if reach.ReferenceCount <= 0 {
+func shouldRenderBlastRadiusSection(triage codereview.ChangeTriage, catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy) bool {
+	switch triage.Class {
+	case "code", "security-sensitive":
+		return true
+	}
+	if reach.ReferenceCount > 0 {
+		return true
+	}
+	for _, hunk := range catalog.Hunks {
+		if hunkMatchesRiskPath(hunk.File, policy) {
+			return true
+		}
+	}
+	return false
+}
+
+func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy, triage codereview.ChangeTriage) string {
+	if !shouldRenderBlastRadiusSection(triage, catalog, reach, policy) {
 		return ""
 	}
 	prURL := pullRequestURL(artifact)
@@ -295,45 +314,145 @@ func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCata
 	body.WriteString("\n\n## Blast Radius\n\n")
 	body.WriteString(readinessSentence(catalog, reach))
 	body.WriteByte('\n')
-	lines := 0
-	for _, sym := range reach.Symbols {
-		if lines >= 5 {
+
+	criticalCount := 0
+	for _, riskPath := range policy.RiskPaths {
+		if criticalCount >= maxBlastRadiusCritical {
 			break
 		}
-		body.WriteString("- **")
-		body.WriteString(sym.Symbol)
-		body.WriteString("**: ")
-		body.WriteString(strconv.Itoa(len(sym.References)))
-		body.WriteString(" reference")
-		if len(sym.References) != 1 {
-			body.WriteByte('s')
+		hunk, ok := bestHunkMatchingRiskPath(catalog, riskPath.Glob)
+		if !ok {
+			continue
 		}
-		linkCount := 0
-		for _, ref := range sym.References {
-			if linkCount >= 2 {
-				break
-			}
-			if link := blobPermalink(prURL, sha, ref.File, ref.Line); link != "" {
-				if linkCount == 0 {
-					body.WriteString(" — ")
-				} else {
-					body.WriteString(", ")
-				}
-				body.WriteString("[")
-				body.WriteString(ref.File)
-				body.WriteString(":")
-				body.WriteString(strconv.Itoa(ref.Line))
-				body.WriteString("](")
-				body.WriteString(link)
-				body.WriteString(")")
-				linkCount++
-			}
+		body.WriteString(renderCriticalPathLine(riskPath, hunk, prURL))
+		criticalCount++
+	}
+
+	reachLineCount := 0
+	for _, sym := range reach.Symbols {
+		if reachLineCount >= maxBlastRadiusSymbols {
+			break
+		}
+		body.WriteString(renderReachSymbolLine(sym, catalog, prURL, sha))
+		reachLineCount++
+	}
+
+	if reachLineCount > 0 {
+		body.WriteString("\nReach is lexical (text search), not a dependency graph.")
+		if reach.Truncated {
+			body.WriteString(" Common names were skipped.")
 		}
 		body.WriteByte('\n')
-		lines++
-	}
-	if reach.Truncated {
+	} else if reach.Truncated {
 		body.WriteString("\nReach is lexical (text search) and truncated; common names were skipped.\n")
 	}
 	return body.String()
+}
+
+func bestHunkMatchingRiskPath(catalog prBodyCatalog, glob string) (prHunkSummary, bool) {
+	var best prHunkSummary
+	bestScore := -1
+	found := false
+	for _, hunk := range catalog.Hunks {
+		if !codereview.MatchRiskPathGlob(glob, hunk.File) {
+			continue
+		}
+		score := hunk.NewLines + hunk.OldLines
+		if !found || score > bestScore {
+			best = hunk
+			bestScore = score
+			found = true
+		}
+	}
+	return best, found
+}
+
+func renderCriticalPathLine(riskPath codereview.RiskPath, hunk prHunkSummary, prURL string) string {
+	var b strings.Builder
+	b.WriteString("- **Critical path `")
+	b.WriteString(riskPath.Glob)
+	b.WriteString("`** — ")
+	b.WriteString(strings.TrimSpace(riskPath.Message))
+	b.WriteString(" (REVIEW.md)")
+	link := hunk.Link
+	if link == "" && prURL != "" {
+		link = githubHunkLineLink(prURL, hunk.File, hunk.ChangedLine)
+	}
+	if link != "" {
+		b.WriteString(" — [changed here](")
+		b.WriteString(link)
+		b.WriteString(")")
+	}
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func findDefiningHunk(catalog prBodyCatalog, symbol string) (prHunkSummary, int) {
+	symRE := regexp.MustCompile(`^\+(?:func|type)\s+` + regexp.QuoteMeta(symbol) + `\b`)
+	for _, hunk := range catalog.Hunks {
+		if line := lineOfPatchMatch(hunk, symRE); line > 0 {
+			return hunk, line
+		}
+	}
+	return prHunkSummary{}, 0
+}
+
+func renderReachSymbolLine(sym symbolReach, catalog prBodyCatalog, prURL, sha string) string {
+	uniqueFiles := map[string]struct{}{}
+	for _, ref := range sym.References {
+		uniqueFiles[ref.File] = struct{}{}
+	}
+
+	var b strings.Builder
+	b.WriteString("- **`")
+	b.WriteString(sym.Symbol)
+	b.WriteString("`** — ")
+
+	if defHunk, defLine := findDefiningHunk(catalog, sym.Symbol); defLine > 0 {
+		defLink := defHunk.Link
+		if defLine != defHunk.ChangedLine || defLink == "" {
+			defLink = githubHunkLineLink(prURL, defHunk.File, defLine)
+		}
+		if defLink != "" {
+			b.WriteString("redefined in [")
+			b.WriteString(path.Base(defHunk.File))
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(defLine))
+			b.WriteString("](")
+			b.WriteString(defLink)
+			b.WriteString("), ")
+		}
+	}
+
+	b.WriteString("referenced ")
+	b.WriteString(strconv.Itoa(len(sym.References)))
+	b.WriteString("× across ")
+	b.WriteString(strconv.Itoa(len(uniqueFiles)))
+	b.WriteString(" file")
+	if len(uniqueFiles) != 1 {
+		b.WriteByte('s')
+	}
+	b.WriteString(": ")
+
+	linkCount := 0
+	for _, ref := range sym.References {
+		if linkCount >= 2 {
+			break
+		}
+		if link := blobPermalink(prURL, sha, ref.File, ref.Line); link != "" {
+			if linkCount > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString("[")
+			b.WriteString(ref.File)
+			b.WriteString(":")
+			b.WriteString(strconv.Itoa(ref.Line))
+			b.WriteString("](")
+			b.WriteString(link)
+			b.WriteString(")")
+			linkCount++
+		}
+	}
+	b.WriteByte('\n')
+	return b.String()
 }
