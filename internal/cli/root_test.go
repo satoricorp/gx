@@ -1860,6 +1860,79 @@ func TestGenerateAutoInitializesGitRepo(t *testing.T) {
 	}
 }
 
+func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	t.Chdir(root)
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	cmd := NewRoot(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"init", "-y"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("gx init -y error = %v\n%s", err, out.String())
+	}
+	if out.String() != "" {
+		t.Fatalf("gx init -y output = %q, want empty", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
+		t.Fatalf("after gx init -y .jj missing: %v", err)
+	}
+}
+
+func TestGenerateAutoInitSuppressesInteractiveInitOutput(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	writeTestFile(t, root, "README.md", "# repo\n")
+	gitAddTestFiles(t, root, "README.md")
+	runGitTest(t, root, "commit", "-m", "initial")
+	writeTestFile(t, root, "README.md", "# repo\n\nchanged\n")
+	t.Chdir(root)
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	cmd := NewRoot(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"generate", "--json", "--intent", "auto init"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("gx generate error = %v\n%s", err, out.String())
+	}
+	for _, unwanted := range []string{
+		"Your config is stored",
+		"gx name",
+		"gx email",
+		"gx init",
+	} {
+		if strings.Contains(out.String(), unwanted) {
+			t.Fatalf("gx generate auto-init leaked %q:\n%s", unwanted, out.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
+		t.Fatalf("after gx generate .jj missing: %v", err)
+	}
+}
+
 func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)

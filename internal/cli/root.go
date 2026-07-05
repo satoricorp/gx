@@ -193,23 +193,26 @@ func newVersionCommand() *cobra.Command {
 func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var name string
 	var email string
+	var yes bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Set up gx in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
-			fmt.Fprintln(cmd.OutOrStdout())
+			if !yes {
+				fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
 			result, err := engine.Init(ctx, authoring.InitOptions{
 				Name:        name,
 				Email:       email,
-				Interactive: true,
-				In:          cmd.InOrStdin(),
-				Out:         cmd.OutOrStdout(),
+				Interactive: !yes,
+				In:          initInput(cmd, yes),
+				Out:         initOutput(cmd, yes),
 			})
 			if err != nil {
 				return err
 			}
-			if result.IdentityName != "" && result.IdentityEmail != "" {
+			if !yes && result.IdentityName != "" && result.IdentityEmail != "" {
 				if result.IdentityApplied {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Configured", fmt.Sprintf("gx identity as %s <%s>", result.IdentityName, result.IdentityEmail)))
 				} else {
@@ -226,21 +229,46 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					}
 				}
 			}
-			if err := installCaptureHook(cmd, result.Repo.RootPath); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Pre-push hook", err.Error()))
+			installHook := installCaptureHook
+			if yes {
+				installHook = installCaptureHookQuiet
+			}
+			if err := installHook(cmd, result.Repo.RootPath); err != nil {
+				if !yes {
+					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Pre-push hook", err.Error()))
+				}
 			}
 			if err := gxconfig.EnsureCaptureRetention(); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Retention", err.Error()))
+				if !yes {
+					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Retention", err.Error()))
+				}
 			} else {
 				cfg, _ := gxconfig.Load()
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Session retention", fmt.Sprintf("%d days", cfg.Capture.CleanupPeriodDays)))
+				if !yes {
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Session retention", fmt.Sprintf("%d days", cfg.Capture.CleanupPeriodDays)))
+				}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "user name to store in GX and JJ config")
 	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX and JJ config")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
 	return cmd
+}
+
+func initInput(cmd *cobra.Command, quiet bool) io.Reader {
+	if quiet {
+		return nil
+	}
+	return cmd.InOrStdin()
+}
+
+func initOutput(cmd *cobra.Command, quiet bool) io.Writer {
+	if quiet {
+		return nil
+	}
+	return cmd.OutOrStdout()
 }
 
 func newAddCommand(ctx context.Context, engine *authoring.Engine, use string, helpName string, hidden bool) *cobra.Command {
@@ -756,15 +784,7 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 }
 
 func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
-	interactive := !opts.JSON && !generateIsMCP() && useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout())
-	initOpts := authoring.InitOptions{
-		Interactive: interactive,
-	}
-	if interactive {
-		initOpts.In = cmd.InOrStdin()
-		initOpts.Out = cmd.OutOrStdout()
-	}
-	_, err := engine.Init(ctx, initOpts)
+	_, err := engine.Init(ctx, authoring.InitOptions{})
 	return err
 }
 
