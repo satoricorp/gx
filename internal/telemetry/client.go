@@ -11,7 +11,7 @@ import (
 	"github.com/satoricorp/gx/internal/buildconfig"
 )
 
-const defaultPostHogHost = "https://us.i.posthog.com"
+const defaultPostHogHost = "https://f.gx.run"
 
 // ClientImpl sends events to PostHog when configured.
 type ClientImpl struct {
