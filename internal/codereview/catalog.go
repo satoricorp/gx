@@ -153,6 +153,14 @@ func (StaticCatalog) SourcesForScopes(scopes []string) []Source {
 	return out
 }
 
+func SourcesForScopes(scopes []string) []Source {
+	return sourcesForScopes(scopes)
+}
+
+func SourceBriefs(sources []Source) []SourceBrief {
+	return sourceBriefs(sources)
+}
+
 func sourcesForScopes(scopes []string) []Source {
 	return StaticCatalog{}.SourcesForScopes(scopes)
 }

@@ -280,20 +280,22 @@ func TestSourcesAreCollectedAndRendered(t *testing.T) {
 	}
 }
 
-func TestParseAIReviewContentIncludesAnchors(t *testing.T) {
+func TestParseAIReviewContentIncludesFileAndLine(t *testing.T) {
+	brief := ReviewBrief{}
 	findings, err := parseAIReviewContent(`{"recommendations":[{
 		"title":"Anchor title",
 		"summary":"Anchor summary",
 		"benefit":"Anchor benefit",
 		"recommendation":"Anchor recommendation",
 		"evidence":["internal/app/app.go:2 shows the issue"],
-		"anchors":[{"file":"internal/app/app.go","line":2}]
-	}]}`, nil)
+		"file":"internal/app/app.go",
+		"line":2
+	}]}`, brief)
 	if err != nil {
 		t.Fatalf("parseAIReviewContent() error = %v", err)
 	}
-	if len(findings) != 1 || len(findings[0].Anchors) != 1 {
-		t.Fatalf("Findings = %#v, want parsed anchor", findings)
+	if len(findings) != 1 || findings[0].File != "internal/app/app.go" || findings[0].Line != 2 {
+		t.Fatalf("Findings = %#v, want parsed file/line", findings)
 	}
 }
 
@@ -787,10 +789,33 @@ func TestDeepReviewBriefUsesFullSpectrumRubric(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownShowsResolvedSourcesAttribution(t *testing.T) {
+	report := Report{
+		Findings: []Finding{{
+			ID:             "ai.review.1",
+			Title:          "Review auth inputs",
+			Summary:        "Missing validation on auth callback.",
+			Benefit:        "Prevents forged callbacks.",
+			Recommendation: "Validate signatures.",
+			ResolvedSources: []ResolvedSource{
+				{Kind: "review_resource", Publisher: "OWASP", Opaque: true},
+				{Kind: "local", Publisher: "local", File: "REVIEW.md", StartLine: 4, Opaque: false},
+			},
+		}},
+	}
+	text := RenderMarkdown(report)
+	for _, want := range []string{"**Informed by:**", "OWASP", "REVIEW.md:4"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
+		}
+	}
+}
+
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 	prompt := reviewDeveloperPrompt()
 	for _, want := range []string{
 		"patch_focused",
+		"pr_summary",
 		"prompt_directed",
 		"deep_full_spectrum",
 		"review_prompt",
@@ -800,6 +825,11 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"observability",
 		"broad architecture",
 		"empty recommendations array",
+		"source_labels",
+		"\"overview\"",
+		"\"file\"",
+		"\"line\"",
+		"Only when review_profile is pr_summary",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("review prompt missing %q in:\n%s", want, prompt)

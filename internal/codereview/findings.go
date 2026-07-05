@@ -16,6 +16,9 @@ type Finding struct {
 	Benefit          string
 	Evidence         []Evidence
 	Anchors          []FindingAnchor
+	File             string
+	Line             int
+	ResolvedSources  []ResolvedSource
 	Recommendation   string
 	Strength         string
 	SourceIDs        []string
@@ -457,6 +460,7 @@ func findingMentionsChangedFile(finding Finding, changed []string) bool {
 		finding.Recommendation,
 		evidenceText(finding.Evidence),
 		anchorsText(finding.Anchors),
+		fileLineText(finding.File, finding.Line),
 	}, "\n")
 	text = filepath.ToSlash(text)
 	for _, file := range changed {
@@ -465,6 +469,14 @@ func findingMentionsChangedFile(finding Finding, changed []string) bool {
 		}
 	}
 	return false
+}
+
+func fileLineText(file string, line int) string {
+	file = strings.TrimSpace(filepath.ToSlash(file))
+	if file == "" || line <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", file, line)
 }
 
 func anchorsText(anchors []FindingAnchor) string {

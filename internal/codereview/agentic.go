@@ -46,28 +46,36 @@ func maybeAgenticReviewer(reviewer AIReviewer) AIReviewer {
 }
 
 func (r *agenticResponsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
+	_, findings, err := r.ReviewWithOverview(ctx, brief)
+	return findings, err
+}
+
+func (r *agenticResponsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
 	if r == nil || r.base == nil {
-		return nil, fmt.Errorf("agentic reviewer is not configured")
+		return "", nil, fmt.Errorf("agentic reviewer is not configured")
 	}
 	brief = compactReviewBriefForAI(brief)
-	resolver := newSourceResolver(brief)
 	input := any(mustJSON(brief))
 	previousID := ""
 	for step := 0; step <= maxAgenticToolCalls; step++ {
 		result, err := r.createResponse(ctx, input, previousID)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		content := strings.TrimSpace(result.OutputText)
 		if content == "" {
 			content = strings.TrimSpace(responseOutputText(result))
 		}
 		if content != "" {
-			return parseAIReviewContent(content, resolver)
+			output, err := parseAIReviewOutput(content, brief)
+			if err != nil {
+				return "", nil, err
+			}
+			return output.Overview, output.Findings, nil
 		}
 		calls := agenticToolCalls(result)
 		if len(calls) == 0 {
-			return nil, fmt.Errorf("agentic AI review response returned no findings or tool calls")
+			return "", nil, fmt.Errorf("agentic AI review response returned no findings or tool calls")
 		}
 		var outputs []map[string]any
 		for _, call := range calls {
@@ -80,7 +88,7 @@ func (r *agenticResponsesAIReviewer) Review(ctx context.Context, brief ReviewBri
 		input = outputs
 		previousID = result.ID
 	}
-	return nil, fmt.Errorf("agentic AI review exceeded tool call limit")
+	return "", nil, fmt.Errorf("agentic AI review exceeded tool call limit")
 }
 
 func (r *agenticResponsesAIReviewer) createResponse(ctx context.Context, input any, previousID string) (responseResult, error) {

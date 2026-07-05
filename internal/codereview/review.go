@@ -203,6 +203,22 @@ func RenderMarkdown(report Report) string {
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {
+	if len(finding.ResolvedSources) > 0 {
+		seen := map[string]struct{}{}
+		var out []string
+		for _, src := range finding.ResolvedSources {
+			label := strings.TrimSpace(ResolvedSourceLabel(src))
+			if label == "" {
+				continue
+			}
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			out = append(out, label)
+		}
+		return out
+	}
 	publishers := append([]string(nil), finding.SourcePublishers...)
 	sources := sourceMap(report.Sources)
 	for _, id := range finding.SourceIDs {

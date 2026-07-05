@@ -330,6 +330,14 @@ func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
 	return ContextSnippet{Kind: kind, Ref: rel, Text: text, Source: "local", Publisher: "this repo"}, true
 }
 
+func LabelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
+	return labelContextSnippets(snippets)
+}
+
+func SourceRefsFromContextSnippets(snippets []ContextSnippet) []SourceRef {
+	return sourceRefsFromContextSnippets(snippets)
+}
+
 func labelContextSnippets(snippets []ContextSnippet) []ContextSnippet {
 	counts := map[string]int{}
 	out := make([]ContextSnippet, 0, len(snippets))
@@ -522,7 +530,7 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 		Title:      sourceRefTitle(snippet),
 		URL:        strings.TrimSpace(snippet.URL),
 		Source:     strings.TrimSpace(snippet.Source),
-		Publisher:  strings.TrimSpace(snippet.Publisher),
+		Publisher:  publisherForContextSnippet(snippet),
 		File:       firstNonEmpty(snippet.File, snippet.Ref),
 		StartLine:  snippet.StartLine,
 		EndLine:    snippet.EndLine,
@@ -531,6 +539,41 @@ func sourceRefFromContextSnippet(snippet ContextSnippet) SourceRef {
 		RequestID:  strings.TrimSpace(snippet.RequestID),
 		ResponseID: strings.TrimSpace(snippet.ResponseID),
 		ChunkHash:  strings.TrimSpace(snippet.ChunkHash),
+	}
+}
+
+func publisherForContextSnippet(snippet ContextSnippet) string {
+	if publisher := strings.TrimSpace(snippet.Publisher); publisher != "" {
+		return publisher
+	}
+	switch strings.TrimSpace(snippet.Kind) {
+	case "domain_doc", "repo_doc", "adr", "dependency_manifest", "changed_file", "module_file", "code_quality_file":
+		return "local"
+	case "indexed_session", "session":
+		return "session"
+	case "indexed_code":
+		return "indexed"
+	case "review_policy", "review_reference":
+		if publisher := publisherFromURLHost(snippet.URL); publisher != "" {
+			return publisher
+		}
+		return "local"
+	case "review_resource":
+		if publisher := publisherFromURLHost(snippet.URL); publisher != "" {
+			return publisher
+		}
+		return "unknown"
+	default:
+		if publisher := publisherFromURLHost(snippet.URL); publisher != "" {
+			return publisher
+		}
+		if strings.EqualFold(strings.TrimSpace(snippet.Source), "local") {
+			return "local"
+		}
+		if strings.HasPrefix(strings.TrimSpace(snippet.Source), "turbopuffer:") {
+			return "indexed"
+		}
+		return "unknown"
 	}
 }
 

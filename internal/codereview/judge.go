@@ -484,10 +484,28 @@ func mergeNearDuplicateFindings(findings []Finding) []Finding {
 	return out
 }
 
+func mergeResolvedSources(left, right []ResolvedSource) []ResolvedSource {
+	seen := map[string]struct{}{}
+	var out []ResolvedSource
+	for _, src := range append(append([]ResolvedSource{}, left...), right...) {
+		key := strings.TrimSpace(src.ID) + "|" + strings.TrimSpace(ResolvedSourceLabel(src))
+		if key == "|" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, src)
+	}
+	return out
+}
+
 func mergeFindingMetadata(left Finding, right Finding) Finding {
 	left.Evidence = append(left.Evidence, right.Evidence...)
 	left.SourceIDs = uniqueStrings(append(left.SourceIDs, right.SourceIDs...))
 	left.SourcePublishers = uniqueStrings(append(left.SourcePublishers, right.SourcePublishers...))
+	left.ResolvedSources = mergeResolvedSources(left.ResolvedSources, right.ResolvedSources)
 	if strengthRank(right.Strength) < strengthRank(left.Strength) {
 		left.Strength = right.Strength
 	}
