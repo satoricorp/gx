@@ -96,6 +96,8 @@ jobs:
         run: |
           test -f apps/menubar/dist/GX-macOS.zip
           test -f apps/menubar/dist/GX-macOS.dmg
+          test -f apps/menubar/dist/appcast/appcast.xml
+          compgen -G 'apps/menubar/dist/appcast/GX-*-macOS.zip' >/dev/null
           [[ "$GITHUB_REF_TYPE" != "tag" ]] || strings apps/menubar/dist/GX.app/Contents/Resources/bin/gx | grep -q 'github.com/satoricorp/gx/internal/buildconfig.PostHogKey=' || {
             echo "missing baked GX_POSTHOG_KEY in macOS app CLI" >&2
             exit 1
@@ -114,6 +116,7 @@ jobs:
           path: |
             apps/menubar/dist/GX-macOS.zip
             apps/menubar/dist/GX-macOS.dmg
+            apps/menubar/dist/appcast/*
             dist/cli/*
             scripts/install.sh
           if-no-files-found: error

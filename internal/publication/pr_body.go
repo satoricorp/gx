@@ -108,15 +108,17 @@ type prNeedsReviewItem struct {
 
 func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundle.Artifact) (string, error) {
 	catalog := buildPRBodyCatalog(artifact)
+	reach := computeLexicalReach(ctx, artifact.Bundle.Repo.RootPath, catalog, artifact)
+	applyLexicalReachToStats(&catalog.Stats, reach)
 	summaryContext, err := collectPRSummaryContext(ctx, artifact, catalog)
 	if err != nil {
 		return "", err
 	}
-	findings, _, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext)
-	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, aiSucceeded), nil
+	findings, _, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach)
+	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, aiSucceeded, reach), nil
 }
 
-func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, aiSucceeded bool) string {
+func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, aiSucceeded bool, reach lexicalReach) string {
 	triage := triageChangeFromCatalog(catalog)
 	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded)
 	includeHeuristics := verdict != "No review needed"
@@ -126,7 +128,8 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	body.WriteString("\n\n")
 	body.WriteString(fmt.Sprintf("**Review verdict: %s** — %s.", verdict, reason))
 	body.WriteString("\n\n")
-	body.WriteString(openingSummary(artifact, catalog, items, summaryContext))
+	body.WriteString(openingSummary(artifact, catalog, items, summaryContext, reach))
+	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
 	body.WriteString("\n\n## Needs Review\n\n")
 	if len(items) == 0 {
 		body.WriteString("- No specific high-impact review targets surfaced from the available GX context.\n")
@@ -157,8 +160,8 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	return strings.TrimRight(body.String(), "\n")
 }
 
-func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, items []prNeedsReviewItem, summaryContext prSummaryContext) string {
-	parts := []string{changeSummarySentence(artifact, catalog), readinessSentence(catalog, len(items))}
+func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, items []prNeedsReviewItem, summaryContext prSummaryContext, reach lexicalReach) string {
+	parts := []string{changeSummarySentence(artifact, catalog), readinessSentence(catalog, reach, len(items))}
 	if context := contextSentence(summaryContext); context != "" {
 		parts = append(parts, context)
 	}
@@ -184,9 +187,18 @@ func changeSummarySentence(artifact reviewbundle.Artifact, catalog prBodyCatalog
 	return fmt.Sprintf("This PR publishes %d GX revisions: %s.", len(catalog.Revisions), strings.Join(descriptions, "; "))
 }
 
-func readinessSentence(catalog prBodyCatalog, itemCount int) string {
+func readinessSentence(catalog prBodyCatalog, reach lexicalReach, itemCount int) string {
 	blast := firstNonEmpty(catalog.Stats.MaxRiskLevel, "low")
 	detail := fmt.Sprintf("%d file(s), %d area(s), +%d/-%d lines", catalog.Stats.FileCount, catalog.Stats.AreaCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
+	if reach.ReferenceCount > 0 {
+		symbols := strings.Join(topReachSymbolNames(reach, 2), ", ")
+		reachDetail := fmt.Sprintf("%d references to changed symbols (%s) across %d other file(s); %d file(s), +%d/-%d lines",
+			reach.ReferenceCount, symbols, reach.DependentFiles, catalog.Stats.FileCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
+		if itemCount > 0 {
+			return fmt.Sprintf("Blast radius is %s: %s, with %d review target%s below.", blast, reachDetail, itemCount, plural(itemCount))
+		}
+		return fmt.Sprintf("Blast radius is %s: %s.", blast, reachDetail)
+	}
 	switch {
 	case itemCount > 0:
 		return fmt.Sprintf("Blast radius is %s (%s), with %d review target%s below.", blast, detail, itemCount, plural(itemCount))
@@ -453,12 +465,12 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 	return catalog.Stats.MaxRiskLevel == "high" || containsAny(strings.Join(catalog.Stats.RiskSignals, " "), []string{"structural", "warning:", "many_files", "many_hunks"})
 }
 
-func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
+func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
 	reviewer, info := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
 		return nil, "", false, info
 	}
-	brief := prReviewBrief(artifact, catalog, summaryContext)
+	brief := prReviewBrief(artifact, catalog, summaryContext, reach)
 	var findings []codereview.Finding
 	var overview string
 	var err error
@@ -473,7 +485,7 @@ func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact
 	return findings, overview, true, info
 }
 
-func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) codereview.ReviewBrief {
+func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach) codereview.ReviewBrief {
 	diffSnippets := make([]codereview.DiffSnippet, 0, len(catalog.Hunks))
 	for _, hunk := range catalog.Hunks {
 		diffSnippets = append(diffSnippets, codereview.DiffSnippet{File: hunk.File, Diff: hunk.Patch})
@@ -481,7 +493,8 @@ func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summar
 			break
 		}
 	}
-	labeled := codereview.LabelContextSnippets(summaryContext.Snippets)
+	snippets := append(append([]codereview.ContextSnippet(nil), summaryContext.Snippets...), lexicalReachContextSnippets(reach)...)
+	labeled := codereview.LabelContextSnippets(snippets)
 	return codereview.ReviewBrief{
 		RepoRoot:      artifact.Bundle.Repo.RootPath,
 		Scope:         "maintainability",
@@ -1096,9 +1109,9 @@ func bodyStats(artifact reviewbundle.Artifact, revisions []prRevisionSummary, ex
 	}
 	if stats.MaxRiskScore == 0 {
 		switch {
-		case stats.WarningCount > 0 || len(files) >= 8 || stats.AddedLines+stats.DeletedLines >= 400:
+		case stats.WarningCount > 0:
 			stats.MaxRiskLevel, stats.MaxRiskScore = "high", 60
-		case len(files) >= 4 || stats.AddedLines+stats.DeletedLines >= 100 || stats.ChangedSymbolCount >= 5:
+		case len(files) >= 4 || stats.AddedLines+stats.DeletedLines >= 100 || stats.ChangedSymbolCount >= 5 || len(files) >= 8 || stats.AddedLines+stats.DeletedLines >= 400:
 			stats.MaxRiskLevel, stats.MaxRiskScore = "medium", 25
 		}
 	}
