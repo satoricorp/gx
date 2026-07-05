@@ -686,6 +686,9 @@ type generateRunOptions struct {
 
 func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) (authoring.DemuxPlanPacket, authoring.ApplyDemuxResult, error) {
 	run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
+		if err := ensureGenerateInitialized(ctx, engine, cmd, opts); err != nil {
+			return authoring.DemuxPlanPacket{}, err
+		}
 		if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
 			return authoring.DemuxPlanPacket{}, err
 		}
@@ -750,6 +753,19 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 	}
 	printDemuxApplySummary(cmd.OutOrStdout(), result)
 	return packet, result, nil
+}
+
+func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
+	interactive := !opts.JSON && !generateIsMCP() && useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout())
+	initOpts := authoring.InitOptions{
+		Interactive: interactive,
+	}
+	if interactive {
+		initOpts.In = cmd.InOrStdin()
+		initOpts.Out = cmd.OutOrStdout()
+	}
+	_, err := engine.Init(ctx, initOpts)
+	return err
 }
 
 func generatePreflightAttempts() int {

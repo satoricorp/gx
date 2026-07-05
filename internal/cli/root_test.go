@@ -1817,6 +1817,49 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	}
 }
 
+func TestGenerateAutoInitializesGitRepo(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	writeTestFile(t, root, "README.md", "# repo\n")
+	gitAddTestFiles(t, root, "README.md")
+	runGitTest(t, root, "commit", "-m", "initial")
+	writeTestFile(t, root, "README.md", "# repo\n\nchanged\n")
+	t.Chdir(root)
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("TERM", "dumb")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	cmd := NewRoot(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"generate", "--json", "--intent", "auto init"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("gx generate error = %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "There is no jj repo") {
+		t.Fatalf("gx generate leaked jj init error:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
+		t.Fatalf("after gx generate .jj missing: %v\n%s", err, out.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("decode generate JSON: %v\n%s", err, out.String())
+	}
+	if _, ok := payload["proposal"].(map[string]any); !ok {
+		t.Fatalf("generate JSON missing proposal:\n%s", out.String())
+	}
+}
+
 func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)

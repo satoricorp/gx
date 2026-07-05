@@ -57,7 +57,8 @@ func TestSetKeyRejectsEmptyKey(t *testing.T) {
 func TestRootHelpShowsInferenceKeyStatus(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
-	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: "openai-key"}); err != nil {
+	const apiKey = "apikey_openai-secret"
+	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: apiKey}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	root := NewRoot(context.Background())
@@ -71,8 +72,53 @@ func TestRootHelpShowsInferenceKeyStatus(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "OpenAI: Key provided") {
+	if !strings.Contains(text, "Using openai: apikey_...") {
 		t.Fatalf("root help missing OpenAI key status:\n%s", text)
+	}
+	if strings.Contains(text, apiKey) {
+		t.Fatalf("root help leaked OpenAI key:\n%s", text)
+	}
+}
+
+func TestRootHelpShowsAnthropicInferenceKeyStatus(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	const apiKey = "apikey_anthropic-secret"
+	if err := inference.Save(inference.Credentials{Provider: "anthropic", APIKey: apiKey}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	root := NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--help"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute() error = %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, "Using anthropic: apikey_...") {
+		t.Fatalf("root help missing Anthropic key status:\n%s", text)
+	}
+	if strings.Contains(text, apiKey) {
+		t.Fatalf("root help leaked Anthropic key:\n%s", text)
+	}
+}
+
+func TestMaskedAPIKeyNeverShowsFullKey(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{key: "apikey_secret", want: "apikey_..."},
+		{key: "abcdefg", want: "abcdef..."},
+		{key: "a", want: "..."},
+		{key: "", want: "..."},
+	} {
+		if got := maskedAPIKey(tc.key); got != tc.want {
+			t.Fatalf("maskedAPIKey(%q) = %q, want %q", tc.key, got, tc.want)
+		}
 	}
 }
 
