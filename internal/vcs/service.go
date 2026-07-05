@@ -643,7 +643,7 @@ func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, r
 	if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, "@-"); err != nil {
 		return CommitResult{}, err
 	}
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "set", bookmark, "-r", "@-"); err != nil {
+	if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", "@-"); err != nil {
 		return CommitResult{}, err
 	}
 	base := s.publicStackBaseRef(ctx, repo, firstNonEmpty(strings.TrimSpace(baseRef), s.defaultStackBaseRef(repo)))
@@ -1304,6 +1304,36 @@ func jjBookmarkDeleteMissing(err error) bool {
 		strings.Contains(message, "bookmark does not exist")
 }
 
+// JJRevisionUnavailable reports whether jj rejected a revision or bookmark lookup.
+func JJRevisionUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if jjBookmarkDeleteMissing(err) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "doesn't exist") ||
+		strings.Contains(message, "does not exist") ||
+		strings.Contains(message, "unknown revision") ||
+		strings.Contains(message, "invalid revset")
+}
+
+func (s *Service) RevisionExists(ctx context.Context, repoRoot, rev string) (bool, error) {
+	rev = strings.TrimSpace(rev)
+	if rev == "" {
+		return false, nil
+	}
+	_, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", rev, "--limit", "1", "--no-graph", "-T", "commit_id")
+	if err != nil {
+		if JJRevisionUnavailable(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 	repo, err := s.configuredJJRepo(ctx)
 	if err != nil {
@@ -1871,7 +1901,7 @@ func (s *Service) createStackUnlocked(ctx context.Context, repo RepoInfo, name s
 	if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, "@"); err != nil {
 		return CreateStackResult{}, err
 	}
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "set", bookmark, "-r", "@"); err != nil {
+	if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", "@"); err != nil {
 		return CreateStackResult{}, err
 	}
 	now := time.Now().UnixMilli()
@@ -3232,6 +3262,22 @@ func (s *Service) DiffGit(ctx context.Context, repoRoot, rev string) (string, er
 	return s.runStdoutTrimmed(ctx, repoRoot, "jj", "diff", "-r", rev, "--git")
 }
 
+func (s *Service) DiffRevisionRange(ctx context.Context, repoRoot, fromRev, toRev string, paths []string) (string, error) {
+	fromRev = strings.TrimSpace(fromRev)
+	toRev = strings.TrimSpace(toRev)
+	if fromRev == "" || toRev == "" {
+		return "", fmt.Errorf("from and to revisions are required")
+	}
+	args := []string{"diff", "--from", fromRev, "--to", toRev, "--git"}
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			args = append(args, path)
+		}
+	}
+	return s.runStdoutTrimmed(ctx, repoRoot, "jj", args...)
+}
+
 func (s *Service) CurrentOperation(ctx context.Context, repoRoot string) (string, error) {
 	return s.runStdoutTrimmed(ctx, repoRoot, "jj", "op", "log", "-n", "1", "--no-graph", "-T", "id")
 }
@@ -4382,7 +4428,7 @@ func (s *Service) createDraftStack(ctx context.Context, store *storage.Store, re
 		if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, targetRev); err != nil {
 			return StackInfo{}, err
 		}
-		if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "set", bookmark, "-r", targetRev); err != nil {
+		if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", targetRev); err != nil {
 			return StackInfo{}, err
 		}
 	}
@@ -4785,7 +4831,7 @@ func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, ta
 	if targetRev == "" {
 		return fmt.Errorf("container target revision is empty")
 	}
-	_, err := s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
+	_, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
 	return err
 }
 

@@ -124,3 +124,36 @@ func TestWithGitRetryRetriesIndexLock(t *testing.T) {
 		t.Fatalf("withGitRetry() attempts = %d, want 2", attempts)
 	}
 }
+
+type flakyLockRunner struct {
+	failures int
+	calls    int
+}
+
+func (r *flakyLockRunner) Run(ctx context.Context, dir, name string, args ...string) (string, error) {
+	r.calls++
+	if r.calls <= r.failures {
+		return "", fmt.Errorf("jj %s: Failed to reset Git HEAD state: The lockfile at '.git/index.lock' might need manual deletion", name)
+	}
+	return "", nil
+}
+
+func (r *flakyLockRunner) RunStdout(ctx context.Context, dir, name string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
+}
+
+func (r *flakyLockRunner) RunStream(ctx context.Context, dir, name string, args ...string) error {
+	_, err := r.Run(ctx, dir, name, args...)
+	return err
+}
+
+func TestRunJJGitBackedRetriesGitIndexLock(t *testing.T) {
+	runner := &flakyLockRunner{failures: 2}
+	svc := NewServiceWithRunner(runner)
+	if _, err := svc.runJJGitBacked(context.Background(), "/repo", "bookmark", "set", "feature/x", "-r", "@-"); err != nil {
+		t.Fatalf("runJJGitBacked() error = %v", err)
+	}
+	if runner.calls != 3 {
+		t.Fatalf("runJJGitBacked() calls = %d, want 3", runner.calls)
+	}
+}
