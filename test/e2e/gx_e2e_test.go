@@ -313,6 +313,36 @@ func TestGXGenerateCreatesEveryProposedStackAndPushPublishesAll(t *testing.T) {
 	}
 }
 
+func TestGXGenerateAutoInitializesGitRepo(t *testing.T) {
+	h := newHarness(t)
+	h.initGitRepo(false)
+
+	if _, err := os.Stat(filepath.Join(h.repo, ".jj")); !os.IsNotExist(err) {
+		t.Fatalf("before gx generate .jj exists or stat failed: %v", err)
+	}
+	h.writeFile("README.md", "# e2e\n\nchanged\n")
+
+	gxg := filepath.Join(filepath.Dir(h.bin), "gxg")
+	if err := os.Link(h.bin, gxg); err != nil {
+		t.Fatalf("link gxg test binary: %v", err)
+	}
+	rawApply := runCommand(h.t, h.repo, h.env(), gxg, "--json", "--intent", "auto init")
+	if strings.Contains(rawApply, "There is no jj repo") {
+		t.Fatalf("gx generate leaked jj init error:\n%s", rawApply)
+	}
+	if _, err := os.Stat(filepath.Join(h.repo, ".jj")); err != nil {
+		t.Fatalf("after gx generate .jj missing: %v\n%s", err, rawApply)
+	}
+	var applied demuxApplyPayload
+	if err := json.Unmarshal([]byte(rawApply), &applied); err != nil {
+		t.Fatalf("decode generate apply: %v\n%s", err, rawApply)
+	}
+	if applied.Proposal.ID == "" || len(applied.Revisions) == 0 {
+		t.Fatalf("generate result missing applied revisions: %#v\n%s", applied, rawApply)
+	}
+	assertCurrentBranch(t, h, "main")
+}
+
 func TestGXGenerateAppendsToExistingJJBookmark(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
