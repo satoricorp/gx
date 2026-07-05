@@ -678,7 +678,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 					return err
 				}
 				printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-				fmt.Fprintln(cmd.OutOrStdout())
+				printGenerateRoundFailure(cmd.OutOrStdout(), err)
 				continued := promptContinueGenerate(cmd.InOrStdin(), cmd.OutOrStdout())
 				telemetry.EmitProductEvent(ctx, telemetry.EventCLIGeneratePrompt, map[string]any{
 					"round":     round,
@@ -786,6 +786,16 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
 	_, err := engine.Init(ctx, authoring.InitOptions{})
 	return err
+}
+
+// printGenerateRoundFailure surfaces the error that stopped a generate round
+// before the interactive continue prompt. Without it the prompt appears with
+// no explanation, which reads like a hang.
+func printGenerateRoundFailure(out io.Writer, err error) {
+	fmt.Fprintln(out)
+	if err != nil {
+		fmt.Fprintln(out, labelWarningValue("Error", err.Error()))
+	}
 }
 
 func generatePreflightAttempts() int {
