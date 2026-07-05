@@ -65,7 +65,7 @@ func (e *Engine) semanticLabelCorpus(ctx context.Context, proposal DemuxProposal
 			}
 		}
 	}
-	if index, err := e.demuxStackIndex(ctx, proposal.RepoRoot); err == nil {
+	if index, _, err := e.demuxStackIndex(ctx, proposal.RepoRoot); err == nil {
 		for _, stack := range index.stacks {
 			if IsTerminalDemuxStackStatus(stack.Status) {
 				continue

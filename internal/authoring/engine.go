@@ -44,12 +44,13 @@ const (
 )
 
 type CheckpointOptions struct {
-	Intent              string
-	Filesets            []string
-	Interactive         bool
-	Hunk                bool
-	PatchFile           string
-	PreferredSessionIDs []string
+	Intent                 string
+	Filesets               []string
+	Interactive            bool
+	Hunk                   bool
+	PatchFile              string
+	PreferredSessionIDs      []string
+	BookmarkRecordedCommit bool
 }
 
 // Engine is GX's authoring seam. CLI and MCP adapters should call this module
@@ -85,12 +86,13 @@ func (e *Engine) Checkpoint(ctx context.Context, opts CheckpointOptions) (Checkp
 		return CheckpointResult{}, fmt.Errorf("filesets are not supported with --hunk; use --patch-file")
 	}
 	return e.vcs.RecordAuthoringRevision(ctx, vcs.RevisionOptions{
-		Message:             opts.Intent,
-		Filesets:            opts.Filesets,
-		Interactive:         opts.Interactive,
-		Hunk:                opts.Hunk,
-		PatchFile:           opts.PatchFile,
-		PreferredSessionIDs: opts.PreferredSessionIDs,
+		Message:                opts.Intent,
+		Filesets:               opts.Filesets,
+		Interactive:            opts.Interactive,
+		Hunk:                   opts.Hunk,
+		PatchFile:              opts.PatchFile,
+		PreferredSessionIDs:    opts.PreferredSessionIDs,
+		BookmarkRecordedCommit: opts.BookmarkRecordedCommit,
 	})
 }
 

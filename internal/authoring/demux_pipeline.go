@@ -14,7 +14,7 @@ type demuxPipeline struct {
 	engine *Engine
 }
 
-const defaultDemuxApplyPreflightAttempts = 3
+const defaultDemuxApplyPreflightAttempts = 0
 
 func (e *Engine) demuxPipeline() demuxPipeline {
 	return demuxPipeline{engine: e}
@@ -99,6 +99,13 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 	if demuxWorkflowState(ReviewDemuxResult{Valid: true, Proposal: proposal}, proposal) != DemuxWorkflowReadyToApply {
 		return proposal, nil
 	}
+	if !generateApplyPreflightEnabled() {
+		proposal = appendGeneratePipelineWarning(proposal, "skipped disposable apply preflight for fast compose path; set GX_GENERATE_VERIFY=1 to force it")
+		if saved, saveErr := p.engine.SaveDemuxProposal(ctx, proposal); saveErr == nil {
+			proposal = saved
+		}
+		return proposal, nil
+	}
 	attempts := opts.ApplyPreflightAttempts
 	if attempts <= 0 {
 		attempts = envInt("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS", 0)
@@ -107,7 +114,7 @@ func (p demuxPipeline) preflightApplyReadyProposal(ctx context.Context, proposal
 		attempts = envInt("GX_COMPOSE_APPLY_PREFLIGHT_ATTEMPTS", defaultDemuxApplyPreflightAttempts)
 	}
 	if attempts <= 0 {
-		attempts = 1
+		return proposal, nil
 	}
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {

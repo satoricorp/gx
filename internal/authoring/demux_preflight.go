@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/satoricorp/gx/internal/storage"
 )
@@ -27,8 +28,17 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 	if strings.TrimSpace(os.Getenv("GX_COMPOSE_SKIP_APPLY_PREFLIGHT")) == "1" {
 		return nil
 	}
+	if !generateApplyPreflightEnabled() {
+		return nil
+	}
 	if strings.TrimSpace(proposal.RepoRoot) == "" {
 		return fmt.Errorf("proposal repo root is empty")
+	}
+	timeout := demuxApplyPreflightTimeout()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
 	state, err := loadDemuxApplyPreflightState(ctx, proposal.RepoRoot)
 	if err != nil {
@@ -42,6 +52,9 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 
 	attemptRoot := filepath.Join(tmp, "repo")
 	if err := copyTreeForDemuxPreflight(proposal, attemptRoot); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("copy repo into compose attempt dir timed out after %s: %w", timeout, ctx.Err())
+		}
 		return fmt.Errorf("copy repo into compose attempt dir: %w", err)
 	}
 	attemptGXHome := filepath.Join(tmp, "gx-home")
@@ -59,6 +72,9 @@ func (e *Engine) PreflightDemuxApply(ctx context.Context, proposal DemuxProposal
 			return fmt.Errorf("save compose attempt proposal: %w", err)
 		}
 		if _, err := attemptEngine.ApplyDemuxProposalWithOptions(ctx, saved.ID, ApplyDemuxOptions{AllowWarnings: true}); err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("apply compose attempt proposal timed out after %s: %w", timeout, ctx.Err())
+			}
 			return fmt.Errorf("apply compose attempt proposal: %w", err)
 		}
 		return nil
@@ -354,4 +370,14 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 		return err
 	}
 	return out.Close()
+}
+
+func demuxApplyPreflightTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("GX_GENERATE_PREFLIGHT_TIMEOUT"))
+	if raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 2 * time.Minute
 }
