@@ -599,6 +599,14 @@ func parseAIReviewContent(content string, brief ReviewBrief) ([]Finding, error) 
 	return output.Findings, nil
 }
 
+func ParseAIReviewOutput(content string, brief ReviewBrief) (overview string, findings []Finding, err error) {
+	output, err := parseAIReviewOutput(content, brief)
+	if err != nil {
+		return "", nil, err
+	}
+	return output.Overview, output.Findings, nil
+}
+
 func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
