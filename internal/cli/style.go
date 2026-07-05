@@ -127,7 +127,19 @@ func rootInferenceStatusLine() string {
 	if !ok {
 		return danger("●") + " " + muted("API Key required. Run `gx set key` to set an API Key.")
 	}
-	return success("●") + " " + value(inference.ProviderDisplay(creds.Provider)+": Key provided")
+	return success("●") + " " + value("Using "+creds.Provider+": "+maskedAPIKey(creds.APIKey))
+}
+
+func maskedAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "..."
+	}
+	visible := min(7, len(key)-1)
+	if visible < 1 {
+		visible = 1
+	}
+	return key[:visible] + "..."
 }
 
 func printRootHelp(cmd *cobra.Command) error {
