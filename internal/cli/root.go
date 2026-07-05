@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
@@ -203,7 +202,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			result, err := engine.Init(ctx, authoring.InitOptions{
 				Name:        name,
 				Email:       email,
-				Interactive: stdinIsTerminal(cmd.InOrStdin()),
+				Interactive: true,
 				In:          cmd.InOrStdin(),
 				Out:         cmd.OutOrStdout(),
 			})
@@ -755,19 +754,9 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 
 func generatePreflightAttempts() int {
 	if generateIsMCP() {
-		if v := strings.TrimSpace(os.Getenv("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS")); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				return n
-			}
-		}
 		return 6
 	}
-	if v := strings.TrimSpace(os.Getenv("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			return n
-		}
-	}
-	return 0
+	return 3
 }
 
 func generateIsMCP() bool {
@@ -3971,6 +3960,7 @@ func highlightPushRevisions(output string) string {
 func printPushReview(out io.Writer, result publication.Result) {
 	if result.Queued {
 		fmt.Fprintln(out, labelValue("GX Cloud", "queued for background upload"))
+		fmt.Fprintln(out, labelValue("PR summary", "queued for background update"))
 		if result.QueueID != "" {
 			fmt.Fprintln(out, labelValue("Upload ID", result.QueueID))
 		}
@@ -4097,7 +4087,11 @@ func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, li
 		return err
 	}
 	if !quiet {
-		fmt.Fprintln(out, labelValue("GX Cloud uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
+		msg := fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)
+		if result.PRSummariesUpdated > 0 || result.PRSummariesFailed > 0 {
+			msg += fmt.Sprintf("; PR summaries: %d updated, %d failed", result.PRSummariesUpdated, result.PRSummariesFailed)
+		}
+		fmt.Fprintln(out, labelValue("GX Cloud uploads", msg))
 	}
 	return nil
 }
@@ -4255,12 +4249,4 @@ func shortID(value string, max int) string {
 		return value
 	}
 	return value[:max]
-}
-
-func stdinIsTerminal(in io.Reader) bool {
-	file, ok := in.(*os.File)
-	if !ok {
-		return false
-	}
-	return term.IsTerminal(file.Fd())
 }
