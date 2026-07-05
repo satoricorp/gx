@@ -73,3 +73,16 @@ func isGitIndexLock(err error) bool {
 func (s *Service) runGitLocked(ctx context.Context, repoRoot, label string, fn func() error) error {
 	return withGitRetry(ctx, label, fn)
 }
+
+// runJJGitBacked runs a jj command that mutates Git-backed state (e.g.
+// bookmark set), retrying when jj fails to reset Git HEAD because another
+// process briefly holds .git/index.lock.
+func (s *Service) runJJGitBacked(ctx context.Context, repoRoot string, args ...string) (string, error) {
+	var out string
+	err := withGitRetry(ctx, "jj "+strings.Join(args, " "), func() error {
+		var runErr error
+		out, runErr = s.runner.Run(ctx, repoRoot, "jj", args...)
+		return runErr
+	})
+	return out, err
+}

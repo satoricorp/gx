@@ -472,6 +472,18 @@ func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, 
 	return tx.Commit()
 }
 
+func (s *Store) MarkStackStatus(ctx context.Context, stackID int64, status string, updatedAt int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE stacks
+		SET status = ?, updated_at = ?
+		WHERE id = ?
+	`, status, updatedAt, stackID)
+	if err != nil {
+		return fmt.Errorf("mark stack status: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) MarkChangeStatus(ctx context.Context, changeID int64, status string, updatedAt int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE changes

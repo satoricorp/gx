@@ -435,7 +435,7 @@ func (s *Service) relocateKnownStackBookmarksFromChange(ctx context.Context, sto
 		if err != nil {
 			return err
 		}
-		if _, err := s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", target.Name, "-r", distinctRev, "--allow-backwards"); err != nil {
+		if _, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", target.Name, "-r", distinctRev, "--allow-backwards"); err != nil {
 			return fmt.Errorf("move bookmark %q off shared change: %w", target.Name, err)
 		}
 	}
@@ -553,7 +553,7 @@ func (s *Service) repairSharedStackBookmarks(ctx context.Context, store *storage
 			if err != nil {
 				return err
 			}
-			if _, err := s.runner.Run(ctx, repoRoot, "jj", "bookmark", "set", name, "-r", targetRev, "--allow-backwards"); err != nil {
+			if _, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", name, "-r", targetRev, "--allow-backwards"); err != nil {
 				return fmt.Errorf("move bookmark %q off shared change: %w", name, err)
 			}
 		}
