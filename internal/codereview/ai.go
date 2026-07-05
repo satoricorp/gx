@@ -45,6 +45,23 @@ type AIReviewerWithOverview interface {
 	ReviewWithOverview(ctx context.Context, brief ReviewBrief) (overview string, findings []Finding, err error)
 }
 
+type NotableChange struct {
+	File string
+	Line int
+	Note string
+}
+
+type PRSummaryReview struct {
+	Overview       string
+	NotableChanges []NotableChange
+	Findings       []Finding
+}
+
+type AIReviewerWithSummary interface {
+	AIReviewer
+	ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error)
+}
+
 type ReviewerInfo struct {
 	Models []string
 }
@@ -124,11 +141,19 @@ type responseResult struct {
 type aiReviewResponse struct {
 	Overview        string             `json:"overview"`
 	Recommendations []aiRecommendation `json:"recommendations"`
+	NotableChanges  []aiNotableChange  `json:"notable_changes"`
 }
 
 type aiReviewOutput struct {
-	Overview  string
-	Findings  []Finding
+	Overview       string
+	NotableChanges []NotableChange
+	Findings       []Finding
+}
+
+type aiNotableChange struct {
+	File string          `json:"file"`
+	Line json.RawMessage `json:"line"`
+	Note string          `json:"note"`
 }
 
 type aiRecommendation struct {
@@ -362,12 +387,11 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 	return findings, err
 }
 
-func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	type reviewerResult struct {
-		item     namedAIReviewer
-		overview string
-		findings []Finding
-		err      error
+		item           namedAIReviewer
+		summary        PRSummaryReview
+		err            error
 	}
 	results := make([]reviewerResult, len(m.reviewers))
 	var wg sync.WaitGroup
@@ -381,13 +405,18 @@ func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBri
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if withSummary, ok := item.reviewer.(AIReviewerWithSummary); ok {
+				summary, err := withSummary.ReviewForSummary(ctx, brief)
+				results[i] = reviewerResult{item: item, summary: summary, err: err}
+				return
+			}
 			if withOverview, ok := item.reviewer.(AIReviewerWithOverview); ok {
 				overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-				results[i] = reviewerResult{item: item, overview: overview, findings: findings, err: err}
+				results[i] = reviewerResult{item: item, summary: PRSummaryReview{Overview: overview, Findings: findings}, err: err}
 				return
 			}
 			findings, err := item.reviewer.Review(ctx, brief)
-			results[i] = reviewerResult{item: item, findings: findings, err: err}
+			results[i] = reviewerResult{item: item, summary: PRSummaryReview{Findings: findings}, err: err}
 		}()
 	}
 	wg.Wait()
@@ -396,6 +425,7 @@ func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBri
 	})
 	var out []Finding
 	var overview string
+	var notableChanges []NotableChange
 	var errors []string
 	parsed := false
 	for _, result := range results {
@@ -405,10 +435,13 @@ func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBri
 			continue
 		}
 		parsed = true
-		if overview == "" && strings.TrimSpace(result.overview) != "" {
-			overview = strings.TrimSpace(result.overview)
+		if overview == "" && strings.TrimSpace(result.summary.Overview) != "" {
+			overview = strings.TrimSpace(result.summary.Overview)
 		}
-		for _, finding := range result.findings {
+		if len(notableChanges) == 0 && len(result.summary.NotableChanges) > 0 {
+			notableChanges = append([]NotableChange(nil), result.summary.NotableChanges...)
+		}
+		for _, finding := range result.summary.Findings {
 			finding.ID = item.name + "." + finding.ID
 			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
 			out = append(out, finding)
@@ -416,12 +449,20 @@ func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBri
 	}
 	out = mergeNearDuplicateFindings(out)
 	if parsed {
-		return overview, out, nil
+		return PRSummaryReview{Overview: overview, NotableChanges: notableChanges, Findings: out}, nil
 	}
 	if len(errors) > 0 {
-		return "", nil, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
+		return PRSummaryReview{}, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
 	}
-	return "", nil, fmt.Errorf("AI reviewers failed")
+	return PRSummaryReview{}, fmt.Errorf("AI reviewers failed")
+}
+
+func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+	summary, err := m.ReviewForSummary(ctx, brief)
+	if err != nil {
+		return "", nil, err
+	}
+	return summary.Overview, summary.Findings, nil
 }
 
 func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
@@ -430,20 +471,37 @@ func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Fi
 	return findings, err
 }
 
-func (r fallbackAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	if withOverview, ok := r.primary.(AIReviewerWithOverview); ok {
+func (r fallbackAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
+	if withSummary, ok := r.primary.(AIReviewerWithSummary); ok {
+		summary, err := withSummary.ReviewForSummary(ctx, brief)
+		if err == nil {
+			return summary, nil
+		}
+	} else if withOverview, ok := r.primary.(AIReviewerWithOverview); ok {
 		overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
 		if err == nil {
-			return overview, findings, nil
+			return PRSummaryReview{Overview: overview, Findings: findings}, nil
 		}
 	} else if findings, err := r.primary.Review(ctx, brief); err == nil {
-		return "", findings, nil
+		return PRSummaryReview{Findings: findings}, nil
+	}
+	if withFallback, ok := r.fallback.(AIReviewerWithSummary); ok {
+		return withFallback.ReviewForSummary(ctx, brief)
 	}
 	if withFallback, ok := r.fallback.(AIReviewerWithOverview); ok {
-		return withFallback.ReviewWithOverview(ctx, brief)
+		overview, findings, err := withFallback.ReviewWithOverview(ctx, brief)
+		return PRSummaryReview{Overview: overview, Findings: findings}, err
 	}
 	findings, err := r.fallback.Review(ctx, brief)
-	return "", findings, err
+	return PRSummaryReview{Findings: findings}, err
+}
+
+func (r fallbackAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+	summary, err := r.ReviewForSummary(ctx, brief)
+	if err != nil {
+		return "", nil, err
+	}
+	return summary.Overview, summary.Findings, nil
 }
 
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
@@ -451,17 +509,25 @@ func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]
 	return findings, err
 }
 
-func (r *responsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+func (r *responsesAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
 	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
 	if err != nil {
-		return "", nil, err
+		return PRSummaryReview{}, err
 	}
 	output, err := parseAIReviewOutput(content, brief)
 	if err != nil {
+		return PRSummaryReview{}, err
+	}
+	return aiReviewOutputToPRSummaryReview(output), nil
+}
+
+func (r *responsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+	summary, err := r.ReviewForSummary(ctx, brief)
+	if err != nil {
 		return "", nil, err
 	}
-	return output.Overview, output.Findings, nil
+	return summary.Overview, summary.Findings, nil
 }
 
 func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
@@ -521,7 +587,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 	return findings, err
 }
 
-func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
 	body, err := json.Marshal(map[string]any{
 		"anthropic_version": "bedrock-2023-05-31",
@@ -533,14 +599,14 @@ func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief
 		}},
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("marshal Bedrock review request: %w", err)
+		return PRSummaryReview{}, fmt.Errorf("marshal Bedrock review request: %w", err)
 	}
 
 	requestPath := "/model/" + url.PathEscape(r.model) + "/invoke"
 	endpoint := "https://bedrock-runtime." + r.region + ".amazonaws.com" + requestPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", nil, fmt.Errorf("create Bedrock review request: %w", err)
+		return PRSummaryReview{}, fmt.Errorf("create Bedrock review request: %w", err)
 	}
 	r.signBedrockRequest(req, body, requestPath)
 	req.Header.Set("Accept", "application/json")
@@ -553,16 +619,16 @@ func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("request Bedrock review: %w", err)
+		return PRSummaryReview{}, fmt.Errorf("request Bedrock review: %w", err)
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
-			return "", nil, fmt.Errorf("Bedrock review status %s: %s", resp.Status, detail)
+			return PRSummaryReview{}, fmt.Errorf("Bedrock review status %s: %s", resp.Status, detail)
 		}
-		return "", nil, fmt.Errorf("Bedrock review status %s", resp.Status)
+		return PRSummaryReview{}, fmt.Errorf("Bedrock review status %s", resp.Status)
 	}
 
 	var completion struct {
@@ -572,7 +638,7 @@ func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return "", nil, fmt.Errorf("decode Bedrock review response: %w", err)
+		return PRSummaryReview{}, fmt.Errorf("decode Bedrock review response: %w", err)
 	}
 	var content strings.Builder
 	for _, part := range completion.Content {
@@ -582,13 +648,21 @@ func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief
 	}
 	text := strings.TrimSpace(content.String())
 	if text == "" {
-		return "", nil, fmt.Errorf("Bedrock review response returned empty output")
+		return PRSummaryReview{}, fmt.Errorf("Bedrock review response returned empty output")
 	}
 	output, err := parseAIReviewOutput(text, brief)
 	if err != nil {
+		return PRSummaryReview{}, err
+	}
+	return aiReviewOutputToPRSummaryReview(output), nil
+}
+
+func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
+	summary, err := r.ReviewForSummary(ctx, brief)
+	if err != nil {
 		return "", nil, err
 	}
-	return output.Overview, output.Findings, nil
+	return summary.Overview, summary.Findings, nil
 }
 
 func parseAIReviewContent(content string, brief ReviewBrief) ([]Finding, error) {
@@ -607,15 +681,52 @@ func ParseAIReviewOutput(content string, brief ReviewBrief) (overview string, fi
 	return output.Overview, output.Findings, nil
 }
 
+func ParsePRSummaryReview(content string, brief ReviewBrief) (PRSummaryReview, error) {
+	output, err := parseAIReviewOutput(content, brief)
+	if err != nil {
+		return PRSummaryReview{}, err
+	}
+	return aiReviewOutputToPRSummaryReview(output), nil
+}
+
 func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
 	}
 	return aiReviewOutput{
-		Overview: strings.TrimSpace(parsed.Overview),
-		Findings: aiRecommendationsToFindings(parsed.Recommendations, brief),
+		Overview:       strings.TrimSpace(parsed.Overview),
+		NotableChanges: aiNotableChangesToNotableChanges(parsed.NotableChanges),
+		Findings:       aiRecommendationsToFindings(parsed.Recommendations, brief),
 	}, nil
+}
+
+func aiReviewOutputToPRSummaryReview(output aiReviewOutput) PRSummaryReview {
+	return PRSummaryReview{
+		Overview:       output.Overview,
+		NotableChanges: append([]NotableChange(nil), output.NotableChanges...),
+		Findings:       output.Findings,
+	}
+}
+
+func aiNotableChangesToNotableChanges(raw []aiNotableChange) []NotableChange {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]NotableChange, 0, len(raw))
+	for _, item := range raw {
+		file := strings.TrimSpace(item.File)
+		note := strings.TrimSpace(item.Note)
+		if file == "" || note == "" {
+			continue
+		}
+		out = append(out, NotableChange{
+			File: file,
+			Line: parseRecommendationLine(item.Line),
+			Note: note,
+		})
+	}
+	return out
 }
 
 func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []byte, requestPath string) {
@@ -948,8 +1059,9 @@ func reviewDeveloperPrompt() string {
 		"Set file to the exact changed file path from static.diff_snippets and line to a changed line number inside that hunk. If a recommendation cannot be tied to a specific changed file, omit file and line.",
 		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
 		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions and session_transcript context; no file lists, no URLs, no praise. For all other profiles, omit overview.",
+		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview rule.",
-		"Return JSON only with shape {\"overview\":string(optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		"Return JSON only with shape {\"overview\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")
 }

@@ -65,6 +65,113 @@ func TestParseAIReviewOutputEmptyRecommendationsIsValid(t *testing.T) {
 	}
 }
 
+func TestParsePRSummaryReviewIncludesNotableChangesWithStringLine(t *testing.T) {
+	summary, err := ParsePRSummaryReview(`{
+		"overview":"Adds session validation.",
+		"notable_changes":[
+			{"file":"internal/auth/session.go","line":"42","note":"Reject expired tokens before refresh."},
+			{"file":"","line":1,"note":"skip empty file"},
+			{"file":"internal/auth/session.go","line":99,"note":""}
+		],
+		"recommendations":[]
+	}`, ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ParsePRSummaryReview() error = %v", err)
+	}
+	if summary.Overview != "Adds session validation." {
+		t.Fatalf("Overview = %q", summary.Overview)
+	}
+	if len(summary.NotableChanges) != 1 {
+		t.Fatalf("NotableChanges = %#v, want one anchored entry", summary.NotableChanges)
+	}
+	change := summary.NotableChanges[0]
+	if change.File != "internal/auth/session.go" || change.Line != 42 || change.Note == "" {
+		t.Fatalf("NotableChange = %#v", change)
+	}
+}
+
+func TestParsePRSummaryReviewMissingNotableChangesIsEmpty(t *testing.T) {
+	summary, err := ParsePRSummaryReview(`{"overview":"Purpose only.","recommendations":[]}`, ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ParsePRSummaryReview() error = %v", err)
+	}
+	if summary.NotableChanges != nil && len(summary.NotableChanges) != 0 {
+		t.Fatalf("NotableChanges = %#v, want empty", summary.NotableChanges)
+	}
+}
+
+func TestReviewWithOverviewDropsNotableChanges(t *testing.T) {
+	reviewer := cannedAIReviewer{payload: `{
+		"overview":"Hidden overview.",
+		"notable_changes":[{"file":"main.go","line":3,"note":"Notable change."}],
+		"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]
+	}`}
+	overview, findings, err := reviewer.ReviewWithOverview(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ReviewWithOverview() error = %v", err)
+	}
+	if overview != "Hidden overview." || len(findings) != 1 {
+		t.Fatalf("overview=%q findings=%#v", overview, findings)
+	}
+	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ReviewForSummary() error = %v", err)
+	}
+	if len(summary.NotableChanges) != 1 {
+		t.Fatalf("ReviewForSummary() NotableChanges = %#v", summary.NotableChanges)
+	}
+}
+
+func TestPatchFocusedReviewIgnoresNotableChanges(t *testing.T) {
+	findings, err := cannedAIReviewer{payload: `{
+		"notable_changes":[{"file":"main.go","line":3,"note":"Should not surface in gx review."}],
+		"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]
+	}`}.Review(context.Background(), ReviewBrief{ReviewProfile: "patch_focused"})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings = %#v", findings)
+	}
+	text := RenderMarkdown(Report{Findings: findings})
+	if strings.Contains(text, "Should not surface in gx review") {
+		t.Fatalf("RenderMarkdown() leaked notable_changes:\n%s", text)
+	}
+}
+
+func TestResponsesAIReviewerReviewForSummaryParsesNotableChanges(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"output_text":"{\"overview\":\"Overview.\",\"notable_changes\":[{\"file\":\"main.go\",\"line\":\"3\",\"note\":\"Changed entry point.\"}],\"recommendations\":[]}"}`))
+	}))
+	defer server.Close()
+
+	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
+	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ReviewForSummary() error = %v", err)
+	}
+	if summary.Overview != "Overview." || len(summary.NotableChanges) != 1 || summary.NotableChanges[0].Line != 3 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestBedrockAnthropicReviewerReviewForSummaryParsesNotableChanges(t *testing.T) {
+	reviewer := &bedrockAnthropicReviewer{
+		region: "us-east-1", model: "test-model", accessKey: "key", secretKey: "secret",
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			body := strings.NewReader(`{"content":[{"type":"text","text":"{\"overview\":\"Overview text\",\"notable_changes\":[{\"file\":\"main.go\",\"line\":3,\"note\":\"Changed entry point.\"}],\"recommendations\":[]}"}]}`)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
+		})},
+	}
+	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ReviewForSummary() error = %v", err)
+	}
+	if summary.Overview != "Overview text" || len(summary.NotableChanges) != 1 || summary.NotableChanges[0].Line != 3 {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
 func TestResponsesAIReviewerParsesCannedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"output_text":"{\"recommendations\":[{\"title\":\"T\",\"summary\":\"S\",\"benefit\":\"B\",\"recommendation\":\"R\",\"file\":\"main.go\",\"line\":3,\"source_labels\":[\"L1\"]}]}"}`))
@@ -189,6 +296,14 @@ func (c cannedAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBr
 		return "", nil, err
 	}
 	return output.Overview, output.Findings, nil
+}
+
+func (c cannedAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
+	output, err := parseAIReviewOutput(c.payload, brief)
+	if err != nil {
+		return PRSummaryReview{}, err
+	}
+	return aiReviewOutputToPRSummaryReview(output), nil
 }
 
 type failingAIReviewer struct {
