@@ -66,14 +66,40 @@ jobs:
           CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
           GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
           GX_POSTHOG_KEY: ${{ vars.GX_POSTHOG_KEY }}
-          GX_POSTHOG_HOST: ${{ vars.GX_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+          GX_POSTHOG_HOST: ${{ vars.GX_POSTHOG_HOST || 'https://f.gx.run' }}
+          GX_SPARKLE_PUBLIC_ED_KEY: ${{ vars.GX_SPARKLE_PUBLIC_ED_KEY }}
+          GX_APPCAST_URL: ${{ vars.GX_APPCAST_URL }}
+          GX_APP_BUILD_VERSION: ${{ github.run_number }}
         run: |
           [[ "$GITHUB_REF_TYPE" != "tag" || -n "$GX_POSTHOG_KEY" ]] || {
             echo "GX_POSTHOG_KEY repository variable is required for macOS releases" >&2
             exit 1
           }
+          [[ -n "$GX_SPARKLE_PUBLIC_ED_KEY" ]] || {
+            echo "GX_SPARKLE_PUBLIC_ED_KEY repository variable is required" >&2
+            exit 1
+          }
+          [[ -n "$GX_APPCAST_URL" ]] || {
+            echo "GX_APPCAST_URL repository variable is required" >&2
+            exit 1
+          }
           export GITHUB_CLIENT_ID="$GX_GITHUB_CLIENT_ID"
           just menubar
+
+      - name: Generate Sparkle appcast
+        env:
+          GX_SPARKLE_PRIVATE_ED_KEY: ${{ secrets.GX_SPARKLE_PRIVATE_ED_KEY }}
+          GX_APPCAST_DOWNLOAD_URL_PREFIX: ${{ vars.GX_APPCAST_DOWNLOAD_URL_PREFIX }}
+        run: |
+          [[ -n "$GX_SPARKLE_PRIVATE_ED_KEY" ]] || {
+            echo "GX_SPARKLE_PRIVATE_ED_KEY repository secret is required" >&2
+            exit 1
+          }
+          [[ -n "$GX_APPCAST_DOWNLOAD_URL_PREFIX" ]] || {
+            echo "GX_APPCAST_DOWNLOAD_URL_PREFIX repository variable is required" >&2
+            exit 1
+          }
+          apps/menubar/scripts/generate-appcast.sh
 
       - name: Build CLI packages
         env:
@@ -82,7 +108,7 @@ jobs:
           CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
           GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
           GX_POSTHOG_KEY: ${{ vars.GX_POSTHOG_KEY }}
-          GX_POSTHOG_HOST: ${{ vars.GX_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+          GX_POSTHOG_HOST: ${{ vars.GX_POSTHOG_HOST || 'https://f.gx.run' }}
           GX_DOWNLOAD_BASE_URL: https://download.gx.run
         run: |
           export GITHUB_CLIENT_ID="$GX_GITHUB_CLIENT_ID"
@@ -157,6 +183,15 @@ jobs:
           aws s3 cp apps/menubar/dist/GX-macOS.dmg "s3://$GX_DOWNLOAD_BUCKET_NAME/GX-macOS.dmg" \
             --content-type application/x-apple-diskimage \
             --cache-control "public, max-age=300"
+          aws s3 cp apps/menubar/dist/appcast/appcast.xml "s3://$GX_DOWNLOAD_BUCKET_NAME/menubar/appcast.xml" \
+            --content-type application/xml \
+            --cache-control "public, max-age=300"
+          for archive in apps/menubar/dist/appcast/GX-*-macOS.zip; do
+            test -f "$archive" || continue
+            aws s3 cp "$archive" "s3://$GX_DOWNLOAD_BUCKET_NAME/menubar/$(basename "$archive")" \
+              --content-type application/zip \
+              --cache-control "public, max-age=31536000, immutable"
+          done
 
           aws s3 cp apps/menubar/dist/GX-macOS.zip "s3://$GX_DOWNLOAD_BUCKET_NAME/releases/$GITHUB_SHA/GX-macOS.zip" \
             --content-type application/zip \
@@ -207,7 +242,7 @@ jobs:
 
           aws cloudfront create-invalidation \
             --distribution-id "$GX_DOWNLOAD_DISTRIBUTION_ID" \
-            --paths /GX-macOS.zip /GX-macOS.dmg /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
+            --paths /GX-macOS.zip /GX-macOS.dmg /menubar/appcast.xml /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
 
       - name: Publish GitHub release assets
         if: ${{ github.ref_type == 'tag' }}
@@ -220,6 +255,8 @@ jobs:
           assets=(
             apps/menubar/dist/GX-macOS.zip
             apps/menubar/dist/GX-macOS.dmg
+            apps/menubar/dist/appcast/appcast.xml
+            apps/menubar/dist/appcast/GX-*-macOS.zip
             scripts/install.sh
             dist/cli/manifest.json
             dist/cli/gx_*.tar.gz
