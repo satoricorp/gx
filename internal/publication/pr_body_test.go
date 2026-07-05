@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
@@ -85,7 +86,7 @@ func TestGitHubPullRequestBodyCapsNeedsReviewTargets(t *testing.T) {
 		})
 	}
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{findings: findings}, codereview.ReviewerInfo{}
+		return &fakePRSummaryReviewer{findings: findings}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
@@ -287,7 +288,7 @@ func TestReviewVerdictDocsOnlyWithSuccessfulAI(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
@@ -309,7 +310,7 @@ func TestReviewVerdictDocsOnlyWithReviewerError(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{err: fmt.Errorf("model unavailable")}, codereview.ReviewerInfo{}
+		return &fakePRSummaryReviewer{failCount: 2, err: fmt.Errorf("model unavailable")}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
@@ -334,7 +335,7 @@ func TestReviewVerdictStrongFinding(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{findings: []codereview.Finding{{
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
 			Title:    "Verify auth handling",
 			Summary:  "Session token validation changed.",
 			Strength: "Strong",
@@ -426,7 +427,7 @@ func TestSpeculativeFindingsDroppedFromPRBody(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{findings: []codereview.Finding{{
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
 			Title:    "Maybe consider renaming",
 			Summary:  "Speculative nit.",
 			Strength: "Speculative",
@@ -467,7 +468,7 @@ func TestOpeningSummaryRendersOverviewFirst(t *testing.T) {
 	}()
 	overview := "This change clarifies publication ordering so reviewers see PR summaries before side effects complete."
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{overview: overview}, codereview.ReviewerInfo{}
+		return &fakePRSummaryReviewer{overview: overview}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
@@ -497,7 +498,7 @@ func TestOpeningSummaryFallsBackWithoutOverview(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
@@ -529,9 +530,10 @@ func TestOpeningSummaryFallsBackWhenAIFailed(t *testing.T) {
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{
-			overview: "This overview should not render when AI failed.",
-			err:      fmt.Errorf("model unavailable"),
+		return &fakePRSummaryReviewer{
+			failCount: 2,
+			overview:  "This overview should not render when AI failed.",
+			err:       fmt.Errorf("model unavailable"),
 		}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
@@ -642,5 +644,82 @@ func TestGitHubPullRequestBodyUsesConfiguredRiskPath(t *testing.T) {
 	}
 	if !strings.Contains(body, "internal/billing/**") {
 		t.Fatalf("body missing matched glob:\n%s", body)
+	}
+}
+
+func TestReviewPRSummaryFindingsRetriesAfterTransientError(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldWait := prSummaryReviewRetryWait
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		prSummaryReviewRetryWait = oldWait
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewRetryWait = func(context.Context, time.Duration) error { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{failCount: 1}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "**Review verdict: No review needed**") {
+		t.Fatalf("body missing no-review verdict after retry:\n%s", body)
+	}
+	if strings.Contains(body, "heuristics only") {
+		t.Fatalf("body should not show heuristics-only footer after successful retry:\n%s", body)
+	}
+}
+
+func TestProvenanceFooterHeuristicsOnlyWhenAllAttemptsFail(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldWait := prSummaryReviewRetryWait
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		prSummaryReviewRetryWait = oldWait
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewRetryWait = func(context.Context, time.Duration) error { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{failCount: 2, err: fmt.Errorf("model unavailable")}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	want := "*Generated by GX — heuristics only (AI unavailable).*"
+	if !strings.Contains(body, want) {
+		t.Fatalf("body missing heuristics-only footer:\n%s", body)
+	}
+}
+
+func TestProvenanceFooterListsModels(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{Models: []string{"test-model"}}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{Sources: []string{"codebase", "session"}}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	want := "*Generated by GX — model test-model; context: codebase, session.*"
+	if !strings.Contains(body, want) {
+		t.Fatalf("body missing model provenance footer, want %q:\n%s", want, body)
 	}
 }
