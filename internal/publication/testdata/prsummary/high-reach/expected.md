@@ -2,10 +2,11 @@
 
 > 👀 **Quick scan** — standard change; skim the notable changes.
 
-This PR changes `.`: change HelloWorld. Blast radius is medium: 3 references to changed symbols (HelloWorld) across 3 other file(s); 1 file(s), +1/-1 lines.
+This PR changes `.`: change HelloWorld.
 
 ## Blast Radius
 
+Blast radius is medium: 3 references to changed symbols (HelloWorld) across 3 other file(s); 1 file(s), +1/-1 lines.
 - **HelloWorld**: 3 references — [consumer.go:4](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer.go#L4), [consumer2.go:3](https://github.com/example/reach/blob/__REACH_HEAD_SHA__/consumer2.go#L3)
 
 

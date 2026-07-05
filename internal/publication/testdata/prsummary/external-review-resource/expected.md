@@ -2,7 +2,7 @@
 
 > 🔴 **Requires Deep Review** — review findings need human judgment.
 
-This PR changes `internal/publication`: adopt GitHub PR summaries. Blast radius is low (1 file(s), 1 area(s), +3/-0 lines), with 1 review target below. Context used: codebase, review resources.
+This PR changes `internal/publication`: adopt GitHub PR summaries.
 
 ## Needs Review
 

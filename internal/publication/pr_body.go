@@ -149,7 +149,7 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	body.WriteString("\n\n")
 	body.WriteString(renderVerdictBanner(verdict, reason))
 	body.WriteString("\n\n")
-	body.WriteString(openingSummary(artifact, catalog, items, summaryContext, overview, aiSucceeded, reach))
+	body.WriteString(openingSummary(artifact, catalog, overview, aiSucceeded))
 	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
 	body.WriteString("\n\n## Needs Review\n\n")
 	if len(items) == 0 {
@@ -206,18 +206,11 @@ func provenanceFooter(aiSucceeded bool, info codereview.ReviewerInfo, summaryCon
 	return footer.String()
 }
 
-func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, items []prNeedsReviewItem, summaryContext prSummaryContext, overview string, aiSucceeded bool, reach lexicalReach) string {
-	var parts []string
+func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, overview string, aiSucceeded bool) string {
 	if paragraph := sanitizedOverviewParagraph(overview, aiSucceeded); paragraph != "" {
-		parts = append(parts, paragraph)
-	} else {
-		parts = append(parts, changeSummarySentence(artifact, catalog))
+		return paragraph
 	}
-	parts = append(parts, readinessSentence(catalog, reach, len(items)))
-	if context := contextSentence(summaryContext); context != "" {
-		parts = append(parts, context)
-	}
-	return strings.Join(parts, " ")
+	return changeSummarySentence(artifact, catalog)
 }
 
 func sanitizedOverviewParagraph(overview string, aiSucceeded bool) string {
@@ -252,35 +245,16 @@ func changeSummarySentence(artifact reviewbundle.Artifact, catalog prBodyCatalog
 	return fmt.Sprintf("This PR publishes %d GX revisions: %s.", len(catalog.Revisions), strings.Join(descriptions, "; "))
 }
 
-func readinessSentence(catalog prBodyCatalog, reach lexicalReach, itemCount int) string {
+func readinessSentence(catalog prBodyCatalog, reach lexicalReach) string {
 	blast := firstNonEmpty(catalog.Stats.MaxRiskLevel, "low")
 	detail := fmt.Sprintf("%d file(s), %d area(s), +%d/-%d lines", catalog.Stats.FileCount, catalog.Stats.AreaCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
 	if reach.ReferenceCount > 0 {
 		symbols := strings.Join(topReachSymbolNames(reach, 2), ", ")
 		reachDetail := fmt.Sprintf("%d references to changed symbols (%s) across %d other file(s); %d file(s), +%d/-%d lines",
 			reach.ReferenceCount, symbols, reach.DependentFiles, catalog.Stats.FileCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
-		if itemCount > 0 {
-			return fmt.Sprintf("Blast radius is %s: %s, with %d review target%s below.", blast, reachDetail, itemCount, plural(itemCount))
-		}
 		return fmt.Sprintf("Blast radius is %s: %s.", blast, reachDetail)
 	}
-	switch {
-	case itemCount > 0:
-		return fmt.Sprintf("Blast radius is %s (%s), with %d review target%s below.", blast, detail, itemCount, plural(itemCount))
-	case blast == "high":
-		return fmt.Sprintf("Blast radius is high (%s), but GX did not isolate a specific high-impact review target.", detail)
-	case blast == "medium":
-		return fmt.Sprintf("Blast radius is medium (%s), and GX did not isolate a specific high-impact review target.", detail)
-	default:
-		return fmt.Sprintf("Blast radius is low (%s), and GX did not isolate a specific high-impact review target.", detail)
-	}
-}
-
-func contextSentence(summaryContext prSummaryContext) string {
-	if len(summaryContext.Sources) == 0 {
-		return ""
-	}
-	return "Context used: " + strings.Join(limitStrings(sortedUnique(summaryContext.Sources), 4), ", ") + "."
+	return fmt.Sprintf("Blast radius is %s (%s).", blast, detail)
 }
 
 func triageChangeFromCatalog(catalog prBodyCatalog) codereview.ChangeTriage {

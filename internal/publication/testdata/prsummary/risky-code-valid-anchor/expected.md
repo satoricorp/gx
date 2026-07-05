@@ -2,7 +2,7 @@
 
 > 🔴 **Requires Deep Review** — security-sensitive change: internal/auth.
 
-This PR changes `internal/auth`: add session validation. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), with 2 review targets below.
+This PR changes `internal/auth`: add session validation.
 
 ## Needs Review
 

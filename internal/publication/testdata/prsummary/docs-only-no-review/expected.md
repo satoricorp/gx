@@ -2,7 +2,7 @@
 
 > ✅ **No review needed** — documentation-only change (1 file(s)); nothing needs human eyes.
 
-This PR changes `docs`: clarify docs. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), and GX did not isolate a specific high-impact review target.
+This PR changes `docs`: clarify docs.
 
 ## Needs Review
 

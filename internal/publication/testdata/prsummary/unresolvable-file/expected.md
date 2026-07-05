@@ -2,7 +2,7 @@
 
 > 🔴 **Requires Deep Review** — review findings need human judgment.
 
-This PR changes `internal/github`: update github client. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), with 1 review target below.
+This PR changes `internal/github`: update github client.
 
 ## Needs Review
 

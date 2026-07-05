@@ -194,8 +194,6 @@ func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testi
 	for _, want := range []string{
 		githubPRBodyMarker,
 		"This PR changes",
-		"Blast radius is high",
-		"Context used: codebase, review resources, session.",
 		"> 🔴 **Requires Deep Review** — high-risk change signals.",
 		"## Needs Review",
 		"Verify GitHub PR summary update ordering",

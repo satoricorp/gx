@@ -293,6 +293,8 @@ func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCata
 	sha := headCommitSHA(artifact, catalog)
 	var body strings.Builder
 	body.WriteString("\n\n## Blast Radius\n\n")
+	body.WriteString(readinessSentence(catalog, reach))
+	body.WriteByte('\n')
 	lines := 0
 	for _, sym := range reach.Symbols {
 		if lines >= 5 {

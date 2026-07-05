@@ -2,7 +2,7 @@
 
 > ✅ **No review needed** — tests-only change (1 file(s)); nothing needs human eyes.
 
-This PR changes `internal/app`: extend app tests. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), and GX did not isolate a specific high-impact review target.
+This PR changes `internal/app`: extend app tests.
 
 ## Needs Review
 
