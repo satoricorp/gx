@@ -1,6 +1,6 @@
 <!-- gx:pr-summary:v1 -->
 
-**Review verdict: Quick scan** — default code review classification; AI review unavailable.
+> 👀 **Quick scan** — standard change; AI review unavailable.
 
 This PR changes `internal/billing`: add billing charge helper. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), with 1 review target below.
 

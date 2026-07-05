@@ -196,7 +196,7 @@ func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testi
 		"This PR changes",
 		"Blast radius is high",
 		"Context used: codebase, review resources, session.",
-		"**Review verdict: Full review**",
+		"> 🔴 **Requires Deep Review** — high-risk change signals.",
 		"## Needs Review",
 		"Verify GitHub PR summary update ordering",
 		"Attribution:",

@@ -31,6 +31,10 @@ const (
 	maxPRReviewItems          = 10
 	maxPRContextSnippetSize   = 1800
 	maxPROverviewLength       = 500
+
+	verdictNoReview  = "No review needed"
+	verdictQuickScan = "Quick scan"
+	verdictDeepReview = "Requires Deep Review"
 )
 
 var (
@@ -137,13 +141,13 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 
 func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, overview string, aiSucceeded bool, reach lexicalReach, policy codereview.ReviewPolicy, reviewerInfo codereview.ReviewerInfo) string {
 	triage := triageChangeFromCatalog(catalog)
-	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded)
-	includeHeuristics := verdict != "No review needed"
+	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded, catalog.Files, catalog.Areas)
+	includeHeuristics := verdict != verdictNoReview
 	items := needsReviewItems(artifact, catalog, findings, summaryContext, includeHeuristics, policy)
 	var body strings.Builder
 	body.WriteString(githubPRBodyMarker)
 	body.WriteString("\n\n")
-	body.WriteString(fmt.Sprintf("**Review verdict: %s** — %s.", verdict, reason))
+	body.WriteString(renderVerdictBanner(verdict, reason))
 	body.WriteString("\n\n")
 	body.WriteString(openingSummary(artifact, catalog, items, summaryContext, overview, aiSucceeded, reach))
 	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
@@ -287,28 +291,91 @@ func triageChangeFromCatalog(catalog prBodyCatalog) codereview.ChangeTriage {
 	return codereview.TriageChange(catalog.Files, snippets, codereview.Options{})
 }
 
-func reviewVerdict(triage codereview.ChangeTriage, stats prBodyStats, findings []codereview.Finding, aiSucceeded bool) (string, string) {
-	triageReason := strings.Join(triage.Rationale, "; ")
-	if triageReason == "" {
-		triageReason = triage.Class + " change"
-	}
+func reviewVerdict(triage codereview.ChangeTriage, stats prBodyStats, findings []codereview.Finding, aiSucceeded bool, files, areas []string) (string, string) {
 	if triage.Class == "security-sensitive" {
-		return "Full review", triageReason + "; security-sensitive change"
+		return verdictDeepReview, securitySensitiveVerdictReason(files, areas)
 	}
 	if stats.MaxRiskLevel == "high" {
-		return "Full review", triageReason + "; high blast radius"
+		return verdictDeepReview, highRiskVerdictReason(stats)
 	}
 	if hasStrongOrBlockingFinding(findings) {
-		return "Full review", triageReason + "; strong or blocking findings present"
+		return verdictDeepReview, "review findings need human judgment"
 	}
 	if aiSucceeded && isLowImpactTriageClass(triage.Class) && stats.WarningCount == 0 && stats.MaxRiskLevel == "low" {
-		detail := fmt.Sprintf("%s (%d file(s))", triage.Class, stats.FileCount)
-		return "No review needed", detail + ", no warnings, no findings"
+		return verdictNoReview, noReviewVerdictReason(triage.Class, stats.FileCount)
 	}
 	if !aiSucceeded {
-		return "Quick scan", triageReason + "; AI review unavailable"
+		return verdictQuickScan, "standard change; AI review unavailable"
 	}
-	return "Quick scan", triageReason + "; quick scan recommended"
+	return verdictQuickScan, "standard change; skim the notable changes"
+}
+
+func securitySensitiveVerdictReason(files, areas []string) string {
+	target := firstNonEmpty(firstSorted(areas), verdictReasonFileArea(files))
+	if target == "" {
+		target = "code"
+	}
+	return "security-sensitive change: " + target
+}
+
+func highRiskVerdictReason(stats prBodyStats) string {
+	for _, signal := range stats.RiskSignals {
+		if strings.HasPrefix(signal, "lexical_reach:") {
+			return "changes are referenced widely across the codebase"
+		}
+	}
+	return "high-risk change signals"
+}
+
+func noReviewVerdictReason(class string, fileCount int) string {
+	return fmt.Sprintf("%s change (%d file(s)); nothing needs human eyes", triageClassLabel(class), fileCount)
+}
+
+func triageClassLabel(class string) string {
+	switch class {
+	case "docs-only":
+		return "documentation-only"
+	case "tests-only":
+		return "tests-only"
+	case "config-only":
+		return "configuration-only"
+	case "mechanical":
+		return "mechanical"
+	default:
+		return class
+	}
+}
+
+func verdictReasonFileArea(files []string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	sorted := sortedUnique(files)
+	return fileArea(sorted[0])
+}
+
+func firstSorted(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return sortedUnique(values)[0]
+}
+
+func renderVerdictBanner(verdict, reason string) string {
+	return fmt.Sprintf("> %s **%s** — %s.", verdictEmoji(verdict), verdict, reason)
+}
+
+func verdictEmoji(verdict string) string {
+	switch verdict {
+	case verdictNoReview:
+		return "✅"
+	case verdictQuickScan:
+		return "👀"
+	case verdictDeepReview:
+		return "🔴"
+	default:
+		return ""
+	}
 }
 
 func isLowImpactTriageClass(class string) bool {

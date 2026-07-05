@@ -1,6 +1,6 @@
 <!-- gx:pr-summary:v1 -->
 
-**Review verdict: Quick scan** — changed files are documentation, text, license, image, or CODEOWNERS files; AI review unavailable.
+> 👀 **Quick scan** — standard change; AI review unavailable.
 
 This PR changes `docs`: clarify docs. Blast radius is low (1 file(s), 1 area(s), +1/-0 lines), and GX did not isolate a specific high-impact review target.
 

@@ -1,6 +1,6 @@
 <!-- gx:pr-summary:v1 -->
 
-**Review verdict: Quick scan** — default code review classification; quick scan recommended.
+> 👀 **Quick scan** — standard change; skim the notable changes.
 
 This PR changes `.`: change HelloWorld. Blast radius is medium: 3 references to changed symbols (HelloWorld) across 3 other file(s); 1 file(s), +1/-1 lines.
 
