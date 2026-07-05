@@ -52,9 +52,11 @@ type QueueStatus struct {
 }
 
 type DrainResult struct {
-	Uploaded int
-	Failed   int
-	Pending  int
+	Uploaded            int
+	Failed              int
+	Pending             int
+	PRSummariesUpdated  int
+	PRSummariesFailed   int
 }
 
 func EnqueuePush(ctx context.Context, push vcs.PushResult) (Result, error) {
@@ -67,9 +69,6 @@ func EnqueuePush(ctx context.Context, push vcs.PushResult) (Result, error) {
 
 func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact) (Result, error) {
 	artifact.IndexStatus = firstNonEmpty(artifact.IndexStatus, "queued")
-	if _, err := UpdateGitHubPullRequestBody(ctx, artifact); err != nil {
-		return Result{}, err
-	}
 	item, err := newQueueItem(artifact)
 	if err != nil {
 		return Result{}, err
@@ -123,6 +122,13 @@ func DrainQueuedUploads(ctx context.Context, uploader Uploader, limit int) (Drai
 		item.LastAttemptAt = time.Now().UnixMilli()
 		item.LastError = ""
 		_, _ = writeQueueItem(item)
+
+		updated, err := UpdateGitHubPullRequestBody(ctx, item.Artifact)
+		if err != nil {
+			result.PRSummariesFailed++
+		} else if updated {
+			result.PRSummariesUpdated++
+		}
 
 		uploaded, err := uploader.UploadReviewArtifact(ctx, item.Artifact)
 		if err != nil {

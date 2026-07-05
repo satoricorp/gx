@@ -314,7 +314,8 @@ func ParseAll(sessions []DiscoveredSession, repoRoot string, parsers []Parser) (
 		}
 		parsed, err := parser.ParseFile(session.Path, repoRoot)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s (%s): %w", session.Path, session.Tool, err)
+			fmt.Fprintf(os.Stderr, "warning: skip parse %s (%s): %v\n", session.Path, session.Tool, err)
+			continue
 		}
 		events = append(events, parsed...)
 	}

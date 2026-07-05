@@ -1,0 +1,11 @@
+{
+  "recommendations": [{
+    "title": "Confirm retry semantics",
+    "summary": "Error handling now swallows transient failures instead of surfacing them.",
+    "benefit": "Silent failures can drop queued work without alerting operators.",
+    "recommendation": "Review error propagation before merging.",
+    "strength": "Strong",
+    "file": "internal/worker/runner.go",
+    "line": 47
+  }]
+}

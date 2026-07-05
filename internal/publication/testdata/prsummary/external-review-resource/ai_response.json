@@ -1,0 +1,12 @@
+{
+  "recommendations": [{
+    "title": "Verify GitHub PR summary update ordering",
+    "summary": "internal/publication/publication.go updates the GitHub PR body around publish side effects.",
+    "benefit": "Reviewers need the PR body updated before side effects complete so targets are visible.",
+    "recommendation": "Review the publication hunk before merging.",
+    "strength": "Strong",
+    "file": "internal/publication/publication.go",
+    "line": 180,
+    "source_labels": ["R1"]
+  }]
+}

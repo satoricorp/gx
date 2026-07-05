@@ -1,0 +1,19 @@
+{
+  "index_status": "pending",
+  "event": "gx.pr",
+  "schema_version": 1,
+  "repo": {"root_path": "/tmp/acme"},
+  "push": {
+    "head_commit_id": "bill001",
+    "github_pull_request_url": "https://github.com/example/acme/pull/1"
+  },
+  "stack": [{
+    "patch": "diff --git a/internal/billing/charge.go b/internal/billing/charge.go\n--- a/internal/billing/charge.go\n+++ b/internal/billing/charge.go\n@@ -1 +1,2 @@\n package billing\n+func Charge() {}\n",
+    "change": {
+      "current_commit_id": "bill001",
+      "description": "add billing charge helper",
+      "files": ["internal/billing/charge.go"]
+    },
+    "github_pull_request_url": "https://github.com/example/acme/pull/1"
+  }]
+}

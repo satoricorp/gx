@@ -3,6 +3,8 @@ package publication
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,25 +14,127 @@ import (
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
-func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.T) {
+func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer {
-		return fakePRSummaryReviewer{findings: []codereview.Finding{{
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
+			Title: "Verify GitHub PR summary update ordering",
+		}}}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{Sources: []string{"codebase"}}, nil
+	}
+	var patchedBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"html_url": prURL,
+				"number":   11,
+				"body":     "",
+			})
+		case http.MethodPatch:
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode patch payload: %v", err)
+			}
+			patchedBody = payload["body"]
+			_ = json.NewEncoder(w).Encode(map[string]any{"html_url": prURL, "number": 11, "body": patchedBody})
+		default:
+			t.Fatalf("method = %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
+		t.Fatalf("EnqueueArtifact() error = %v", err)
+	}
+	if patchedBody != "" {
+		t.Fatalf("EnqueueArtifact() updated GitHub PR body synchronously:\n%s", patchedBody)
+	}
+
+	uploader := &fakeUploader{}
+	drain, err := DrainQueuedUploads(context.Background(), uploader, 10)
+	if err != nil {
+		t.Fatalf("DrainQueuedUploads() error = %v", err)
+	}
+	if drain.PRSummariesUpdated != 1 || drain.PRSummariesFailed != 0 {
+		t.Fatalf("drain = %#v, want one PR summary updated", drain)
+	}
+	if !strings.Contains(patchedBody, githubPRBodyMarker) {
+		t.Fatalf("patched body missing GX summary marker:\n%s", patchedBody)
+	}
+	if !uploader.called {
+		t.Fatal("uploader was not called during drain")
+	}
+}
+
+func TestDrainQueuedUploadsContinuesUploadWhenPRSummaryFails(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+	prURL := "https://github.com/satoricorp/gx/pull/11"
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) { return nil, codereview.ReviewerInfo{} }
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, errors.New("summary context unavailable")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET only when summary fails before patch", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"html_url": prURL, "number": 11, "body": ""})
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
+		t.Fatalf("EnqueueArtifact() error = %v", err)
+	}
+	uploader := &fakeUploader{}
+	drain, err := DrainQueuedUploads(context.Background(), uploader, 10)
+	if err != nil {
+		t.Fatalf("DrainQueuedUploads() error = %v", err)
+	}
+	if drain.Uploaded != 1 || drain.Failed != 0 || drain.PRSummariesFailed != 1 {
+		t.Fatalf("drain = %#v uploader.called=%t, want upload despite summary failure", drain, uploader.called)
+	}
+}
+
+func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+	prURL := "https://github.com/satoricorp/gx/pull/11"
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
 			Title:          "Verify GitHub PR summary update ordering",
 			Summary:        "internal/publication/publication.go updates the GitHub PR body around publish side effects, so failures could leave reviewers without the important review targets.",
 			Recommendation: "Review the publication hunk before merging and confirm GitHub update failures are visible.",
 			Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
 			Strength:       "Strong",
+			File:           "internal/publication/publication.go",
+			Line:           180,
 			SourceIDs:      []string{"google-eng-practices"},
-		}}}
+		}}}, codereview.ReviewerInfo{}
 	}
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{
@@ -80,16 +184,23 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
+	if patchedBody != "" {
+		t.Fatalf("EnqueueArtifact() updated GitHub PR body before drain:\n%s", patchedBody)
+	}
+	uploader := &fakeUploader{}
+	if _, err := DrainQueuedUploads(context.Background(), uploader, 10); err != nil {
+		t.Fatalf("DrainQueuedUploads() error = %v", err)
+	}
 	for _, want := range []string{
 		githubPRBodyMarker,
 		"This PR changes",
-		"Blast radius is high",
-		"Context used: codebase, review resources, session.",
-		"## Needs Review",
+		"> 🔴 **Requires Deep Review** — high-risk change signals.",
+		"## Notable Changes",
 		"Verify GitHub PR summary update ordering",
 		"Attribution:",
 		"google-eng-practices",
-		githubHunkLink(prURL, "internal/publication/publication.go", 180, 180, 9),
+		githubHunkLineLink(prURL, "internal/publication/publication.go", 180),
+		"*Generated by GX — context: codebase, review resources, session.*",
 	} {
 		if !strings.Contains(patchedBody, want) {
 			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
@@ -103,13 +214,13 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnv
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
 	oldContext := collectPRSummaryContext
 	defer func() {
-		prSummaryReviewerFromEnv = oldReviewer
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
 		collectPRSummaryContext = oldContext
 	}()
-	prSummaryReviewerFromEnv = func() codereview.AIReviewer { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) { return nil, codereview.ReviewerInfo{} }
 	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
 		return prSummaryContext{}, nil
 	}
@@ -156,11 +267,49 @@ func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) 
 }
 
 type fakePRSummaryReviewer struct {
-	findings []codereview.Finding
+	findings       []codereview.Finding
+	overview       string
+	notableChanges []codereview.NotableChange
+	err            error
+	failCount      int
+	attempts       int
 }
 
-func (f fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
+func (f *fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return nil, f.err
+		}
+		return nil, fmt.Errorf("transient reviewer failure")
+	}
 	return f.findings, nil
+}
+
+func (f *fakePRSummaryReviewer) ReviewForSummary(_ context.Context, _ codereview.ReviewBrief) (codereview.PRSummaryReview, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return codereview.PRSummaryReview{}, f.err
+		}
+		return codereview.PRSummaryReview{}, fmt.Errorf("transient reviewer failure")
+	}
+	return codereview.PRSummaryReview{
+		Overview:       f.overview,
+		NotableChanges: f.notableChanges,
+		Findings:       f.findings,
+	}, nil
+}
+
+func (f *fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return "", nil, f.err
+		}
+		return "", nil, fmt.Errorf("transient reviewer failure")
+	}
+	return f.overview, f.findings, nil
 }
 
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {

@@ -1,0 +1,11 @@
+{
+  "recommendations": [{
+    "title": "Check missing dependency wiring",
+    "summary": "internal/missing/file.go may need matching updates for the client change.",
+    "benefit": "Prevents shipping a client change that references removed or renamed dependencies.",
+    "recommendation": "Confirm the dependency path exists before merging.",
+    "strength": "Strong",
+    "file": "internal/missing/file.go",
+    "line": 10
+  }]
+}
