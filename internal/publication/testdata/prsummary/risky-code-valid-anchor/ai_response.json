@@ -1,4 +1,16 @@
 {
+  "notable_changes": [
+    {
+      "file": "internal/auth/session.go",
+      "line": 2,
+      "note": "Adds Validate helper so expired session tokens fail before credential refresh."
+    },
+    {
+      "file": "internal/auth/other.go",
+      "line": 1,
+      "note": "Unanchored entry must not render."
+    }
+  ],
   "recommendations": [{
     "title": "Verify auth handling",
     "summary": "Session token validation changed and may affect login flows.",

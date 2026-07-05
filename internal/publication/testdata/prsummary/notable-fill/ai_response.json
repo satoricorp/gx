@@ -1,0 +1,4 @@
+{
+  "overview": "Moves cache eviction from LRU scans to TTL buckets so stale entries drop without full-table walks.",
+  "recommendations": []
+}
