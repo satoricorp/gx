@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
@@ -202,7 +203,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			result, err := engine.Init(ctx, authoring.InitOptions{
 				Name:        name,
 				Email:       email,
-				Interactive: true,
+				Interactive: stdinIsTerminal(cmd.InOrStdin()),
 				In:          cmd.InOrStdin(),
 				Out:         cmd.OutOrStdout(),
 			})
@@ -754,9 +755,19 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 
 func generatePreflightAttempts() int {
 	if generateIsMCP() {
+		if v := strings.TrimSpace(os.Getenv("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+		}
 		return 6
 	}
-	return 3
+	if v := strings.TrimSpace(os.Getenv("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 func generateIsMCP() bool {
@@ -4244,4 +4255,12 @@ func shortID(value string, max int) string {
 		return value
 	}
 	return value[:max]
+}
+
+func stdinIsTerminal(in io.Reader) bool {
+	file, ok := in.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(file.Fd())
 }

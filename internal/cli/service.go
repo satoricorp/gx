@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -191,14 +192,23 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var repair vcs.RepairResult
 			var repairErr error
+			var staleRepair vcs.StaleStackCleanupResult
 			if fix {
 				repair, repairErr = vcs.NewService().RepairWorkflow(ctx)
 				if repairErr != nil {
 					return repairErr
 				}
+				staleRepair, repairErr = vcs.NewService().CleanupStaleStacks(ctx)
+				if repairErr != nil {
+					return repairErr
+				}
 			}
+			stale, staleErr := doctorStaleStacks(ctx, fix, staleRepair)
 			if jsonOut {
 				payload := map[string]any{"doctor": doctorStatusJSON(ctx)}
+				if staleErr == nil {
+					payload["stale_stacks"] = stale
+				}
 				if fix {
 					payload["repair"] = repair
 				}
@@ -206,6 +216,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			}
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
+			printDoctorStaleStacks(cmd.OutOrStdout(), fix, stale, staleErr)
 			if fix {
 				if len(repair.Actions) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Workflow repair", success("ok")+": no changes needed"))
@@ -227,6 +238,36 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe gx workflow state issues")
 	return cmd
+}
+
+func doctorStaleStacks(ctx context.Context, fixed bool, repaired vcs.StaleStackCleanupResult) (vcs.StaleStackCleanupResult, error) {
+	if fixed {
+		return repaired, nil
+	}
+	return vcs.NewService().ListStaleStacks(ctx)
+}
+
+func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanupResult, err error) {
+	if err != nil {
+		fmt.Fprintln(w, labelWarningValue("Stale stacks", "check skipped: "+err.Error()))
+		return
+	}
+	if len(result.Stale) == 0 {
+		fmt.Fprintln(w, labelValue("Stale stacks", success("ok")+": none"))
+		return
+	}
+	if fixed {
+		fmt.Fprintln(w, section("Stale stack repair"))
+		for _, action := range result.Actions {
+			fmt.Fprintf(w, "  %s\n", action)
+		}
+		return
+	}
+	names := make([]string, 0, len(result.Stale))
+	for _, stack := range result.Stale {
+		names = append(names, stack.BookmarkName)
+	}
+	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing jj bookmarks: %s (run gx doctor --fix)", len(names), strings.Join(names, ", "))))
 }
 
 func newRepairCommand(ctx context.Context) *cobra.Command {
