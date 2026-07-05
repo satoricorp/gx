@@ -113,6 +113,14 @@ func splitCaptureTools(raw string) []string {
 }
 
 func installCaptureHook(cmd *cobra.Command, repoRoot string) error {
+	return installCaptureHookWithOutput(cmd, repoRoot, true)
+}
+
+func installCaptureHookQuiet(cmd *cobra.Command, repoRoot string) error {
+	return installCaptureHookWithOutput(cmd, repoRoot, false)
+}
+
+func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSuccess bool) error {
 	if repoRoot == "" {
 		var err error
 		repoRoot, err = os.Getwd()
@@ -127,6 +135,8 @@ func installCaptureHook(cmd *cobra.Command, repoRoot string) error {
 	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repoRoot, GXPath: gxPath}); err != nil {
 		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), labelValue("Pre-push hook", success("ok")+": capture on git push"))
+	if printSuccess {
+		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Pre-push hook", success("ok")+": capture on git push"))
+	}
 	return nil
 }
