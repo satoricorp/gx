@@ -1,0 +1,11 @@
+{
+  "recommendations": [{
+    "title": "Verify auth handling",
+    "summary": "Session token validation changed and may affect login flows.",
+    "benefit": "Catching auth regressions before merge reduces credential exposure risk.",
+    "recommendation": "Review the changed hunk before merging.",
+    "strength": "Strong",
+    "file": "internal/auth/session.go",
+    "line": 2
+  }]
+}

@@ -378,12 +378,7 @@ func isSpeculativePRFinding(finding codereview.Finding) bool {
 func patchRelevantFinding(catalog prBodyCatalog, finding codereview.Finding) bool {
 	file := strings.TrimSpace(finding.File)
 	if file != "" {
-		for _, candidate := range catalog.Files {
-			if candidate == file {
-				return true
-			}
-		}
-		return false
+		return true
 	}
 	if len(catalog.Hunks) == 0 {
 		return true

@@ -1,0 +1,20 @@
+{
+  "index_status": "pending",
+  "event": "gx.pr",
+  "schema_version": 1,
+  "repo": {"root_path": "/repo"},
+  "push": {
+    "head_commit_id": "pub001",
+    "github_pull_request_url": "https://github.com/satoricorp/gx/pull/11"
+  },
+  "stack": [{
+    "branch_name": "feature/github-pr-summary",
+    "patch": "diff --git a/internal/publication/publication.go b/internal/publication/publication.go\n--- a/internal/publication/publication.go\n+++ b/internal/publication/publication.go\n@@ -180,6 +180,9 @@ func (p *Publisher) PublishPush(ctx context.Context, push vcs.PushResult) (Result, error) {\n+\tif _, err := UpdateGitHubPullRequestBody(ctx, artifact); err != nil {\n+\t\treturn Result{}, err\n+\t}\n \treturn p.PublishArtifact(ctx, artifact)\n",
+    "change": {
+      "current_commit_id": "pub001",
+      "description": "adopt GitHub PR summaries",
+      "files": ["internal/publication/publication.go"]
+    },
+    "github_pull_request_url": "https://github.com/satoricorp/gx/pull/11"
+  }]
+}

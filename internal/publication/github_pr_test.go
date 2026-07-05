@@ -3,6 +3,7 @@ package publication
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,12 +24,14 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		collectPRSummaryContext = oldContext
 	}()
 	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return fakePRSummaryReviewer{findings: []codereview.Finding{{
+		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
 			Title:          "Verify GitHub PR summary update ordering",
 			Summary:        "internal/publication/publication.go updates the GitHub PR body around publish side effects, so failures could leave reviewers without the important review targets.",
 			Recommendation: "Review the publication hunk before merging and confirm GitHub update failures are visible.",
 			Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
 			Strength:       "Strong",
+			File:           "internal/publication/publication.go",
+			Line:           180,
 			SourceIDs:      []string{"google-eng-practices"},
 		}}}, codereview.ReviewerInfo{}
 	}
@@ -89,7 +92,7 @@ func TestEnqueueArtifactUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.
 		"Verify GitHub PR summary update ordering",
 		"Attribution:",
 		"google-eng-practices",
-		githubHunkLink(prURL, "internal/publication/publication.go", 180, 180, 9),
+		githubHunkLineLink(prURL, "internal/publication/publication.go", 180),
 	} {
 		if !strings.Contains(patchedBody, want) {
 			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
@@ -156,15 +159,33 @@ func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) 
 }
 
 type fakePRSummaryReviewer struct {
-	findings []codereview.Finding
+	findings  []codereview.Finding
+	overview  string
+	err       error
+	failCount int
+	attempts  int
 }
 
-func (f fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
+func (f *fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return nil, f.err
+		}
+		return nil, fmt.Errorf("transient reviewer failure")
+	}
 	return f.findings, nil
 }
 
-func (f fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {
-	return "", f.findings, nil
+func (f *fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {
+	f.attempts++
+	if f.attempts <= f.failCount {
+		if f.err != nil {
+			return "", nil, f.err
+		}
+		return "", nil, fmt.Errorf("transient reviewer failure")
+	}
+	return f.overview, f.findings, nil
 }
 
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
