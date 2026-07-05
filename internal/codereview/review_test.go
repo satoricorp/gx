@@ -839,6 +839,8 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"empty recommendations array",
 		"source_labels",
 		"\"overview\"",
+		"\"notable_changes\"",
+		"Only when review_profile is pr_summary: include notable_changes",
 		"\"file\"",
 		"\"line\"",
 		"Only when review_profile is pr_summary",
