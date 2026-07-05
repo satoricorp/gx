@@ -22,7 +22,8 @@ type demuxRouteReview struct {
 }
 
 type demuxRouter struct {
-	index demuxStackIndex
+	index              demuxStackIndex
+	staleStackWarnings []string
 }
 
 func (e *Engine) planDemuxRoutes(ctx context.Context, proposal DemuxProposal) (DemuxProposal, error) {
@@ -30,7 +31,11 @@ func (e *Engine) planDemuxRoutes(ctx context.Context, proposal DemuxProposal) (D
 	if err != nil {
 		return DemuxProposal{}, err
 	}
-	return router.plan(proposal), nil
+	proposal = router.plan(proposal)
+	for _, warning := range router.staleStackWarnings {
+		proposal.Warnings = append(proposal.Warnings, warning)
+	}
+	return proposal, nil
 }
 
 func (e *Engine) reviewDemuxRoutes(ctx context.Context, proposal DemuxProposal) (demuxRouteReview, error) {
@@ -42,11 +47,11 @@ func (e *Engine) reviewDemuxRoutes(ctx context.Context, proposal DemuxProposal) 
 }
 
 func (e *Engine) demuxRouter(ctx context.Context, repoRoot string) (demuxRouter, error) {
-	index, err := e.demuxStackIndex(ctx, repoRoot)
+	index, staleWarnings, err := e.demuxStackIndex(ctx, repoRoot)
 	if err != nil {
 		return demuxRouter{}, err
 	}
-	return demuxRouter{index: index}, nil
+	return demuxRouter{index: index, staleStackWarnings: staleWarnings}, nil
 }
 
 func (r demuxRouter) plan(proposal DemuxProposal) DemuxProposal {
@@ -196,53 +201,70 @@ type demuxStackIndex struct {
 	stackFiles   map[int64][]string
 }
 
-func (e *Engine) demuxStackIndex(ctx context.Context, repoRoot string) (demuxStackIndex, error) {
+func (e *Engine) demuxStackIndex(ctx context.Context, repoRoot string) (demuxStackIndex, []string, error) {
 	if strings.TrimSpace(repoRoot) == "" {
-		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil
+		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil, nil
 	}
 	db, err := storage.Open(ctx)
 	if err != nil {
-		return demuxStackIndex{}, err
+		return demuxStackIndex{}, nil, err
 	}
 	defer db.Close()
 	store, err := storage.NewStore(ctx, db)
 	if err != nil {
-		return demuxStackIndex{}, err
+		return demuxStackIndex{}, nil, err
 	}
 	repo, err := store.FindRepoByRoot(ctx, repoRoot)
 	if err != nil {
-		return demuxStackIndex{}, err
+		return demuxStackIndex{}, nil, err
 	}
 	if repo == nil {
-		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil
+		return demuxStackIndex{byKey: map[string]storage.Stack{}, stackChanges: map[int64][]storage.Change{}, stackFiles: map[int64][]string{}}, nil, nil
 	}
 	stacks, err := store.ListStacksByRepoID(ctx, repo.ID)
 	if err != nil {
-		return demuxStackIndex{}, err
+		return demuxStackIndex{}, nil, err
 	}
 	index := demuxStackIndex{
-		stacks:       stacks,
+		stacks:       make([]storage.Stack, 0, len(stacks)),
 		byKey:        map[string]storage.Stack{},
 		stackChanges: map[int64][]storage.Change{},
 		stackFiles:   map[int64][]string{},
 	}
-	for i, stack := range stacks {
+	staleWarnings := make([]string, 0)
+	warnedBookmarks := map[string]struct{}{}
+	for _, stack := range stacks {
+		bookmark := strings.TrimSpace(stack.BookmarkName)
+		if bookmark != "" && !IsTerminalDemuxStackStatus(stack.Status) {
+			exists, existsErr := e.vcs.RevisionExists(ctx, repoRoot, bookmark)
+			// The probe is best-effort: if jj itself cannot answer, keep the
+			// stack and let downstream operations surface any real failure.
+			if existsErr == nil && !exists {
+				if _, ok := warnedBookmarks[bookmark]; !ok {
+					warnedBookmarks[bookmark] = struct{}{}
+					staleWarnings = append(staleWarnings, demuxDedupStackSkipWarning(bookmark))
+				}
+				continue
+			}
+		}
+		stackIndex := len(index.stacks)
+		index.stacks = append(index.stacks, stack)
 		index.add(stack.Name, stack)
 		index.add(stack.BookmarkName, stack)
-		index.add(stackAlias(i), stack)
+		index.add(stackAlias(stackIndex), stack)
 		index.add(stackNameFromBookmark(stack.BookmarkName), stack)
 		changes, err := store.ListChangesByStackID(ctx, stack.ID)
 		if err != nil {
-			return demuxStackIndex{}, err
+			return demuxStackIndex{}, nil, err
 		}
 		index.stackChanges[stack.ID] = changes
 		files, err := stackChangedFiles(ctx, store, changes)
 		if err != nil {
-			return demuxStackIndex{}, err
+			return demuxStackIndex{}, nil, err
 		}
 		index.stackFiles[stack.ID] = files
 	}
-	return index, nil
+	return index, staleWarnings, nil
 }
 
 func stackChangedFiles(ctx context.Context, store *storage.Store, changes []storage.Change) ([]string, error) {

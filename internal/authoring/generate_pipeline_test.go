@@ -3,6 +3,8 @@ package authoring
 import (
 	"strings"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
@@ -203,6 +205,45 @@ func TestPolishGenerateProposalCoalescesDocsAndNamesRevisions(t *testing.T) {
 	}
 	if got.Revisions[1].TargetStack != "feature/cli" {
 		t.Fatalf("cli target = %q, want deterministic cli route", got.Revisions[1].TargetStack)
+	}
+}
+
+func TestComposeApplyPreflightDefaultsOff(t *testing.T) {
+	t.Setenv("GX_GENERATE_VERIFY", "")
+	t.Setenv("GX_COMPOSE_SKIP_APPLY_PREFLIGHT", "")
+	t.Setenv("GX_GENERATE_APPLY_PREFLIGHT_ATTEMPTS", "")
+	t.Setenv("GX_COMPOSE_APPLY_PREFLIGHT_ATTEMPTS", "")
+
+	if defaultDemuxApplyPreflightAttempts != 0 {
+		t.Fatalf("defaultDemuxApplyPreflightAttempts = %d, want 0", defaultDemuxApplyPreflightAttempts)
+	}
+
+	repoRoot := t.TempDir()
+	engine := NewEngineWithVCS(vcs.NewServiceWithRunner(&demuxAlreadyAppliedFakeRunner{repoRoot: repoRoot}))
+	pipeline := engine.demuxPipeline()
+	proposal := DemuxProposal{
+		ID:       "p1",
+		RepoRoot: repoRoot,
+		Revisions: []RevisionProposal{{
+			ID:          "u1",
+			Intent:      "test",
+			Files:       []string{"a.txt"},
+			TargetStack: "feature/test",
+		}},
+	}
+	got, err := pipeline.preflightApplyReadyProposal(t.Context(), proposal, ProposeDemuxOptions{})
+	if err != nil {
+		t.Fatalf("preflightApplyReadyProposal: %v", err)
+	}
+	foundSkip := false
+	for _, warning := range got.Warnings {
+		if strings.Contains(warning, "skipped disposable apply preflight") {
+			foundSkip = true
+			break
+		}
+	}
+	if !foundSkip {
+		t.Fatalf("warnings = %#v, want skip preflight warning", got.Warnings)
 	}
 }
 
