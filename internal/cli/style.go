@@ -132,13 +132,10 @@ func rootInferenceStatusLine() string {
 
 func maskedAPIKey(key string) string {
 	key = strings.TrimSpace(key)
-	if key == "" {
+	if len(key) < 2 {
 		return "..."
 	}
 	visible := min(7, len(key)-1)
-	if visible < 1 {
-		visible = 1
-	}
 	return key[:visible] + "..."
 }
 

@@ -686,6 +686,9 @@ type generateRunOptions struct {
 
 func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) (authoring.DemuxPlanPacket, authoring.ApplyDemuxResult, error) {
 	run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
+		if err := ensureGenerateInitialized(ctx, engine, cmd, opts); err != nil {
+			return authoring.DemuxPlanPacket{}, err
+		}
 		if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
 			return authoring.DemuxPlanPacket{}, err
 		}
@@ -750,6 +753,19 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 	}
 	printDemuxApplySummary(cmd.OutOrStdout(), result)
 	return packet, result, nil
+}
+
+func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
+	interactive := !opts.JSON && !generateIsMCP() && useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout())
+	initOpts := authoring.InitOptions{
+		Interactive: interactive,
+	}
+	if interactive {
+		initOpts.In = cmd.InOrStdin()
+		initOpts.Out = cmd.OutOrStdout()
+	}
+	_, err := engine.Init(ctx, initOpts)
+	return err
 }
 
 func generatePreflightAttempts() int {
@@ -3960,7 +3976,6 @@ func highlightPushRevisions(output string) string {
 func printPushReview(out io.Writer, result publication.Result) {
 	if result.Queued {
 		fmt.Fprintln(out, labelValue("GX Cloud", "queued for background upload"))
-		fmt.Fprintln(out, labelValue("PR summary", "queued for background update"))
 		if result.QueueID != "" {
 			fmt.Fprintln(out, labelValue("Upload ID", result.QueueID))
 		}
@@ -4087,11 +4102,7 @@ func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, li
 		return err
 	}
 	if !quiet {
-		msg := fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)
-		if result.PRSummariesUpdated > 0 || result.PRSummariesFailed > 0 {
-			msg += fmt.Sprintf("; PR summaries: %d updated, %d failed", result.PRSummariesUpdated, result.PRSummariesFailed)
-		}
-		fmt.Fprintln(out, labelValue("GX Cloud uploads", msg))
+		fmt.Fprintln(out, labelValue("GX Cloud uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
 	}
 	return nil
 }

@@ -106,6 +106,22 @@ func TestRootHelpShowsAnthropicInferenceKeyStatus(t *testing.T) {
 	}
 }
 
+func TestMaskedAPIKeyNeverShowsFullKey(t *testing.T) {
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{key: "apikey_secret", want: "apikey_..."},
+		{key: "abcdefg", want: "abcdef..."},
+		{key: "a", want: "..."},
+		{key: "", want: "..."},
+	} {
+		if got := maskedAPIKey(tc.key); got != tc.want {
+			t.Fatalf("maskedAPIKey(%q) = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+}
+
 func TestRootHelpShowsMissingInferenceKeyStatus(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
