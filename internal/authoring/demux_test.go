@@ -2533,7 +2533,10 @@ func (r *demuxRoutingFakeRunner) jjLogOutput(args []string) string {
 }
 
 func (r *demuxRoutingFakeRunner) jjDiffOutput(args []string) string {
-	if len(args) >= 3 && args[0] == "-r" && args[1] == "@" && args[2] == "--name-only" {
+	if len(args) >= 2 && args[0] == "diff" && args[1] == "--from" {
+		return "diff-content\n"
+	}
+	if len(args) >= 4 && args[0] == "diff" && args[1] == "-r" && args[2] == "@" && args[3] == "--name-only" {
 		r.diffNameOnlyCalls++
 		if r.diffNameOnlyCalls <= 2 {
 			return "internal/hooks/run.go\ninternal/hooks/run_test.go\n"

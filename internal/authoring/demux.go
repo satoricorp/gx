@@ -125,6 +125,10 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	if err != nil {
 		return DemuxProposal{}, err
 	}
+	proposal, err = e.excludeDemuxAlreadyAppliedContent(ctx, proposal)
+	if err != nil {
+		return DemuxProposal{}, err
+	}
 	proposal, _ = shapeDemuxProposalForReview(proposal)
 	proposal.FeasibilityWarnings = feasibilityWarningsForProposal(proposal)
 	if anchor.ID != "" {
@@ -349,30 +353,28 @@ func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID s
 			if strings.TrimSpace(revision.Intent) == "" {
 				return ApplyDemuxResult{}, fmt.Errorf("revision %s has empty intent", revision.ID)
 			}
-			if len(revision.Files) == 0 {
+			if len(revision.Files) == 0 && !(revision.UseHunks && len(revision.Hunks) > 0) {
 				return ApplyDemuxResult{}, fmt.Errorf("revision %s has no files", revision.ID)
 			}
+			var outcome demuxRevisionApplyOutcome
 			if hasNonCurrentDemuxRoute(revision) {
-				result, err := e.applyRoutedDemuxRevision(ctx, proposal, revision)
-				if err != nil {
-					return ApplyDemuxResult{}, fmt.Errorf("apply revision %s: %w", revision.ID, err)
-				}
-				results = append(results, result)
-				if err := e.writeDemuxEvidence(ctx, proposal, revision, result); err != nil {
-					return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
-				}
-				continue
+				outcome, err = e.applyRoutedDemuxRevision(ctx, proposal, revision)
+			} else {
+				outcome, err = e.applyCurrentDemuxRevisionWithValidation(ctx, proposal.RepoRoot, proposal.ProposedCommitID, revision)
 			}
-			result, err := e.applyCurrentDemuxRevision(ctx, revision)
 			if err != nil {
 				return ApplyDemuxResult{}, fmt.Errorf("apply revision %s: %w", revision.ID, err)
 			}
-			results = append(results, result)
-			if err := e.writeDemuxEvidence(ctx, proposal, revision, result); err != nil {
+			if outcome.Skipped {
+				appendDemuxApplySkipWarning(&proposal, outcome.Warning)
+				continue
+			}
+			results = append(results, outcome.Result)
+			if err := e.writeDemuxEvidence(ctx, proposal, revision, outcome.Result); err != nil {
 				return ApplyDemuxResult{}, fmt.Errorf("write demux evidence for revision %s: %w", revision.ID, err)
 			}
-			if index < len(proposal.Revisions)-1 {
-				if err := e.prepareNextDemuxRevision(ctx, proposal.RepoRoot, result.Change.ChangeID); err != nil {
+			if !hasNonCurrentDemuxRoute(revision) && index < len(proposal.Revisions)-1 {
+				if err := e.prepareNextDemuxRevision(ctx, proposal.RepoRoot, outcome.Result.Change.ChangeID); err != nil {
 					return ApplyDemuxResult{}, fmt.Errorf("prepare next revision after %s: %w", revision.ID, err)
 				}
 			}
@@ -524,32 +526,99 @@ func (e *Engine) editDemuxApplySourceIfNeeded(ctx context.Context, repoRoot, wor
 }
 
 func (e *Engine) applyCurrentDemuxRevision(ctx context.Context, revision RevisionProposal) (CheckpointResult, error) {
+	outcome, err := e.applyCurrentDemuxRevisionWithValidation(ctx, "", "", revision)
+	if err != nil {
+		return CheckpointResult{}, err
+	}
+	return outcome.Result, nil
+}
+
+func (e *Engine) applyCurrentDemuxRevisionWithValidation(ctx context.Context, repoRoot, sourceRev string, revision RevisionProposal) (demuxRevisionApplyOutcome, error) {
+	if repoRoot == "" {
+		repo, err := e.vcs.ResolveJJRepo(ctx)
+		if err != nil {
+			return demuxRevisionApplyOutcome{}, err
+		}
+		repoRoot = repo.RootPath
+	}
+	stackBookmark, err := demuxStackBookmarkForRevision(ctx, e, repoRoot, revision)
+	if err != nil {
+		return demuxRevisionApplyOutcome{}, err
+	}
+	if stackBookmark != "" && sourceRev != "" {
+		already, err := e.demuxRevisionAlreadyOnTargetStack(ctx, repoRoot, stackBookmark, sourceRev, revision)
+		if err != nil {
+			if !isDemuxDedupStackUnavailable(err) {
+				return demuxRevisionApplyOutcome{}, err
+			}
+		} else if already {
+			return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+				"revision %s skipped at apply time: content already present on stack %q",
+				revision.ID, stackBookmark,
+			)), nil
+		}
+	}
+
+	opID, err := e.vcs.CurrentOperation(ctx, repoRoot)
+	if err != nil {
+		return demuxRevisionApplyOutcome{}, err
+	}
+
 	preferred := revision.SessionIDs
+	var result CheckpointResult
 	if revision.UseHunks && len(revision.Hunks) > 0 {
 		patchFile, cleanup, err := writeRevisionPatch(revision.Hunks)
 		if err != nil {
-			return CheckpointResult{}, err
+			return demuxRevisionApplyOutcome{}, err
 		}
 		defer cleanup()
-		return e.Checkpoint(ctx, CheckpointOptions{
-			Intent:              revision.Intent,
-			Hunk:                true,
-			PatchFile:           patchFile,
-			PreferredSessionIDs: preferred,
+		result, err = e.Checkpoint(ctx, CheckpointOptions{
+			Intent:                 revision.Intent,
+			Hunk:                   true,
+			PatchFile:              patchFile,
+			PreferredSessionIDs:    preferred,
+			BookmarkRecordedCommit: true,
+		})
+	} else {
+		result, err = e.Checkpoint(ctx, CheckpointOptions{
+			Intent:                 revision.Intent,
+			Filesets:               revision.Files,
+			PreferredSessionIDs:    preferred,
+			BookmarkRecordedCommit: true,
 		})
 	}
-	return e.Checkpoint(ctx, CheckpointOptions{
-		Intent:              revision.Intent,
-		Filesets:            revision.Files,
-		PreferredSessionIDs: preferred,
-	})
+	if err != nil {
+		if restoreErr := e.restoreDemuxRevisionAttempt(ctx, repoRoot, opID); restoreErr != nil {
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("%w; additionally failed to restore jj operation %s: %v", err, opID, restoreErr)
+		}
+		return demuxRevisionApplyOutcome{}, err
+	}
+	if validateErr := e.validateDemuxCheckpointResult(ctx, repoRoot, revision, result, stackBookmark, sourceRev); validateErr != nil {
+		if restoreErr := e.restoreDemuxRevisionAttempt(ctx, repoRoot, opID); restoreErr != nil {
+			if isDemuxRevisionAlreadyApplied(validateErr) {
+				return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+					"revision %s skipped at apply time: %v",
+					revision.ID, validateErr,
+				)), nil
+			}
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("%w; additionally failed to restore jj operation %s: %v", validateErr, opID, restoreErr)
+		}
+		if isDemuxRevisionAlreadyApplied(validateErr) {
+			return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+				"revision %s skipped at apply time: content already present on stack %q",
+				revision.ID, stackBookmark,
+			)), nil
+		}
+		return demuxRevisionApplyOutcome{}, validateErr
+	}
+	return demuxOutcomeFromCheckpoint(result), nil
 }
 
-func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxProposal, revision RevisionProposal) (CheckpointResult, error) {
+func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxProposal, revision RevisionProposal) (demuxRevisionApplyOutcome, error) {
 	target := routeTargetStack(revision)
 	router, err := e.demuxRouter(ctx, proposal.RepoRoot)
 	if err != nil {
-		return CheckpointResult{}, err
+		return demuxRevisionApplyOutcome{}, err
 	}
 	targetStack := router.lookup(target)
 	targetBookmark := ""
@@ -558,21 +627,41 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 	}
 	sourceChange, err := e.vcs.CurrentChange(ctx, proposal.RepoRoot, "@")
 	if err != nil {
-		return CheckpointResult{}, err
+		return demuxRevisionApplyOutcome{}, err
 	}
 	source, err := e.demuxApplySourceLocation(ctx, sourceChange)
 	if err != nil {
-		return CheckpointResult{}, err
+		return demuxRevisionApplyOutcome{}, err
 	}
 	if source.matches(target) {
-		return e.applyCurrentDemuxRevision(ctx, revision)
+		return e.applyCurrentDemuxRevisionWithValidation(ctx, proposal.RepoRoot, proposal.ProposedCommitID, revision)
 	}
 	files := cleanFiles(revision.Files)
 	if len(files) == 0 {
-		return CheckpointResult{}, fmt.Errorf("route requires files for revision %s", revision.ID)
+		return demuxRevisionApplyOutcome{}, fmt.Errorf("route requires files for revision %s", revision.ID)
 	}
 	sourceRev := firstNonEmpty(proposal.ProposedCommitID, sourceChange.ChangeID)
 	sourceIgnored := demuxPreflightIgnoredPaths(proposal.RepoRoot)
+
+	if targetBookmark != "" {
+		already, err := e.demuxRevisionAlreadyOnTargetStack(ctx, proposal.RepoRoot, targetBookmark, sourceRev, revision)
+		if err != nil {
+			if !isDemuxDedupStackUnavailable(err) {
+				return demuxRevisionApplyOutcome{}, err
+			}
+		} else if already {
+			if err := source.restore(ctx, e, proposal.RepoRoot); err != nil {
+				return demuxRevisionApplyOutcome{}, fmt.Errorf("return to source %s: %w", source.label(), err)
+			}
+			if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", files); err != nil {
+				return demuxRevisionApplyOutcome{}, fmt.Errorf("remove already-applied files from source %s: %w", source.label(), err)
+			}
+			return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+				"revision %s skipped at apply time: content already present on stack %q",
+				revision.ID, targetBookmark,
+			)), nil
+		}
+	}
 
 	restoreSource := func() error {
 		if err := source.restore(ctx, e, proposal.RepoRoot); err != nil {
@@ -590,39 +679,60 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 		return cause
 	}
 
+	opID, err := e.vcs.CurrentOperation(ctx, proposal.RepoRoot)
+	if err != nil {
+		return demuxRevisionApplyOutcome{}, err
+	}
+
 	if targetStack != nil {
 		if _, err := e.Switch(ctx, target); err != nil {
-			return CheckpointResult{}, fmt.Errorf("switch to routed target %q: %w", target, err)
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("switch to routed target %q: %w", target, err)
 		}
 		if err := e.vcs.NewRevisionChild(ctx, proposal.RepoRoot); err != nil {
-			return CheckpointResult{}, restoreAfterError(fmt.Errorf("prepare empty child on routed target %q: %w", target, err))
+			return demuxRevisionApplyOutcome{}, restoreAfterError(fmt.Errorf("prepare empty child on routed target %q: %w", target, err))
 		}
 	} else {
 		baseRef := firstNonEmpty(routeBaseStack(revision), "base")
 		resolvedBase, ok, err := e.BaseSwitchTarget(ctx, baseRef)
 		if err != nil {
-			return CheckpointResult{}, fmt.Errorf("resolve routed base %q: %w", baseRef, err)
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("resolve routed base %q: %w", baseRef, err)
 		}
 		if !ok {
 			if _, err := e.Switch(ctx, baseRef); err != nil {
-				return CheckpointResult{}, fmt.Errorf("switch to routed base %q: %w", baseRef, err)
+				return demuxRevisionApplyOutcome{}, fmt.Errorf("switch to routed base %q: %w", baseRef, err)
 			}
 			resolvedBase = baseRef
 		}
 		if err := e.vcs.NewRevisionFrom(ctx, proposal.RepoRoot, resolvedBase); err != nil {
-			return CheckpointResult{}, fmt.Errorf("prepare empty child on routed base %q: %w", baseRef, err)
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("prepare empty child on routed base %q: %w", baseRef, err)
 		}
 	}
 	targetBefore, err := e.vcs.CurrentChange(ctx, proposal.RepoRoot, "@")
 	if err != nil {
-		return CheckpointResult{}, restoreAfterError(err)
+		return demuxRevisionApplyOutcome{}, restoreAfterError(err)
 	}
 	targetFiles := demuxTargetBlockingFiles(targetBefore.Files, files, sourceIgnored)
 	if len(targetFiles) > 0 {
-		return CheckpointResult{}, restoreAfterError(fmt.Errorf("target stack %q has existing working-copy changes: %s", target, strings.Join(targetFiles, ", ")))
+		return demuxRevisionApplyOutcome{}, restoreAfterError(fmt.Errorf("target stack %q has existing working-copy changes: %s", target, strings.Join(targetFiles, ", ")))
 	}
 	if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, sourceRev, files); err != nil {
-		return CheckpointResult{}, restoreAfterError(fmt.Errorf("copy routed files to target stack %q: %w", target, err))
+		return demuxRevisionApplyOutcome{}, restoreAfterError(fmt.Errorf("copy routed files to target stack %q: %w", target, err))
+	}
+	targetAfterRestore, err := e.vcs.CurrentChange(ctx, proposal.RepoRoot, "@")
+	if err != nil {
+		return demuxRevisionApplyOutcome{}, restoreAfterError(err)
+	}
+	if len(cleanFiles(targetAfterRestore.Files)) == 0 {
+		if err := restoreSource(); err != nil {
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("return to source %s: %w", source.label(), err)
+		}
+		if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", files); err != nil {
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("remove already-applied files from source %s: %w", source.label(), err)
+		}
+		return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+			"revision %s skipped at apply time: restore produced no net changes on stack %q",
+			revision.ID, target,
+		)), nil
 	}
 
 	var result CheckpointResult
@@ -632,15 +742,48 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 		result, err = e.vcs.RecordCurrentRevisionInNewStack(ctx, newStackRouteName(revision), newStackRouteBookmark(revision), routeBaseStack(revision), revision.Intent, revision.SessionIDs)
 	}
 	if err != nil {
-		return CheckpointResult{}, restoreAfterError(err)
+		if restoreErr := e.restoreDemuxRevisionAttempt(ctx, proposal.RepoRoot, opID); restoreErr != nil {
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("%w; additionally failed to restore jj operation %s: %v", err, opID, restoreErr)
+		}
+		return demuxRevisionApplyOutcome{}, restoreAfterError(err)
+	}
+	if validateErr := e.validateDemuxCheckpointResult(ctx, proposal.RepoRoot, revision, result, targetBookmark, sourceRev); validateErr != nil {
+		if restoreErr := e.restoreDemuxRevisionAttempt(ctx, proposal.RepoRoot, opID); restoreErr != nil {
+			if isDemuxRevisionAlreadyApplied(validateErr) {
+				if err := restoreSource(); err != nil {
+					return demuxRevisionApplyOutcome{}, err
+				}
+				if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", files); err != nil {
+					return demuxRevisionApplyOutcome{}, err
+				}
+				return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+					"revision %s skipped at apply time: content already present on stack %q",
+					revision.ID, targetBookmark,
+				)), nil
+			}
+			return demuxRevisionApplyOutcome{}, fmt.Errorf("%w; additionally failed to restore jj operation %s: %v", validateErr, opID, restoreErr)
+		}
+		if isDemuxRevisionAlreadyApplied(validateErr) {
+			if err := restoreSource(); err != nil {
+				return demuxRevisionApplyOutcome{}, err
+			}
+			if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", files); err != nil {
+				return demuxRevisionApplyOutcome{}, err
+			}
+			return demuxSkippedCheckpoint(revision, fmt.Sprintf(
+				"revision %s skipped at apply time: content already present on stack %q",
+				revision.ID, targetBookmark,
+			)), nil
+		}
+		return demuxRevisionApplyOutcome{}, restoreAfterError(validateErr)
 	}
 	if err := source.restore(ctx, e, proposal.RepoRoot); err != nil {
-		return CheckpointResult{}, fmt.Errorf("return to source %s: %w", source.label(), err)
+		return demuxRevisionApplyOutcome{}, fmt.Errorf("return to source %s: %w", source.label(), err)
 	}
 	if err := e.vcs.RestorePathsFromRevision(ctx, proposal.RepoRoot, "@-", files); err != nil {
-		return CheckpointResult{}, fmt.Errorf("remove routed files from source %s: %w", source.label(), err)
+		return demuxRevisionApplyOutcome{}, fmt.Errorf("remove routed files from source %s: %w", source.label(), err)
 	}
-	return result, nil
+	return demuxOutcomeFromCheckpoint(result), nil
 }
 
 func demuxTargetBlockingFiles(targetFiles []string, revisionFiles []string, sourceIgnored map[string]struct{}) []string {
