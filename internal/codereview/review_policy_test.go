@@ -10,6 +10,64 @@ import (
 	"time"
 )
 
+func TestParseReviewRiskPaths(t *testing.T) {
+	text := strings.Join([]string{
+		"# Review",
+		"",
+		"## high-risk paths",
+		"",
+		"risk-path: internal/auth/** — auth changes can leak or misuse credentials",
+		"risk-path: internal/payments/* - payment flow changes need careful review",
+		"",
+		"## Other",
+		"risk-path: ignored/outside-section — should not parse",
+	}, "\n")
+	paths := parseReviewRiskPaths(text)
+	if len(paths) != 2 {
+		t.Fatalf("paths = %#v, want 2 entries", paths)
+	}
+	if paths[0].Glob != "internal/auth/**" || !strings.Contains(paths[0].Message, "auth changes") {
+		t.Fatalf("paths[0] = %#v", paths[0])
+	}
+	if paths[1].Glob != "internal/payments/*" {
+		t.Fatalf("paths[1] = %#v", paths[1])
+	}
+}
+
+func TestMatchRiskPathGlob(t *testing.T) {
+	cases := []struct {
+		pattern string
+		file    string
+		want    bool
+	}{
+		{"internal/auth/**", "internal/auth/session.go", true},
+		{"internal/auth/**", "internal/auth/nested/token.go", true},
+		{"internal/auth/**", "internal/storage/auth.go", false},
+		{"internal/payments/*", "internal/payments/handler.go", true},
+		{"**/Dockerfile", "deploy/Dockerfile", true},
+	}
+	for _, tc := range cases {
+		if got := MatchRiskPathGlob(tc.pattern, tc.file); got != tc.want {
+			t.Fatalf("MatchRiskPathGlob(%q, %q) = %v, want %v", tc.pattern, tc.file, got, tc.want)
+		}
+	}
+}
+
+func TestLoadReviewPolicyParsesRiskPaths(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "REVIEW.md", strings.Join([]string{
+		"## high-risk paths",
+		"risk-path: internal/auth/** — auth changes can leak or misuse credentials",
+	}, "\n"))
+	policy := LoadReviewPolicy(context.Background(), root)
+	if len(policy.RiskPaths) != 1 {
+		t.Fatalf("RiskPaths = %#v, want one entry", policy.RiskPaths)
+	}
+	if policy.RiskPaths[0].Glob != "internal/auth/**" {
+		t.Fatalf("RiskPaths[0] = %#v", policy.RiskPaths[0])
+	}
+}
+
 func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "<html><body><h1>Review reference</h1><p>Check authorization before side effects.</p></body></html>")

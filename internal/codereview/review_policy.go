@@ -33,7 +33,14 @@ type ReviewPolicy struct {
 	URLs        []string          `json:"urls,omitempty"`
 	References  []ReviewReference `json:"references,omitempty"`
 	ModelHints  []ReviewModelHint `json:"model_hints,omitempty"`
+	RiskPaths   []RiskPath        `json:"risk_paths,omitempty"`
 	Diagnostics []string          `json:"diagnostics,omitempty"`
+}
+
+type RiskPath struct {
+	Glob    string `json:"glob,omitempty"`
+	Message string `json:"message,omitempty"`
+	Raw     string `json:"raw,omitempty"`
 }
 
 type ReviewReference struct {
@@ -68,6 +75,7 @@ func LoadReviewPolicy(ctx context.Context, repoRoot string) ReviewPolicy {
 		Summarized: summarized,
 		URLs:       extractReviewPolicyURLs(text),
 		ModelHints: parseReviewModelHints(text),
+		RiskPaths:  parseReviewRiskPaths(text),
 	}
 	if summarized {
 		policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s summarized from %d byte(s)", reviewPolicyPath, len(data)))
@@ -220,6 +228,7 @@ var (
 	htmlScriptPattern  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
 	htmlStylePattern   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 	reviewModelPattern = regexp.MustCompile(`(?i)\b(?:(openai|anthropic):)?((?:gpt|o)[A-Za-z0-9._-]*|(?:anthropic\.)?claude[A-Za-z0-9._-]*)\b`)
+	reviewRiskPathPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*(?:—|-)\s*(.+?)\s*$`)
 )
 
 func extractReviewPolicyURLs(text string) []string {
@@ -238,6 +247,96 @@ func extractReviewPolicyURLs(text string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func parseReviewRiskPaths(text string) []RiskPath {
+	inSection := false
+	seen := map[string]struct{}{}
+	var out []RiskPath
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "#") {
+			heading := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+			inSection = strings.Contains(heading, "high-risk paths") || strings.Contains(heading, "high risk paths")
+			continue
+		}
+		if lower == "high-risk paths" || lower == "high risk paths" {
+			inSection = true
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(lower, "#") {
+			inSection = false
+			continue
+		}
+		match := reviewRiskPathPattern.FindStringSubmatch(line)
+		if len(match) != 3 {
+			continue
+		}
+		glob := strings.TrimSpace(match[1])
+		message := strings.TrimSpace(match[2])
+		if glob == "" || message == "" {
+			continue
+		}
+		key := glob + "\x00" + message
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, RiskPath{
+			Glob:    glob,
+			Message: message,
+			Raw:     trimmed,
+		})
+	}
+	return out
+}
+
+func MatchRiskPathGlob(pattern, file string) bool {
+	pattern = filepath.ToSlash(strings.TrimSpace(pattern))
+	file = filepath.ToSlash(strings.TrimSpace(file))
+	if pattern == "" || file == "" {
+		return false
+	}
+	if !strings.Contains(pattern, "**") {
+		matched, err := filepath.Match(pattern, file)
+		return err == nil && matched
+	}
+	if pattern == "**" {
+		return true
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		if prefix == "" {
+			return true
+		}
+		return file == prefix || strings.HasPrefix(file, prefix+"/")
+	}
+	if strings.HasPrefix(pattern, "**/") {
+		suffix := strings.TrimPrefix(pattern, "**/")
+		if suffix == "" {
+			return true
+		}
+		return file == suffix || strings.HasSuffix(file, "/"+suffix) || strings.HasPrefix(file, suffix+"/")
+	}
+	left, right, ok := strings.Cut(pattern, "**")
+	if !ok {
+		return false
+	}
+	if left != "" && !strings.HasPrefix(file, left) {
+		return false
+	}
+	rest := strings.TrimPrefix(file, left)
+	if right != "" && !strings.HasSuffix(rest, right) {
+		return false
+	}
+	return true
 }
 
 func parseReviewModelHints(text string) []ReviewModelHint {
