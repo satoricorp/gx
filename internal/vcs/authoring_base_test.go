@@ -63,6 +63,27 @@ func TestEnsureBootstrapReadmePreservesExisting(t *testing.T) {
 	}
 }
 
+func TestBootstrapAfterGXStyleJJInit(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Joe Example")
+	runGit(t, root, "config", "user.email", "joe@example.com")
+	runJJ(t, root, "git", "init", ".")
+
+	svc := NewServiceWithRunner(ExecRunner{})
+	main := "main"
+	repo := RepoInfo{RootPath: root, BranchName: &main}
+	if err := svc.ensureAuthoringBaseRevision(context.Background(), repo, "main"); err != nil {
+		t.Fatalf("ensureAuthoringBaseRevision() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, bootstrapReadmeName)); err != nil {
+		t.Fatalf("README.md missing after bootstrap: %v", err)
+	}
+}
+
 func TestEnsureAuthoringBaseRevisionBootstrapsWithUntrackedWork(t *testing.T) {
 	if _, err := exec.LookPath("jj"); err != nil {
 		t.Skip("jj executable not found")
@@ -98,14 +119,11 @@ func TestEnsureAuthoringBaseRevisionBootstrapsWithUntrackedWork(t *testing.T) {
 	if got, want := string(data), "# "+baseName+"\n"; got != want {
 		t.Fatalf("README content = %q, want %q", got, want)
 	}
-	gitLogCmd := exec.Command("git", "log", "-1", "--format=%s")
+	gitLogCmd := exec.Command("git", "log", "--reverse", "-1", "--format=%s")
 	gitLogCmd.Dir = root
 	out, err := gitLogCmd.CombinedOutput()
 	if err != nil {
-		allCmd := exec.Command("git", "log", "--oneline", "--all")
-		allCmd.Dir = root
-		allOut, _ := allCmd.CombinedOutput()
-		t.Fatalf("git log after bootstrap: %v\n%s\nall:\n%s", err, out, allOut)
+		t.Fatalf("git log after bootstrap: %v\n%s", err, out)
 	}
 	if strings.TrimSpace(string(out)) != bootstrapInitCommitMessage {
 		t.Fatalf("initial commit message = %q, want %q", strings.TrimSpace(string(out)), bootstrapInitCommitMessage)
@@ -183,7 +201,6 @@ func TestEnsureAuthoringCheckoutBootstrapsUnbornBase(t *testing.T) {
 		t.Fatalf("ensureAuthoringCheckout() = (%q, %q), want (main, base)", ref, mode)
 	}
 }
-
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()

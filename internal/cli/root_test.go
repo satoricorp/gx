@@ -1829,7 +1829,9 @@ func TestGenerateAutoInitializesGitRepo(t *testing.T) {
 	runGitTest(t, root, "commit", "-m", "initial")
 	writeTestFile(t, root, "README.md", "# repo\n\nchanged\n")
 	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
+	gxHome := t.TempDir()
+	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TERM", "dumb")
@@ -1857,6 +1859,100 @@ func TestGenerateAutoInitializesGitRepo(t *testing.T) {
 	}
 	if _, ok := payload["proposal"].(map[string]any); !ok {
 		t.Fatalf("generate JSON missing proposal:\n%s", out.String())
+	}
+}
+
+func TestRequireAuthoringBaseBootstrapsUnbornRepo(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	writeTestFile(t, root, "internal/foo.go", "package foo\n")
+	t.Chdir(root)
+	gxHome := t.TempDir()
+	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	if _, err := authoring.NewEngine().Init(context.Background(), authoring.InitOptions{}); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	if err := authoring.NewEngine().RequireAuthoringBase(context.Background(), "gx generate"); err != nil {
+		t.Fatalf("RequireAuthoringBase() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "README.md")); err != nil {
+		t.Fatalf("README.md missing after bootstrap: %v", err)
+	}
+	jjOut, err := exec.Command("jj", "bookmark", "list").CombinedOutput()
+	if err != nil {
+		t.Fatalf("jj bookmark list: %v\n%s", err, jjOut)
+	}
+	if !strings.Contains(string(jjOut), "main") {
+		t.Fatalf("jj bookmark list missing main:\n%s", jjOut)
+	}
+}
+
+func TestGenerateBootstrapsUnbornGitRepo(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	writeTestFile(t, root, "internal/foo.go", "package foo\n")
+	t.Chdir(root)
+	gxHome := t.TempDir()
+	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("TERM", "dumb")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	cmd := NewRoot(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"generate", "--json", "--intent", "bootstrap unborn"})
+
+	if err := cmd.Execute(); err != nil {
+		jjOut, _ := exec.Command("jj", "bookmark", "list").CombinedOutput()
+		gitOut, _ := exec.Command("git", "log", "--oneline", "--all").CombinedOutput()
+		readmeStat := "missing"
+		if _, statErr := os.Stat(filepath.Join(root, "README.md")); statErr == nil {
+			readmeStat = "present"
+		}
+		t.Fatalf("gx generate error = %v\nreadme=%s\njj bookmarks:\n%s\ngit log:\n%s\ngx output:\n%s", err, readmeStat, jjOut, gitOut, out.String())
+	}
+	readmePath := filepath.Join(root, "README.md")
+	data, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("README.md missing after bootstrap: %v\n%s", err, out.String())
+	}
+	baseName := filepath.Base(root)
+	if got, want := string(data), "# "+baseName+"\n"; got != want {
+		t.Fatalf("README content = %q, want %q", got, want)
+	}
+	if outLog, err := exec.Command("git", "-C", root, "log", "--reverse", "-1", "--format=%s").CombinedOutput(); err != nil {
+		t.Fatalf("git log after bootstrap: %v\n%s", err, outLog)
+	} else if strings.TrimSpace(string(outLog)) != "init commit" {
+		t.Fatalf("initial commit message = %q, want %q", strings.TrimSpace(string(outLog)), "init commit")
+	}
+}
+
+func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
+	t.Helper()
+	if err := os.MkdirAll(gxHome, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	content := fmt.Sprintf(`{"user":{"name":%q,"email":%q}}`, name, email)
+	if err := os.WriteFile(filepath.Join(gxHome, "config.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 }
 
@@ -2196,7 +2292,7 @@ func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	cmd := exec.Command("git", "init")
+	cmd := exec.Command("git", "init", "-b", "main")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init error = %v\n%s", err, out)
