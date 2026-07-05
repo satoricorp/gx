@@ -1813,6 +1813,9 @@ func (s *Service) RequireAuthoringBase(ctx context.Context, commandName string) 
 
 func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, commandName string) (string, string, error) {
 	result := s.baseResult(ctx, repo)
+	if err := s.requireBaseRevision(ctx, repo, result.BaseRef, commandName); err != nil {
+		return "", "", err
+	}
 	current := strings.TrimSpace(result.CurrentRef)
 	if current == "" {
 		current = "(detached)"
@@ -1844,6 +1847,23 @@ func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, co
 		}
 	}
 	return "", "", fmt.Errorf("%s must run from %s; currently on %q. Run `gx base --set %s` to return to the GX authoring checkout", commandName, gxAuthoringCheckoutRef(result.BaseRef), current, result.BaseRef)
+}
+
+// requireBaseRevision fails fast with an actionable message when the authoring
+// base branch does not resolve to any commit (for example a brand-new
+// repository whose default branch has no commits yet). Without this gate the
+// failure surfaces much later as a raw jj revset error, or worse, an
+// interactive retry prompt that looks like a hang.
+func (s *Service) requireBaseRevision(ctx context.Context, repo RepoInfo, baseRef, commandName string) error {
+	baseRef = strings.TrimSpace(baseRef)
+	if baseRef == "" {
+		return nil
+	}
+	exists, err := s.RevisionExists(ctx, repo.RootPath, baseRef)
+	if err != nil || exists {
+		return nil
+	}
+	return fmt.Errorf("%s requires base branch %q to have at least one commit, but it does not resolve to any revision. If this is a brand-new repository, create an initial commit on %q first (for example `git commit -m \"initial commit\"`), then rerun %s", commandName, baseRef, baseRef, commandName)
 }
 
 func vcsPluralize(word string, count int) string {
