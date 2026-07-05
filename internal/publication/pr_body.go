@@ -112,14 +112,19 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	if err != nil {
 		return "", err
 	}
-	findings := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext)
-	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings), nil
+	findings, _, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext)
+	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, aiSucceeded), nil
 }
 
-func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding) string {
-	items := needsReviewItems(artifact, catalog, findings, summaryContext)
+func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, aiSucceeded bool) string {
+	triage := triageChangeFromCatalog(catalog)
+	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded)
+	includeHeuristics := verdict != "No review needed"
+	items := needsReviewItems(artifact, catalog, findings, summaryContext, includeHeuristics)
 	var body strings.Builder
 	body.WriteString(githubPRBodyMarker)
+	body.WriteString("\n\n")
+	body.WriteString(fmt.Sprintf("**Review verdict: %s** — %s.", verdict, reason))
 	body.WriteString("\n\n")
 	body.WriteString(openingSummary(artifact, catalog, items, summaryContext))
 	body.WriteString("\n\n## Needs Review\n\n")
@@ -201,7 +206,58 @@ func contextSentence(summaryContext prSummaryContext) string {
 	return "Context used: " + strings.Join(limitStrings(sortedUnique(summaryContext.Sources), 4), ", ") + "."
 }
 
-func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext) []prNeedsReviewItem {
+func triageChangeFromCatalog(catalog prBodyCatalog) codereview.ChangeTriage {
+	snippets := make([]codereview.DiffSnippet, 0, len(catalog.Hunks))
+	for _, hunk := range catalog.Hunks {
+		snippets = append(snippets, codereview.DiffSnippet{File: hunk.File, Diff: hunk.Patch})
+	}
+	return codereview.TriageChange(catalog.Files, snippets, codereview.Options{})
+}
+
+func reviewVerdict(triage codereview.ChangeTriage, stats prBodyStats, findings []codereview.Finding, aiSucceeded bool) (string, string) {
+	triageReason := strings.Join(triage.Rationale, "; ")
+	if triageReason == "" {
+		triageReason = triage.Class + " change"
+	}
+	if triage.Class == "security-sensitive" {
+		return "Full review", triageReason + "; security-sensitive change"
+	}
+	if stats.MaxRiskLevel == "high" {
+		return "Full review", triageReason + "; high blast radius"
+	}
+	if hasStrongOrBlockingFinding(findings) {
+		return "Full review", triageReason + "; strong or blocking findings present"
+	}
+	if aiSucceeded && isLowImpactTriageClass(triage.Class) && stats.WarningCount == 0 && stats.MaxRiskLevel == "low" {
+		detail := fmt.Sprintf("%s (%d file(s))", triage.Class, stats.FileCount)
+		return "No review needed", detail + ", no warnings, no findings"
+	}
+	if !aiSucceeded {
+		return "Quick scan", triageReason + "; AI review unavailable"
+	}
+	return "Quick scan", triageReason + "; quick scan recommended"
+}
+
+func isLowImpactTriageClass(class string) bool {
+	switch class {
+	case "docs-only", "tests-only", "config-only", "mechanical":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasStrongOrBlockingFinding(findings []codereview.Finding) bool {
+	for _, finding := range findings {
+		switch strings.TrimSpace(finding.Strength) {
+		case "Blocking", "Strong":
+			return true
+		}
+	}
+	return false
+}
+
+func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext, includeHeuristics bool) []prNeedsReviewItem {
 	prURL := pullRequestURL(artifact)
 	var items []prNeedsReviewItem
 	for _, finding := range findings {
@@ -221,7 +277,9 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 			Attributions: findingAttributions(finding, summaryContext, artifact, catalog),
 		})
 	}
-	items = append(items, heuristicNeedsReviewItems(artifact, catalog)...)
+	if includeHeuristics {
+		items = append(items, heuristicNeedsReviewItems(artifact, catalog)...)
+	}
 	items = dedupeNeedsReviewItems(items)
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Score == items[j].Score {
@@ -395,23 +453,24 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 	return catalog.Stats.MaxRiskLevel == "high" || containsAny(strings.Join(catalog.Stats.RiskSignals, " "), []string{"structural", "warning:", "many_files", "many_hunks"})
 }
 
-func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) []codereview.Finding {
-	reviewer, _ := prSummaryReviewerFromEnvWithInfo()
+func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
+	reviewer, info := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
-		return nil
+		return nil, "", false, info
 	}
 	brief := prReviewBrief(artifact, catalog, summaryContext)
 	var findings []codereview.Finding
+	var overview string
 	var err error
 	if withOverview, ok := reviewer.(codereview.AIReviewerWithOverview); ok {
-		_, findings, err = withOverview.ReviewWithOverview(ctx, brief)
+		overview, findings, err = withOverview.ReviewWithOverview(ctx, brief)
 	} else {
 		findings, err = reviewer.Review(ctx, brief)
 	}
 	if err != nil {
-		return nil
+		return nil, "", false, info
 	}
-	return findings
+	return findings, overview, true, info
 }
 
 func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext) codereview.ReviewBrief {

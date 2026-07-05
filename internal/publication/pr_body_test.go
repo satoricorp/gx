@@ -52,6 +52,9 @@ func TestGitHubPullRequestBodyAllowsZeroNeedsReviewTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
 	}
+	if !strings.Contains(body, "**Review verdict: Quick scan**") {
+		t.Fatalf("body missing quick scan verdict for unavailable AI:\n%s", body)
+	}
 	if !strings.Contains(body, "No specific high-impact review targets surfaced") {
 		t.Fatalf("body did not render zero-target state:\n%s", body)
 	}
@@ -272,6 +275,145 @@ func TestFindingAttributionsEmptyPRURLPlainText(t *testing.T) {
 	if !strings.Contains(rendered, "internal/storage/schema.go:42") {
 		t.Fatalf("renderAttributions() = %q, want plain file:line label", rendered)
 	}
+}
+
+func TestReviewVerdictDocsOnlyWithSuccessfulAI(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "**Review verdict: No review needed**") {
+		t.Fatalf("body missing no-review verdict:\n%s", body)
+	}
+}
+
+func TestReviewVerdictDocsOnlyWithReviewerError(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{err: fmt.Errorf("model unavailable")}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "**Review verdict: Quick scan**") {
+		t.Fatalf("body missing quick scan verdict:\n%s", body)
+	}
+	if strings.Contains(body, "**Review verdict: No review needed**") {
+		t.Fatalf("body should not grant no-review when AI failed:\n%s", body)
+	}
+}
+
+func TestReviewVerdictStrongFinding(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{findings: []codereview.Finding{{
+			Title:    "Verify auth handling",
+			Summary:  "Session token validation changed.",
+			Strength: "Strong",
+			File:     "internal/auth/session.go",
+			Line:     2,
+		}}}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	prURL := "https://github.com/satoricorp/gx/pull/20"
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Files: []string{"internal/auth/session.go"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "**Review verdict: Full review**") {
+		t.Fatalf("body missing full review verdict:\n%s", body)
+	}
+}
+
+func TestTriageChangeFromCatalogTestsOnly(t *testing.T) {
+	catalog := buildPRBodyCatalog(reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Stack: []reviewbundle.StackPayload{{
+			Patch: strings.Join([]string{
+				"diff --git a/internal/app/app_test.go b/internal/app/app_test.go",
+				"--- a/internal/app/app_test.go",
+				"+++ b/internal/app/app_test.go",
+				"@@ -1 +1,2 @@",
+				" package app",
+				"+func TestMore() {}",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{Files: []string{"internal/app/app_test.go"}},
+		}},
+	}))
+	triage := triageChangeFromCatalog(catalog)
+	if triage.Class != "tests-only" {
+		t.Fatalf("Class = %q, want tests-only", triage.Class)
+	}
+}
+
+func docsOnlyPRArtifact() reviewbundle.Artifact {
+	prURL := "https://github.com/satoricorp/gx/pull/12"
+	return reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
+		Push: reviewbundle.PushPayload{
+			HeadCommitID:         "abc123",
+			GitHubPullRequestURL: &prURL,
+		},
+		Stack: []reviewbundle.StackPayload{{
+			BranchName: "docs/demo",
+			Patch: strings.Join([]string{
+				"diff --git a/docs/demo.md b/docs/demo.md",
+				"--- a/docs/demo.md",
+				"+++ b/docs/demo.md",
+				"@@ -1,2 +1,3 @@",
+				" # Demo",
+				"+Small docs clarification.",
+				"",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{
+				CurrentCommitID: "abc123",
+				Description:     "clarify docs",
+				Files:           []string{"docs/demo.md"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	})
 }
 
 func TestSpeculativeFindingsDroppedFromPRBody(t *testing.T) {
