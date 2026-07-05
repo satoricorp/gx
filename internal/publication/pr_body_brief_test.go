@@ -16,7 +16,7 @@ func TestPRReviewBriefLabelsContextAndSourceRefs(t *testing.T) {
 	}
 	brief := prReviewBrief(reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: "/repo"},
-	}), prBodyCatalog{Files: []string{"internal/auth/session.go"}}, summaryContext, lexicalReach{})
+	}), prBodyCatalog{Files: []string{"internal/auth/session.go"}}, summaryContext, lexicalReach{}, codereview.ReviewPolicy{})
 
 	if brief.ReviewProfile != "pr_summary" {
 		t.Fatalf("ReviewProfile = %q, want pr_summary", brief.ReviewProfile)

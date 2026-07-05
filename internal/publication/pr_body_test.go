@@ -3,6 +3,8 @@ package publication
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -544,5 +546,101 @@ func TestOpeningSummaryFallsBackWhenAIFailed(t *testing.T) {
 	}
 	if !strings.Contains(body, "This PR changes") {
 		t.Fatalf("body should fall back to template change summary:\n%s", body)
+	}
+}
+
+func TestHunkImpactConfiguredRiskPath(t *testing.T) {
+	root := t.TempDir()
+	reviewMD := strings.Join([]string{
+		"## high-risk paths",
+		"risk-path: internal/auth/** — auth changes can leak or misuse credentials",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "REVIEW.md"), []byte(reviewMD), 0o644); err != nil {
+		t.Fatalf("write REVIEW.md: %v", err)
+	}
+	policy := codereview.LoadReviewPolicy(context.Background(), root)
+	catalog := prBodyCatalog{}
+	hunk := prHunkSummary{File: "internal/auth/session.go"}
+	score, title, detail := hunkImpact(catalog, hunk, policy)
+	if score != 700 {
+		t.Fatalf("score = %d, want 700", score)
+	}
+	if !strings.Contains(detail, "internal/auth/**") || !strings.Contains(detail, "session.go") {
+		t.Fatalf("detail = %q, want matched glob and file", detail)
+	}
+	if !strings.Contains(detail, "auth changes can leak or misuse credentials") {
+		t.Fatalf("detail = %q, want configured message", detail)
+	}
+	if title == "" {
+		t.Fatalf("title = %q, want non-empty title derived from message", title)
+	}
+}
+
+func TestHunkImpactGenericFallbackWithoutReviewPolicy(t *testing.T) {
+	policy := codereview.ReviewPolicy{}
+	catalog := prBodyCatalog{}
+	hunk := prHunkSummary{File: "pkg/session/token.go"}
+	score, title, detail := hunkImpact(catalog, hunk, policy)
+	if score != 650 {
+		t.Fatalf("score = %d, want 650 for generic auth pattern", score)
+	}
+	if !strings.Contains(title, "token.go") {
+		t.Fatalf("title = %q, want basename", title)
+	}
+	if !strings.Contains(detail, "auth|token|secret|credential") || !strings.Contains(detail, "pkg/session/token.go") {
+		t.Fatalf("detail = %q, want generic pattern and file path", detail)
+	}
+}
+
+func TestGitHubPullRequestBodyUsesConfiguredRiskPath(t *testing.T) {
+	root := t.TempDir()
+	reviewMD := strings.Join([]string{
+		"## high-risk paths",
+		"risk-path: internal/billing/** — billing changes can mischarge customers",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, "REVIEW.md"), []byte(reviewMD), 0o644); err != nil {
+		t.Fatalf("write REVIEW.md: %v", err)
+	}
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return nil, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	prURL := "https://github.com/example/acme/pull/1"
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Event:         "gx.pr",
+		SchemaVersion: reviewbundle.SchemaVersion,
+		Repo:          reviewbundle.RepoPayload{RootPath: root},
+		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: strings.Join([]string{
+				"diff --git a/internal/billing/charge.go b/internal/billing/charge.go",
+				"--- a/internal/billing/charge.go",
+				"+++ b/internal/billing/charge.go",
+				"@@ -1 +1,2 @@",
+				" package billing",
+				"+func Charge() {}",
+			}, "\n"),
+			Change: reviewbundle.ChangePayload{
+				Files: []string{"internal/billing/charge.go"},
+			},
+			GitHubPullRequestURL: &prURL,
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "billing changes can mischarge customers") {
+		t.Fatalf("body missing configured risk-path message:\n%s", body)
+	}
+	if !strings.Contains(body, "internal/billing/**") {
+		t.Fatalf("body missing matched glob:\n%s", body)
 	}
 }

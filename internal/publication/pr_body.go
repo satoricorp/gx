@@ -114,19 +114,20 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	catalog := buildPRBodyCatalog(artifact)
 	reach := computeLexicalReach(ctx, artifact.Bundle.Repo.RootPath, catalog, artifact)
 	applyLexicalReachToStats(&catalog.Stats, reach)
+	policy := codereview.LoadReviewPolicy(ctx, artifact.Bundle.Repo.RootPath)
 	summaryContext, err := collectPRSummaryContext(ctx, artifact, catalog)
 	if err != nil {
 		return "", err
 	}
-	findings, overview, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach)
-	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, overview, aiSucceeded, reach), nil
+	findings, overview, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach, policy)
+	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, overview, aiSucceeded, reach, policy), nil
 }
 
-func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, overview string, aiSucceeded bool, reach lexicalReach) string {
+func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, overview string, aiSucceeded bool, reach lexicalReach, policy codereview.ReviewPolicy) string {
 	triage := triageChangeFromCatalog(catalog)
 	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded)
 	includeHeuristics := verdict != "No review needed"
-	items := needsReviewItems(artifact, catalog, findings, summaryContext, includeHeuristics)
+	items := needsReviewItems(artifact, catalog, findings, summaryContext, includeHeuristics, policy)
 	var body strings.Builder
 	body.WriteString(githubPRBodyMarker)
 	body.WriteString("\n\n")
@@ -292,7 +293,7 @@ func hasStrongOrBlockingFinding(findings []codereview.Finding) bool {
 	return false
 }
 
-func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext, includeHeuristics bool) []prNeedsReviewItem {
+func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext, includeHeuristics bool, policy codereview.ReviewPolicy) []prNeedsReviewItem {
 	prURL := pullRequestURL(artifact)
 	var items []prNeedsReviewItem
 	for _, finding := range findings {
@@ -313,7 +314,7 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 		})
 	}
 	if includeHeuristics {
-		items = append(items, heuristicNeedsReviewItems(artifact, catalog)...)
+		items = append(items, heuristicNeedsReviewItems(artifact, catalog, policy)...)
 	}
 	items = dedupeNeedsReviewItems(items)
 	sort.SliceStable(items, func(i, j int) bool {
@@ -399,7 +400,7 @@ func sanitizePRVisibleText(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog) []prNeedsReviewItem {
+func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, policy codereview.ReviewPolicy) []prNeedsReviewItem {
 	var candidates []prNeedsReviewItem
 	for _, warning := range reviewWarnings(artifact) {
 		file := firstNonEmpty(warning.FromFile, warning.ToFile)
@@ -428,7 +429,7 @@ func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCat
 		})
 	}
 	for _, hunk := range catalog.Hunks {
-		score, title, detail := hunkImpact(catalog, hunk)
+		score, title, detail := hunkImpact(catalog, hunk, policy)
 		if score == 0 {
 			continue
 		}
@@ -464,23 +465,75 @@ func heuristicNeedsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCat
 	return candidates
 }
 
-func hunkImpact(catalog prBodyCatalog, hunk prHunkSummary) (int, string, string) {
+func hunkImpact(catalog prBodyCatalog, hunk prHunkSummary, policy codereview.ReviewPolicy) (int, string, string) {
 	file := strings.TrimSpace(hunk.File)
-	switch {
-	case strings.HasPrefix(file, "internal/storage/") || strings.Contains(file, "schema"):
-		return 720, "Verify storage and schema behavior", "Storage and schema changes can affect existing repositories and status/read-model correctness across GX."
-	case strings.HasPrefix(file, "internal/github/"):
-		return 700, "Verify GitHub API behavior", "This code talks to GitHub, so review auth, ownership, retry/error behavior, and whether user-authored PR content is preserved."
-	case strings.HasPrefix(file, "internal/publication/"):
-		return 690, "Verify publication side effects", "Publication code coordinates GX Cloud, local artifacts, and GitHub updates. Review ordering and partial-failure behavior."
-	case strings.HasPrefix(file, "internal/vcs/"):
-		return 660, "Verify stack publish state changes", "VCS service changes affect branch push, PR creation, and local metadata. Review state transitions and failure paths."
-	case strings.HasPrefix(file, "internal/auth") || strings.Contains(file, "token"):
-		return 650, "Verify auth handling", "Auth changes can leak, drop, or misuse credentials. Review token lookup and error reporting."
-	case catalog.Stats.MaxRiskLevel == "high" && hunk.NewLines+hunk.OldLines >= 40:
-		return 500, "Review large high-risk hunk", "This is one of the larger hunks in a high-risk stack and may hide cross-cutting behavior."
-	default:
+	if file == "" {
 		return 0, "", ""
+	}
+	base := path.Base(file)
+	lowerFile := strings.ToLower(file + " " + base)
+
+	for _, riskPath := range policy.RiskPaths {
+		if !codereview.MatchRiskPathGlob(riskPath.Glob, file) {
+			continue
+		}
+		title := riskPathTitle(riskPath.Message, base)
+		detail := fmt.Sprintf("%s (matched `%s` in %s).", strings.TrimSpace(riskPath.Message), riskPath.Glob, file)
+		return 700, title, trimSentence(detail, 240)
+	}
+
+	if containsAny(lowerFile, []string{"auth", "token", "secret", "credential"}) {
+		pattern := "auth|token|secret|credential"
+		title := fmt.Sprintf("Verify auth handling in %s", base)
+		detail := fmt.Sprintf("Path or filename matches generic pattern %q in %s; auth changes can leak, drop, or misuse credentials.", pattern, file)
+		return 650, title, trimSentence(detail, 240)
+	}
+	if containsAny(lowerFile, []string{"migration", "schema"}) {
+		pattern := "migration|schema"
+		title := fmt.Sprintf("Verify schema change in %s", base)
+		detail := fmt.Sprintf("Path matches generic pattern %q in %s; schema changes can break persistence or migrations.", pattern, file)
+		return 670, title, trimSentence(detail, 240)
+	}
+	if strings.Contains(lowerFile, "dockerfile") || strings.Contains(lowerFile, ".github/workflows") || strings.Contains(lowerFile, "deploy") {
+		pattern := "Dockerfile|.github/workflows|deploy"
+		title := fmt.Sprintf("Verify deployment change in %s", base)
+		detail := fmt.Sprintf("Path matches generic pattern %q in %s; deployment changes can alter runtime or CI behavior.", pattern, file)
+		return 660, title, trimSentence(detail, 240)
+	}
+	if isGenericLockfilePath(lowerFile) {
+		pattern := "lockfiles"
+		title := fmt.Sprintf("Verify lockfile change in %s", base)
+		detail := fmt.Sprintf("Filename matches generic pattern %q in %s; dependency lockfile changes can alter build or runtime versions.", pattern, file)
+		return 640, title, trimSentence(detail, 240)
+	}
+	if catalog.Stats.MaxRiskLevel == "high" && hunk.NewLines+hunk.OldLines >= 40 {
+		title := fmt.Sprintf("Review large high-risk hunk in %s", base)
+		detail := fmt.Sprintf("%s is one of the larger hunks in a high-risk stack and may hide cross-cutting behavior.", file)
+		return 500, title, trimSentence(detail, 240)
+	}
+	return 0, "", ""
+}
+
+func riskPathTitle(message, base string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return fmt.Sprintf("Verify change in %s", base)
+	}
+	if idx := strings.IndexAny(message, ".;"); idx > 0 {
+		clause := strings.TrimSpace(message[:idx])
+		if clause != "" {
+			return "Verify " + clause
+		}
+	}
+	return fmt.Sprintf("Verify change in %s", base)
+}
+
+func isGenericLockfilePath(file string) bool {
+	switch strings.ToLower(path.Base(file)) {
+	case "go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "cargo.lock", "gemfile.lock", "poetry.lock", "composer.lock":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -488,12 +541,12 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 	return catalog.Stats.MaxRiskLevel == "high" || containsAny(strings.Join(catalog.Stats.RiskSignals, " "), []string{"structural", "warning:", "many_files", "many_hunks"})
 }
 
-func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
+func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) ([]codereview.Finding, string, bool, codereview.ReviewerInfo) {
 	reviewer, info := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
 		return nil, "", false, info
 	}
-	brief := prReviewBrief(artifact, catalog, summaryContext, reach)
+	brief := prReviewBrief(artifact, catalog, summaryContext, reach, policy)
 	var findings []codereview.Finding
 	var overview string
 	var err error
@@ -508,7 +561,7 @@ func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact
 	return findings, overview, true, info
 }
 
-func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach) codereview.ReviewBrief {
+func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) codereview.ReviewBrief {
 	diffSnippets := make([]codereview.DiffSnippet, 0, len(catalog.Hunks))
 	for _, hunk := range catalog.Hunks {
 		diffSnippets = append(diffSnippets, codereview.DiffSnippet{File: hunk.File, Diff: hunk.Patch})
@@ -518,12 +571,20 @@ func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summar
 	}
 	snippets := append(append([]codereview.ContextSnippet(nil), summaryContext.Snippets...), lexicalReachContextSnippets(reach)...)
 	labeled := codereview.LabelContextSnippets(snippets)
+	focus := strings.Join(catalog.Files, " ")
+	if len(policy.RiskPaths) > 0 {
+		paths := make([]string, 0, len(policy.RiskPaths))
+		for _, riskPath := range policy.RiskPaths {
+			paths = append(paths, riskPath.Glob)
+		}
+		focus = focus + "; configured high-risk paths: " + strings.Join(paths, ", ")
+	}
 	return codereview.ReviewBrief{
 		RepoRoot:      artifact.Bundle.Repo.RootPath,
 		Scope:         "maintainability",
 		Depth:         "shallow",
 		ReviewProfile: "pr_summary",
-		Focus:         strings.Join(catalog.Files, " "),
+		Focus:         focus,
 		Static: codereview.StaticSnapshot{
 			FileCount:     catalog.Stats.FileCount,
 			ChangedFiles:  catalog.Files,
@@ -537,7 +598,7 @@ func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summar
 		Rubric: codereview.ArchitectureRubric{
 			Goal: "Identify the changed hunks a human should review before merging this PR.",
 			Questions: []string{
-				"Which changed hunks most affect GX's behavior, state model, remote side effects, security, or developer workflow?",
+				"Which changed hunks most affect the project's behavior, persistence/state, remote side effects, security, or developer workflow?",
 				"Which files could create user-visible or developer-visible regressions?",
 				"What exact behavior should a reviewer verify first?",
 			},
