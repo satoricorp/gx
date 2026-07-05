@@ -30,9 +30,13 @@ const (
 	githubPRAuthorNotesHeader = "## Author Notes"
 	maxPRReviewItems          = 10
 	maxPRContextSnippetSize   = 1800
+	maxPROverviewLength       = 500
 )
 
-var hunkHeaderRE = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
+var (
+	hunkHeaderRE  = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
+	prURLStripRE  = regexp.MustCompile(`https?://\S+`)
+)
 
 var prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
 	return codereview.ReviewerFromEnvWithInfo()
@@ -114,11 +118,11 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	if err != nil {
 		return "", err
 	}
-	findings, _, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach)
-	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, aiSucceeded, reach), nil
+	findings, overview, aiSucceeded, _ := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach)
+	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, findings, overview, aiSucceeded, reach), nil
 }
 
-func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, aiSucceeded bool, reach lexicalReach) string {
+func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, findings []codereview.Finding, overview string, aiSucceeded bool, reach lexicalReach) string {
 	triage := triageChangeFromCatalog(catalog)
 	verdict, reason := reviewVerdict(triage, catalog.Stats, findings, aiSucceeded)
 	includeHeuristics := verdict != "No review needed"
@@ -128,7 +132,7 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	body.WriteString("\n\n")
 	body.WriteString(fmt.Sprintf("**Review verdict: %s** — %s.", verdict, reason))
 	body.WriteString("\n\n")
-	body.WriteString(openingSummary(artifact, catalog, items, summaryContext, reach))
+	body.WriteString(openingSummary(artifact, catalog, items, summaryContext, overview, aiSucceeded, reach))
 	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach))
 	body.WriteString("\n\n## Needs Review\n\n")
 	if len(items) == 0 {
@@ -160,12 +164,31 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	return strings.TrimRight(body.String(), "\n")
 }
 
-func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, items []prNeedsReviewItem, summaryContext prSummaryContext, reach lexicalReach) string {
-	parts := []string{changeSummarySentence(artifact, catalog), readinessSentence(catalog, reach, len(items))}
+func openingSummary(artifact reviewbundle.Artifact, catalog prBodyCatalog, items []prNeedsReviewItem, summaryContext prSummaryContext, overview string, aiSucceeded bool, reach lexicalReach) string {
+	var parts []string
+	if paragraph := sanitizedOverviewParagraph(overview, aiSucceeded); paragraph != "" {
+		parts = append(parts, paragraph)
+	} else {
+		parts = append(parts, changeSummarySentence(artifact, catalog))
+	}
+	parts = append(parts, readinessSentence(catalog, reach, len(items)))
 	if context := contextSentence(summaryContext); context != "" {
 		parts = append(parts, context)
 	}
 	return strings.Join(parts, " ")
+}
+
+func sanitizedOverviewParagraph(overview string, aiSucceeded bool) string {
+	if !aiSucceeded {
+		return ""
+	}
+	overview = strings.TrimSpace(overview)
+	if overview == "" {
+		return ""
+	}
+	overview = prURLStripRE.ReplaceAllString(overview, "")
+	overview = sanitizePRVisibleText(overview)
+	return trimSentence(overview, maxPROverviewLength)
 }
 
 func changeSummarySentence(artifact reviewbundle.Artifact, catalog prBodyCatalog) string {

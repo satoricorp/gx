@@ -64,7 +64,7 @@ func TestComputeLexicalReachCountsExternalReference(t *testing.T) {
 	}
 
 	catalog.Stats = stats
-	body := renderGitHubPullRequestBody(artifact, catalog, prSummaryContext{}, nil, false, reach)
+	body := renderGitHubPullRequestBody(artifact, catalog, prSummaryContext{}, nil, "", false, reach)
 	if !strings.Contains(body, "references to changed symbols (HelloWorld)") {
 		t.Fatalf("body missing reach readiness sentence:\n%s", body)
 	}
@@ -107,7 +107,7 @@ func TestComputeLexicalReachDisabledByEnv(t *testing.T) {
 	if reach.ReferenceCount != 0 {
 		t.Fatalf("reach = %#v, want disabled", reach)
 	}
-	body := renderGitHubPullRequestBody(artifact, catalog, prSummaryContext{}, nil, false, reach)
+	body := renderGitHubPullRequestBody(artifact, catalog, prSummaryContext{}, nil, "", false, reach)
 	if strings.Contains(body, "references to changed symbols") {
 		t.Fatalf("body should fall back without reach wording:\n%s", body)
 	}

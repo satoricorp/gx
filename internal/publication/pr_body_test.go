@@ -455,3 +455,94 @@ func TestSpeculativeFindingsDroppedFromPRBody(t *testing.T) {
 		t.Fatalf("speculative finding should be dropped:\n%s", body)
 	}
 }
+
+func TestOpeningSummaryRendersOverviewFirst(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	overview := "This change clarifies publication ordering so reviewers see PR summaries before side effects complete."
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{overview: overview}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	verdictIdx := strings.Index(body, "**Review verdict:")
+	overviewIdx := strings.Index(body, overview)
+	if overviewIdx < 0 {
+		t.Fatalf("body missing overview:\n%s", body)
+	}
+	if verdictIdx >= 0 && overviewIdx < verdictIdx {
+		t.Fatalf("overview should follow verdict line:\n%s", body)
+	}
+	if strings.Contains(body, "This PR changes") {
+		t.Fatalf("body should not use template change summary when overview present:\n%s", body)
+	}
+}
+
+func TestOpeningSummaryFallsBackWithoutOverview(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if !strings.Contains(body, "This PR changes") {
+		t.Fatalf("body should fall back to template change summary:\n%s", body)
+	}
+}
+
+func TestOpeningSummaryStripsURLsFromOverview(t *testing.T) {
+	got := sanitizedOverviewParagraph("See https://example.com/docs for context on the auth flow.", true)
+	if strings.Contains(got, "https://") || strings.Contains(got, "example.com") {
+		t.Fatalf("sanitizedOverviewParagraph() = %q, want URL stripped", got)
+	}
+	if !strings.Contains(got, "auth flow") {
+		t.Fatalf("sanitizedOverviewParagraph() = %q, want non-URL text preserved", got)
+	}
+}
+
+func TestOpeningSummaryFallsBackWhenAIFailed(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return fakePRSummaryReviewer{
+			overview: "This overview should not render when AI failed.",
+			err:      fmt.Errorf("model unavailable"),
+		}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if strings.Contains(body, "This overview should not render") {
+		t.Fatalf("body should not render overview when AI failed:\n%s", body)
+	}
+	if !strings.Contains(body, "This PR changes") {
+		t.Fatalf("body should fall back to template change summary:\n%s", body)
+	}
+}
