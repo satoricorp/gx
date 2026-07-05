@@ -91,10 +91,11 @@ type prSummaryContext struct {
 }
 
 type prAttribution struct {
-	Kind  string
-	Label string
-	Ref   string
-	URL   string
+	Kind   string
+	Label  string
+	Ref    string
+	URL    string
+	Opaque bool
 }
 
 type prNeedsReviewItem struct {
@@ -201,9 +202,10 @@ func contextSentence(summaryContext prSummaryContext) string {
 }
 
 func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, findings []codereview.Finding, summaryContext prSummaryContext) []prNeedsReviewItem {
+	prURL := pullRequestURL(artifact)
 	var items []prNeedsReviewItem
 	for _, finding := range findings {
-		if !patchRelevantFinding(catalog.Hunks, finding) || lowValuePRFinding(finding) {
+		if isSpeculativePRFinding(finding) || !patchRelevantFinding(catalog, finding) || lowValuePRFinding(finding) {
 			continue
 		}
 		title := sanitizePRVisibleText(strings.TrimSpace(finding.Title))
@@ -214,9 +216,9 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 		items = append(items, prNeedsReviewItem{
 			Title:        title,
 			Detail:       trimSentence(sanitizePRVisibleText(detail), 240),
-			Link:         hunkLinkForFinding(catalog.Hunks, finding),
-			Score:        1000 + findingScore(finding),
-			Attributions: findingAttributions(finding, summaryContext),
+			Link:         hunkLinkForFinding(prURL, catalog.Hunks, finding),
+			Score:        1000 + findingScore(catalog.Hunks, finding),
+			Attributions: findingAttributions(finding, summaryContext, artifact, catalog),
 		})
 	}
 	items = append(items, heuristicNeedsReviewItems(artifact, catalog)...)
@@ -233,14 +235,32 @@ func needsReviewItems(artifact reviewbundle.Artifact, catalog prBodyCatalog, fin
 	return items
 }
 
-func patchRelevantFinding(hunks []prHunkSummary, finding codereview.Finding) bool {
-	if len(hunks) == 0 {
+func isSpeculativePRFinding(finding codereview.Finding) bool {
+	switch strings.TrimSpace(finding.Strength) {
+	case "Blocking", "Strong", "Worth exploring":
+		return false
+	default:
+		return true
+	}
+}
+
+func patchRelevantFinding(catalog prBodyCatalog, finding codereview.Finding) bool {
+	file := strings.TrimSpace(finding.File)
+	if file != "" {
+		for _, candidate := range catalog.Files {
+			if candidate == file {
+				return true
+			}
+		}
+		return false
+	}
+	if len(catalog.Hunks) == 0 {
 		return true
 	}
 	text := strings.ToLower(strings.Join([]string{finding.Title, finding.Summary, finding.Recommendation, evidenceText(finding.Evidence)}, " "))
-	for _, hunk := range hunks {
-		file := strings.ToLower(hunk.File)
-		if file != "" && (strings.Contains(text, file) || strings.Contains(text, strings.ToLower(path.Base(file)))) {
+	for _, hunk := range catalog.Hunks {
+		hunkFile := strings.ToLower(hunk.File)
+		if hunkFile != "" && (strings.Contains(text, hunkFile) || strings.Contains(text, strings.ToLower(path.Base(hunkFile)))) {
 			return true
 		}
 	}
@@ -249,28 +269,21 @@ func patchRelevantFinding(hunks []prHunkSummary, finding codereview.Finding) boo
 
 func lowValuePRFinding(finding codereview.Finding) bool {
 	text := strings.ToLower(strings.Join([]string{finding.Title, finding.Summary, finding.Recommendation}, " "))
-	if strings.Contains(text, "this is good") || strings.Contains(text, "this is correct") {
-		return true
-	}
-	if strings.Contains(text, "test coverage") && !containsAny(text, []string{"regression", "risk", "behavior", "remote", "storage", "auth", "publish"}) {
-		return true
-	}
-	return !containsAny(text, []string{
-		"architecture", "auth", "boundary", "break", "data", "database", "error", "fail", "github", "merge", "missing", "overwrite", "publish", "remote", "review", "schema", "security", "stale", "state", "storage", "sync", "user-visible", "wrong",
-	})
+	return strings.Contains(text, "this is good") || strings.Contains(text, "this is correct")
 }
 
-func findingScore(finding codereview.Finding) int {
+func findingScore(hunks []prHunkSummary, finding codereview.Finding) int {
 	score := 0
-	text := strings.ToLower(strings.Join([]string{finding.Title, finding.Summary, finding.Recommendation, finding.Strength}, " "))
-	if strings.Contains(text, "strong") || strings.Contains(text, "high") || strings.Contains(text, "must") {
-		score += 80
+	switch strings.TrimSpace(finding.Strength) {
+	case "Blocking":
+		score = 300
+	case "Strong":
+		score = 200
+	case "Worth exploring":
+		score = 100
 	}
-	if containsAny(text, []string{"auth", "security", "storage", "database", "schema", "remote", "github", "publish", "sync"}) {
-		score += 60
-	}
-	if containsAny(text, []string{"overwrite", "stale", "wrong", "missing", "fail", "error", "regression"}) {
-		score += 40
+	if validatedHunkAnchor(hunks, finding) {
+		score += 50
 	}
 	return score
 }
@@ -833,22 +846,121 @@ func githubHunkLink(prURL, file string, oldStart, newStart, newLines int) string
 	return fmt.Sprintf("%s/files#diff-%s%s%d", prURL, hex.EncodeToString(sum[:]), side, line)
 }
 
-func hunkLinkForFinding(hunks []prHunkSummary, finding codereview.Finding) string {
-	search := strings.ToLower(strings.Join([]string{finding.Title, finding.Summary, finding.Recommendation, evidenceText(finding.Evidence)}, " "))
-	for _, hunk := range hunks {
-		if hunk.File != "" && strings.Contains(search, strings.ToLower(hunk.File)) {
-			return hunk.Link
+func githubFileDiffLink(prURL, file string) string {
+	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	file = strings.TrimSpace(file)
+	if prURL == "" || file == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(file))
+	return fmt.Sprintf("%s/files#diff-%s", prURL, hex.EncodeToString(sum[:]))
+}
+
+func githubHunkLineLink(prURL, file string, line int) string {
+	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	file = strings.TrimSpace(file)
+	if prURL == "" || file == "" || line <= 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(file))
+	return fmt.Sprintf("%s/files#diff-%sR%d", prURL, hex.EncodeToString(sum[:]), line)
+}
+
+func blobPermalink(prURL, sha, file string, line int) string {
+	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	sha = strings.TrimSpace(sha)
+	file = strings.TrimSpace(file)
+	if prURL == "" || sha == "" || file == "" {
+		return ""
+	}
+	owner, repo, ok := parseGitHubOwnerRepo(prURL)
+	if !ok {
+		return ""
+	}
+	link := fmt.Sprintf("https://github.com/%s/%s/blob/%s/%s", owner, repo, sha, file)
+	if line > 0 {
+		link += fmt.Sprintf("#L%d", line)
+	}
+	return link
+}
+
+func parseGitHubOwnerRepo(prURL string) (string, string, bool) {
+	u, err := url.Parse(strings.TrimSpace(prURL))
+	if err != nil || !strings.EqualFold(u.Host, "github.com") {
+		return "", "", false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func findingAnchorLine(finding codereview.Finding) int {
+	if finding.Line > 0 {
+		return finding.Line
+	}
+	file := strings.TrimSpace(finding.File)
+	for _, anchor := range finding.Anchors {
+		if strings.TrimSpace(anchor.File) == file && anchor.Line > 0 {
+			return anchor.Line
 		}
 	}
+	return 0
+}
+
+func lineInHunkNewRange(hunk prHunkSummary, line int) bool {
+	if line <= 0 || hunk.NewLines <= 0 {
+		return false
+	}
+	return line >= hunk.NewStart && line < hunk.NewStart+hunk.NewLines
+}
+
+func validatedHunkAnchor(hunks []prHunkSummary, finding codereview.Finding) bool {
+	file := strings.TrimSpace(finding.File)
+	line := findingAnchorLine(finding)
+	if file == "" || line <= 0 {
+		return false
+	}
 	for _, hunk := range hunks {
-		if base := path.Base(hunk.File); base != "" && strings.Contains(search, strings.ToLower(base)) {
-			return hunk.Link
+		if hunk.File == file && lineInHunkNewRange(hunk, line) {
+			return true
 		}
 	}
-	if hunk := firstHunk(hunks, ""); hunk != nil {
-		return hunk.Link
+	return false
+}
+
+func hunkLinkForFinding(prURL string, hunks []prHunkSummary, finding codereview.Finding) string {
+	file := strings.TrimSpace(finding.File)
+	if file == "" {
+		search := strings.ToLower(strings.Join([]string{finding.Title, finding.Summary, finding.Recommendation, evidenceText(finding.Evidence)}, " "))
+		for _, hunk := range hunks {
+			if hunk.File != "" && strings.Contains(search, strings.ToLower(hunk.File)) {
+				return hunk.Link
+			}
+		}
+		for _, hunk := range hunks {
+			if base := path.Base(hunk.File); base != "" && strings.Contains(search, strings.ToLower(base)) {
+				return hunk.Link
+			}
+		}
+		return ""
 	}
-	return ""
+	line := findingAnchorLine(finding)
+	var matched bool
+	for _, hunk := range hunks {
+		if hunk.File != file {
+			continue
+		}
+		matched = true
+		if line > 0 && lineInHunkNewRange(hunk, line) {
+			return githubHunkLineLink(prURL, file, line)
+		}
+	}
+	if !matched {
+		return ""
+	}
+	return githubFileDiffLink(prURL, file)
 }
 
 func firstHunk(hunks []prHunkSummary, filePrefix string) *prHunkSummary {
@@ -1031,39 +1143,116 @@ func stackName(artifact reviewbundle.Artifact) string {
 	return pointerString(artifact.Push.BranchName)
 }
 
-func findingAttributions(finding codereview.Finding, summaryContext prSummaryContext) []prAttribution {
+func headCommitSHA(artifact reviewbundle.Artifact, catalog prBodyCatalog) string {
+	if n := len(catalog.Revisions); n > 0 {
+		if sha := strings.TrimSpace(catalog.Revisions[n-1].CommitID); sha != "" {
+			return sha
+		}
+	}
+	return strings.TrimSpace(artifact.Push.HeadCommitID)
+}
+
+func fileInPRDiff(catalog prBodyCatalog, file string) bool {
+	for _, hunk := range catalog.Hunks {
+		if hunk.File == file {
+			return true
+		}
+	}
+	return false
+}
+
+func findingAttributions(finding codereview.Finding, summaryContext prSummaryContext, artifact reviewbundle.Artifact, catalog prBodyCatalog) []prAttribution {
+	if len(finding.ResolvedSources) > 0 {
+		var out []prAttribution
+		for _, src := range finding.ResolvedSources {
+			out = append(out, renderPRResolvedSource(src, artifact, catalog))
+			if len(out) >= 3 {
+				break
+			}
+		}
+		return dedupeAttributions(out)
+	}
 	var out []prAttribution
 	for _, sourceID := range finding.SourceIDs {
 		if sourceID == "" {
 			continue
 		}
-		out = append(out, prAttribution{Kind: "review_resource", Label: "review resource", Ref: sourceID})
-	}
-	for _, evidence := range finding.Evidence {
-		text := strings.TrimSpace(evidence.Label + " " + evidence.Value)
-		if text == "" {
+		if attr := attributionFromSourceID(sourceID, summaryContext.Snippets); attr != nil {
+			out = append(out, *attr)
 			continue
 		}
-		kind := "codebase"
-		lower := strings.ToLower(text)
-		switch {
-		case strings.Contains(lower, "session"):
-			kind = "session"
-		case strings.Contains(lower, "review") || strings.Contains(lower, "resource"):
-			kind = "review_resource"
+		out = append(out, prAttribution{Kind: "review_resource", Label: "review resource", Ref: sourceID, Opaque: true})
+	}
+	for _, evidence := range finding.Evidence {
+		if attr := attributionFromEvidence(evidence, summaryContext.Snippets); attr != nil {
+			out = append(out, *attr)
 		}
-		out = append(out, prAttribution{Kind: kind, Label: strings.TrimSpace(evidence.Label), Ref: trimSentence(evidence.Value, 120)})
 		if len(out) >= 3 {
 			return dedupeAttributions(out)
 		}
 	}
-	for _, snippet := range summaryContext.Snippets {
-		out = append(out, attributionFromSnippet(snippet))
-		if len(out) >= 2 {
-			break
+	return dedupeAttributions(out)
+}
+
+func renderPRResolvedSource(src codereview.ResolvedSource, artifact reviewbundle.Artifact, catalog prBodyCatalog) prAttribution {
+	label := codereview.ResolvedSourceLabel(src)
+	kind := firstNonEmpty(strings.TrimSpace(src.Kind), "source")
+	if src.Opaque {
+		return prAttribution{Kind: kind, Label: label, Opaque: true}
+	}
+	if strings.EqualFold(kind, "session") {
+		return prAttribution{Kind: kind, Label: label, Ref: strings.TrimSpace(src.Ref)}
+	}
+	file := strings.TrimSpace(src.File)
+	if file == "" {
+		return prAttribution{Kind: kind, Label: label, Ref: strings.TrimSpace(src.Ref), URL: strings.TrimSpace(src.URL)}
+	}
+	prURL := pullRequestURL(artifact)
+	line := src.StartLine
+	if fileInPRDiff(catalog, file) {
+		if line > 0 && validatedHunkAnchor(catalog.Hunks, codereview.Finding{File: file, Line: line}) {
+			return prAttribution{Kind: kind, Label: label, URL: githubHunkLineLink(prURL, file, line)}
+		}
+		if link := githubFileDiffLink(prURL, file); link != "" {
+			return prAttribution{Kind: kind, Label: label, URL: link}
+		}
+		if prURL == "" {
+			return prAttribution{Kind: kind, Label: label}
 		}
 	}
-	return dedupeAttributions(out)
+	if link := blobPermalink(prURL, headCommitSHA(artifact, catalog), file, line); link != "" {
+		return prAttribution{Kind: kind, Label: label, URL: link}
+	}
+	return prAttribution{Kind: kind, Label: label}
+}
+
+func attributionFromSourceID(sourceID string, snippets []codereview.ContextSnippet) *prAttribution {
+	for _, snippet := range snippets {
+		if snippet.Ref == sourceID || snippet.SourceLabel == sourceID {
+			attr := attributionFromSnippet(snippet)
+			return &attr
+		}
+	}
+	return nil
+}
+
+func attributionFromEvidence(evidence codereview.Evidence, snippets []codereview.ContextSnippet) *prAttribution {
+	label := strings.TrimSpace(evidence.Label)
+	value := strings.TrimSpace(evidence.Value)
+	for _, snippet := range snippets {
+		if snippet.Ref != "" && (snippet.Ref == label || snippet.Ref == value) {
+			attr := attributionFromSnippet(snippet)
+			return &attr
+		}
+		if snippet.SourceLabel != "" && snippet.SourceLabel == label {
+			attr := attributionFromSnippet(snippet)
+			return &attr
+		}
+	}
+	if label == "" && value == "" {
+		return nil
+	}
+	return &prAttribution{Kind: "codebase", Label: label, Ref: trimSentence(value, 120)}
 }
 
 func attributionFromSnippet(snippet codereview.ContextSnippet) prAttribution {
@@ -1091,11 +1280,14 @@ func renderAttributions(attributions []prAttribution) string {
 	for _, attr := range attributions {
 		label := firstNonEmpty(attr.Label, attr.Kind)
 		ref := strings.TrimSpace(attr.Ref)
-		if attr.URL != "" && ref != "" {
-			parts = append(parts, fmt.Sprintf("%s [%s](%s)", attr.Kind, ref, attr.URL))
-		} else if ref != "" {
-			parts = append(parts, fmt.Sprintf("%s `%s`", label, ref))
-		} else {
+		switch {
+		case attr.Opaque:
+			parts = append(parts, label)
+		case attr.URL != "" && label != "":
+			parts = append(parts, fmt.Sprintf("%s [%s](%s)", attr.Kind, label, attr.URL))
+		case ref != "":
+			parts = append(parts, fmt.Sprintf("%s `%s`", firstNonEmpty(attr.Kind, label), ref))
+		default:
 			parts = append(parts, label)
 		}
 	}
