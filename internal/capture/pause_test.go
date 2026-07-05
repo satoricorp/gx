@@ -15,8 +15,10 @@ func TestIsPaused(t *testing.T) {
 	})
 
 	t.Run("pause-capture file", func(t *testing.T) {
+		t.Setenv("GX_CAPTURE_PAUSED", "")
 		home := t.TempDir()
 		gxHome := filepath.Join(home, ".gx")
+		t.Setenv("GX_HOME", gxHome)
 		if err := os.MkdirAll(gxHome, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -29,8 +31,10 @@ func TestIsPaused(t *testing.T) {
 	})
 
 	t.Run("legacy capture-paused file", func(t *testing.T) {
+		t.Setenv("GX_CAPTURE_PAUSED", "")
 		home := t.TempDir()
 		gxHome := filepath.Join(home, ".gx")
+		t.Setenv("GX_HOME", gxHome)
 		if err := os.MkdirAll(gxHome, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -43,7 +47,13 @@ func TestIsPaused(t *testing.T) {
 	})
 
 	t.Run("not paused", func(t *testing.T) {
+		t.Setenv("GX_CAPTURE_PAUSED", "")
 		home := t.TempDir()
+		gxHome := filepath.Join(home, ".gx")
+		if err := os.MkdirAll(gxHome, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GX_HOME", gxHome)
 		if IsPaused(home) {
 			t.Fatal("expected not paused")
 		}
