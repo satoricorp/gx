@@ -243,7 +243,7 @@ func TestRenderBlastRadiusCriticalPathLine(t *testing.T) {
 	})
 	catalog := buildPRBodyCatalog(artifact)
 	triage := triageChangeFromCatalog(catalog)
-	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, policy, triage)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, policy, triage, codereview.PRSummaryReview{}, false)
 	if !strings.Contains(body, "**Critical path `internal/billing/**`**") {
 		t.Fatalf("body missing critical path line:\n%s", body)
 	}
@@ -269,12 +269,15 @@ func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
 	})
 	catalog := buildPRBodyCatalog(artifact)
 	triage := triageChangeFromCatalog(catalog)
-	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage, codereview.PRSummaryReview{}, false)
 	if !strings.Contains(body, "## Blast Radius") {
 		t.Fatalf("body missing blast radius section:\n%s", body)
 	}
 	if !strings.Contains(body, "Blast radius is") {
 		t.Fatalf("body missing lead sentence:\n%s", body)
+	}
+	if !strings.Contains(body, "low risk to existing customer-visible behavior") {
+		t.Fatalf("body missing heuristic narrative:\n%s", body)
 	}
 	if strings.Contains(body, "**Critical path") {
 		t.Fatalf("body should not contain critical path lines:\n%s", body)
@@ -284,11 +287,54 @@ func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
 	}
 }
 
+func TestRenderBlastRadiusNarrativeFromAI(t *testing.T) {
+	prURL := "https://github.com/example/acme/pull/1"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Description: "add handler",
+				Files:       []string{"internal/foo/handler.go"},
+			},
+		}},
+	})
+	catalog := buildPRBodyCatalog(artifact)
+	triage := triageChangeFromCatalog(catalog)
+	summary := codereview.PRSummaryReview{
+		DownstreamImpact: "Low customer-facing risk; adds a handler without changing existing routes.",
+	}
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage, summary, true)
+	if !strings.Contains(body, "Low customer-facing risk; adds a handler without changing existing routes.") {
+		t.Fatalf("body missing AI downstream impact narrative:\n%s", body)
+	}
+}
+
+func TestRenderBlastRadiusHeuristicNarrativeWhenAIAbsent(t *testing.T) {
+	prURL := "https://github.com/example/acme/pull/1"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+		Stack: []reviewbundle.StackPayload{{
+			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Change: reviewbundle.ChangePayload{
+				Description: "add handler",
+				Files:       []string{"internal/foo/handler.go"},
+			},
+		}},
+	})
+	catalog := buildPRBodyCatalog(artifact)
+	triage := triageChangeFromCatalog(catalog)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage, codereview.PRSummaryReview{}, false)
+	if !strings.Contains(body, "low risk to existing customer-visible behavior") {
+		t.Fatalf("body missing heuristic narrative:\n%s", body)
+	}
+}
+
 func TestRenderBlastRadiusAbsentForDocsOnly(t *testing.T) {
 	artifact := docsOnlyPRArtifact()
 	catalog := buildPRBodyCatalog(artifact)
 	triage := triageChangeFromCatalog(catalog)
-	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage)
+	body := renderBlastRadiusSection(artifact, catalog, lexicalReach{}, codereview.ReviewPolicy{}, triage, codereview.PRSummaryReview{}, false)
 	if body != "" {
 		t.Fatalf("body = %q, want empty for docs-only", body)
 	}

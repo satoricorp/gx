@@ -267,12 +267,13 @@ func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) 
 }
 
 type fakePRSummaryReviewer struct {
-	findings       []codereview.Finding
-	overview       string
-	notableChanges []codereview.NotableChange
-	err            error
-	failCount      int
-	attempts       int
+	findings          []codereview.Finding
+	overview          string
+	downstreamImpact  string
+	notableChanges    []codereview.NotableChange
+	err               error
+	failCount         int
+	attempts          int
 }
 
 func (f *fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
@@ -295,9 +296,10 @@ func (f *fakePRSummaryReviewer) ReviewForSummary(_ context.Context, _ codereview
 		return codereview.PRSummaryReview{}, fmt.Errorf("transient reviewer failure")
 	}
 	return codereview.PRSummaryReview{
-		Overview:       f.overview,
-		NotableChanges: f.notableChanges,
-		Findings:       f.findings,
+		Overview:         f.overview,
+		DownstreamImpact: f.downstreamImpact,
+		NotableChanges:   f.notableChanges,
+		Findings:         f.findings,
 	}, nil
 }
 

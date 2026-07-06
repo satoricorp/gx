@@ -3,6 +3,7 @@ package vcs
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,7 +50,14 @@ func (s *Service) loadStackReadModel(ctx context.Context, repo RepoInfo) (stackR
 
 	stackContainer := repo.defaultBaseBranch()
 	if found && strings.TrimSpace(current.BaseRef) != "" {
-		stackContainer = current.BaseRef
+		candidate := strings.TrimSpace(current.BaseRef)
+		remoteName := ""
+		if current.RemoteName != nil {
+			remoteName = strings.TrimSpace(*current.RemoteName)
+		}
+		if s.stackBaseRefExists(ctx, repo.RootPath, candidate, remoteName) {
+			stackContainer = candidate
+		}
 	}
 	entries, err := s.jjStackEntries(ctx, repo.RootPath, stackContainer)
 	if err != nil {
@@ -130,7 +138,7 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 	for _, target := range targets {
 		bookmarkTargets[target.Name] = target.ChangeID
 	}
-	mergedByStack := s.stackMergeStates(ctx, repo.RootPath, infos, bookmarkTargets)
+	mergedByStack := s.stackMergeStates(ctx, repo.RootPath, repo.defaultBaseBranch(), infos, bookmarkTargets)
 
 	out := make([]StackInfo, 0, len(infos))
 	for _, info := range infos {
@@ -227,7 +235,7 @@ type stackMergeCandidate struct {
 	remoteName string
 }
 
-func (s *Service) stackMergeStates(ctx context.Context, repoRoot string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
+func (s *Service) stackMergeStates(ctx context.Context, repoRoot, defaultBaseBranch string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
 	merged := make(map[int64]bool, len(stacks))
 	candidates := stackMergeCandidates(stacks, bookmarkTargets)
 	if len(candidates) == 0 {
@@ -239,7 +247,7 @@ func (s *Service) stackMergeStates(ctx context.Context, repoRoot string, stacks 
 		cacheKey := candidate.baseRef + "\x00" + candidate.remoteName
 		selectors, ok := baseSelectors[cacheKey]
 		if !ok {
-			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName)
+			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName, defaultBaseBranch)
 			baseSelectors[cacheKey] = selectors
 		}
 		for _, baseSelector := range selectors {
@@ -331,22 +339,30 @@ func stackMergeCandidates(stacks []StackInfo, bookmarkTargets map[string]string)
 	return candidates
 }
 
-func (s *Service) stackMergeBaseSelectors(ctx context.Context, repoRoot, baseRef, remoteName string) []string {
+func (s *Service) stackMergeBaseSelectors(ctx context.Context, repoRoot, baseRef, remoteName, defaultBaseBranch string) []string {
 	baseRef = strings.TrimSpace(baseRef)
 	if baseRef == "" {
 		return nil
 	}
-	selectors := []string{baseRef}
-	if strings.Contains(baseRef, "@") {
-		return selectors
+	selectors := make([]string, 0, 3)
+	if s.stackBaseRefExists(ctx, repoRoot, baseRef, remoteName) {
+		selectors = append(selectors, baseRef)
+		if !strings.Contains(baseRef, "@") {
+			remoteName = strings.TrimSpace(remoteName)
+			if remoteName == "" {
+				remoteName = "origin"
+			}
+			remoteBase := baseRef + "@" + remoteName
+			if remoteBase != baseRef && s.revExists(ctx, repoRoot, remoteBase) {
+				selectors = append(selectors, remoteBase)
+			}
+		}
 	}
-	remoteName = strings.TrimSpace(remoteName)
-	if remoteName == "" {
-		remoteName = "origin"
-	}
-	remoteBase := baseRef + "@" + remoteName
-	if s.revExists(ctx, repoRoot, remoteBase) {
-		selectors = append(selectors, remoteBase)
+	defaultBaseBranch = strings.TrimSpace(defaultBaseBranch)
+	if defaultBaseBranch != "" && defaultBaseBranch != baseRef && s.revExists(ctx, repoRoot, defaultBaseBranch) {
+		if len(selectors) == 0 || !slices.Contains(selectors, defaultBaseBranch) {
+			selectors = append(selectors, defaultBaseBranch)
+		}
 	}
 	return selectors
 }

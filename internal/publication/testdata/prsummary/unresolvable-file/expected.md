@@ -7,6 +7,7 @@ This PR changes `internal/github`: update github client.
 ## Blast Radius
 
 Blast radius is low (1 file(s), 1 area(s), +1/-0 lines).
+Small localized change with low risk to existing customer-visible behavior.
 
 
 ## Notable Changes

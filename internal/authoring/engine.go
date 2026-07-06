@@ -144,6 +144,14 @@ func (e *Engine) Status(ctx context.Context) (StackSummary, error) {
 	return e.vcs.Stack(ctx)
 }
 
+func (e *Engine) DetectMissingStackBaseRefs(ctx context.Context) (vcs.MissingStackBaseRefStatus, error) {
+	return e.vcs.DetectMissingStackBaseRefs(ctx)
+}
+
+func (e *Engine) RebaseMissingStackBaseRefs(ctx context.Context, issues []vcs.MissingStackBaseRef) (vcs.RebaseOntoDefaultResult, error) {
+	return e.vcs.RebaseMissingStackBaseRefs(ctx, issues)
+}
+
 func (e *Engine) ResolveJJRepo(ctx context.Context) (RepoInfo, error) {
 	return e.vcs.ResolveJJRepo(ctx)
 }

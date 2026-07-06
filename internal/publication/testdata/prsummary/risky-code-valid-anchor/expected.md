@@ -7,6 +7,7 @@ This PR changes `internal/auth`: add session validation.
 ## Blast Radius
 
 Blast radius is low (1 file(s), 1 area(s), +1/-0 lines).
+Security-sensitive change in `internal/auth`; could affect customer trust, data handling, or access control — verify auth and data paths before merge.
 
 
 ## Notable Changes
