@@ -2752,6 +2752,9 @@ func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine
 	if err != nil {
 		return authoring.StackSummary{}, 0, err
 	}
+	if repo, repoErr := engine.ResolveJJRepo(ctx); repoErr == nil {
+		_, _ = engine.PruneTerminalGitHubPullRequestStacks(ctx, repo)
+	}
 	stack, err := engine.Status(ctx)
 	if err != nil {
 		return authoring.StackSummary{}, len(pruned.Deleted), err

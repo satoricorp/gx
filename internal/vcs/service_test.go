@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -4010,6 +4011,109 @@ func TestSplitCommitHunkRequiresPatchFile(t *testing.T) {
 	}
 }
 
+func TestSplitCommitByHunkPatchRequiresCommitMessage(t *testing.T) {
+	svc := NewServiceWithRunner(&fakeRunner{})
+	_, err := svc.SplitCommitByHunkPatch(context.Background(), SplitCommitOptions{
+		Message:   "   ",
+		Hunk:      true,
+		PatchFile: filepath.Join(t.TempDir(), "selected.patch"),
+	})
+	if err == nil || !errors.Is(err, ErrEmptyCommitMessage) {
+		t.Fatalf("SplitCommitByHunkPatch() error = %v, want %v", err, ErrEmptyCommitMessage)
+	}
+}
+
+func TestSplitCommitByHunkPatchDescribesRecordedRevisionWithIntent(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	prev, _ := os.Getwd()
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	defer os.Chdir(prev)
+
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: repoRoot, Backend: "jj"})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	head := "work-change"
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "authoring",
+		BookmarkName: "feature/authoring",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+
+	patchFile := filepath.Join(t.TempDir(), "selected.patch")
+	if err := os.WriteFile(patchFile, []byte("diff --git a/app.go b/app.go\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	changeTemplate := `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`
+	intent := "update server/src/billing/stripe.ts"
+	describeRecorded := runnerKey(repoRoot, "jj", "describe", "-m", intent, "-r", "@-")
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "root"): {repoRoot + "\n"},
+			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", changeTemplate): {
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+				"work-change|work-commit||parent-change\n",
+			},
+			runnerKey(repoRoot, "jj", "diff", "-r", "@", "--name-only"): {
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+				"app.go\napp_test.go\n",
+			},
+			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                {""},
+			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                             {""},
+			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                      {""},
+			runnerKey(repoRoot, "jj", "split", "-m", intent, "app.go", "app_test.go"):                  {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "work-change"): {""},
+			runnerKey(repoRoot, "jj", "edit", "@-"):                                                    {""},
+			runnerKey(repoRoot, "jj", "edit", "work-change"):                                           {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"):          {""},
+		},
+		errors: map[string][]error{
+			describeRecorded: {fmt.Errorf("stop after recorded describe")},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	_, err = svc.SplitCommitByHunkPatch(ctx, SplitCommitOptions{
+		Message:   intent,
+		Hunk:      true,
+		PatchFile: patchFile,
+	})
+	if err == nil || !strings.Contains(err.Error(), "stop after recorded describe") {
+		t.Fatalf("SplitCommitByHunkPatch() error = %v, want stop after recorded describe; calls=%#v", err, runner.calls)
+	}
+	assertRunnerCalled(t, runner.calls, describeRecorded)
+	assertRunnerCalled(t, runner.calls, runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"))
+	assertRunnerNotCalled(t, runner.calls, runnerKey(repoRoot, "jj", "describe", "-m", "", "-r", "@"))
+}
+
 func TestSplitCommitByHunkPatchDescribesEmptyRemainderBeforeEditingAway(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	repoRoot := t.TempDir()
@@ -4080,8 +4184,8 @@ func TestSplitCommitByHunkPatchDescribesEmptyRemainderBeforeEditingAway(t *testi
 			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                             {""},
 			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                      {""},
 			runnerKey(repoRoot, "jj", "split", "-m", "split selected hunk", "app.go", "app_test.go"):   {""},
-			runnerKey(repoRoot, "jj", "describe", "-m", "gx: pending remainder", "-r", "child-change"): {""},
-			runnerKey(repoRoot, "jj", "describe", "-m", "gx: pending remainder", "-r", "work-change"):  {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "child-change"): {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "work-change"):  {""},
 			runnerKey(repoRoot, "jj", "edit", "@-"):                                                    {""},
 		},
 		errors: map[string][]error{
@@ -4102,7 +4206,7 @@ func TestSplitCommitByHunkPatchDescribesEmptyRemainderBeforeEditingAway(t *testi
 	editParentCall := runnerKey(repoRoot, "jj", "edit", "@-")
 	describeIndex, editIndex := -1, -1
 	for index, call := range runner.calls {
-		if strings.Contains(call, "|jj|describe -m gx: pending remainder -r ") {
+		if strings.Contains(call, "|jj|describe -m "+PendingRemainderDescription+" -r ") {
 			describeIndex = index
 		}
 		if call == editParentCall {
