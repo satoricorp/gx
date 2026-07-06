@@ -1865,7 +1865,6 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	var agentOut bool
 	var showAll bool
 	var interactive bool
-	var approveFixBase bool
 	cmd := &cobra.Command{
 		Use:     use,
 		Aliases: []string{"gxs"},
@@ -1873,9 +1872,8 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 		Hidden:  hidden,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			checkOpts := statusCheckOptions{ApproveFixBase: approveFixBase, JSON: jsonOut}
 			if jsonOut {
-				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), checkOpts)
+				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
 				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
 				if writeErr := writeJSON(cmd, stack); writeErr != nil {
 					return writeErr
@@ -1885,14 +1883,13 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 			if len(args) > 0 && !agentOut {
 				return fmt.Errorf("stack selector is only supported with --agent")
 			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, interactive, checkOpts)
+			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, interactive, jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
 	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "open the interactive status browser")
-	cmd.Flags().BoolVar(&approveFixBase, "approve-fix-base", false, "rebase stacks onto the default branch when their stored parent base ref is missing")
 	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
 		flag.Hidden = true
 	}
@@ -1908,14 +1905,12 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var jsonOut bool
 	var agentOut bool
-	var approveFixBase bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all non-merged GX features",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			checkOpts := statusCheckOptions{ApproveFixBase: approveFixBase, JSON: jsonOut}
-			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), checkOpts)
+			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
 			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
 			if jsonOut {
 				if writeErr := writeJSON(cmd, stack); writeErr != nil {
@@ -1937,7 +1932,6 @@ func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	cmd.Flags().BoolVar(&approveFixBase, "approve-fix-base", false, "rebase stacks onto the default branch when their stored parent base ref is missing")
 	return cmd
 }
 
@@ -2610,15 +2604,13 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	var jsonOut bool
 	var agentOut bool
 	var showAll bool
-	var approveFixBase bool
 	cmd := &cobra.Command{
 		Use:   "stacks [stack]",
 		Short: "Browse GX stacks and revisions",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			checkOpts := statusCheckOptions{ApproveFixBase: approveFixBase, JSON: jsonOut}
 			if jsonOut {
-				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), checkOpts)
+				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
 				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
 				if writeErr := writeJSON(cmd, stack); writeErr != nil {
 					return writeErr
@@ -2628,13 +2620,12 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if len(args) > 0 && !agentOut {
 				return fmt.Errorf("stack selector is only supported with --agent")
 			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, true, checkOpts)
+			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, true, jsonOut)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
 	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
-	cmd.Flags().BoolVar(&approveFixBase, "approve-fix-base", false, "rebase stacks onto the default branch when their stored parent base ref is missing")
 	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
 		flag.Hidden = true
 	}
@@ -2649,14 +2640,12 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var jsonOut bool
 	var agentOut bool
-	var approveFixBase bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all non-merged GX stacks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			checkOpts := statusCheckOptions{ApproveFixBase: approveFixBase, JSON: jsonOut}
-			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), checkOpts)
+			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
 			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
 			if jsonOut {
 				if writeErr := writeJSON(cmd, stack); writeErr != nil {
@@ -2678,7 +2667,6 @@ func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	cmd.Flags().BoolVar(&approveFixBase, "approve-fix-base", false, "rebase stacks onto the default branch when their stored parent base ref is missing")
 	return cmd
 }
 
@@ -2709,8 +2697,8 @@ func newStacksDiffCommand() *cobra.Command {
 	}
 }
 
-func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions, interactive bool, checkOpts statusCheckOptions) error {
-	stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, in, out, checkOpts)
+func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions, interactive bool, jsonOut bool) error {
+	stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, out, jsonOut)
 	if err != nil {
 		return err
 	}
@@ -2767,12 +2755,7 @@ func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine
 	return stack, len(pruned.Deleted), nil
 }
 
-type statusCheckOptions struct {
-	ApproveFixBase bool
-	JSON           bool
-}
-
-func statusWithMissingBaseCheck(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, opts statusCheckOptions) (authoring.StackSummary, int, error) {
+func statusWithMissingBaseCheck(ctx context.Context, engine *authoring.Engine, out io.Writer, jsonOut bool) (authoring.StackSummary, int, error) {
 	stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
 	if err != nil {
 		return stack, prunedEmpty, err
@@ -2786,22 +2769,10 @@ func statusWithMissingBaseCheck(ctx context.Context, engine *authoring.Engine, i
 	}
 	attachMissingStackBaseSummary(&stack, missing)
 	blockErr := &vcs.ErrMissingStackBaseRefs{Status: missing}
-	if opts.ApproveFixBase {
-		if _, err := engine.RebaseMissingStackBaseRefs(ctx, missing.Issues); err != nil {
-			return stack, prunedEmpty, err
-		}
-		return statusAfterPruningEmptyStacks(ctx, engine)
-	}
-	if opts.JSON {
+	if jsonOut {
 		return stack, prunedEmpty, blockErr
 	}
 	printMissingStackBaseRefNotice(out, missing)
-	if useStatusInteractive(in, out) && promptFixMissingStackBase(in, out, missing.FixPrompt) {
-		if _, err := engine.RebaseMissingStackBaseRefs(ctx, missing.Issues); err != nil {
-			return stack, prunedEmpty, err
-		}
-		return statusAfterPruningEmptyStacks(ctx, engine)
-	}
 	return stack, prunedEmpty, blockErr
 }
 
@@ -2811,8 +2782,7 @@ func attachMissingStackBaseSummary(stack *authoring.StackSummary, status vcs.Mis
 	}
 	stack.MissingBaseRefs = status.Issues
 	stack.NeedsRebaseOntoDefault = status.NeedsRebaseOntoDefault
-	stack.FixAction = status.FixAction
-	stack.FixPrompt = status.FixPrompt
+	stack.RepairCommand = status.RepairCommand
 }
 
 func printMissingStackBaseRefNotice(out io.Writer, status vcs.MissingStackBaseRefStatus) {
@@ -3833,6 +3803,7 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				return runErr
 			}
 			mode := authoring.PublishModeReviewAndGit
+			pushOpts := authoring.PushOptions{Mode: mode}
 
 			client := cloud.NewClient()
 			if client == nil {
@@ -3844,7 +3815,7 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				}
 
 				if publishAllRequested {
-					results, err := engine.PublishAll(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+					results, err := engine.PublishAll(ctx, nil, pushOpts, publishHook)
 					if err != nil {
 						runErr = err
 						return runErr
@@ -3859,9 +3830,9 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					err  error
 				)
 				if len(args) > 0 {
-					push, err = engine.PublishNamed(ctx, args[0], nil, authoring.PushOptions{Mode: mode}, publishHook)
+					push, err = engine.PublishNamed(ctx, args[0], nil, pushOpts, publishHook)
 				} else {
-					push, err = engine.Publish(ctx, nil, authoring.PushOptions{Mode: mode}, publishHook)
+					push, err = engine.Publish(ctx, nil, pushOpts, publishHook)
 				}
 				if err != nil {
 					runErr = err
@@ -3872,7 +3843,7 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}
 
 			if publishAllRequested {
-				prepared, err := engine.PrepareAllPublishes(ctx, nil, authoring.PushOptions{Mode: mode})
+				prepared, err := engine.PrepareAllPublishes(ctx, nil, pushOpts)
 				if err != nil {
 					runErr = err
 					return runErr
@@ -3914,9 +3885,9 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			var push authoring.PushResult
 			var err error
 			if len(args) > 0 {
-				push, err = engine.PrepareNamedPublish(ctx, args[0], nil, authoring.PushOptions{Mode: mode})
+				push, err = engine.PrepareNamedPublish(ctx, args[0], nil, pushOpts)
 			} else {
-				push, err = engine.PreparePublish(ctx, nil, authoring.PushOptions{Mode: mode})
+				push, err = engine.PreparePublish(ctx, nil, pushOpts)
 			}
 			if err != nil {
 				runErr = err

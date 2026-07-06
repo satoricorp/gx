@@ -190,6 +190,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 		Use:   "doctor",
 		Short: "Fix current gx state",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			missingBaseRepair, missingBaseErr := vcs.NewService().RepairMissingStackBaseRefs(ctx)
 			var repair vcs.RepairResult
 			var repairErr error
 			var staleRepair vcs.StaleStackCleanupResult
@@ -206,6 +207,9 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			stale, staleErr := doctorStaleStacks(ctx, fix, staleRepair)
 			if jsonOut {
 				payload := map[string]any{"doctor": doctorStatusJSON(ctx)}
+				if missingBaseErr == nil && (len(missingBaseRepair.Fixed) > 0 || len(missingBaseRepair.Actions) > 0) {
+					payload["missing_base_refs"] = missingBaseRepair
+				}
 				if staleErr == nil {
 					payload["stale_stacks"] = stale
 				}
@@ -216,6 +220,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			}
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
+			printDoctorMissingBaseRefRepair(cmd.OutOrStdout(), missingBaseRepair, missingBaseErr)
 			printDoctorStaleStacks(cmd.OutOrStdout(), fix, stale, staleErr)
 			if fix {
 				if len(repair.Actions) == 0 {
@@ -232,12 +237,30 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 					}
 				}
 			}
+			if missingBaseErr != nil {
+				return missingBaseErr
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe gx workflow state issues")
 	return cmd
+}
+
+func printDoctorMissingBaseRefRepair(w io.Writer, result vcs.RebaseOntoDefaultResult, err error) {
+	if err != nil {
+		fmt.Fprintln(w, labelWarningValue("Missing parent base", "repair failed: "+err.Error()))
+		return
+	}
+	if len(result.Fixed) == 0 {
+		fmt.Fprintln(w, labelValue("Missing parent base", success("ok")+": none"))
+		return
+	}
+	fmt.Fprintln(w, section("Missing parent base repair"))
+	for _, action := range result.Actions {
+		fmt.Fprintf(w, "  %s\n", action)
+	}
 }
 
 func doctorStaleStacks(ctx context.Context, fixed bool, repaired vcs.StaleStackCleanupResult) (vcs.StaleStackCleanupResult, error) {
