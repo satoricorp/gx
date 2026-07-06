@@ -292,6 +292,31 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 	}
 }
 
+func TestBuildPushUsesGXStackRefForPushBranchName(t *testing.T) {
+	store := newBundleTestStore(t)
+	ctx := context.Background()
+	repoID := seedRepo(t, store, "/repo")
+	seedChange(t, store, repoID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
+
+	main := "main"
+	stackRef := "feature/cli"
+	bundle, err := BuildPush(ctx, vcs.PushResult{
+		HeadCommitID: "commit-1",
+		GXStackRef:   stackRef,
+		Repo: vcs.RepoInfo{
+			RootPath:   "/repo",
+			Backend:    "jj",
+			BranchName: &main,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildPush() error = %v", err)
+	}
+	if bundle.Push.BranchName == nil || *bundle.Push.BranchName != stackRef {
+		t.Fatalf("push branch = %#v, want %q", bundle.Push.BranchName, stackRef)
+	}
+}
+
 func TestBuildPushJSONShapeIsStableForConsoleIngest(t *testing.T) {
 	store := newBundleTestStore(t)
 	ctx := context.Background()
