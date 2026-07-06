@@ -235,7 +235,7 @@ type stackMergeCandidate struct {
 	remoteName string
 }
 
-func (s *Service) stackMergeStates(ctx context.Context, repoRoot, defaultBaseBranch string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
+func (s *Service) stackMergeStates(ctx context.Context, repoRoot, fallbackBaseRef string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
 	merged := make(map[int64]bool, len(stacks))
 	candidates := stackMergeCandidates(stacks, bookmarkTargets)
 	if len(candidates) == 0 {
@@ -244,10 +244,10 @@ func (s *Service) stackMergeStates(ctx context.Context, repoRoot, defaultBaseBra
 	revsets := make([]string, 0, len(candidates))
 	baseSelectors := map[string][]string{}
 	for _, candidate := range candidates {
-		cacheKey := candidate.baseRef + "\x00" + candidate.remoteName
+		cacheKey := candidate.baseRef + "\x00" + candidate.remoteName + "\x00" + fallbackBaseRef
 		selectors, ok := baseSelectors[cacheKey]
 		if !ok {
-			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName, defaultBaseBranch)
+			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName, fallbackBaseRef)
 			baseSelectors[cacheKey] = selectors
 		}
 		for _, baseSelector := range selectors {
@@ -260,7 +260,7 @@ func (s *Service) stackMergeStates(ctx context.Context, repoRoot, defaultBaseBra
 	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", strings.Join(revsets, " | "), "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`)
 	if err != nil {
 		for _, stack := range stacks {
-			merged[stack.ID] = s.stackMergedIntoBase(ctx, repoRoot, stack, bookmarkTargets)
+			merged[stack.ID] = s.stackMergedIntoBase(ctx, repoRoot, fallbackBaseRef, stack, bookmarkTargets)
 		}
 		return merged
 	}

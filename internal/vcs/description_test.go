@@ -40,6 +40,17 @@ func TestValidateCommitMessage(t *testing.T) {
 	}
 }
 
+func TestValidateRecordedChangeDescription(t *testing.T) {
+	t.Parallel()
+
+	if err := validateRecordedChangeDescription("add login flow"); err != nil {
+		t.Fatalf("validateRecordedChangeDescription() error = %v", err)
+	}
+	if err := validateRecordedChangeDescription(""); err == nil {
+		t.Fatal("validateRecordedChangeDescription() error = nil, want empty rejection")
+	}
+}
+
 func TestRequireRecordedAddsForPublish(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("GX_HOME", t.TempDir())
