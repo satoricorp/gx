@@ -1956,6 +1956,15 @@ func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
 	}
 }
 
+
+func TestPrintGenerateRoundFailureShowsError(t *testing.T) {
+	var out bytes.Buffer
+	printGenerateRoundFailure(&out, fmt.Errorf("Revision `main` doesn't exist"))
+	if !strings.Contains(out.String(), "Revision `main` doesn't exist") {
+		t.Fatalf("printGenerateRoundFailure() output = %q, want the error text", out.String())
+	}
+}
+
 func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	if _, err := exec.LookPath("jj"); err != nil {
 		t.Skip("jj executable not found")
