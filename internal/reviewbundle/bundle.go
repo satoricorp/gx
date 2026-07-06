@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/satoricorp/gx/internal/agentprovenance"
@@ -257,7 +258,7 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 		},
 		Push: PushPayload{
 			RemoteName:           push.RemoteName,
-			BranchName:           push.Repo.BranchName,
+			BranchName:           publishBranchName(push),
 			HeadCommitID:         push.HeadCommitID,
 			GitHubPullRequestURL: push.GitHubPullRequestURL,
 		},
@@ -900,4 +901,11 @@ func listRequestResponses(ctx context.Context, db *sql.DB, requestID string) ([]
 		return nil, fmt.Errorf("iterate responses: %w", err)
 	}
 	return responses, nil
+}
+
+func publishBranchName(push vcs.PushResult) *string {
+	if ref := strings.TrimSpace(push.GXStackRef); ref != "" {
+		return &ref
+	}
+	return push.Repo.BranchName
 }
