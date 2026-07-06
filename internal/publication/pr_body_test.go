@@ -151,23 +151,35 @@ func TestBlobPermalink(t *testing.T) {
 	}
 }
 
-func TestHunkLinkForFindingValidatedLine(t *testing.T) {
-	prURL := "https://github.com/satoricorp/gx/pull/1"
-	hunks := []prHunkSummary{{
-		File:     "internal/github/client.go",
-		NewStart: 1,
-		NewLines: 3,
-		Link:     githubHunkLink(prURL, "internal/github/client.go", 1, 1, 3),
-	}}
-	finding := codereview.Finding{File: "internal/github/client.go", Line: 2}
-	got := hunkLinkForFinding(prURL, hunks, finding)
-	want := githubHunkLineLink(prURL, "internal/github/client.go", 2)
-	if got != want {
-		t.Fatalf("hunkLinkForFinding() = %q, want %q", got, want)
+func TestGitHubPullRequestFilesURL(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"https://github.com/satoricorp/gx/pull/71", "https://github.com/satoricorp/gx/pull/71/files"},
+		{"https://github.com/satoricorp/gx/pull/71/", "https://github.com/satoricorp/gx/pull/71/files"},
+		{"https://github.com/satoricorp/gx/pull/71/changes", "https://github.com/satoricorp/gx/pull/71/files"},
+		{"https://github.com/satoricorp/gx/pull/71/files", "https://github.com/satoricorp/gx/pull/71/files"},
+	}
+	for _, tc := range cases {
+		if got := githubPullRequestFilesURL(tc.in); got != tc.want {
+			t.Fatalf("githubPullRequestFilesURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
-func TestHunkLinkForFindingInvalidLineUsesHunkAnchor(t *testing.T) {
+func TestGitHubHunkLineLinkUsesFilesTabAnchor(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/71/changes"
+	file := "internal/reviewbundle/bundle.go"
+	line := 910
+	got := githubHunkLineLink(prURL, file, line)
+	want := "https://github.com/satoricorp/gx/pull/71/files#diff-222c707db70208988323245aee1da2520b10ae584ecdf8136e08c1fd6b1cae65R910"
+	if got != want {
+		t.Fatalf("githubHunkLineLink() = %q, want %q", got, want)
+	}
+}
+
+func TestHunkLinkForFindingValidatedLine(t *testing.T) {
 	prURL := "https://github.com/satoricorp/gx/pull/1"
 	hunks := []prHunkSummary{{
 		File:        "internal/github/client.go",
