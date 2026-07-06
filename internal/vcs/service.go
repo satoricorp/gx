@@ -760,6 +760,9 @@ func (s *Service) commitUnlocked(ctx context.Context, repo RepoInfo, message str
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if err := validateRecordedChangeDescription(change.Description); err != nil {
+		return CommitResult{}, err
+	}
 	repo, err = s.reattachRecordedContainer(ctx, repo.RootPath, body.BookmarkName, checkoutBranch)
 	if err != nil {
 		return CommitResult{}, err
@@ -826,6 +829,9 @@ func (s *Service) splitCommitUnlocked(ctx context.Context, repo RepoInfo, opts S
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if err := validateRecordedChangeDescription(change.Description); err != nil {
+		return CommitResult{}, err
+	}
 	if opts.BookmarkRecordedCommit {
 		repo, err = s.reattachRecordedContainerAtRev(ctx, repo.RootPath, body.BookmarkName, checkoutBranch, change.CommitID)
 	} else {
@@ -865,6 +871,9 @@ func (s *Service) splitCommitByHunkPatchLocked(ctx context.Context, opts SplitCo
 }
 
 func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOptions) (CommitResult, error) {
+	if err := ValidateCommitMessage(opts.Message); err != nil {
+		return CommitResult{}, err
+	}
 	if strings.TrimSpace(opts.PatchFile) == "" {
 		return CommitResult{}, fmt.Errorf("patch file is required; use --patch-file with --hunk")
 	}
@@ -915,7 +924,7 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 	if err != nil {
 		return CommitResult{}, err
 	}
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "gx: pending remainder", "-r", childChange.ChangeID); err != nil {
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", PendingRemainderDescription, "-r", childChange.ChangeID); err != nil {
 		return CommitResult{}, err
 	}
 	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "edit", "@-"); err != nil {
@@ -941,11 +950,17 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 			return CommitResult{}, fmt.Errorf("remaining hunk patch applied but jj working copy has no changes")
 		}
 	}
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", "", "-r", "@"); err != nil {
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"); err != nil {
+		return CommitResult{}, err
+	}
+	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", opts.Message, "-r", "@-"); err != nil {
 		return CommitResult{}, err
 	}
 	change, err := s.CurrentChange(ctx, repo.RootPath, "@-")
 	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := validateRecordedChangeDescription(change.Description); err != nil {
 		return CommitResult{}, err
 	}
 	if opts.BookmarkRecordedCommit {
@@ -3058,7 +3073,7 @@ func (s *Service) Stack(ctx context.Context) (StackSummary, error) {
 	return stackSummaryForStack(model.repo, model.currentStack, model.currentStackFound, model.stacks, model.currentRevisions, model.currentPublishedCount), nil
 }
 
-func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stack StackInfo, bookmarkTargets map[string]string) bool {
+func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot, fallbackBaseRef string, stack StackInfo, bookmarkTargets map[string]string) bool {
 	baseRef := strings.TrimSpace(stack.BaseRef)
 	if baseRef == "" || IsTerminalStackStatus(stack.Status) {
 		return false
@@ -3067,7 +3082,7 @@ func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stac
 	if stack.RemoteName != nil {
 		remoteName = strings.TrimSpace(*stack.RemoteName)
 	}
-	baseSelectors := s.stackMergeBaseSelectors(ctx, repoRoot, baseRef, remoteName, "")
+	baseSelectors := s.stackMergeBaseSelectors(ctx, repoRoot, baseRef, remoteName, fallbackBaseRef)
 	selectors := make([]string, 0, 2)
 	if bookmark := strings.TrimSpace(stack.BookmarkName); bookmark != "" {
 		if _, exists := bookmarkTargets[bookmark]; exists {

@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-const PlaceholderDescription = "(no description set)"
+const (
+	PlaceholderDescription       = "(no description set)"
+	PendingRemainderDescription  = "gx: pending remainder"
+)
 
 var (
 	ErrNoRecordedAdds     = errors.New("no gx add recorded for this stack")
@@ -29,6 +32,13 @@ func ValidateCommitMessage(message string) error {
 	}
 	if IsPlaceholderDescription(trimmed) {
 		return fmt.Errorf("commit message cannot be %q", PlaceholderDescription)
+	}
+	return nil
+}
+
+func validateRecordedChangeDescription(description string) error {
+	if err := ValidateCommitMessage(description); err != nil {
+		return fmt.Errorf("recorded revision has invalid description: %w", err)
 	}
 	return nil
 }

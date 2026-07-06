@@ -67,7 +67,7 @@ func TestStackMergedIntoBaseUsesLiveBookmark(t *testing.T) {
 	}
 	svc := NewServiceWithRunner(runner)
 
-	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
+	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, "main", StackInfo{
 		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		Status:       "draft",
@@ -94,7 +94,7 @@ func TestStackMergedIntoBaseIgnoresStoredHeadWhenBookmarkExists(t *testing.T) {
 	}
 	svc := NewServiceWithRunner(runner)
 
-	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
+	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, "main", StackInfo{
 		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		HeadCommitID: &headCommit,
@@ -122,7 +122,7 @@ func TestStackMergedIntoBaseUsesRemoteTrackingBase(t *testing.T) {
 	}
 	svc := NewServiceWithRunner(runner)
 
-	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
+	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, "main", StackInfo{
 		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		Status:       "published",
@@ -144,7 +144,7 @@ func TestStackMergedIntoBaseFallsBackToStoredHeadWithoutBookmark(t *testing.T) {
 	}
 	svc := NewServiceWithRunner(runner)
 
-	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, StackInfo{
+	merged := svc.stackMergedIntoBase(context.Background(), repoRoot, "main", StackInfo{
 		BookmarkName: "feature/work",
 		BaseRef:      "main",
 		HeadCommitID: &headCommit,
@@ -152,6 +152,30 @@ func TestStackMergedIntoBaseFallsBackToStoredHeadWithoutBookmark(t *testing.T) {
 	}, nil)
 	if !merged {
 		t.Fatal("expected stored head ancestor of main to be merged when bookmark is gone")
+	}
+}
+
+func TestStackMergeStatesUsesDefaultBranchWhenStackBaseMissing(t *testing.T) {
+	repoRoot := t.TempDir()
+	runner := &fakeRunner{
+		outputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "log", "-r", "main@origin", "-n", "1", "--no-graph", "-T", "change_id"): {
+				"basechange\n",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "(feature/work) & ancestors(feature/authoring) | (feature/work) & ancestors(main) | (feature/work) & ancestors(main@origin)", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`): {
+				"work-change|work-commit\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	merged := svc.stackMergeStates(context.Background(), repoRoot, "main", []StackInfo{
+		{ID: 1, BookmarkName: "feature/work", BaseRef: "feature/authoring", Status: "published"},
+	}, map[string]string{
+		"feature/work": "work-change",
+	})
+	if !merged[1] {
+		t.Fatal("expected stack merged into default branch when stack base ref is missing")
 	}
 }
 
