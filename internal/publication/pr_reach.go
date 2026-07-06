@@ -2,6 +2,7 @@ package publication
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +24,7 @@ const (
 	highReachRefsPerSymbol  = 25
 	maxBlastRadiusCritical  = 4
 	maxBlastRadiusSymbols   = 4
+	maxBlastRadiusNarrative = 500
 )
 
 var goPatchSymbolRE = regexp.MustCompile(`^\+(?:func|type)\s+([A-Za-z_][A-Za-z0-9_]*)`)
@@ -304,7 +306,96 @@ func shouldRenderBlastRadiusSection(triage codereview.ChangeTriage, catalog prBo
 	return false
 }
 
-func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy, triage codereview.ChangeTriage) string {
+func blastRadiusNarrative(catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy, triage codereview.ChangeTriage, summary codereview.PRSummaryReview, aiSucceeded bool) string {
+	if aiSucceeded {
+		if text := sanitizedBlastRadiusNarrative(summary.DownstreamImpact); text != "" {
+			return text
+		}
+	}
+	return heuristicBlastRadiusNarrative(catalog, reach, policy, triage)
+}
+
+func sanitizedBlastRadiusNarrative(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = prURLStripRE.ReplaceAllString(text, "")
+	text = sanitizePRVisibleText(text)
+	return trimSentence(text, maxBlastRadiusNarrative)
+}
+
+func heuristicBlastRadiusNarrative(catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy, triage codereview.ChangeTriage) string {
+	switch triage.Class {
+	case "docs-only":
+		return "Documentation-only change; no customer-facing runtime behavior should change."
+	case "tests-only":
+		return "Tests-only change; production behavior should stay the same unless the tests uncovered a needed fix."
+	case "config-only":
+		return "Configuration-only change; verify deployed settings, but customer-facing code paths are unlikely to shift."
+	case "mechanical":
+		return "Mechanical refactor with low behavioral risk; existing behavior should be preserved, though wide refactors can still hide subtle regressions."
+	case "security-sensitive":
+		area := firstNonEmpty(firstSorted(catalog.Areas), verdictReasonFileArea(catalog.Files))
+		if area != "" {
+			return fmt.Sprintf("Security-sensitive change in %s; could affect customer trust, data handling, or access control — verify auth and data paths before merge.", humanAreaList([]string{area}, 1))
+		}
+		return "Security-sensitive change; could affect customer trust, data handling, or access control — verify auth and data paths before merge."
+	}
+
+	totalLines := catalog.Stats.AddedLines + catalog.Stats.DeletedLines
+	areas := humanAreaList(catalog.Areas, 3)
+	reachNote := ""
+	if reach.ReferenceCount > 0 {
+		reachNote = fmt.Sprintf(" Changed symbols are referenced across %d other file(s), so downstream callers may need re-checking.", reach.DependentFiles)
+	}
+	if catalogTouchesCriticalPath(catalog, policy) {
+		return fmt.Sprintf("Touches configured high-risk paths; could affect customer-visible behavior or billing — review end-to-end before merge.%s", reachNote)
+	}
+
+	switch catalog.Stats.MaxRiskLevel {
+	case "high":
+		if areas != "" {
+			return fmt.Sprintf("Large high-risk change across %d file(s) in %s; could alter customer-visible behavior and ripple through downstream callers.%s Review end-to-end flows before merge.", catalog.Stats.FileCount, areas, reachNote)
+		}
+		return fmt.Sprintf("Large high-risk change across %d file(s); could alter customer-visible behavior and ripple through downstream callers.%s Review end-to-end flows before merge.", catalog.Stats.FileCount, reachNote)
+	case "medium":
+		if areas != "" {
+			return fmt.Sprintf("Moderate change across %d file(s) in %s; may shift runtime behavior — sanity-check key user flows.%s", catalog.Stats.FileCount, areas, reachNote)
+		}
+		return fmt.Sprintf("Moderate change across %d file(s); may shift runtime behavior — sanity-check key user flows.%s", catalog.Stats.FileCount, reachNote)
+	}
+
+	switch {
+	case totalLines >= 400 || catalog.Stats.FileCount >= 8:
+		if areas != "" {
+			return fmt.Sprintf("Broad change across %d file(s) in %s; could alter customer-visible behavior with downstream effects.%s", catalog.Stats.FileCount, areas, reachNote)
+		}
+		return fmt.Sprintf("Broad change across %d file(s); could alter customer-visible behavior with downstream effects.%s", catalog.Stats.FileCount, reachNote)
+	case totalLines >= 100 || catalog.Stats.FileCount >= 4 || reach.ReferenceCount >= 3:
+		if areas != "" {
+			return fmt.Sprintf("Touches %d file(s) in %s; localized but may affect adjacent behavior.%s", catalog.Stats.FileCount, areas, reachNote)
+		}
+		return fmt.Sprintf("Touches %d file(s); localized but may affect adjacent behavior.%s", catalog.Stats.FileCount, reachNote)
+	default:
+		base := "Small localized change with low risk to existing customer-visible behavior."
+		if reachNote != "" {
+			return base + reachNote
+		}
+		return base
+	}
+}
+
+func catalogTouchesCriticalPath(catalog prBodyCatalog, policy codereview.ReviewPolicy) bool {
+	for _, hunk := range catalog.Hunks {
+		if hunkMatchesRiskPath(hunk.File, policy) {
+			return true
+		}
+	}
+	return false
+}
+
+func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCatalog, reach lexicalReach, policy codereview.ReviewPolicy, triage codereview.ChangeTriage, summary codereview.PRSummaryReview, aiSucceeded bool) string {
 	if !shouldRenderBlastRadiusSection(triage, catalog, reach, policy) {
 		return ""
 	}
@@ -314,6 +405,10 @@ func renderBlastRadiusSection(artifact reviewbundle.Artifact, catalog prBodyCata
 	body.WriteString("\n\n## Blast Radius\n\n")
 	body.WriteString(readinessSentence(catalog, reach))
 	body.WriteByte('\n')
+	if narrative := blastRadiusNarrative(catalog, reach, policy, triage, summary, aiSucceeded); narrative != "" {
+		body.WriteString(narrative)
+		body.WriteByte('\n')
+	}
 
 	criticalCount := 0
 	for _, riskPath := range policy.RiskPaths {

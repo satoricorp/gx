@@ -151,7 +151,7 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	body.WriteString(renderVerdictBanner(verdict, reason))
 	body.WriteString("\n\n")
 	body.WriteString(openingSummary(artifact, catalog, summary.Overview, aiSucceeded))
-	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach, policy, triage))
+	body.WriteString(renderBlastRadiusSection(artifact, catalog, reach, policy, triage, summary, aiSucceeded))
 	body.WriteString(renderNotableChangesSection(items))
 	body.WriteString("\n\n")
 	body.WriteString(provenanceFooter(aiSucceeded, reviewerInfo, summaryContext))

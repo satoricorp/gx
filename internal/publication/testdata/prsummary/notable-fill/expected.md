@@ -7,6 +7,7 @@ Moves cache eviction from LRU scans to TTL buckets so stale entries drop without
 ## Blast Radius
 
 Blast radius is low (2 file(s), 1 area(s), +2/-0 lines).
+Low customer-facing risk; cache expiry timing may shift slightly but API responses should stay consistent.
 
 
 ## Notable Changes

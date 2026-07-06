@@ -52,9 +52,10 @@ type NotableChange struct {
 }
 
 type PRSummaryReview struct {
-	Overview       string
-	NotableChanges []NotableChange
-	Findings       []Finding
+	Overview          string
+	DownstreamImpact  string
+	NotableChanges    []NotableChange
+	Findings          []Finding
 }
 
 type AIReviewerWithSummary interface {
@@ -139,15 +140,17 @@ type responseResult struct {
 }
 
 type aiReviewResponse struct {
-	Overview        string             `json:"overview"`
-	Recommendations []aiRecommendation `json:"recommendations"`
-	NotableChanges  []aiNotableChange  `json:"notable_changes"`
+	Overview          string             `json:"overview"`
+	DownstreamImpact  string             `json:"downstream_impact"`
+	Recommendations   []aiRecommendation `json:"recommendations"`
+	NotableChanges    []aiNotableChange  `json:"notable_changes"`
 }
 
 type aiReviewOutput struct {
-	Overview       string
-	NotableChanges []NotableChange
-	Findings       []Finding
+	Overview          string
+	DownstreamImpact  string
+	NotableChanges    []NotableChange
+	Findings          []Finding
 }
 
 type aiNotableChange struct {
@@ -425,6 +428,7 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	})
 	var out []Finding
 	var overview string
+	var downstreamImpact string
 	var notableChanges []NotableChange
 	var errors []string
 	parsed := false
@@ -438,6 +442,9 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		if overview == "" && strings.TrimSpace(result.summary.Overview) != "" {
 			overview = strings.TrimSpace(result.summary.Overview)
 		}
+		if downstreamImpact == "" && strings.TrimSpace(result.summary.DownstreamImpact) != "" {
+			downstreamImpact = strings.TrimSpace(result.summary.DownstreamImpact)
+		}
 		if len(notableChanges) == 0 && len(result.summary.NotableChanges) > 0 {
 			notableChanges = append([]NotableChange(nil), result.summary.NotableChanges...)
 		}
@@ -449,7 +456,7 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	}
 	out = mergeNearDuplicateFindings(out)
 	if parsed {
-		return PRSummaryReview{Overview: overview, NotableChanges: notableChanges, Findings: out}, nil
+		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Findings: out}, nil
 	}
 	if len(errors) > 0 {
 		return PRSummaryReview{}, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
@@ -695,17 +702,19 @@ func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, err
 		return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
 	}
 	return aiReviewOutput{
-		Overview:       strings.TrimSpace(parsed.Overview),
-		NotableChanges: aiNotableChangesToNotableChanges(parsed.NotableChanges),
-		Findings:       aiRecommendationsToFindings(parsed.Recommendations, brief),
+		Overview:         strings.TrimSpace(parsed.Overview),
+		DownstreamImpact: strings.TrimSpace(parsed.DownstreamImpact),
+		NotableChanges:   aiNotableChangesToNotableChanges(parsed.NotableChanges),
+		Findings:         aiRecommendationsToFindings(parsed.Recommendations, brief),
 	}, nil
 }
 
 func aiReviewOutputToPRSummaryReview(output aiReviewOutput) PRSummaryReview {
 	return PRSummaryReview{
-		Overview:       output.Overview,
-		NotableChanges: append([]NotableChange(nil), output.NotableChanges...),
-		Findings:       output.Findings,
+		Overview:         output.Overview,
+		DownstreamImpact: output.DownstreamImpact,
+		NotableChanges:   append([]NotableChange(nil), output.NotableChanges...),
+		Findings:         output.Findings,
 	}
 }
 
@@ -1060,8 +1069,9 @@ func reviewDeveloperPrompt() string {
 		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
 		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions and session_transcript context; no file lists, no URLs, no praise. For all other profiles, omit overview.",
 		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
-		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview rule.",
-		"Return JSON only with shape {\"overview\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
+		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
+		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
 	}, "\n")
 }

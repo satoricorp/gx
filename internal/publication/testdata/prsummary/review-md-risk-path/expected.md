@@ -7,6 +7,7 @@ This PR changes `internal/billing`: add billing charge helper.
 ## Blast Radius
 
 Blast radius is low (1 file(s), 1 area(s), +1/-0 lines).
+Touches configured high-risk paths; could affect customer-visible behavior or billing — review end-to-end before merge.
 - **Critical path `internal/billing/**`** — billing changes can mischarge customers (REVIEW.md) — [changed here](https://github.com/example/acme/pull/1/files#diff-646ce9f468adba34cd66264566857e4a9a1ab2374fe1e53982452bf790dbefadR2)
 
 

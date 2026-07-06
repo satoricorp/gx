@@ -65,6 +65,20 @@ func TestParseAIReviewOutputEmptyRecommendationsIsValid(t *testing.T) {
 	}
 }
 
+func TestParsePRSummaryReviewIncludesDownstreamImpact(t *testing.T) {
+	summary, err := ParsePRSummaryReview(`{
+		"overview":"Adjusts cache eviction.",
+		"downstream_impact":"Low customer-facing risk; eviction timing may shift but API behavior stays the same.",
+		"recommendations":[]
+	}`, ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ParsePRSummaryReview() error = %v", err)
+	}
+	if summary.DownstreamImpact != "Low customer-facing risk; eviction timing may shift but API behavior stays the same." {
+		t.Fatalf("DownstreamImpact = %q", summary.DownstreamImpact)
+	}
+}
+
 func TestParsePRSummaryReviewIncludesNotableChangesWithStringLine(t *testing.T) {
 	summary, err := ParsePRSummaryReview(`{
 		"overview":"Adds session validation.",
