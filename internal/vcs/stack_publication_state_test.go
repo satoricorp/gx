@@ -169,7 +169,7 @@ func TestStackMergeStatesBatchesBookmarkChecks(t *testing.T) {
 	}
 	svc := NewServiceWithRunner(runner)
 
-	merged := svc.stackMergeStates(context.Background(), repoRoot, []StackInfo{
+	merged := svc.stackMergeStates(context.Background(), repoRoot, "main", []StackInfo{
 		{ID: 1, BookmarkName: "feature/one", BaseRef: "main", Status: "draft"},
 		{ID: 2, BookmarkName: "feature/two", BaseRef: "main", Status: "draft"},
 	}, map[string]string{

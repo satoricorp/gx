@@ -322,6 +322,11 @@ type StackSummary struct {
 	PublishedCount int
 	Units          []UnitSummary
 	Revisions      []RevisionSummary
+
+	MissingBaseRefs        []MissingStackBaseRef `json:"missing_base_refs,omitempty"`
+	NeedsRebaseOntoDefault bool                  `json:"needs_rebase_onto_default,omitempty"`
+	FixAction              string                `json:"fix_action,omitempty"`
+	FixPrompt              string                `json:"fix_prompt,omitempty"`
 }
 
 type InitOptions struct {
@@ -3062,7 +3067,7 @@ func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot string, stac
 	if stack.RemoteName != nil {
 		remoteName = strings.TrimSpace(*stack.RemoteName)
 	}
-	baseSelectors := s.stackMergeBaseSelectors(ctx, repoRoot, baseRef, remoteName)
+	baseSelectors := s.stackMergeBaseSelectors(ctx, repoRoot, baseRef, remoteName, "")
 	selectors := make([]string, 0, 2)
 	if bookmark := strings.TrimSpace(stack.BookmarkName); bookmark != "" {
 		if _, exists := bookmarkTargets[bookmark]; exists {
