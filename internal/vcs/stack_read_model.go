@@ -108,6 +108,14 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 	if len(stored) == 0 {
 		return []StackInfo{}, nil
 	}
+	if err := s.reconcileStoredStacksRemoteState(ctx, store, repo, repoID, stored); err != nil {
+		return nil, err
+	}
+	reloaded, err := store.ListStacksByRepoID(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	stored = reloaded
 	stackIDs := make([]int64, 0, len(stored))
 	publishRefs := make([]string, 0, len(stored))
 	infos := make([]StackInfo, 0, len(stored))

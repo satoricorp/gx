@@ -162,8 +162,11 @@ func TestRebaseStackOntoDefaultUnlockedUpdatesStoredBase(t *testing.T) {
 		t.Fatalf("UpsertStack() error = %v", err)
 	}
 
-	rebaseRevset := stackRebaseSourceRevset("feature/structural", "feature/authoring", "main")
+	rebaseRevset := stackRebaseSourceRevset("feature/structural", "feature/authoring", "main", false)
 	changeTmpl := `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`
+	revExists := func(rev string) string {
+		return runnerKey(repoRoot, "jj", "log", "-r", rev, "-n", "1", "--no-graph", "-T", "change_id")
+	}
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "rebase", "-s", rebaseRevset, "-d", "main"): {""},
@@ -195,6 +198,10 @@ func TestRebaseStackOntoDefaultUnlockedUpdatesStoredBase(t *testing.T) {
 				"",
 			},
 		},
+		errors: map[string][]error{
+			revExists("feature/authoring"):        {fmt.Errorf(`revision "feature/authoring" doesn't exist`), fmt.Errorf(`revision "feature/authoring" doesn't exist`)},
+			revExists("feature/authoring@origin"): {fmt.Errorf(`revision "feature/authoring@origin" doesn't exist`), fmt.Errorf(`revision "feature/authoring@origin" doesn't exist`)},
+		},
 	}
 	svc := NewServiceWithRunner(runner)
 	repo := RepoInfo{RootPath: repoRoot, DefaultBranch: ptr("main")}
@@ -218,8 +225,16 @@ func TestRebaseStackOntoDefaultUnlockedUpdatesStoredBase(t *testing.T) {
 	}
 }
 
-func TestStackRebaseSourceRevsetExcludesMissingBase(t *testing.T) {
-	got := stackRebaseSourceRevset("feature/structural", "feature/authoring", "main")
+func TestStackRebaseSourceRevsetOmitsGoneMissingBase(t *testing.T) {
+	got := stackRebaseSourceRevset("feature/structural", "feature/authoring", "main", false)
+	want := `ancestors(feature/structural) & mutable() & ~empty() & ~hidden() & ~ancestors(main)`
+	if got != want {
+		t.Fatalf("revset = %q, want %q", got, want)
+	}
+}
+
+func TestStackRebaseSourceRevsetExcludesPresentMissingBase(t *testing.T) {
+	got := stackRebaseSourceRevset("feature/structural", "feature/authoring", "main", true)
 	want := `ancestors(feature/structural) & mutable() & ~empty() & ~hidden() & ~ancestors(feature/authoring) & ~ancestors(main)`
 	if got != want {
 		t.Fatalf("revset = %q, want %q", got, want)

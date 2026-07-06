@@ -356,15 +356,18 @@ func TestEnsureGitHubPullRequestReturnsExistingPR(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "git@github.com:satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "main",
 	}, "feature/demo", nil)
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest() error = %v, want nil", err)
+	}
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/7" {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want existing PR URL", got)
 	}
-	if status != "existing" || len(warnings) != 0 {
-		t.Fatalf("status=%q warnings=%#v, want existing without warnings", status, warnings)
+	if status != "existing" {
+		t.Fatalf("status=%q, want existing", status)
 	}
 	if gotAuth != "Bearer token-one" {
 		t.Fatalf("Authorization = %q", gotAuth)
@@ -381,16 +384,19 @@ func TestEnsureGitHubPullRequestReusesStoredPR(t *testing.T) {
 	remoteURL := "git@github.com:satoricorp/gx.git"
 	prURL := "https://github.com/satoricorp/gx/pull/42"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:        "Demo stack",
 		BaseRef:     "main",
 		GitHubPRURL: &prURL,
 	}, "feature/demo", nil)
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest() error = %v, want nil", err)
+	}
 	if got == nil || *got != prURL {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want stored PR URL", got)
 	}
-	if status != "stored" || len(warnings) != 0 {
-		t.Fatalf("status=%q warnings=%#v, want stored without warnings", status, warnings)
+	if status != "stored" {
+		t.Fatalf("status=%q, want stored", status)
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("runner calls = %#v, want none", runner.calls)
@@ -456,17 +462,20 @@ func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "git@github.com:satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "origin/main",
 	}, "feature/demo", []PushedChange{{
 		Change: ChangeInfo{ChangeID: "abc123", Description: "Add publish flow"},
 	}})
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest() error = %v, want nil", err)
+	}
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/8" {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want created PR URL", got)
 	}
-	if status != "created" || len(warnings) != 0 {
-		t.Fatalf("status=%q warnings=%#v, want created without warnings", status, warnings)
+	if status != "created" {
+		t.Fatalf("status=%q, want created", status)
 	}
 	if createPayload["base"] != "main" || createPayload["head"] != "feature/demo" || createPayload["title"] != "Demo stack" {
 		t.Fatalf("create payload = %#v", createPayload)
@@ -516,7 +525,7 @@ func TestEnsureGitHubPullRequestResolvesInternalBaseRefToPublicBookmark(t *testi
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "git@github.com:satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
 		RootPath:      repoRoot,
 		DefaultBranch: ptr("main"),
 		RemoteURL:     &remoteURL,
@@ -524,18 +533,21 @@ func TestEnsureGitHubPullRequestResolvesInternalBaseRefToPublicBookmark(t *testi
 		Name:    "Demo stack",
 		BaseRef: "gx/edit",
 	}, "feature/demo", nil)
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest() error = %v, want nil", err)
+	}
 	if got == nil || *got != "https://github.com/satoricorp/gx/pull/9" {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want created PR URL", got)
 	}
-	if status != "created" || len(warnings) != 0 {
-		t.Fatalf("status=%q warnings=%#v, want created without warnings", status, warnings)
+	if status != "created" {
+		t.Fatalf("status=%q, want created", status)
 	}
 	if createPayload["base"] != "feature/recovered-compose-batch" {
 		t.Fatalf("create payload base = %q, want public bookmark; payload = %#v", createPayload["base"], createPayload)
 	}
 }
 
-func TestEnsureGitHubPullRequestWarnsWhenBaseBranchMissing(t *testing.T) {
+func TestEnsureGitHubPullRequestErrorsWhenBaseBranchMissing(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
@@ -565,7 +577,7 @@ func TestEnsureGitHubPullRequestWarnsWhenBaseBranchMissing(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "git@github.com:satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
 		RootPath:      repoRoot,
 		DefaultBranch: ptr("main"),
 		RemoteURL:     &remoteURL,
@@ -573,18 +585,24 @@ func TestEnsureGitHubPullRequestWarnsWhenBaseBranchMissing(t *testing.T) {
 		Name:    "Demo stack",
 		BaseRef: "gx-internal-checkout-refs",
 	}, "feature/gx-internal-checkout-refs", nil)
-	if got != nil {
-		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
+	if err == nil {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want error", got)
 	}
-	if status != "warning" || len(warnings) != 1 || !strings.Contains(warnings[0], "base branch") {
-		t.Fatalf("status=%q warnings=%#v, want missing base warning", status, warnings)
+	if !strings.Contains(err.Error(), "base branch") || !strings.Contains(err.Error(), "gx doctor") {
+		t.Fatalf("error = %q, want missing base guidance", err.Error())
+	}
+	if got != nil {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want nil URL", got)
+	}
+	if status != "" {
+		t.Fatalf("status=%q, want empty on error", status)
 	}
 	if posted {
 		t.Fatal("ensureGitHubPullRequest() posted despite missing base branch")
 	}
 }
 
-func TestEnsureGitHubPullRequestWarnsWhenGXStackBaseNotPublished(t *testing.T) {
+func TestEnsureGitHubPullRequestErrorsWhenGXStackBaseNotPublished(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
@@ -614,45 +632,161 @@ func TestEnsureGitHubPullRequestWarnsWhenGXStackBaseNotPublished(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "git@github.com:satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{
 		RootPath:  repoRoot,
 		RemoteURL: &remoteURL,
 	}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "feature/base-stack",
 	}, "feature/demo-stack", nil)
+	if err == nil {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want error", got)
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "run `gx push feature/base-stack` first, then retry `gx push feature/demo-stack`") {
+		t.Fatalf("error = %q, want stack push guidance", err.Error())
+	}
 	if got != nil {
-		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
+		t.Fatalf("ensureGitHubPullRequest() = %v, want nil URL", got)
 	}
-	if status != "warning" {
-		t.Fatalf("status=%q warnings=%#v, want warning", status, warnings)
-	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "Run `gx push feature/base-stack` first, then retry `gx push feature/demo-stack`") {
-		t.Fatalf("warnings=%#v, want stack push guidance", warnings)
+	if status != "" {
+		t.Fatalf("status=%q, want empty on error", status)
 	}
 	if posted {
 		t.Fatal("ensureGitHubPullRequest() posted despite missing base branch")
 	}
 }
 
-func TestEnsureGitHubPullRequestSkipsNonGitHubRemote(t *testing.T) {
+func TestEnsureGitHubPullRequestErrorsOnNonGitHubRemote(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &fakeRunner{}
 	svc := NewServiceWithRunner(runner)
 	remoteURL := "https://example.com/satoricorp/gx.git"
 
-	got, status, warnings := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+	got, status, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
 		Name:    "Demo stack",
 		BaseRef: "main",
 	}, "feature/demo", nil)
+	if err == nil {
+		t.Fatal("ensureGitHubPullRequest() error = nil, want non-GitHub remote error")
+	}
+	if !strings.Contains(err.Error(), "GitHub remote") {
+		t.Fatalf("error = %q, want GitHub remote guidance", err.Error())
+	}
 	if got != nil {
 		t.Fatalf("ensureGitHubPullRequest() = %v, want nil", got)
 	}
-	if status != "skipped" || len(warnings) != 0 {
-		t.Fatalf("status=%q warnings=%#v, want skipped without warnings", status, warnings)
+	if status != "" {
+		t.Fatalf("status=%q, want empty on error", status)
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("runner calls = %#v, want none", runner.calls)
+	}
+}
+
+func TestEnsureGitHubPullRequestErrorsOnCreateFailure(t *testing.T) {
+	repoRoot := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`[]`))
+		case http.MethodPost:
+			http.Error(w, "validation failed", http.StatusUnprocessableEntity)
+		default:
+			t.Fatalf("method = %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("GH_TOKEN", "token-one")
+	runner := &fakeRunner{
+		stdoutOutputs: map[string][]string{
+			runnerKey(repoRoot, "git", "ls-remote", "--heads", "origin", "main"): {
+				"abc123\trefs/heads/main\n",
+			},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+	remoteURL := "git@github.com:satoricorp/gx.git"
+
+	got, _, err := svc.ensureGitHubPullRequest(context.Background(), RepoInfo{RootPath: repoRoot, RemoteURL: &remoteURL}, StackInfo{
+		Name:    "Demo stack",
+		BaseRef: "main",
+	}, "feature/demo", nil)
+	if err == nil {
+		t.Fatalf("ensureGitHubPullRequest() = %v, want create failure error", got)
+	}
+	if !strings.Contains(err.Error(), "could not create GitHub PR") {
+		t.Fatalf("error = %q, want create failure message", err.Error())
+	}
+}
+
+func TestRequireGitHubPullRequestAuthErrorsOnNonGitHubRemote(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+
+	svc := NewServiceWithRunner(&fakeRunner{})
+	remoteURL := "https://example.com/satoricorp/gx.git"
+	err := svc.requireGitHubPullRequestAuth(context.Background(), RepoInfo{RemoteURL: &remoteURL}, StackInfo{})
+	if err == nil {
+		t.Fatal("requireGitHubPullRequestAuth() error = nil, want non-GitHub remote error")
+	}
+	if !strings.Contains(err.Error(), "GitHub remote") {
+		t.Fatalf("error = %q, want GitHub remote guidance", err.Error())
+	}
+}
+
+func TestRecordPushStoresGitHubPRURL(t *testing.T) {
+	repoRoot := t.TempDir()
+	t.Setenv("GX_HOME", t.TempDir())
+	prURL := "https://github.com/satoricorp/gx/pull/8"
+	remoteRef := "refs/heads/feature/demo"
+	result := PushResult{
+		Repo: RepoInfo{
+			RootPath:      repoRoot,
+			Backend:       "jj",
+			DefaultRemote: ptr("origin"),
+			DefaultBranch: ptr("main"),
+			RemoteURL:     ptr("git@github.com:satoricorp/gx.git"),
+			BranchName:    ptr("feature/demo"),
+		},
+		RemoteName:     ptr("origin"),
+		GXStackRef:     "feature/demo",
+		GitPublishedRef: remoteRef,
+		GitExported:    true,
+		HeadCommitID:   "head123",
+		Stack: &StackInfo{
+			Name:         "Demo stack",
+			BookmarkName: "feature/demo",
+			GitHubPRURL:  &prURL,
+		},
+	}
+	if err := recordPush(context.Background(), result); err != nil {
+		t.Fatalf("recordPush() error = %v", err)
+	}
+	store, err := openStore(context.Background())
+	if err != nil {
+		t.Fatalf("openStore() error = %v", err)
+	}
+	defer store.Close()
+	repo, err := store.FindRepoByRoot(context.Background(), repoRoot)
+	if err != nil {
+		t.Fatalf("FindRepoByRoot() error = %v", err)
+	}
+	if repo == nil {
+		t.Fatal("repo was not recorded")
+	}
+	stacks, err := store.ListStacksByRepoID(context.Background(), repo.ID)
+	if err != nil {
+		t.Fatalf("ListStacksByRepoID() error = %v", err)
+	}
+	if len(stacks) != 1 {
+		t.Fatalf("stacks = %d, want 1", len(stacks))
+	}
+	if stacks[0].GitHubPRURL == nil || *stacks[0].GitHubPRURL != prURL {
+		t.Fatalf("github_pr_url = %v, want %q", stacks[0].GitHubPRURL, prURL)
+	}
+	if stacks[0].Status != "published" {
+		t.Fatalf("status = %q, want published", stacks[0].Status)
 	}
 }
 

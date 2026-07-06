@@ -152,6 +152,10 @@ func (e *Engine) RebaseMissingStackBaseRefs(ctx context.Context, issues []vcs.Mi
 	return e.vcs.RebaseMissingStackBaseRefs(ctx, issues)
 }
 
+func (e *Engine) RepairMissingStackBaseRefs(ctx context.Context) (vcs.RebaseOntoDefaultResult, error) {
+	return e.vcs.RepairMissingStackBaseRefs(ctx)
+}
+
 func (e *Engine) ResolveJJRepo(ctx context.Context) (RepoInfo, error) {
 	return e.vcs.ResolveJJRepo(ctx)
 }

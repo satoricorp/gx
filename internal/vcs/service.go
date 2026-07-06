@@ -2487,10 +2487,12 @@ func (s *Service) pushStackUnlockedWithContext(ctx context.Context, repo RepoInf
 	var githubPRURL *string
 	githubPRStatus := "not requested"
 	if gitExported {
-		prURL, prStatus, prWarnings := s.ensureGitHubPullRequest(ctx, repo, body, refName, pushed)
+		prURL, prStatus, prErr := s.ensureGitHubPullRequest(ctx, repo, body, refName, pushed)
+		if prErr != nil {
+			return PushResult{}, fmt.Errorf("GitHub pull request required: %w", prErr)
+		}
 		githubPRURL = prURL
 		githubPRStatus = prStatus
-		warnings = append(warnings, prWarnings...)
 		body.GitHubPRURL = prURL
 		for i := range pushed {
 			pushed[i].GitHubPullRequestURL = prURL
@@ -2691,11 +2693,11 @@ func (s *Service) requireGitHubPullRequestAuth(ctx context.Context, repo RepoInf
 		return nil
 	}
 	if repo.RemoteURL == nil || strings.TrimSpace(*repo.RemoteURL) == "" {
-		return nil
+		return fmt.Errorf("gx push requires a GitHub remote URL to create a pull request; run `git remote -v` and ensure origin points to GitHub")
 	}
 	host, _, _, ok := parseGitHubRemote(*repo.RemoteURL)
 	if !ok {
-		return nil
+		return fmt.Errorf("gx push requires a GitHub remote to create a pull request; origin URL %q is not a GitHub repository", strings.TrimSpace(*repo.RemoteURL))
 	}
 	if _, err := githubapi.NewClient(host); err != nil {
 		return fmt.Errorf("GitHub PR setup requires authentication before pushing code: %w", err)
@@ -2850,16 +2852,16 @@ func (s *Service) gitCommitIsAncestor(ctx context.Context, repoRoot, ancestor, d
 	return true, nil
 }
 
-func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, stack StackInfo, refName string, pushed []PushedChange) (*string, string, []string) {
+func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, stack StackInfo, refName string, pushed []PushedChange) (*string, string, error) {
 	if stack.GitHubPRURL != nil && strings.TrimSpace(*stack.GitHubPRURL) != "" {
 		return ptr(strings.TrimSpace(*stack.GitHubPRURL)), "stored", nil
 	}
 	if repo.RemoteURL == nil || strings.TrimSpace(*repo.RemoteURL) == "" {
-		return nil, "skipped", nil
+		return nil, "", fmt.Errorf("gx push requires a GitHub remote URL to create a pull request; run `git remote -v` and ensure origin points to GitHub")
 	}
 	host, owner, repoName, ok := parseGitHubRemote(*repo.RemoteURL)
 	if !ok {
-		return nil, "skipped", nil
+		return nil, "", fmt.Errorf("gx push requires a GitHub remote to create a pull request; origin URL %q is not a GitHub repository", strings.TrimSpace(*repo.RemoteURL))
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, stack.BaseRef)
 	title := strings.TrimSpace(firstNonEmpty(stack.Name, stack.BookmarkName, refName))
@@ -2867,7 +2869,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 
 	client, err := githubapi.NewClient(host)
 	if err != nil {
-		return nil, "warning", []string{fmt.Sprintf("Could not prepare GitHub PR for branch %s: %v. Re-run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN, then retry `gx push %s`.", refName, err, refName)}
+		return nil, "", fmt.Errorf("could not prepare GitHub PR for branch %s: %w; run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN, then retry `gx push %s`", refName, err, refName)
 	}
 	opts := githubapi.CreatePullRequestOptions{
 		Host:       host,
@@ -2880,7 +2882,7 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 	}
 	existing, err := client.FindPullRequest(ctx, opts)
 	if err != nil {
-		return nil, "warning", []string{fmt.Sprintf("Could not check for an existing GitHub PR for target branch %s (the pushed branch): %v. Retry `gx push %s` after GitHub access is fixed.", refName, err, refName)}
+		return nil, "", fmt.Errorf("could not check for an existing GitHub PR for target branch %s: %w; retry `gx push %s` after GitHub access is fixed", refName, err, refName)
 	}
 	if existing != nil && strings.TrimSpace(existing.URL) != "" {
 		return ptr(strings.TrimSpace(existing.URL)), "existing", nil
@@ -2890,31 +2892,30 @@ func (s *Service) ensureGitHubPullRequest(ctx context.Context, repo RepoInfo, st
 		remoteName = strings.TrimSpace(*repo.DefaultRemote)
 	}
 	baseExists, baseErr := s.remoteBranchExists(ctx, repo.RootPath, remoteName, baseRef)
-	if baseErr == nil && !baseExists {
+	if baseErr != nil {
+		return nil, "", fmt.Errorf("could not verify PR base branch %q on %s: %w; run `gx doctor` if the base ref is wrong, then retry `gx push %s`", baseRef, remoteName, baseErr, refName)
+	}
+	if !baseExists {
 		compare := githubPullRequestURL(*repo.RemoteURL, baseRef, refName)
-		hint := fmt.Sprintf("Could not create GitHub PR for target branch %s because its base branch %q is not on %s. ", refName, baseRef, remoteName)
+		hint := fmt.Sprintf("could not create GitHub PR for target branch %s because its base branch %q is not on %s", refName, baseRef, remoteName)
 		if isGXStackBookmark(baseRef) {
-			hint += fmt.Sprintf("Run `gx push %s` first, then retry `gx push %s`.", baseRef, refName)
+			hint += fmt.Sprintf("; run `gx push %s` first, then retry `gx push %s`", baseRef, refName)
 		} else {
-			hint += fmt.Sprintf("Set a valid base with `gx base --set %s` or run `gx repair`, then retry `gx push %s`.", baseRef, refName)
+			hint += fmt.Sprintf("; run `gx doctor` or set a valid base with `gx base --set %s`, then retry `gx push %s`", baseRef, refName)
 		}
 		if compare != nil {
-			hint += " You can also inspect " + *compare + "."
+			hint += "; inspect " + *compare
 		}
-		return nil, "warning", []string{hint}
-	}
-	warnings := []string{}
-	if baseErr != nil {
-		warnings = append(warnings, fmt.Sprintf("Could not verify PR base branch %q on %s before creating a PR: %v", baseRef, remoteName, baseErr))
+		return nil, "", fmt.Errorf("%s", hint)
 	}
 	created, err := client.CreatePullRequest(ctx, opts)
 	if err != nil {
-		return nil, "warning", append(warnings, fmt.Sprintf("Could not create GitHub PR for target branch %s against base %s: %v. Fix the base with `gx base --set <github-base-branch>` or create the PR manually.", refName, baseRef, err))
+		return nil, "", fmt.Errorf("could not create GitHub PR for target branch %s against base %s: %w; run `gx doctor` or set a valid base with `gx base --set <github-base-branch>`, then retry `gx push %s`", refName, baseRef, err, refName)
 	}
 	if created == nil || strings.TrimSpace(created.URL) == "" {
-		return nil, "warning", append(warnings, fmt.Sprintf("GitHub did not return a PR URL for target branch %s. Retry `gx push %s` or create the PR manually.", refName, refName))
+		return nil, "", fmt.Errorf("GitHub did not return a PR URL for target branch %s; retry `gx push %s` or create the PR manually on GitHub", refName, refName)
 	}
-	return ptr(strings.TrimSpace(created.URL)), "created", warnings
+	return ptr(strings.TrimSpace(created.URL)), "created", nil
 }
 
 func (s *Service) remoteBranchExists(ctx context.Context, repoRoot, remoteName, branchName string) (bool, error) {
