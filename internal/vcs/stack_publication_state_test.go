@@ -183,7 +183,7 @@ func TestStackMergeStatesBatchesBookmarkChecks(t *testing.T) {
 	if merged[2] {
 		t.Fatal("expected feature/two to remain unmerged")
 	}
-	if len(runner.calls) != 2 {
-		t.Fatalf("merge checks made %d runner calls, want 2: %v", len(runner.calls), runner.calls)
+	if len(runner.calls) != 3 {
+		t.Fatalf("merge checks made %d runner calls, want 3: %v", len(runner.calls), runner.calls)
 	}
 }

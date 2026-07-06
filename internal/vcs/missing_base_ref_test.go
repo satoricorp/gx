@@ -167,6 +167,7 @@ func TestRebaseStackOntoDefaultUnlockedUpdatesStoredBase(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "rebase", "-s", rebaseRevset, "-d", "main"): {""},
+			runnerKey(repoRoot, "git", "rev-parse", "main"):                        {"newbase\n"},
 		},
 		stdoutOutputs: map[string][]string{
 			runnerKey(repoRoot, "jj", "log", "-r", "main", "-n", "1", "--no-graph", "-T", "change_id"): {
@@ -181,8 +182,11 @@ func TestRebaseStackOntoDefaultUnlockedUpdatesStoredBase(t *testing.T) {
 			runnerKey(repoRoot, "jj", "log", "-r", rebaseRevset, "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"",
 			},
-			runnerKey(repoRoot, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(main)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
+			runnerKey(repoRoot, "jj", "log", "-r", "mutable() & ~empty() & ~hidden() & ancestors(@) & ~ancestors(main)", "--reversed", "--no-graph", "-T", jjStackLineTmpl): {
 				"",
+			},
+			runnerKey(repoRoot, "jj", "log", "-r", "@", "--no-graph", "-T", "change_id"): {
+				"stackchange\n",
 			},
 			runnerKey(repoRoot, "jj", "log", "-r", "feature/structural", "--no-graph", "-T", changeTmpl): {
 				"stackchange|stackcommit|structural change|\n",
