@@ -1189,10 +1189,39 @@ func changedLineForHunk(hunk prHunkSummary) int {
 	return hunk.NewStart
 }
 
-func githubHunkLink(prURL, file string, oldStart, newStart, newLines int) string {
+func githubPullRequestFilesURL(prURL string) string {
 	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	if prURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(prURL)
+	if err == nil && parsed.Host != "" {
+		parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+		if len(parts) >= 4 && parts[2] == "pull" {
+			number, err := strconv.Atoi(parts[3])
+			if err == nil && number > 0 {
+				owner := parts[0]
+				repo := strings.TrimSuffix(parts[1], ".git")
+				scheme := parsed.Scheme
+				if scheme == "" {
+					scheme = "https"
+				}
+				return fmt.Sprintf("%s://%s/%s/%s/pull/%d/files", scheme, parsed.Host, owner, repo, number)
+			}
+		}
+	}
+	for _, suffix := range []string{"/files", "/changes", "/commits", "/checks", "/conversation"} {
+		if strings.HasSuffix(prURL, suffix) {
+			return strings.TrimSuffix(prURL, suffix) + "/files"
+		}
+	}
+	return prURL + "/files"
+}
+
+func githubHunkLink(prURL, file string, oldStart, newStart, newLines int) string {
+	filesURL := githubPullRequestFilesURL(prURL)
 	file = strings.TrimSpace(file)
-	if prURL == "" || file == "" {
+	if filesURL == "" || file == "" {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(file))
@@ -1205,27 +1234,27 @@ func githubHunkLink(prURL, file string, oldStart, newStart, newLines int) string
 	if line <= 0 {
 		line = 1
 	}
-	return fmt.Sprintf("%s/files#diff-%s%s%d", prURL, hex.EncodeToString(sum[:]), side, line)
+	return fmt.Sprintf("%s#diff-%s%s%d", filesURL, hex.EncodeToString(sum[:]), side, line)
 }
 
 func githubFileDiffLink(prURL, file string) string {
-	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	filesURL := githubPullRequestFilesURL(prURL)
 	file = strings.TrimSpace(file)
-	if prURL == "" || file == "" {
+	if filesURL == "" || file == "" {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(file))
-	return fmt.Sprintf("%s/files#diff-%s", prURL, hex.EncodeToString(sum[:]))
+	return fmt.Sprintf("%s#diff-%s", filesURL, hex.EncodeToString(sum[:]))
 }
 
 func githubHunkLineLink(prURL, file string, line int) string {
-	prURL = strings.TrimRight(strings.TrimSpace(prURL), "/")
+	filesURL := githubPullRequestFilesURL(prURL)
 	file = strings.TrimSpace(file)
-	if prURL == "" || file == "" || line <= 0 {
+	if filesURL == "" || file == "" || line <= 0 {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(file))
-	return fmt.Sprintf("%s/files#diff-%sR%d", prURL, hex.EncodeToString(sum[:]), line)
+	return fmt.Sprintf("%s#diff-%sR%d", filesURL, hex.EncodeToString(sum[:]), line)
 }
 
 func blobPermalink(prURL, sha, file string, line int) string {
