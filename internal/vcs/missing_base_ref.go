@@ -9,9 +9,7 @@ import (
 	"github.com/satoricorp/gx/internal/storage"
 )
 
-const (
-	MissingStackBaseFixAction = "rebase_onto_default"
-)
+const MissingStackBaseRepairCommand = "gx doctor"
 
 // MissingStackBaseRef describes a stack whose stored parent base ref no longer exists.
 type MissingStackBaseRef struct {
@@ -26,8 +24,7 @@ type MissingStackBaseRef struct {
 type MissingStackBaseRefStatus struct {
 	Issues                 []MissingStackBaseRef `json:"issues,omitempty"`
 	NeedsRebaseOntoDefault bool                  `json:"needs_rebase_onto_default,omitempty"`
-	FixAction              string                `json:"fix_action,omitempty"`
-	FixPrompt              string                `json:"fix_prompt,omitempty"`
+	RepairCommand          string                `json:"repair_command,omitempty"`
 }
 
 // RebaseOntoDefaultResult reports stacks rebased after a missing-base repair.
@@ -44,39 +41,41 @@ type ErrMissingStackBaseRefs struct {
 
 func (e *ErrMissingStackBaseRefs) Error() string {
 	if len(e.Status.Issues) == 0 {
-		return "stack parent base ref is missing"
+		return fmt.Sprintf("stack parent base ref is missing; run %s to repair", MissingStackBaseRepairCommand)
 	}
 	if len(e.Status.Issues) == 1 {
 		issue := e.Status.Issues[0]
 		return fmt.Sprintf(
-			"stack %s stores missing parent base ref %q (parent branch was likely merged); rebase onto %s to continue",
-			firstNonEmpty(issue.BookmarkName, issue.Name),
+			"missing parent base ref %q for stack %s (parent branch was likely merged); run %s to repair",
 			issue.MissingBaseRef,
-			issue.DefaultBaseRef,
+			firstNonEmpty(issue.BookmarkName, issue.Name),
+			MissingStackBaseRepairCommand,
 		)
 	}
-	return fmt.Sprintf("%d stacks store missing parent base refs; rebase onto the default branch to continue", len(e.Status.Issues))
+	return fmt.Sprintf("%d stacks store missing parent base refs; run %s to repair", len(e.Status.Issues), MissingStackBaseRepairCommand)
 }
 
-func missingStackBaseFixPrompt(issues []MissingStackBaseRef) string {
-	if len(issues) == 0 {
-		return ""
+func (s *Service) ensureStackBaseRefsForPublish(ctx context.Context) error {
+	status, err := s.DetectMissingStackBaseRefs(ctx)
+	if err != nil {
+		return err
 	}
-	if len(issues) == 1 {
-		issue := issues[0]
-		return fmt.Sprintf(
-			"Rebase stack %s onto %s because parent base ref %q is missing (parent branch was likely merged)? [y/N]",
-			firstNonEmpty(issue.BookmarkName, issue.Name),
-			issue.DefaultBaseRef,
-			issue.MissingBaseRef,
-		)
+	if len(status.Issues) == 0 {
+		return nil
 	}
-	defaultBase := issues[0].DefaultBaseRef
-	return fmt.Sprintf(
-		"Rebase %d stacks onto %s because their stored parent base refs are missing (parent branches were likely merged)? [y/N]",
-		len(issues),
-		defaultBase,
-	)
+	return &ErrMissingStackBaseRefs{Status: status}
+}
+
+// RepairMissingStackBaseRefs rebases stacks with missing parent base refs onto the default branch.
+func (s *Service) RepairMissingStackBaseRefs(ctx context.Context) (RebaseOntoDefaultResult, error) {
+	status, err := s.DetectMissingStackBaseRefs(ctx)
+	if err != nil {
+		return RebaseOntoDefaultResult{}, err
+	}
+	if len(status.Issues) == 0 {
+		return RebaseOntoDefaultResult{}, nil
+	}
+	return s.RebaseMissingStackBaseRefs(ctx, status.Issues)
 }
 
 func (s *Service) DetectMissingStackBaseRefs(ctx context.Context) (MissingStackBaseRefStatus, error) {
@@ -110,8 +109,7 @@ func missingStackBaseRefStatusFromIssues(issues []MissingStackBaseRef) MissingSt
 	return MissingStackBaseRefStatus{
 		Issues:                 issues,
 		NeedsRebaseOntoDefault: true,
-		FixAction:              MissingStackBaseFixAction,
-		FixPrompt:              missingStackBaseFixPrompt(issues),
+		RepairCommand:          MissingStackBaseRepairCommand,
 	}
 }
 
@@ -201,6 +199,10 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 			return fmt.Errorf("repo not registered in gx storage")
 		}
 		now := time.Now().UnixMilli()
+		missingBases := map[string]struct{}{}
+		for _, issue := range issues {
+			missingBases[strings.TrimSpace(issue.MissingBaseRef)] = struct{}{}
+		}
 		for _, issue := range issues {
 			if err := s.rebaseStackOntoDefaultUnlocked(ctx, store, repo, repoRow.ID, issue, now); err != nil {
 				return err
@@ -212,6 +214,24 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 				issue.DefaultBaseRef,
 				issue.MissingBaseRef,
 			))
+		}
+		if repoRow.AuthoringBase != nil {
+			authoringBase := strings.TrimSpace(*repoRow.AuthoringBase)
+			if authoringBase != "" {
+				if _, missing := missingBases[authoringBase]; missing {
+					defaultBase := firstNonEmpty(strings.TrimSpace(issues[0].DefaultBaseRef), repo.defaultBaseBranch())
+					if authoringBase != defaultBase {
+						if err := store.SetRepoAuthoringBase(ctx, repoRow.ID, defaultBase, now); err != nil {
+							return err
+						}
+						result.Actions = append(result.Actions, fmt.Sprintf(
+							"changed GX authoring base from %s to %s",
+							authoringBase,
+							defaultBase,
+						))
+					}
+				}
+			}
 		}
 		return nil
 	})
@@ -276,6 +296,5 @@ func attachMissingStackBaseRefStatus(summary *StackSummary, status MissingStackB
 	}
 	summary.MissingBaseRefs = status.Issues
 	summary.NeedsRebaseOntoDefault = status.NeedsRebaseOntoDefault
-	summary.FixAction = status.FixAction
-	summary.FixPrompt = status.FixPrompt
+	summary.RepairCommand = status.RepairCommand
 }
