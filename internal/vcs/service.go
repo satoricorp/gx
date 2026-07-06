@@ -1813,6 +1813,13 @@ func (s *Service) RequireAuthoringBase(ctx context.Context, commandName string) 
 
 func (s *Service) ensureAuthoringCheckout(ctx context.Context, repo RepoInfo, commandName string) (string, string, error) {
 	result := s.baseResult(ctx, repo)
+	if err := s.ensureAuthoringBaseRevision(ctx, repo, result.BaseRef); err != nil {
+		return "", "", err
+	}
+	if resolved, err := s.ResolveJJRepoAtPath(ctx, repo.RootPath); err == nil {
+		repo = resolved
+	}
+	result = s.baseResult(ctx, repo)
 	current := strings.TrimSpace(result.CurrentRef)
 	if current == "" {
 		current = "(detached)"
