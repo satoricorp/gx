@@ -424,7 +424,7 @@ func TestFindingAttributionsNoEvidence(t *testing.T) {
 	if len(attrs) != 0 {
 		t.Fatalf("attributions = %#v, want none", attrs)
 	}
-	if got := renderAttributions(attrs); got != "" {
+	if got := renderAttributions(attrs, attributionLinkContext{}); got != "" {
 		t.Fatalf("renderAttributions() = %q, want empty", got)
 	}
 }
@@ -459,7 +459,8 @@ func TestFindingAttributionsOutOfDiffBlobPermalink(t *testing.T) {
 	if attrs[0].URL != want {
 		t.Fatalf("URL = %q, want blob %q", attrs[0].URL, want)
 	}
-	rendered := renderAttributions(attrs)
+	linkCtx := newAttributionLinkContext(artifact, catalog, nil)
+	rendered := renderAttributions(attrs, linkCtx)
 	if !strings.Contains(rendered, want) {
 		t.Fatalf("renderAttributions() = %q, want blob link", rendered)
 	}
@@ -488,12 +489,88 @@ func TestFindingAttributionsEmptyPRURLPlainText(t *testing.T) {
 	if len(attrs) != 1 || attrs[0].URL != "" {
 		t.Fatalf("attributions = %#v, want plain text without URL", attrs)
 	}
-	rendered := renderAttributions(attrs)
+	rendered := renderAttributions(attrs, attributionLinkContext{})
 	if strings.Contains(rendered, "](http") {
 		t.Fatalf("renderAttributions() = %q, want no markdown links", rendered)
 	}
 	if !strings.Contains(rendered, "internal/storage/schema.go:42") {
 		t.Fatalf("renderAttributions() = %q, want plain file:line label", rendered)
+	}
+}
+
+func TestRenderAttributionsLinksInPRFilePath(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/21"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{HeadCommitID: "abc", GitHubPullRequestURL: &prURL},
+	})
+	catalog := prBodyCatalog{
+		Hunks: []prHunkSummary{{
+			File:        "internal/github/client.go",
+			NewStart:    2,
+			NewLines:    1,
+			ChangedLine: 2,
+			Link:        githubHunkLineLink(prURL, "internal/github/client.go", 2),
+		}},
+	}
+	linkCtx := newAttributionLinkContext(artifact, catalog, nil)
+	rendered := renderAttributions([]prAttribution{{
+		Kind: "codebase",
+		Ref:  "internal/github/client.go",
+	}}, linkCtx)
+	want := githubHunkLineLink(prURL, "internal/github/client.go", 2)
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("renderAttributions() = %q, want diff link %q", rendered, want)
+	}
+}
+
+func TestRenderAttributionsLinksPRNumberReference(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/99"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+	})
+	linkCtx := newAttributionLinkContext(artifact, prBodyCatalog{}, nil)
+	rendered := renderAttributions([]prAttribution{{
+		Kind:  "previous_review",
+		Label: "follow-up from PR #68",
+	}}, linkCtx)
+	want := "https://github.com/satoricorp/gx/pull/68"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("renderAttributions() = %q, want PR link %q", rendered, want)
+	}
+}
+
+func TestRenderAttributionsLinksIndexedDocURL(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/11"
+	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+	})
+	snippets := []codereview.ContextSnippet{{
+		Kind:      "review_resource",
+		Ref:       "google-eng-practices",
+		Publisher: "Google Engineering Practices",
+		URL:       "https://google.github.io/eng-practices/review/",
+	}}
+	linkCtx := newAttributionLinkContext(artifact, prBodyCatalog{}, snippets)
+	rendered := renderAttributions([]prAttribution{{
+		Kind:   "review_resource",
+		Label:  "Google Engineering Practices",
+		Opaque: true,
+	}}, linkCtx)
+	want := "https://google.github.io/eng-practices/review/"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("renderAttributions() = %q, want doc URL %q", rendered, want)
+	}
+}
+
+func TestLinkifyAttributionTextOwnerRepoPRReference(t *testing.T) {
+	prURL := "https://github.com/satoricorp/gx/pull/1"
+	linkCtx := newAttributionLinkContext(reviewbundle.NewArtifact(reviewbundle.Bundle{
+		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
+	}), prBodyCatalog{}, nil)
+	got := linkCtx.linkifyAttributionText("see satoricorp/gx#68 for context")
+	want := "https://github.com/satoricorp/gx/pull/68"
+	if !strings.Contains(got, want) {
+		t.Fatalf("linkifyAttributionText() = %q, want %q", got, want)
 	}
 }
 

@@ -30,11 +30,18 @@ type MissingStackBaseRefStatus struct {
 	FixPrompt              string                `json:"fix_prompt,omitempty"`
 }
 
+// MissingStackBaseRefFailure reports one stack that could not be rebased.
+type MissingStackBaseRefFailure struct {
+	Issue MissingStackBaseRef `json:"issue"`
+	Error string              `json:"error"`
+}
+
 // RebaseOntoDefaultResult reports stacks rebased after a missing-base repair.
 type RebaseOntoDefaultResult struct {
-	RepoRoot string                `json:"repo_root"`
-	Fixed    []MissingStackBaseRef `json:"fixed,omitempty"`
-	Actions  []string              `json:"actions,omitempty"`
+	RepoRoot string                       `json:"repo_root"`
+	Fixed    []MissingStackBaseRef        `json:"fixed,omitempty"`
+	Failed   []MissingStackBaseRefFailure `json:"failed,omitempty"`
+	Actions  []string                     `json:"actions,omitempty"`
 }
 
 // ErrMissingStackBaseRefs blocks status until missing parent base refs are repaired or declined.
@@ -177,6 +184,23 @@ func (s *Service) stackBaseRefExists(ctx context.Context, repoRoot, baseRef, rem
 	return s.revExists(ctx, repoRoot, baseRef+"@"+remoteName)
 }
 
+// RepairMissingStackBaseRefs detects and rebases stacks with missing parent base refs.
+func (s *Service) RepairMissingStackBaseRefs(ctx context.Context) (RebaseOntoDefaultResult, error) {
+	status, err := s.DetectMissingStackBaseRefs(ctx)
+	if err != nil {
+		return RebaseOntoDefaultResult{}, err
+	}
+	if len(status.Issues) == 0 {
+		repo, repoErr := s.configuredJJRepo(ctx)
+		if repoErr != nil {
+			return RebaseOntoDefaultResult{}, repoErr
+		}
+		result := RebaseOntoDefaultResult{RepoRoot: repo.RootPath}
+		return result, s.finishMissingStackBaseRepair(ctx, &result)
+	}
+	return s.RebaseMissingStackBaseRefs(ctx, status.Issues)
+}
+
 // RebaseMissingStackBaseRefs rebases affected stacks onto the default branch and updates stored base refs.
 func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []MissingStackBaseRef) (RebaseOntoDefaultResult, error) {
 	repo, err := s.configuredJJRepo(ctx)
@@ -185,7 +209,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 	}
 	result := RebaseOntoDefaultResult{RepoRoot: repo.RootPath}
 	if len(issues) == 0 {
-		return result, nil
+		return result, s.finishMissingStackBaseRepair(ctx, &result)
 	}
 	err = withRepoLock(repo.RootPath, func() error {
 		store, err := openStore(ctx)
@@ -203,7 +227,11 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 		now := time.Now().UnixMilli()
 		for _, issue := range issues {
 			if err := s.rebaseStackOntoDefaultUnlocked(ctx, store, repo, repoRow.ID, issue, now); err != nil {
-				return err
+				result.Failed = append(result.Failed, MissingStackBaseRefFailure{
+					Issue: issue,
+					Error: err.Error(),
+				})
+				continue
 			}
 			result.Fixed = append(result.Fixed, issue)
 			result.Actions = append(result.Actions, fmt.Sprintf(
@@ -215,7 +243,42 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	return result, s.finishMissingStackBaseRepair(ctx, &result)
+}
+
+func (s *Service) finishMissingStackBaseRepair(ctx context.Context, result *RebaseOntoDefaultResult) error {
+	return withBusyRetry(ctx, "repair repo authoring base", func() error {
+		store, err := openStore(ctx)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		repoRow, err := store.FindRepoByRoot(ctx, result.RepoRoot)
+		if err != nil {
+			return err
+		}
+		if repoRow == nil {
+			return nil
+		}
+		repo, err := s.configuredJJRepo(ctx)
+		if err != nil {
+			return err
+		}
+		previousBase := ""
+		if repoRow.AuthoringBase != nil {
+			previousBase = strings.TrimSpace(*repoRow.AuthoringBase)
+		}
+		if err := s.repairRepoAuthoringBaseIfMissing(ctx, store, repo, repoRow.ID, time.Now().UnixMilli()); err != nil {
+			return err
+		}
+		if previousBase != "" && previousBase != repo.defaultBaseBranch() {
+			result.Actions = append(result.Actions, fmt.Sprintf("updated repo authoring base from %s to %s", previousBase, repo.defaultBaseBranch()))
+		}
+		return nil
+	})
 }
 
 func (s *Service) rebaseStackOntoDefaultUnlocked(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64, issue MissingStackBaseRef, now int64) error {
@@ -227,7 +290,12 @@ func (s *Service) rebaseStackOntoDefaultUnlocked(ctx context.Context, store *sto
 	if !s.revExists(ctx, repo.RootPath, defaultBase) {
 		return fmt.Errorf("default base ref %q does not exist", defaultBase)
 	}
-	sourceRevset := stackRebaseSourceRevset(bookmark, issue.MissingBaseRef, defaultBase)
+	remoteName := ""
+	if stack, stackErr := store.FindStackByBookmark(ctx, repoID, bookmark); stackErr == nil && stack != nil && stack.RemoteName != nil {
+		remoteName = strings.TrimSpace(*stack.RemoteName)
+	}
+	missingBaseExists := s.stackBaseRefExists(ctx, repo.RootPath, issue.MissingBaseRef, remoteName)
+	sourceRevset := stackRebaseSourceRevset(bookmark, issue.MissingBaseRef, defaultBase, missingBaseExists)
 	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "rebase", "-s", sourceRevset, "-d", defaultBase); err != nil {
 		return fmt.Errorf("rebase stack %s onto %s: %w", bookmark, defaultBase, err)
 	}
@@ -253,15 +321,46 @@ func (s *Service) rebaseStackOntoDefaultUnlocked(ctx context.Context, store *sto
 	if err := store.RenameStackBaseRef(ctx, repoID, issue.MissingBaseRef, defaultBase, now); err != nil {
 		return err
 	}
+	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return err
+	}
+	if repoRow != nil && repoRow.AuthoringBase != nil && strings.TrimSpace(*repoRow.AuthoringBase) == strings.TrimSpace(issue.MissingBaseRef) {
+		if err := store.SetRepoAuthoringBase(ctx, repoID, defaultBase, now); err != nil {
+			return err
+		}
+	}
 	return s.reconcileRepoChanges(ctx, repo, defaultBase)
 }
 
-func stackRebaseSourceRevset(bookmark, missingBaseRef, defaultBase string) string {
+func (s *Service) repairRepoAuthoringBaseIfMissing(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64, now int64) error {
+	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	if err != nil {
+		return err
+	}
+	if repoRow == nil || repoRow.AuthoringBase == nil {
+		return nil
+	}
+	baseRef := strings.TrimSpace(*repoRow.AuthoringBase)
+	if baseRef == "" {
+		return nil
+	}
+	defaultBase := repo.defaultBaseBranch()
+	if baseRef == defaultBase || s.stackBaseRefExists(ctx, repo.RootPath, baseRef, repoRemoteName(repo)) {
+		return nil
+	}
+	if err := store.SetRepoAuthoringBase(ctx, repoID, defaultBase, now); err != nil {
+		return err
+	}
+	return store.RenameStackBaseRef(ctx, repoID, baseRef, defaultBase, now)
+}
+
+func stackRebaseSourceRevset(bookmark, missingBaseRef, defaultBase string, missingBaseExists bool) string {
 	bookmark = strings.TrimSpace(bookmark)
 	missingBaseRef = strings.TrimSpace(missingBaseRef)
 	defaultBase = strings.TrimSpace(defaultBase)
 	revset := fmt.Sprintf("ancestors(%s) & mutable() & ~empty() & ~hidden()", quoteJJRev(bookmark))
-	if missingBaseRef != "" && missingBaseRef != defaultBase {
+	if missingBaseExists && missingBaseRef != "" && missingBaseRef != defaultBase {
 		revset += " & ~ancestors(" + quoteJJRev(missingBaseRef) + ")"
 	}
 	if defaultBase != "" {

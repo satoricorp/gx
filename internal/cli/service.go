@@ -193,30 +193,39 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			var repair vcs.RepairResult
 			var repairErr error
 			var staleRepair vcs.StaleStackCleanupResult
+			var staleRepairErr error
+			var missingBaseRepair vcs.RebaseOntoDefaultResult
+			var missingBaseErr error
 			if fix {
+				staleRepair, staleRepairErr = vcs.NewService().CleanupStaleStacks(ctx)
+				if staleRepairErr != nil {
+					return staleRepairErr
+				}
+				missingBaseRepair, missingBaseErr = vcs.NewService().RepairMissingStackBaseRefs(ctx)
 				repair, repairErr = vcs.NewService().RepairWorkflow(ctx)
-				if repairErr != nil {
-					return repairErr
-				}
-				staleRepair, repairErr = vcs.NewService().CleanupStaleStacks(ctx)
-				if repairErr != nil {
-					return repairErr
-				}
 			}
 			stale, staleErr := doctorStaleStacks(ctx, fix, staleRepair)
+			missingBase, missingDetectErr := doctorMissingStackBaseRefs(ctx, fix, missingBaseRepair)
 			if jsonOut {
 				payload := map[string]any{"doctor": doctorStatusJSON(ctx)}
 				if staleErr == nil {
 					payload["stale_stacks"] = stale
 				}
+				if missingDetectErr == nil {
+					payload["missing_base_refs"] = missingBase
+				}
 				if fix {
 					payload["repair"] = repair
+					if missingBaseErr == nil {
+						payload["missing_base_repair"] = missingBaseRepair
+					}
 				}
 				return writeJSON(cmd, payload)
 			}
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
 			printDoctorStaleStacks(cmd.OutOrStdout(), fix, stale, staleErr)
+			printDoctorMissingStackBaseRefs(cmd.OutOrStdout(), fix, missingBase, missingDetectErr, missingBaseRepair, missingBaseErr)
 			if fix {
 				if len(repair.Actions) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Workflow repair", success("ok")+": no changes needed"))
@@ -231,6 +240,18 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 						fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Warning", strings.TrimSpace(warning)))
 					}
 				}
+				if repairErr != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Workflow repair", "repair failed: "+repairErr.Error()))
+				}
+			}
+			if staleErr != nil {
+				return staleErr
+			}
+			if missingDetectErr != nil {
+				return missingDetectErr
+			}
+			if missingBaseErr != nil {
+				return missingBaseErr
 			}
 			return nil
 		},
@@ -245,6 +266,52 @@ func doctorStaleStacks(ctx context.Context, fixed bool, repaired vcs.StaleStackC
 		return repaired, nil
 	}
 	return vcs.NewService().ListStaleStacks(ctx)
+}
+
+func doctorMissingStackBaseRefs(ctx context.Context, fixed bool, repaired vcs.RebaseOntoDefaultResult) (vcs.MissingStackBaseRefStatus, error) {
+	if fixed {
+		status, err := vcs.NewService().DetectMissingStackBaseRefs(ctx)
+		if err != nil {
+			return vcs.MissingStackBaseRefStatus{}, err
+		}
+		_ = repaired
+		return status, nil
+	}
+	return vcs.NewService().DetectMissingStackBaseRefs(ctx)
+}
+
+func printDoctorMissingStackBaseRefs(w io.Writer, fixed bool, status vcs.MissingStackBaseRefStatus, detectErr error, repaired vcs.RebaseOntoDefaultResult, repairErr error) {
+	if detectErr != nil {
+		fmt.Fprintln(w, labelWarningValue("Missing parent base", "check skipped: "+detectErr.Error()))
+		return
+	}
+	if fixed {
+		if len(repaired.Actions) > 0 || len(repaired.Failed) > 0 || repairErr != nil {
+			fmt.Fprintln(w, section("Missing parent base repair"))
+			for _, action := range repaired.Actions {
+				fmt.Fprintf(w, "  %s\n", action)
+			}
+			for _, failure := range repaired.Failed {
+				stackName := firstNonEmptyString(failure.Issue.BookmarkName, failure.Issue.Name)
+				fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("repair failed: rebase stack %s onto %s: %s", stackName, failure.Issue.DefaultBaseRef, failure.Error)))
+			}
+			if repairErr != nil {
+				fmt.Fprintln(w, labelWarningValue("Missing parent base", "repair failed: "+repairErr.Error()))
+			}
+			return
+		}
+		fmt.Fprintln(w, labelValue("Missing parent base", success("ok")+": none"))
+		return
+	}
+	if len(status.Issues) == 0 {
+		fmt.Fprintln(w, labelValue("Missing parent base", success("ok")+": none"))
+		return
+	}
+	names := make([]string, 0, len(status.Issues))
+	for _, issue := range status.Issues {
+		names = append(names, firstNonEmptyString(issue.BookmarkName, issue.Name))
+	}
+	fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("%d stack(s) with missing parent base refs: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanupResult, err error) {
@@ -267,7 +334,7 @@ func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanu
 	for _, stack := range result.Stale {
 		names = append(names, stack.BookmarkName)
 	}
-	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing jj bookmarks: %s (run gx doctor --fix)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing jj bookmarks: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 func newRepairCommand(ctx context.Context) *cobra.Command {
