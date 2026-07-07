@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,16 @@ func (e *Engine) SetProgressWriter(out io.Writer) {
 
 func (e *Engine) Init(ctx context.Context, opts InitOptions) (InitResult, error) {
 	return e.vcs.InitWithOptions(ctx, opts)
+}
+
+type EnsureReadyResult = vcs.EnsureReadyResult
+
+func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return EnsureReadyResult{}, err
+	}
+	return e.vcs.EnsureReadyRepo(ctx, cwd)
 }
 
 func (e *Engine) Checkpoint(ctx context.Context, opts CheckpointOptions) (CheckpointResult, error) {

@@ -245,6 +245,18 @@ func (s *Store) RecordInitializedRepo(ctx context.Context, rootPath string, now 
 	return nil
 }
 
+func (s *Store) IsInitializedRepo(ctx context.Context, rootPath string) (bool, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM initialized_repos
+		WHERE root_path = ?
+	`, rootPath).Scan(&count); err != nil {
+		return false, fmt.Errorf("lookup initialized repo: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (s *Store) ListInitializedRepos(ctx context.Context) ([]InitializedRepo, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT root_path, created_at, updated_at
