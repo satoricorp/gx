@@ -273,7 +273,7 @@ func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
 	if !strings.Contains(body, "## Blast Radius") {
 		t.Fatalf("body missing blast radius section:\n%s", body)
 	}
-	if !strings.Contains(body, "Blast radius is") {
+	if !strings.Contains(body, "LOW (") && !strings.Contains(body, "MEDIUM") && !strings.Contains(body, "HIGH") {
 		t.Fatalf("body missing lead sentence:\n%s", body)
 	}
 	if !strings.Contains(body, "low risk to existing customer-visible behavior") {

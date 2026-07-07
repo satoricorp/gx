@@ -256,15 +256,19 @@ func changeSummarySentence(artifact reviewbundle.Artifact, catalog prBodyCatalog
 }
 
 func readinessSentence(catalog prBodyCatalog, reach lexicalReach) string {
-	blast := firstNonEmpty(catalog.Stats.MaxRiskLevel, "low")
+	blast := blastRadiusLevelLabel(catalog.Stats.MaxRiskLevel)
 	detail := fmt.Sprintf("%d file(s), %d area(s), +%d/-%d lines", catalog.Stats.FileCount, catalog.Stats.AreaCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
 	if reach.ReferenceCount > 0 {
 		symbols := strings.Join(topReachSymbolNames(reach, 2), ", ")
 		reachDetail := fmt.Sprintf("%d references to changed symbols (%s) across %d other file(s); %d file(s), +%d/-%d lines",
 			reach.ReferenceCount, symbols, reach.DependentFiles, catalog.Stats.FileCount, catalog.Stats.AddedLines, catalog.Stats.DeletedLines)
-		return fmt.Sprintf("Blast radius is %s: %s.", blast, reachDetail)
+		return fmt.Sprintf("%s: %s.", blast, reachDetail)
 	}
-	return fmt.Sprintf("Blast radius is %s (%s).", blast, detail)
+	return fmt.Sprintf("%s (%s).", blast, detail)
+}
+
+func blastRadiusLevelLabel(level string) string {
+	return strings.ToUpper(firstNonEmpty(strings.TrimSpace(level), "low"))
 }
 
 func triageChangeFromCatalog(catalog prBodyCatalog) codereview.ChangeTriage {
@@ -1846,20 +1850,30 @@ func countTestFiles(files []string) int {
 }
 
 func dedupeNotableChanges(items []prNotableChange) []prNotableChange {
-	seen := map[string]struct{}{}
+	seen := map[string]int{}
 	var out []prNotableChange
 	for _, item := range items {
-		key := item.Link
-		if key == "" {
-			key = strings.ToLower(item.Title)
-		}
-		if _, ok := seen[key]; ok {
+		key := notableChangeDedupeKey(item)
+		if idx, ok := seen[key]; ok {
+			if item.Score > out[idx].Score {
+				out[idx] = item
+			}
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[key] = len(out)
 		out = append(out, item)
 	}
 	return out
+}
+
+func notableChangeDedupeKey(item prNotableChange) string {
+	if title := strings.ToLower(strings.TrimSpace(item.Title)); title != "" {
+		return "title:" + title
+	}
+	if item.Link != "" {
+		return "link:" + item.Link
+	}
+	return ""
 }
 
 func dedupeAttributions(attributions []prAttribution) []prAttribution {

@@ -378,6 +378,38 @@ func TestNotableChangesDropsUnanchoredAIEntry(t *testing.T) {
 	}
 }
 
+func TestDedupeNotableChangesByTitle(t *testing.T) {
+	items := dedupeNotableChanges([]prNotableChange{
+		{
+			Title: "Verify Publication code coordinates GX Cloud",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-aaaR10",
+			Score: 700,
+		},
+		{
+			Title: "Verify Publication code coordinates GX Cloud",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-bbbR20",
+			Score: 750,
+		},
+		{
+			Title: "Stop linkifying whole free-form detail sentences",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-cccR30",
+			Score: 1000,
+		},
+	})
+	if len(items) != 2 {
+		t.Fatalf("dedupeNotableChanges() len = %d, want 2", len(items))
+	}
+	var publicationLink string
+	for _, item := range items {
+		if item.Title == "Verify Publication code coordinates GX Cloud" {
+			publicationLink = item.Link
+		}
+	}
+	if publicationLink != "https://github.com/example/gx/pull/1/files#diff-bbbR20" {
+		t.Fatalf("kept duplicate title with higher score link = %q", publicationLink)
+	}
+}
+
 func TestHunkLinkForFindingUnresolvableFile(t *testing.T) {
 	prURL := "https://github.com/satoricorp/gx/pull/1"
 	hunks := []prHunkSummary{{
@@ -850,7 +882,7 @@ func TestOpeningSummaryBlastRadiusNotBeforeFirstHeading(t *testing.T) {
 	if strings.Contains(opening, "Blast radius") {
 		t.Fatalf("opening should not contain blast radius prose:\n%s", opening)
 	}
-	if !strings.Contains(body, "## Blast Radius") || !strings.Contains(body, "Blast radius is medium:") {
+	if !strings.Contains(body, "## Blast Radius") || !strings.Contains(body, "MEDIUM:") {
 		t.Fatalf("body should render blast radius lead in Blast Radius section:\n%s", body)
 	}
 }
