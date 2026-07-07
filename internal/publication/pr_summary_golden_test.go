@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	prSummaryBareFileDiffLinkRE = regexp.MustCompile(`#diff-[0-9a-f]{64}\)`)
+	prSummaryBareFileDiffLinkRE = regexp.MustCompile(`#diff-[0-9a-f]{64}"`)
 	prSummaryChangesDiffLinkRE  = regexp.MustCompile(`/changes#diff-[0-9a-f]{64}`)
 	prSummaryVerdictBannerRE    = regexp.MustCompile(`(?m)^> [✅👀🔴] \*\*(No review needed|Quick scan|Requires Deep Review)\*\* — `)
+	prSummaryMarkdownLinkRE     = regexp.MustCompile(`\]\(https?://`)
 )
 
 // TODO: Source future golden cases from GX Cloud review history for live-model quality tracking.
@@ -179,6 +180,12 @@ func assertPRSummaryGoldenLayout(t *testing.T, body string) {
 	}
 	if strings.Contains(body, "No specific high-impact review targets") {
 		t.Fatalf("body contains deprecated filler line:\n%s", body)
+	}
+	if prSummaryMarkdownLinkRE.MatchString(body) {
+		t.Fatalf("body contains markdown link instead of HTML anchor:\n%s", body)
+	}
+	if strings.Contains(body, `<a href="`) && !strings.Contains(body, `target="_blank"`) {
+		t.Fatalf("body contains anchor without target=_blank:\n%s", body)
 	}
 	if prSummaryBareFileDiffLinkRE.MatchString(body) {
 		t.Fatalf("body contains bare file-level diff link (missing R/L anchor):\n%s", body)

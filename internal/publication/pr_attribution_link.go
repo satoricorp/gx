@@ -178,7 +178,7 @@ func (ctx attributionLinkContext) linkifyAttributionText(text string) string {
 		return ""
 	}
 	if url := ctx.resolveRefURL(text); url != "" {
-		return fmt.Sprintf("[%s](%s)", text, url)
+		return formatPRSummaryLink(text, url)
 	}
 	replacers := []struct {
 		re *regexp.Regexp
@@ -194,7 +194,7 @@ func (ctx attributionLinkContext) linkifyAttributionText(text string) string {
 				return match
 			}
 			if url := ctx.pullRequestLink(submatch[1], submatch[2], number); url != "" {
-				return fmt.Sprintf("[%s](%s)", match, url)
+				return formatPRSummaryLink(match, url)
 			}
 			return match
 		}},
@@ -208,7 +208,7 @@ func (ctx attributionLinkContext) linkifyAttributionText(text string) string {
 				return match
 			}
 			if url := ctx.pullRequestLink("", "", number); url != "" {
-				return fmt.Sprintf("[%s](%s)", match, url)
+				return formatPRSummaryLink(match, url)
 			}
 			return match
 		}},
@@ -222,7 +222,7 @@ func (ctx attributionLinkContext) linkifyAttributionText(text string) string {
 				return match
 			}
 			if url := ctx.pullRequestLink("", "", number); url != "" {
-				return fmt.Sprintf("[%s](%s)", match, url)
+				return formatPRSummaryLink(match, url)
 			}
 			return match
 		}},
@@ -244,7 +244,7 @@ func renderAttributionPart(attr prAttribution, ctx attributionLinkContext) strin
 			url = ctx.snippetURLForLabel(label)
 		}
 		if url != "" {
-			return fmt.Sprintf("%s [%s](%s)", kind, label, url)
+			return fmt.Sprintf("%s %s", kind, formatPRSummaryLink(label, url))
 		}
 		return ctx.linkifyAttributionText(label)
 	}
@@ -261,7 +261,7 @@ func renderAttributionPart(attr prAttribution, ctx attributionLinkContext) strin
 		display = ref
 	}
 	if url != "" && display != "" {
-		return fmt.Sprintf("%s [%s](%s)", kind, display, url)
+		return fmt.Sprintf("%s %s", kind, formatPRSummaryLink(display, url))
 	}
 	if ref != "" {
 		if linked := ctx.linkifyAttributionText(ref); linked != ref {
@@ -282,7 +282,7 @@ func linkProvenanceSource(source string, snippets []codereview.ContextSnippet) s
 	}
 	ctx := attributionLinkContext{snippets: snippets}
 	if url := ctx.snippetURLForLabel(source); url != "" {
-		return fmt.Sprintf("[%s](%s)", source, url)
+		return formatPRSummaryLink(source, url)
 	}
 	return source
 }
