@@ -279,8 +279,8 @@ func TestNotableChangesRendersPlainTextWithoutPRURL(t *testing.T) {
 	if !strings.Contains(body, "## Notable Changes") {
 		t.Fatalf("body missing Notable Changes section:\n%s", body)
 	}
-	if strings.Contains(body, "](http") {
-		t.Fatalf("body should not contain markdown links without PR URL:\n%s", body)
+	if strings.Contains(body, `href="http`) {
+		t.Fatalf("body should not contain links without PR URL:\n%s", body)
 	}
 }
 
@@ -322,7 +322,7 @@ func TestNotableChangesIncludesTopHunkFill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
 	}
-	if !strings.Contains(body, "[update handler: handler.go](") {
+	if !strings.Contains(body, `target="_blank"`) || !strings.Contains(body, "update handler: handler.go") {
 		t.Fatalf("body missing top-hunk fill item:\n%s", body)
 	}
 }
@@ -490,8 +490,8 @@ func TestFindingAttributionsEmptyPRURLPlainText(t *testing.T) {
 		t.Fatalf("attributions = %#v, want plain text without URL", attrs)
 	}
 	rendered := renderAttributions(attrs, attributionLinkContext{})
-	if strings.Contains(rendered, "](http") {
-		t.Fatalf("renderAttributions() = %q, want no markdown links", rendered)
+	if strings.Contains(rendered, `href="http`) {
+		t.Fatalf("renderAttributions() = %q, want no links", rendered)
 	}
 	if !strings.Contains(rendered, "internal/storage/schema.go:42") {
 		t.Fatalf("renderAttributions() = %q, want plain file:line label", rendered)

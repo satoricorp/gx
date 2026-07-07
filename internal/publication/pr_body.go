@@ -171,11 +171,7 @@ func renderNotableChangesSection(items []prNotableChange, linkCtx attributionLin
 			b.WriteString("⚠ ")
 		}
 		if item.Link != "" {
-			b.WriteString("[")
-			b.WriteString(item.Title)
-			b.WriteString("](")
-			b.WriteString(item.Link)
-			b.WriteString(")")
+			b.WriteString(formatPRSummaryLink(item.Title, item.Link))
 		} else {
 			b.WriteString(item.Title)
 		}

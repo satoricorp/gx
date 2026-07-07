@@ -12,7 +12,7 @@ Small localized change with low risk to existing customer-visible behavior.
 
 ## Notable Changes
 
-- ⚠ [Verify GitHub PR summary update ordering](https://github.com/satoricorp/gx/pull/11/files#diff-05d27ec1b6497ff53de1073b6bf535a8f5a5b7a06abf3185c807fe5072e50aacR180) — [internal/publication/publication.go updates the GitHub PR body around publish side effects.](https://github.com/satoricorp/gx/blob/pub001/internal/publication/publication.go updates the GitHub PR body around publish side effects.)
+- ⚠ <a href="https://github.com/satoricorp/gx/pull/11/files#diff-05d27ec1b6497ff53de1073b6bf535a8f5a5b7a06abf3185c807fe5072e50aacR180" target="_blank" rel="noopener noreferrer">Verify GitHub PR summary update ordering</a> — <a href="https://github.com/satoricorp/gx/blob/pub001/internal/publication/publication.go updates the GitHub PR body around publish side effects." target="_blank" rel="noopener noreferrer">internal/publication/publication.go updates the GitHub PR body around publish side effects.</a>
   Attribution: Google Engineering Practices
 
 
