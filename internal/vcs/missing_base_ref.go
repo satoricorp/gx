@@ -73,18 +73,6 @@ func (s *Service) ensureStackBaseRefsForPublish(ctx context.Context) error {
 	return &ErrMissingStackBaseRefs{Status: status}
 }
 
-// RepairMissingStackBaseRefs rebases stacks with missing parent base refs onto the default branch.
-func (s *Service) RepairMissingStackBaseRefs(ctx context.Context) (RebaseOntoDefaultResult, error) {
-	status, err := s.DetectMissingStackBaseRefs(ctx)
-	if err != nil {
-		return RebaseOntoDefaultResult{}, err
-	}
-	if len(status.Issues) == 0 {
-		return RebaseOntoDefaultResult{}, nil
-	}
-	return s.RebaseMissingStackBaseRefs(ctx, status.Issues)
-}
-
 func (s *Service) DetectMissingStackBaseRefs(ctx context.Context) (MissingStackBaseRefStatus, error) {
 	repo, err := s.configuredJJRepo(ctx)
 	if err != nil {
