@@ -19,7 +19,8 @@ func TestAttachMissingStackBaseSummaryJSONFields(t *testing.T) {
 			DefaultBaseRef: "main",
 		}},
 		NeedsRebaseOntoDefault: true,
-		RepairCommand:          vcs.MissingStackBaseRepairCommand,
+		FixAction:              vcs.MissingStackBaseFixAction,
+		FixPrompt:              "Rebase stack feature/structural onto main because parent base ref \"feature/authoring\" is missing (parent branch was likely merged)? [y/N]",
 	}
 	attachMissingStackBaseSummary(&summary, status)
 	payload, err := json.Marshal(summary)
@@ -29,7 +30,8 @@ func TestAttachMissingStackBaseSummaryJSONFields(t *testing.T) {
 	body := string(payload)
 	for _, want := range []string{
 		`"needs_rebase_onto_default":true`,
-		`"repair_command":"gx doctor"`,
+		`"fix_action":"rebase_onto_default"`,
+		`"fix_prompt"`,
 		`"missing_base_refs"`,
 		`"feature/authoring"`,
 	} {
@@ -37,7 +39,7 @@ func TestAttachMissingStackBaseSummaryJSONFields(t *testing.T) {
 			t.Fatalf("json = %s, want substring %q", body, want)
 		}
 	}
-	for _, absent := range []string{`"fix_action"`, `"fix_prompt"`} {
+	for _, absent := range []string{`"repair_command"`} {
 		if strings.Contains(body, absent) {
 			t.Fatalf("json = %s, should not contain %q", body, absent)
 		}
@@ -52,11 +54,10 @@ func TestPrintMissingStackBaseRefNotice(t *testing.T) {
 			MissingBaseRef: "feature/authoring",
 			DefaultBaseRef: "main",
 		}},
-		RepairCommand: vcs.MissingStackBaseRepairCommand,
 	}
 	printMissingStackBaseRefNotice(&buf, status)
 	out := buf.String()
-	for _, want := range []string{"feature/authoring", "feature/structural", "gx doctor"} {
+	for _, want := range []string{"feature/authoring", "feature/structural", "missing parent base ref"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("notice = %q, want substring %q", out, want)
 		}

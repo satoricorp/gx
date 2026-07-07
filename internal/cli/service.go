@@ -190,7 +190,6 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 		Use:   "doctor",
 		Short: "Fix current gx state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			missingBaseRepair, missingBaseErr := vcs.NewService().RepairMissingStackBaseRefs(ctx)
 			var repair vcs.RepairResult
 			var repairErr error
 			var staleRepair vcs.StaleStackCleanupResult
