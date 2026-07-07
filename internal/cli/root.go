@@ -2782,7 +2782,8 @@ func attachMissingStackBaseSummary(stack *authoring.StackSummary, status vcs.Mis
 	}
 	stack.MissingBaseRefs = status.Issues
 	stack.NeedsRebaseOntoDefault = status.NeedsRebaseOntoDefault
-	stack.RepairCommand = status.RepairCommand
+	stack.FixAction = status.FixAction
+	stack.FixPrompt = status.FixPrompt
 }
 
 func printMissingStackBaseRefNotice(out io.Writer, status vcs.MissingStackBaseRefStatus) {
