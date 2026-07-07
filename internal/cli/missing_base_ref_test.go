@@ -19,8 +19,7 @@ func TestAttachMissingStackBaseSummaryJSONFields(t *testing.T) {
 			DefaultBaseRef: "main",
 		}},
 		NeedsRebaseOntoDefault: true,
-		FixAction:              vcs.MissingStackBaseFixAction,
-		FixPrompt:              "Rebase stack feature/structural onto main? [y/N]",
+		RepairCommand:          vcs.MissingStackBaseRepairCommand,
 	}
 	attachMissingStackBaseSummary(&summary, status)
 	payload, err := json.Marshal(summary)
@@ -30,13 +29,17 @@ func TestAttachMissingStackBaseSummaryJSONFields(t *testing.T) {
 	body := string(payload)
 	for _, want := range []string{
 		`"needs_rebase_onto_default":true`,
-		`"fix_action":"rebase_onto_default"`,
+		`"repair_command":"gx doctor"`,
 		`"missing_base_refs"`,
 		`"feature/authoring"`,
-		`"fix_prompt"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("json = %s, want substring %q", body, want)
+		}
+	}
+	for _, absent := range []string{`"fix_action"`, `"fix_prompt"`} {
+		if strings.Contains(body, absent) {
+			t.Fatalf("json = %s, should not contain %q", body, absent)
 		}
 	}
 }
@@ -49,20 +52,13 @@ func TestPrintMissingStackBaseRefNotice(t *testing.T) {
 			MissingBaseRef: "feature/authoring",
 			DefaultBaseRef: "main",
 		}},
-		FixPrompt: "Rebase stack feature/structural onto main? [y/N]",
+		RepairCommand: vcs.MissingStackBaseRepairCommand,
 	}
 	printMissingStackBaseRefNotice(&buf, status)
 	out := buf.String()
-	if !strings.Contains(out, "feature/authoring") || !strings.Contains(out, "feature/structural") {
-		t.Fatalf("notice = %q, want missing base details", out)
-	}
-}
-
-func TestPromptFixMissingStackBase(t *testing.T) {
-	if promptFixMissingStackBase(strings.NewReader("y\n"), &bytes.Buffer{}, "Rebase? [y/N]") != true {
-		t.Fatal("expected yes")
-	}
-	if promptFixMissingStackBase(strings.NewReader("n\n"), &bytes.Buffer{}, "Rebase? [y/N]") != false {
-		t.Fatal("expected no")
+	for _, want := range []string{"feature/authoring", "feature/structural", "gx doctor"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("notice = %q, want substring %q", out, want)
+		}
 	}
 }
