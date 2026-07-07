@@ -325,8 +325,7 @@ type StackSummary struct {
 
 	MissingBaseRefs        []MissingStackBaseRef `json:"missing_base_refs,omitempty"`
 	NeedsRebaseOntoDefault bool                  `json:"needs_rebase_onto_default,omitempty"`
-	FixAction              string                `json:"fix_action,omitempty"`
-	FixPrompt              string                `json:"fix_prompt,omitempty"`
+	RepairCommand          string                `json:"repair_command,omitempty"`
 }
 
 type InitOptions struct {
@@ -2153,6 +2152,7 @@ type PushOptions struct {
 	// UploadOnly is kept for compatibility with older callers. New callers should
 	// prefer Mode so review publication and Git export are explicit.
 	UploadOnly bool
+
 }
 
 func (opts PushOptions) gitExportEnabled() bool {
@@ -2453,6 +2453,9 @@ func (s *Service) pushStackUnlocked(ctx context.Context, repo RepoInfo, args []s
 }
 
 func (s *Service) pushStackUnlockedWithContext(ctx context.Context, repo RepoInfo, args []string, opts PushOptions, body StackInfo, stacks []StackInfo, publishedThisRun map[string]struct{}) (PushResult, error) {
+	if err := s.ensureStackBaseRefsForPublish(ctx); err != nil {
+		return PushResult{}, err
+	}
 	remoteName := repo.DefaultRemote
 	if remoteName == nil || strings.TrimSpace(*remoteName) == "" {
 		remoteName = ptr("origin")

@@ -2,6 +2,7 @@ package vcs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,8 +85,8 @@ func TestDetectMissingStackBaseRefsFindsMissingParentBase(t *testing.T) {
 		t.Fatalf("missingStackBaseRefsForRepo() error = %v", err)
 	}
 	got := missingStackBaseRefStatusFromIssues(issues)
-	if !got.NeedsRebaseOntoDefault || got.FixAction != MissingStackBaseFixAction {
-		t.Fatalf("status = %#v, want rebase fix metadata", got)
+	if !got.NeedsRebaseOntoDefault || got.RepairCommand != MissingStackBaseRepairCommand {
+		t.Fatalf("status = %#v, want rebase repair metadata", got)
 	}
 	if len(got.Issues) != 1 {
 		t.Fatalf("issues = %#v, want one missing base ref", got.Issues)
@@ -93,9 +94,6 @@ func TestDetectMissingStackBaseRefsFindsMissingParentBase(t *testing.T) {
 	issue := got.Issues[0]
 	if issue.BookmarkName != "feature/structural" || issue.MissingBaseRef != "feature/authoring" || issue.DefaultBaseRef != "main" {
 		t.Fatalf("issue = %#v, want structural on missing feature/authoring", issue)
-	}
-	if got.FixPrompt == "" {
-		t.Fatal("expected fix prompt for agent/interactive approval")
 	}
 }
 
@@ -251,11 +249,8 @@ func TestMissingStackBaseRefStatusJSONFields(t *testing.T) {
 	if !status.NeedsRebaseOntoDefault {
 		t.Fatal("expected needs_rebase_onto_default")
 	}
-	if status.FixAction != MissingStackBaseFixAction {
-		t.Fatalf("fix_action = %q, want %q", status.FixAction, MissingStackBaseFixAction)
-	}
-	if status.FixPrompt == "" {
-		t.Fatal("expected fix_prompt")
+	if status.RepairCommand != MissingStackBaseRepairCommand {
+		t.Fatalf("repair_command = %q, want %q", status.RepairCommand, MissingStackBaseRepairCommand)
 	}
 }
 
@@ -305,5 +300,81 @@ func TestDetectMissingStackBaseRefsUsesConfiguredRepo(t *testing.T) {
 	svc := NewServiceWithRunner(runner)
 	if _, err := svc.DetectMissingStackBaseRefs(ctx); err != nil {
 		t.Fatalf("DetectMissingStackBaseRefs() error = %v", err)
+	}
+}
+
+func TestEnsureStackBaseRefsForPublishBlocksWhenMissingBase(t *testing.T) {
+	repoRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
+		repoRoot = resolved
+	}
+	t.Setenv("GX_HOME", t.TempDir())
+	prev, _ := os.Getwd()
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	defer os.Chdir(prev)
+
+	ctx := context.Background()
+	db, err := storage.Open(ctx)
+	if err != nil {
+		t.Fatalf("storage.Open() error = %v", err)
+	}
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("storage.NewStore() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:      repoRoot,
+		Backend:       "jj",
+		DefaultBranch: ptr("main"),
+		CreatedAt:     1,
+		UpdatedAt:     1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "structural",
+		BookmarkName: "feature/structural",
+		BaseRef:      "feature/authoring",
+		BaseCommitID: "base",
+		Status:       "draft",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("store.Close() error = %v", err)
+	}
+
+	revExists := func(rev string) string {
+		return runnerKey(repoRoot, "jj", "log", "-r", rev, "-n", "1", "--no-graph", "-T", "change_id")
+	}
+	runner := &fakeRunner{
+		stdoutOutputs: map[string][]string{
+			runnerKey(repoRoot, "jj", "root"): {repoRoot + "\n", repoRoot + "\n"},
+			revExists("main"):                 {"mainchange\n", "mainchange\n"},
+			revExists("feature/structural"):   {"stackchange\n", "stackchange\n"},
+		},
+		errors: map[string][]error{
+			revExists("feature/authoring"):        {fmt.Errorf(`revision "feature/authoring" doesn't exist`), fmt.Errorf(`revision "feature/authoring" doesn't exist`)},
+			revExists("feature/authoring@origin"): {fmt.Errorf(`revision "feature/authoring@origin" doesn't exist`), fmt.Errorf(`revision "feature/authoring@origin" doesn't exist`)},
+		},
+	}
+	svc := NewServiceWithRunner(runner)
+
+	err = svc.ensureStackBaseRefsForPublish(ctx)
+	if err == nil {
+		t.Fatal("ensureStackBaseRefsForPublish() error = nil, want ErrMissingStackBaseRefs")
+	}
+	var blockErr *ErrMissingStackBaseRefs
+	if !errors.As(err, &blockErr) {
+		t.Fatalf("ensureStackBaseRefsForPublish() error = %v, want ErrMissingStackBaseRefs", err)
+	}
+	if len(blockErr.Status.Issues) != 1 {
+		t.Fatalf("issues = %#v, want one missing base ref", blockErr.Status.Issues)
 	}
 }
