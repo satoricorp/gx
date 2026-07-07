@@ -279,8 +279,8 @@ func TestNotableChangesRendersPlainTextWithoutPRURL(t *testing.T) {
 	if !strings.Contains(body, "## Notable Changes") {
 		t.Fatalf("body missing Notable Changes section:\n%s", body)
 	}
-	if strings.Contains(body, "](http") {
-		t.Fatalf("body should not contain markdown links without PR URL:\n%s", body)
+	if strings.Contains(body, `href="http`) {
+		t.Fatalf("body should not contain links without PR URL:\n%s", body)
 	}
 }
 
@@ -322,7 +322,7 @@ func TestNotableChangesIncludesTopHunkFill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
 	}
-	if !strings.Contains(body, "[update handler: handler.go](") {
+	if !strings.Contains(body, `target="_blank"`) || !strings.Contains(body, "update handler: handler.go") {
 		t.Fatalf("body missing top-hunk fill item:\n%s", body)
 	}
 }
@@ -375,6 +375,38 @@ func TestNotableChangesDropsUnanchoredAIEntry(t *testing.T) {
 	}
 	if !strings.Contains(body, "Adds request handling") {
 		t.Fatalf("anchored notable change missing:\n%s", body)
+	}
+}
+
+func TestDedupeNotableChangesByTitle(t *testing.T) {
+	items := dedupeNotableChanges([]prNotableChange{
+		{
+			Title: "Verify Publication code coordinates GX Cloud",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-aaaR10",
+			Score: 700,
+		},
+		{
+			Title: "Verify Publication code coordinates GX Cloud",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-bbbR20",
+			Score: 750,
+		},
+		{
+			Title: "Stop linkifying whole free-form detail sentences",
+			Link:  "https://github.com/example/gx/pull/1/files#diff-cccR30",
+			Score: 1000,
+		},
+	})
+	if len(items) != 2 {
+		t.Fatalf("dedupeNotableChanges() len = %d, want 2", len(items))
+	}
+	var publicationLink string
+	for _, item := range items {
+		if item.Title == "Verify Publication code coordinates GX Cloud" {
+			publicationLink = item.Link
+		}
+	}
+	if publicationLink != "https://github.com/example/gx/pull/1/files#diff-bbbR20" {
+		t.Fatalf("kept duplicate title with higher score link = %q", publicationLink)
 	}
 }
 
@@ -490,8 +522,8 @@ func TestFindingAttributionsEmptyPRURLPlainText(t *testing.T) {
 		t.Fatalf("attributions = %#v, want plain text without URL", attrs)
 	}
 	rendered := renderAttributions(attrs, attributionLinkContext{})
-	if strings.Contains(rendered, "](http") {
-		t.Fatalf("renderAttributions() = %q, want no markdown links", rendered)
+	if strings.Contains(rendered, `href="http`) {
+		t.Fatalf("renderAttributions() = %q, want no links", rendered)
 	}
 	if !strings.Contains(rendered, "internal/storage/schema.go:42") {
 		t.Fatalf("renderAttributions() = %q, want plain file:line label", rendered)
@@ -850,7 +882,7 @@ func TestOpeningSummaryBlastRadiusNotBeforeFirstHeading(t *testing.T) {
 	if strings.Contains(opening, "Blast radius") {
 		t.Fatalf("opening should not contain blast radius prose:\n%s", opening)
 	}
-	if !strings.Contains(body, "## Blast Radius") || !strings.Contains(body, "Blast radius is medium:") {
+	if !strings.Contains(body, "## Blast Radius") || !strings.Contains(body, "MEDIUM:") {
 		t.Fatalf("body should render blast radius lead in Blast Radius section:\n%s", body)
 	}
 }

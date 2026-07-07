@@ -474,9 +474,8 @@ func renderCriticalPathLine(riskPath codereview.RiskPath, hunk prHunkSummary, pr
 		link = githubHunkLineLink(prURL, hunk.File, hunk.ChangedLine)
 	}
 	if link != "" {
-		b.WriteString(" — [changed here](")
-		b.WriteString(link)
-		b.WriteString(")")
+		b.WriteString(" — ")
+		b.WriteString(formatPRSummaryLink("changed here", link))
 	}
 	b.WriteByte('\n')
 	return b.String()
@@ -509,13 +508,9 @@ func renderReachSymbolLine(sym symbolReach, catalog prBodyCatalog, prURL, sha st
 			defLink = githubHunkLineLink(prURL, defHunk.File, defLine)
 		}
 		if defLink != "" {
-			b.WriteString("redefined in [")
-			b.WriteString(path.Base(defHunk.File))
-			b.WriteByte(':')
-			b.WriteString(strconv.Itoa(defLine))
-			b.WriteString("](")
-			b.WriteString(defLink)
-			b.WriteString("), ")
+			b.WriteString("redefined in ")
+			b.WriteString(formatPRSummaryLink(path.Base(defHunk.File)+":"+strconv.Itoa(defLine), defLink))
+			b.WriteString(", ")
 		}
 	}
 
@@ -538,13 +533,7 @@ func renderReachSymbolLine(sym symbolReach, catalog prBodyCatalog, prURL, sha st
 			if linkCount > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString("[")
-			b.WriteString(ref.File)
-			b.WriteString(":")
-			b.WriteString(strconv.Itoa(ref.Line))
-			b.WriteString("](")
-			b.WriteString(link)
-			b.WriteString(")")
+			b.WriteString(formatPRSummaryLink(ref.File+":"+strconv.Itoa(ref.Line), link))
 			linkCount++
 		}
 	}

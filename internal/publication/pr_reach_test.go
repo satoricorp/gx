@@ -76,7 +76,7 @@ func TestComputeLexicalReachCountsExternalReference(t *testing.T) {
 	if !strings.Contains(body, "## Blast Radius") {
 		t.Fatalf("body missing blast radius section:\n%s", body)
 	}
-	if !strings.Contains(body, "redefined in [lib.go:") {
+	if !strings.Contains(body, `target="_blank"`) || !strings.Contains(body, "lib.go:3") {
 		t.Fatalf("body missing symbol definition hunk link:\n%s", body)
 	}
 	if !strings.Contains(body, "Reach is lexical (text search), not a dependency graph.") {
@@ -250,7 +250,7 @@ func TestRenderBlastRadiusCriticalPathLine(t *testing.T) {
 	if !strings.Contains(body, "billing changes can mischarge customers (REVIEW.md)") {
 		t.Fatalf("body missing REVIEW.md attribution:\n%s", body)
 	}
-	if !strings.Contains(body, "[changed here](") || !strings.Contains(body, "R") {
+	if !strings.Contains(body, `target="_blank"`) || !strings.Contains(body, "changed here") || !strings.Contains(body, "R") {
 		t.Fatalf("body missing line-anchored hunk link:\n%s", body)
 	}
 }
@@ -273,7 +273,7 @@ func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
 	if !strings.Contains(body, "## Blast Radius") {
 		t.Fatalf("body missing blast radius section:\n%s", body)
 	}
-	if !strings.Contains(body, "Blast radius is") {
+	if !strings.Contains(body, "LOW (") && !strings.Contains(body, "MEDIUM") && !strings.Contains(body, "HIGH") {
 		t.Fatalf("body missing lead sentence:\n%s", body)
 	}
 	if !strings.Contains(body, "low risk to existing customer-visible behavior") {
