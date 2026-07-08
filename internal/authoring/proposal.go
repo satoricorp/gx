@@ -3,6 +3,7 @@ package authoring
 import (
 	"io"
 
+	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/matcher"
 )
 
@@ -42,11 +43,21 @@ type RevisionProposal struct {
 	RouteSource      string             `json:"route_source,omitempty"`
 	ProvenanceStatus string             `json:"provenance_status"`
 	SessionIDs       []string           `json:"session_ids,omitempty"`
+	SessionContexts  []SessionContext   `json:"session_contexts,omitempty"`
 	HunkLinks        []matcher.HunkLink `json:"hunk_links,omitempty"`
 	Confidence       float64            `json:"confidence"`
 	EffectiveLOC     int                `json:"effective_loc,omitempty"`
 	ShapeReasons     []string           `json:"shape_reasons,omitempty"`
 	SemanticLabels   []SemanticLabel    `json:"semantic_labels,omitempty"`
+}
+
+type SessionContext struct {
+	SessionID       string                 `json:"session_id"`
+	Tool            string                 `json:"tool"`
+	Model           string                 `json:"model,omitempty"`
+	Format          string                 `json:"format"`
+	ContentRedacted []capture.SessionEvent `json:"content_redacted"`
+	CapturedAt      int64                  `json:"captured_at"`
 }
 
 type SemanticLabel struct {

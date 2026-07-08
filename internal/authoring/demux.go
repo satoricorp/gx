@@ -2425,6 +2425,12 @@ func counterpartKey(file string) string {
 
 func proposalIntent(prefix string, files []string) string {
 	prefix = strings.TrimSpace(prefix)
+	if len(files) == 0 {
+		if prefix == "" {
+			return "update changes"
+		}
+		return prefix + ": changes"
+	}
 	label := files[0]
 	if len(files) > 1 {
 		label = counterpartKey(files[0])

@@ -16,6 +16,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture/parsers/claude"
 	"github.com/satoricorp/gx/internal/capture/parsers/codex"
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
+	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/provenance"
 )
 
@@ -27,6 +28,7 @@ type ComposeCaptureResult struct {
 	HunkCoverage float64            `json:"hunk_coverage"`
 	Tools        []string           `json:"tools"`
 	SessionIDs   []string           `json:"session_ids,omitempty"`
+	Contexts     []SessionContext   `json:"session_contexts,omitempty"`
 	Status       string             `json:"status"`
 }
 
@@ -91,9 +93,10 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 	}
 
 	sessionIDs := sessionIDsFromHunkLinks(links)
+	contexts := sessionContextsFromEvents(eligibleEvents, sessionIDs)
 	status := provenance.StatusAbsent
 	if len(sessionIDs) > 0 {
-		status = "matcher"
+		status = provenance.StatusMatched
 	}
 
 	return ComposeCaptureResult{
@@ -101,24 +104,25 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 		HunkCoverage: coverage,
 		Tools:        tools,
 		SessionIDs:   sessionIDs,
+		Contexts:     contexts,
 		Status:       status,
 	}, nil
 }
 
-func resolveComposeProvenance(ctx context.Context, repoRoot string, capture ComposeCaptureResult) ([]string, string, error) {
+func resolveComposeProvenance(ctx context.Context, repoRoot string, capture ComposeCaptureResult) ([]string, []SessionContext, string, error) {
 	if len(capture.SessionIDs) > 0 {
-		return capture.SessionIDs, capture.Status, nil
+		return capture.SessionIDs, capture.Contexts, capture.Status, nil
 	}
 	store, err := openStore(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	defer store.Close()
 	attachment, err := provenance.Resolve(ctx, store, repoRoot)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
-	return attachment.SessionIDs, attachment.Status, nil
+	return attachment.SessionIDs, nil, attachment.Status, nil
 }
 
 func hunkLinksForRevision(links []matcher.HunkLink, files []string) []matcher.HunkLink {
@@ -142,6 +146,46 @@ func hunkLinksForRevision(links []matcher.HunkLink, files []string) []matcher.Hu
 	return out
 }
 
+func sessionContextsForRevision(contexts []SessionContext, links []matcher.HunkLink) []SessionContext {
+	if len(contexts) == 0 || len(links) == 0 {
+		return nil
+	}
+	sessionIDs := map[string]struct{}{}
+	for _, link := range links {
+		if link.SessionID != "" && link.Authorship == matcher.AuthorshipAgent && link.Tier <= matcher.TierFuzzy {
+			sessionIDs[link.SessionID] = struct{}{}
+		}
+	}
+	if len(sessionIDs) == 0 {
+		return nil
+	}
+	out := make([]SessionContext, 0, len(contexts))
+	for _, context := range contexts {
+		if _, ok := sessionIDs[context.SessionID]; ok {
+			out = append(out, context)
+		}
+	}
+	return out
+}
+
+func sessionIDsForRevisionLinks(fallback []string, links []matcher.HunkLink, status string) []string {
+	ids := sessionIDsFromHunkLinks(links)
+	if len(ids) > 0 {
+		return ids
+	}
+	if status == provenance.StatusMatched {
+		return nil
+	}
+	return append([]string(nil), fallback...)
+}
+
+func provenanceStatusForRevision(status string, sessionIDs []string) string {
+	if status == provenance.StatusMatched && len(sessionIDs) == 0 {
+		return provenance.StatusAbsent
+	}
+	return status
+}
+
 func sessionIDsFromHunkLinks(links []matcher.HunkLink) []string {
 	seen := map[string]struct{}{}
 	var out []string
@@ -159,6 +203,57 @@ func sessionIDsFromHunkLinks(links []matcher.HunkLink) []string {
 		out = append(out, link.SessionID)
 	}
 	return out
+}
+
+func sessionContextsFromEvents(events []capture.SessionEvent, sessionIDs []string) []SessionContext {
+	if len(sessionIDs) == 0 {
+		return nil
+	}
+	wanted := map[string]struct{}{}
+	for _, sessionID := range sessionIDs {
+		if strings.TrimSpace(sessionID) != "" {
+			wanted[sessionID] = struct{}{}
+		}
+	}
+	byID := map[string]*SessionContext{}
+	order := make([]string, 0, len(wanted))
+	for _, ev := range events {
+		if _, ok := wanted[ev.SessionID]; !ok {
+			continue
+		}
+		context := byID[ev.SessionID]
+		if context == nil {
+			context = &SessionContext{
+				SessionID:  ev.SessionID,
+				Tool:       ev.Tool,
+				Model:      ev.Model,
+				Format:     "gx_session_events_v1",
+				CapturedAt: ev.TS,
+			}
+			byID[ev.SessionID] = context
+			order = append(order, ev.SessionID)
+		}
+		if context.Model == "" {
+			context.Model = ev.Model
+		}
+		if context.CapturedAt == 0 || (ev.TS != 0 && ev.TS < context.CapturedAt) {
+			context.CapturedAt = ev.TS
+		}
+		context.ContentRedacted = append(context.ContentRedacted, redactSessionEvent(ev))
+	}
+	out := make([]SessionContext, 0, len(order))
+	for _, sessionID := range order {
+		out = append(out, *byID[sessionID])
+	}
+	return out
+}
+
+func redactSessionEvent(ev capture.SessionEvent) capture.SessionEvent {
+	ev.OldText = redact.Redact(ev.OldText)
+	ev.NewText = redact.Redact(ev.NewText)
+	ev.PromptContext = redact.Redact(ev.PromptContext)
+	ev.Raw = nil
+	return ev
 }
 
 func hunkRangesToCommitHunks(hunks []HunkRange) ([]capture.CommitHunk, []matcher.HunkRef) {

@@ -89,6 +89,15 @@ func TestProposalIntentUsesPrefix(t *testing.T) {
 	}
 }
 
+func TestProposalIntentHandlesEmptyFiles(t *testing.T) {
+	if got := proposalIntent("", nil); got != "update changes" {
+		t.Fatalf("proposalIntent(empty) = %q", got)
+	}
+	if got := proposalIntent("ship", nil); got != "ship: changes" {
+		t.Fatalf("proposalIntent(prefix empty) = %q", got)
+	}
+}
+
 func TestCleanFilesSortsAndDedupes(t *testing.T) {
 	got := cleanFiles([]string{"b.go", "", "a.go", "b.go"})
 	want := []string{"a.go", "b.go"}

@@ -50,7 +50,8 @@ type CheckpointOptions struct {
 	Interactive            bool
 	Hunk                   bool
 	PatchFile              string
-	PreferredSessionIDs      []string
+	PreferredSessionIDs    []string
+	SessionContexts        []storage.SessionContext
 	BookmarkRecordedCommit bool
 }
 
@@ -103,6 +104,7 @@ func (e *Engine) Checkpoint(ctx context.Context, opts CheckpointOptions) (Checkp
 		Hunk:                   opts.Hunk,
 		PatchFile:              opts.PatchFile,
 		PreferredSessionIDs:    opts.PreferredSessionIDs,
+		SessionContexts:        opts.SessionContexts,
 		BookmarkRecordedCommit: opts.BookmarkRecordedCommit,
 	})
 }
