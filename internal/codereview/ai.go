@@ -52,10 +52,10 @@ type NotableChange struct {
 }
 
 type PRSummaryReview struct {
-	Overview          string
-	DownstreamImpact  string
-	NotableChanges    []NotableChange
-	Findings          []Finding
+	Overview         string
+	DownstreamImpact string
+	NotableChanges   []NotableChange
+	Findings         []Finding
 }
 
 type AIReviewerWithSummary interface {
@@ -140,17 +140,17 @@ type responseResult struct {
 }
 
 type aiReviewResponse struct {
-	Overview          string             `json:"overview"`
-	DownstreamImpact  string             `json:"downstream_impact"`
-	Recommendations   []aiRecommendation `json:"recommendations"`
-	NotableChanges    []aiNotableChange  `json:"notable_changes"`
+	Overview         string             `json:"overview"`
+	DownstreamImpact string             `json:"downstream_impact"`
+	Recommendations  []aiRecommendation `json:"recommendations"`
+	NotableChanges   []aiNotableChange  `json:"notable_changes"`
 }
 
 type aiReviewOutput struct {
-	Overview          string
-	DownstreamImpact  string
-	NotableChanges    []NotableChange
-	Findings          []Finding
+	Overview         string
+	DownstreamImpact string
+	NotableChanges   []NotableChange
+	Findings         []Finding
 }
 
 type aiNotableChange struct {
@@ -392,9 +392,9 @@ func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Findi
 
 func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	type reviewerResult struct {
-		item           namedAIReviewer
-		summary        PRSummaryReview
-		err            error
+		item    namedAIReviewer
+		summary PRSummaryReview
+		err     error
 	}
 	results := make([]reviewerResult, len(m.reviewers))
 	var wg sync.WaitGroup
@@ -1067,7 +1067,7 @@ func reviewDeveloperPrompt() string {
 		"If no concrete issue meets the active profile, return an empty recommendations array.",
 		"Set file to the exact changed file path from static.diff_snippets and line to a changed line number inside that hunk. If a recommendation cannot be tied to a specific changed file, omit file and line.",
 		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
-		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions and session_transcript context; no file lists, no URLs, no praise. For all other profiles, omit overview.",
+		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions, session_transcript context, and session_context intent/edit trail; no file lists, no URLs, no praise. For all other profiles, omit overview.",
 		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
 		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
