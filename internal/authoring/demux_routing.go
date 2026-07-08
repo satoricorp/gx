@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/satoricorp/gx/internal/storage"
@@ -514,13 +515,15 @@ func routeWords(value string) []string {
 }
 
 type demuxStackCluster struct {
-	Key       string
-	Name      string
-	Kind      string
-	Bookmark  string
-	Reason    string
-	Score     float64
-	Revisions []int
+	Key             string
+	Name            string
+	Kind            string
+	Bookmark        string
+	Reason          string
+	Score           float64
+	Weak            bool
+	Revisions       []int
+	RevisionReasons map[int]string
 }
 
 func inferNewStackRoutes(proposal DemuxProposal) DemuxProposal {
@@ -537,6 +540,9 @@ func inferNewStackRoutes(proposal DemuxProposal) DemuxProposal {
 			revision.TargetStack = cluster.Bookmark
 			revision.RouteSource = routeSourceHeuristic
 			revision.RouteReason = cluster.Reason
+			if override, ok := cluster.RevisionReasons[revisionIndex]; ok {
+				revision.RouteReason = override
+			}
 			revision.RouteConfidence = cluster.Score
 		}
 	}
@@ -546,29 +552,45 @@ func inferNewStackRoutes(proposal DemuxProposal) DemuxProposal {
 func demuxNewStackClusters(proposal DemuxProposal) []demuxStackCluster {
 	byKey := map[string]*demuxStackCluster{}
 	order := []string{}
-	for index, revision := range proposal.Revisions {
-		if hasDemuxRoute(revision) {
-			continue
-		}
-		key, name, kind, reason, score := demuxStackClusterForRevision(revision)
-		if key == "" {
-			continue
-		}
+	ensureCluster := func(key, name, kind, reason string, score float64, weak bool) *demuxStackCluster {
 		cluster := byKey[key]
 		if cluster == nil {
 			cluster = &demuxStackCluster{
-				Key:      key,
-				Name:     name,
-				Kind:     kind,
-				Bookmark: conventionalDemuxStackBookmark(kind, name),
-				Reason:   reason,
-				Score:    score,
+				Key:             key,
+				Name:            name,
+				Kind:            kind,
+				Bookmark:        conventionalDemuxStackBookmark(kind, name),
+				Reason:          reason,
+				Score:           score,
+				Weak:            weak,
+				RevisionReasons: map[int]string{},
 			}
 			byKey[key] = cluster
 			order = append(order, key)
 		}
+		if !weak {
+			cluster.Weak = false
+		}
+		return cluster
+	}
+	deferredTests := []int{}
+	for index, revision := range proposal.Revisions {
+		if hasDemuxRoute(revision) {
+			continue
+		}
+		key, name, kind, reason, score, weak := demuxStackClusterForRevision(revision)
+		if key == "" {
+			continue
+		}
+		if weak && containsOnlyTestFiles(cleanFiles(revisionFilesForRouting(revision))) {
+			deferredTests = append(deferredTests, index)
+			continue
+		}
+		cluster := ensureCluster(key, name, kind, reason, score, weak)
 		cluster.Revisions = append(cluster.Revisions, index)
 	}
+	attachDemuxTestRevisions(proposal, deferredTests, byKey, order, ensureCluster)
+	mergeFragmentDemuxClusters(proposal, byKey, order)
 	clusters := make([]demuxStackCluster, 0, len(order))
 	for _, key := range order {
 		cluster := byKey[key]
@@ -588,49 +610,256 @@ func demuxNewStackClusters(proposal DemuxProposal) []demuxStackCluster {
 	return clusters
 }
 
-func demuxStackClusterForRevision(revision RevisionProposal) (string, string, string, string, float64) {
+// attachDemuxTestRevisions groups test-only revisions with the cluster that
+// contains the code they test (matched by naming conventions), and gathers any
+// unmatched test revisions into one shared tests cluster instead of one stack
+// per test file.
+func attachDemuxTestRevisions(
+	proposal DemuxProposal,
+	testRevisions []int,
+	byKey map[string]*demuxStackCluster,
+	order []string,
+	ensureCluster func(key, name, kind, reason string, score float64, weak bool) *demuxStackCluster,
+) {
+	if len(testRevisions) == 0 {
+		return
+	}
+	subjects := map[string]string{}
+	for _, key := range order {
+		cluster := byKey[key]
+		if cluster == nil {
+			continue
+		}
+		for _, revisionIndex := range cluster.Revisions {
+			for _, file := range cleanFiles(revisionFilesForRouting(proposal.Revisions[revisionIndex])) {
+				if isTestFile(file) {
+					continue
+				}
+				for _, subject := range codeFileSubjectKeys(file) {
+					if _, ok := subjects[subject]; !ok {
+						subjects[subject] = key
+					}
+				}
+			}
+		}
+	}
+	for _, revisionIndex := range testRevisions {
+		files := cleanFiles(revisionFilesForRouting(proposal.Revisions[revisionIndex]))
+		targetKey := ""
+		for _, file := range files {
+			for _, subject := range testSubjectKeys(file) {
+				if key, ok := subjects[subject]; ok {
+					targetKey = key
+					break
+				}
+			}
+			if targetKey != "" {
+				break
+			}
+		}
+		if targetKey != "" {
+			cluster := byKey[targetKey]
+			cluster.Revisions = append(cluster.Revisions, revisionIndex)
+			cluster.RevisionReasons[revisionIndex] = "test file grouped with the code it tests"
+			continue
+		}
+		cluster := ensureCluster("tests", "test updates", "test", "test-only changes grouped together", 0.7, false)
+		cluster.Revisions = append(cluster.Revisions, revisionIndex)
+	}
+}
+
+// mergeFragmentDemuxClusters is the anti-fragmentation pass: weak single-file
+// clusters merge into the nearest related cluster (same directory or top-level
+// subsystem, session-compatible); remaining strays merge into one shared
+// cluster instead of producing N single-file stacks. Revisions with explicit
+// routes never reach this pass, and clusters whose sessions are disjoint from
+// a candidate's sessions are treated as intentionally isolated.
+func mergeFragmentDemuxClusters(proposal DemuxProposal, byKey map[string]*demuxStackCluster, order []string) {
+	leftovers := []*demuxStackCluster{}
+	for _, key := range order {
+		cluster := byKey[key]
+		if cluster == nil || !cluster.Weak || len(cluster.Revisions) != 1 {
+			continue
+		}
+		files := demuxClusterFiles(proposal, cluster)
+		if len(files) != 1 {
+			continue
+		}
+		target := bestFragmentMergeTarget(proposal, byKey, order, cluster, files[0])
+		if target == nil {
+			leftovers = append(leftovers, cluster)
+			continue
+		}
+		moveDemuxClusterRevisions(target, cluster, fmt.Sprintf("single-file change grouped with related %s changes", target.Name))
+	}
+	if len(leftovers) < 2 {
+		return
+	}
+	shared := leftovers[0]
+	merged := false
+	for _, cluster := range leftovers[1:] {
+		if sessionSetsDisjoint(demuxClusterSessionSet(proposal, shared), demuxClusterSessionSet(proposal, cluster)) {
+			continue
+		}
+		moveDemuxClusterRevisions(shared, cluster, "small independent change grouped with other standalone changes")
+		merged = true
+	}
+	if merged {
+		shared.Name = "misc changes"
+		shared.Reason = "small independent changes grouped to avoid single-file stacks"
+	}
+}
+
+func bestFragmentMergeTarget(proposal DemuxProposal, byKey map[string]*demuxStackCluster, order []string, source *demuxStackCluster, file string) *demuxStackCluster {
+	sourceSessions := demuxClusterSessionSet(proposal, source)
+	fileDir := packageDirectory(file)
+	top := topPathSegment(file)
+	var best *demuxStackCluster
+	bestScore := 0
+	for _, key := range order {
+		candidate := byKey[key]
+		if candidate == nil || candidate == source || len(candidate.Revisions) == 0 {
+			continue
+		}
+		candidateSessions := demuxClusterSessionSet(proposal, candidate)
+		if sessionSetsDisjoint(sourceSessions, candidateSessions) {
+			continue
+		}
+		score := 0
+		for _, other := range demuxClusterFiles(proposal, candidate) {
+			switch {
+			case packageDirectory(other) == fileDir:
+				score = maxInt(score, 3)
+			case top != "" && topPathSegment(other) == top:
+				score = maxInt(score, 2)
+			}
+		}
+		if score == 0 {
+			continue
+		}
+		if sessionSetsOverlap(sourceSessions, candidateSessions) {
+			score += 2
+		}
+		if !candidate.Weak {
+			score++
+		}
+		if score > bestScore {
+			best = candidate
+			bestScore = score
+		}
+	}
+	if bestScore < 2 {
+		return nil
+	}
+	return best
+}
+
+func moveDemuxClusterRevisions(target, source *demuxStackCluster, reason string) {
+	for _, revisionIndex := range source.Revisions {
+		target.Revisions = append(target.Revisions, revisionIndex)
+		target.RevisionReasons[revisionIndex] = reason
+	}
+	source.Revisions = nil
+}
+
+func demuxClusterFiles(proposal DemuxProposal, cluster *demuxStackCluster) []string {
+	files := []string{}
+	for _, revisionIndex := range cluster.Revisions {
+		files = append(files, revisionFilesForRouting(proposal.Revisions[revisionIndex])...)
+	}
+	return cleanFiles(files)
+}
+
+func demuxClusterSessionSet(proposal DemuxProposal, cluster *demuxStackCluster) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, revisionIndex := range cluster.Revisions {
+		for _, session := range proposal.Revisions[revisionIndex].SessionIDs {
+			session = strings.TrimSpace(session)
+			if session != "" {
+				out[session] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+func sessionSetsDisjoint(left, right map[string]struct{}) bool {
+	if len(left) == 0 || len(right) == 0 {
+		return false
+	}
+	return !sessionSetsOverlap(left, right)
+}
+
+func sessionSetsOverlap(left, right map[string]struct{}) bool {
+	for session := range left {
+		if _, ok := right[session]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func topPathSegment(file string) string {
+	file = normalizeFilesetPath(file)
+	if index := strings.Index(file, "/"); index > 0 {
+		return file[:index]
+	}
+	return ""
+}
+
+func demuxStackClusterForRevision(revision RevisionProposal) (string, string, string, string, float64, bool) {
 	text := strings.ToLower(strings.TrimSpace(revision.Intent + " " + strings.Join(revision.Files, " ")))
 	files := revisionFilesForRouting(revision)
 	kind := conventionalDemuxStackKind(text, files)
 	if strings.Contains(text, "demux") {
-		return "demux-routing", "demux routing", kind, "revision touches demux planning, repair, or routed apply", 0.82
+		return "demux-routing", "demux routing", kind, "revision touches demux planning, repair, or routed apply", 0.82, false
+	}
+	if containsOnlyInfraFiles(files) {
+		return "infra", "infra", kind, "revision touches infrastructure, build, or CI configuration", 0.74, false
 	}
 	if strings.Contains(text, "stack") || strings.Contains(text, "bookmark") ||
 		containsPathPrefix(files, "internal/vcs/") ||
 		containsPathPrefix(files, "internal/storage/") ||
 		containsPathPrefix(files, "internal/cli/") && strings.Contains(text, "stack") {
-		return "stack-management", "stack management", kind, "revision touches stack lifecycle, storage, or CLI behavior", 0.78
+		return "stack-management", "stack management", kind, "revision touches stack lifecycle, storage, or CLI behavior", 0.78, false
 	}
 	if containsPathPrefix(files, "apps/desktop/") {
-		return "desktop-app", "desktop app", kind, "revision touches the desktop app surface", 0.78
+		return "desktop-app", "desktop app", kind, "revision touches the desktop app surface", 0.78, false
 	}
 	if containsPathPrefix(files, "internal/providers/") || containsPathPrefix(files, "internal/daemon/") || containsPathPrefix(files, "internal/reviewbundle/") {
-		return "provider-runtime", "provider runtime", kind, "revision touches provider, daemon, or review bundle runtime", 0.74
+		return "provider-runtime", "provider runtime", kind, "revision touches provider, daemon, or review bundle runtime", 0.74, false
 	}
 	if containsPathPrefix(files, "docs/") || containsPathPrefix(files, "skills/") || containsMarkdownFile(files) {
-		return "documentation", "documentation", kind, "revision touches documentation", 0.72
+		return "documentation", "documentation", kind, "revision touches documentation", 0.72, false
 	}
 	if containsPathPrefix(files, "src-tauri/") {
-		return "tauri-app", "Tauri app", kind, "revision touches the Tauri application shell", 0.78
+		return "tauri-app", "Tauri app", kind, "revision touches the Tauri application shell", 0.78, false
 	}
 	if containsPathPrefix(files, "src/") || containsExactFile(files, "index.html") {
-		return "frontend-app", "frontend app", kind, "revision touches the frontend application shell", 0.76
+		return "frontend-app", "frontend app", kind, "revision touches the frontend application shell", 0.76, false
 	}
 	if containsProjectToolingFile(files) {
-		return "project-tooling", "project tooling", kind, "revision touches project tooling, dependencies, or build configuration", 0.74
+		return "project-tooling", "project tooling", kind, "revision touches project tooling, dependencies, or build configuration", 0.74, false
 	}
 	if containsPathPrefix(files, "cmd/gx/") || containsPathPrefix(files, "internal/cli/") || containsPathPrefix(files, "internal/clitui/") {
-		return "cli", "CLI", kind, "revision touches the GX command-line surface", 0.72
+		return "cli", "CLI", kind, "revision touches the GX command-line surface", 0.72, false
 	}
 	if containsPathPrefix(files, "test/e2e/") {
-		return "e2e-tests", "e2e tests", kind, "revision touches end-to-end tests", 0.72
+		return "e2e-tests", "e2e tests", kind, "revision touches end-to-end tests", 0.72, false
 	}
-	key := demuxClusterKeyFromFiles(files)
+	key, weak := demuxClusterKeyFromFiles(files)
 	if key == "" {
-		return "", "", "", "", 0
+		return "", "", "", "", 0, false
 	}
 	name := strings.ReplaceAll(key, "-", " ")
-	return key, name, kind, fmt.Sprintf("revision touches %s", name), 0.66
+	return key, name, kind, fmt.Sprintf("revision touches %s", name), 0.66, weak
 }
 
 func conventionalDemuxStackKind(text string, files []string) string {
@@ -646,7 +875,7 @@ func conventionalDemuxStackKind(text string, files []string) string {
 	if containsOnlyTestFiles(files) {
 		return "test"
 	}
-	if containsOnlyBuildOrDependencyFiles(files) || containsOnlyProjectToolingFiles(files) {
+	if containsOnlyBuildOrDependencyFiles(files) || containsOnlyProjectToolingFiles(files) || containsOnlyInfraFiles(files) {
 		return "chore"
 	}
 	return "feature"
@@ -790,16 +1019,88 @@ func containsOnlyDocumentationFiles(files []string) bool {
 func containsOnlyTestFiles(files []string) bool {
 	sawFile := false
 	for _, file := range files {
-		file = strings.ToLower(strings.TrimSpace(file))
-		if file == "" {
+		if strings.TrimSpace(file) == "" {
 			continue
 		}
 		sawFile = true
-		if !(strings.HasSuffix(file, "_test.go") || strings.HasPrefix(file, "test/") || strings.Contains(file, "/test/") || strings.Contains(file, "/tests/")) {
+		if !isTestFile(file) {
 			return false
 		}
 	}
 	return sawFile
+}
+
+func isTestFile(file string) bool {
+	file = strings.ToLower(normalizeFilesetPath(file))
+	if file == "" {
+		return false
+	}
+	base := path.Base(file)
+	name := strings.TrimSuffix(base, path.Ext(base))
+	switch {
+	case strings.HasSuffix(name, "_test"), strings.HasSuffix(name, ".test"), strings.HasSuffix(name, ".spec"), strings.HasSuffix(name, "-test"):
+		return true
+	case strings.HasPrefix(name, "test_"):
+		return true
+	}
+	for _, segment := range strings.Split(path.Dir(file), "/") {
+		switch segment {
+		case "test", "tests", "__tests__", "testdata":
+			return true
+		}
+	}
+	return false
+}
+
+// testSubjectKeys returns identifiers a test file's name implies for the code
+// under test, e.g. test/http-client.test.ts -> "http-client", foo_test.go ->
+// "foo", test_foo.py -> "foo", __tests__/foo.tsx -> "foo".
+func testSubjectKeys(file string) []string {
+	file = strings.ToLower(normalizeFilesetPath(file))
+	base := path.Base(file)
+	name := strings.TrimSuffix(base, path.Ext(base))
+	// Cover double extensions such as foo.test.ts and foo.spec.tsx.
+	for _, suffix := range []string{"_test", ".test", ".spec", "-test", "_spec"} {
+		name = strings.TrimSuffix(name, suffix)
+	}
+	name = strings.TrimPrefix(name, "test_")
+	slug := demuxRouteSlug(name)
+	if slug == "" {
+		return nil
+	}
+	return []string{slug}
+}
+
+// codeFileSubjectKeys returns identifiers that a changed code file answers to,
+// so tests can find their subject across directories: the base name, the
+// parent directory name, and their combination (src/http/client.ts ->
+// "client", "http", "http-client").
+func codeFileSubjectKeys(file string) []string {
+	file = strings.ToLower(normalizeFilesetPath(file))
+	base := path.Base(file)
+	name := strings.TrimSuffix(base, path.Ext(base))
+	dir := path.Base(path.Dir(file))
+	keys := []string{}
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		slug := demuxRouteSlug(value)
+		if slug == "" {
+			return
+		}
+		if _, ok := seen[slug]; ok {
+			return
+		}
+		seen[slug] = struct{}{}
+		keys = append(keys, slug)
+	}
+	add(name)
+	if dir != "." && dir != "/" {
+		add(dir)
+		if name != "" {
+			add(dir + " " + name)
+		}
+	}
+	return keys
 }
 
 func containsOnlyBuildOrDependencyFiles(files []string) bool {
@@ -868,37 +1169,104 @@ func isProjectToolingFile(file string) bool {
 		return true
 	case strings.HasPrefix(file, "tsconfig"):
 		return true
+	case !strings.Contains(file, "/") && isRootMetaFile(path.Base(file)):
+		return true
 	default:
 		return false
 	}
 }
 
-func demuxClusterKeyFromFiles(files []string) string {
+// isRootMetaFile recognizes repository-meta files that belong with project
+// tooling rather than in their own single-file stacks. Callers pass a
+// lowercased base name.
+func isRootMetaFile(base string) bool {
+	switch base {
+	case "license", "license.md", "license.txt", "notice", "codeowners",
+		".editorconfig", ".nvmrc", ".npmrc", ".prettierrc", ".prettierignore",
+		".eslintignore", ".ds_store":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsOnlyInfraFiles(files []string) bool {
+	sawFile := false
+	for _, file := range files {
+		if strings.TrimSpace(file) == "" {
+			continue
+		}
+		sawFile = true
+		if !isInfraFile(file) {
+			return false
+		}
+	}
+	return sawFile
+}
+
+// isInfraFile recognizes infrastructure, container, CI, and deploy
+// configuration so those files group into one infra stack instead of one
+// stack per file.
+func isInfraFile(file string) bool {
+	file = strings.ToLower(normalizeFilesetPath(file))
+	if file == "" {
+		return false
+	}
+	base := path.Base(file)
+	switch {
+	case strings.HasPrefix(base, "dockerfile"), strings.HasSuffix(base, ".dockerfile"),
+		strings.HasPrefix(base, "docker-compose"), base == ".dockerignore":
+		return true
+	case base == "makefile", base == "justfile", base == "jenkinsfile", base == "procfile":
+		return true
+	case strings.HasSuffix(base, ".tf"), strings.HasSuffix(base, ".tfvars"):
+		return true
+	case base == ".gitlab-ci.yml", base == ".travis.yml", base == "cloudbuild.yaml",
+		base == "cdk.json", base == "cdk.context.json",
+		base == "serverless.yml", base == "serverless.yaml",
+		base == "fly.toml", base == "render.yaml", base == "netlify.toml", base == "vercel.json":
+		return true
+	}
+	for _, prefix := range []string{
+		".github/", ".circleci/", ".buildkite/", ".ci/",
+		"terraform/", "helm/", "k8s/", "kubernetes/", "ansible/",
+		"deploy/", "deployments/", "infra/", "infrastructure/",
+	} {
+		if strings.HasPrefix(file, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func demuxClusterKeyFromFiles(files []string) (string, bool) {
 	if containsPathPrefix(files, "src-tauri/") {
-		return "tauri-app"
+		return "tauri-app", false
 	}
 	if containsPathPrefix(files, "src/") || containsExactFile(files, "index.html") {
-		return "frontend-app"
+		return "frontend-app", false
 	}
 	if containsProjectToolingFile(files) {
-		return "project-tooling"
+		return "project-tooling", false
 	}
 	for _, file := range files {
 		file = strings.Trim(strings.TrimSpace(file), "/")
 		if file == "" {
 			continue
 		}
+		// Key on directories only; the last path segment is a file name and
+		// keying on it produces one cluster (and one stack) per file.
 		parts := strings.Split(file, "/")
 		switch {
-		case len(parts) >= 2 && parts[0] == "internal":
-			return demuxRouteSlug(parts[0] + " " + parts[1])
-		case len(parts) >= 2:
-			return demuxRouteSlug(parts[0] + " " + parts[1])
+		case len(parts) >= 3:
+			return demuxRouteSlug(parts[0] + " " + parts[1]), true
+		case len(parts) == 2:
+			return demuxRouteSlug(parts[0]), true
 		default:
-			return demuxRouteSlug(parts[0])
+			return demuxRouteSlug(parts[0]), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func demuxRouteSlug(value string) string {

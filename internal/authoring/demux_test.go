@@ -789,7 +789,7 @@ func TestDemuxStackClusterNamesScaffoldRoutes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, name, kind, _, _ := demuxStackClusterForRevision(RevisionProposal{
+			key, name, kind, _, _, _ := demuxStackClusterForRevision(RevisionProposal{
 				Intent: "stand up Tauri app shell",
 				Files:  tt.files,
 			})
