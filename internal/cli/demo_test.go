@@ -15,7 +15,7 @@ func TestDemoCommandWalksThroughRequestedScreens(t *testing.T) {
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader(strings.Join([]string{
 		"",
-		`gx add -m "initial change for demo"`,
+		`git add hello.txt && gx commit -m "initial change for demo"`,
 		"gx stacks",
 		"",
 		"gx generate",
@@ -35,12 +35,12 @@ func TestDemoCommandWalksThroughRequestedScreens(t *testing.T) {
 	for _, want := range []string{
 		"Welcome to gx!",
 		"gx creates stacks and revisions autonomously.",
-		`gx add -m "initial change for demo"`,
+		`git add hello.txt && gx commit -m "initial change for demo"`,
 		"Revision recorded",
 		"gx stacks",
 		"This command is interactive",
 		"gx generate",
-		"No more `gx add`!",
+		"No more manual commits for this demo.",
 		"gx status",
 		"gx push",
 		"https://gx.run/reviews/demo-stack",

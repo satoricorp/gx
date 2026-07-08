@@ -160,13 +160,17 @@ type ChangeInfo struct {
 }
 
 type CommitResult struct {
-	Repo                RepoInfo
-	Change              ChangeInfo
-	Stack               *StackInfo
-	OperationID         string
-	Output              string
-	PreferredSessionIDs []string
-	SessionContexts     []storage.SessionContext
+	Repo                     RepoInfo
+	Change                   ChangeInfo
+	Stack                    *StackInfo
+	OperationID              string
+	Output                   string
+	PreferredSessionIDs      []string
+	SessionContexts          []storage.SessionContext
+	CreatedBranch            bool
+	ProvenanceStatus         string
+	SkipRepoLocalSessions    bool
+	SessionEventAttributions []storage.SessionEventAttribution
 }
 
 type SplitCommitOptions struct {
@@ -2155,7 +2159,6 @@ type PushOptions struct {
 	// UploadOnly is kept for compatibility with older callers. New callers should
 	// prefer Mode so review publication and Git export are explicit.
 	UploadOnly bool
-
 }
 
 func (opts PushOptions) gitExportEnabled() bool {
@@ -3383,7 +3386,7 @@ func recordCommit(ctx context.Context, result CommitResult) error {
 			return err
 		}
 		defer store.Close()
-		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts)
+		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts, result.SkipRepoLocalSessions, result.SessionEventAttributions)
 	})
 }
 
@@ -3672,7 +3675,7 @@ func isSQLiteBusy(err error) bool {
 	return strings.Contains(value, "sqlite_busy") || strings.Contains(value, "database is locked")
 }
 
-func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext) error {
+func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext, skipRepoLocalSessions bool, eventAttributions []storage.SessionEventAttribution) error {
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
 		return err
@@ -3697,13 +3700,56 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 			return err
 		}
 	}
-	if err := attachSessions(ctx, store, repo.RootPath, changeID, preferredSessionIDs); err != nil {
-		return err
+	if skipRepoLocalSessions {
+		if err := attachExplicitSessions(ctx, store, changeID, preferredSessionIDs); err != nil {
+			return err
+		}
+	} else {
+		if err := attachSessions(ctx, store, repo.RootPath, changeID, preferredSessionIDs); err != nil {
+			return err
+		}
 	}
 	if err := writeSessionContexts(ctx, store, repo.RootPath, sessionContexts); err != nil {
 		return err
 	}
+	if len(eventAttributions) > 0 {
+		stackBookmark := ""
+		if stack != nil {
+			stackBookmark = stack.BookmarkName
+		}
+		now := time.Now().UnixMilli()
+		for i := range eventAttributions {
+			eventAttributions[i].RepoID = repoID
+			eventAttributions[i].ChangeID = changeID
+			if stackBookmark != "" && eventAttributions[i].StackBookmark == nil {
+				eventAttributions[i].StackBookmark = &stackBookmark
+			}
+			if eventAttributions[i].CreatedAt == 0 {
+				eventAttributions[i].CreatedAt = now
+			}
+		}
+		if err := store.WriteSessionEventAttributions(ctx, eventAttributions); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func attachExplicitSessions(ctx context.Context, store *storage.Store, changeID int64, preferredSessionIDs []string) error {
+	sessionIDs := append([]string(nil), preferredSessionIDs...)
+	sessionIDs = append(sessionIDs, provenance.ExplicitSessionIDsFromEnv()...)
+	sessionIDs = uniqueStrings(sessionIDs)
+	if len(sessionIDs) == 0 {
+		return nil
+	}
+	filtered, err := store.FilterExistingSessionIDs(ctx, sessionIDs)
+	if err != nil {
+		return err
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return store.WriteChangeSessions(ctx, changeID, filtered, time.Now().UnixMilli())
 }
 
 func writeSessionContexts(ctx context.Context, store *storage.Store, repoRoot string, contexts []storage.SessionContext) error {
@@ -4445,6 +4491,9 @@ func (s *Service) createDraftStack(ctx context.Context, store *storage.Store, re
 	baseCommitID := s.stackBaseCommitID(ctx, repo.RootPath, baseRef)
 	name := firstNonEmpty(strings.TrimSpace(description), s.inferStackName(repo, change))
 	bookmark := stackBookmarkName(name, headChangeID)
+	if err := s.rejectProtectedStackBookmark(ctx, repo.RootPath, bookmark); err != nil {
+		return StackInfo{}, err
+	}
 	if existing, err := store.FindStackByBookmark(ctx, repoID, bookmark); err != nil {
 		return StackInfo{}, err
 	} else if existing != nil {
@@ -4733,6 +4782,9 @@ func (s *Service) reattachRecordedContainer(ctx context.Context, repoRoot, stack
 	if err != nil {
 		return RepoInfo{}, err
 	}
+	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, branch, commitID); err != nil {
+		return RepoInfo{}, err
+	}
 	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
 		return RepoInfo{}, err
 	}
@@ -4758,6 +4810,9 @@ func (s *Service) reattachRecordedContainerAtRev(ctx context.Context, repoRoot, 
 	if err != nil {
 		return RepoInfo{}, err
 	}
+	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, branch, commitID); err != nil {
+		return RepoInfo{}, err
+	}
 	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
 		return RepoInfo{}, err
 	}
@@ -4771,6 +4826,9 @@ func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) 
 	}
 	commitID, err := s.commitIDForContainer(ctx, repoRoot)
 	if err != nil {
+		return RepoInfo{}, err
+	}
+	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, name, commitID); err != nil {
 		return RepoInfo{}, err
 	}
 	if err := s.attachGitBranch(ctx, repoRoot, name, commitID); err != nil {
@@ -4891,6 +4949,9 @@ func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, ta
 	targetRev = strings.TrimSpace(targetRev)
 	if targetRev == "" {
 		return fmt.Errorf("container target revision is empty")
+	}
+	if err := s.ensureBookmarkMutationAllowed(ctx, repoRoot, name, targetRev); err != nil {
+		return err
 	}
 	_, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
 	return err

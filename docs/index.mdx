@@ -31,6 +31,18 @@ gx push
 
 `gx generate` turns working-copy changes into local revisions and stacks. `gx status` shows Unstaged work, local stacks, and Remote state. `gx push` pushes code, sessions, and GX metadata to the remote review surface.
 
+For a manual Git-like save path, stage exactly what you want and replace
+`git commit` with `gx commit`:
+
+```bash
+git add <files>
+gx commit -m "describe this revision"
+gx push
+```
+
+`gx commit` records the staged tree as a JJ-backed GX revision, so it remains
+editable through GX while preserving the Git staging mental model.
+
 ## Local Inference
 
 For open-source inference, run:
@@ -59,6 +71,7 @@ Use the GX MCP tools first:
 - `gx_push` to publish ready GX stacks.
 
 If MCP is unavailable, use the CLI fallback:
+- `git add <files>` then `gx commit -m "..."` for manual saves
 - `gx sync`
 - `gx generate`
 - `gx status`

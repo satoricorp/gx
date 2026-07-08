@@ -178,6 +178,24 @@ CREATE TABLE IF NOT EXISTS session_contexts (
     captured_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_event_attributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    tool TEXT NOT NULL,
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    event_fingerprint TEXT NOT NULL,
+    change_id INTEGER NOT NULL REFERENCES changes(id),
+    stack_bookmark TEXT,
+    attributed_via TEXT NOT NULL,
+    confidence REAL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(repo_id, tool, session_id, event_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_event_attributions_repo ON session_event_attributions(repo_id);
+CREATE INDEX IF NOT EXISTS idx_session_event_attributions_change ON session_event_attributions(change_id);
+CREATE INDEX IF NOT EXISTS idx_session_event_attributions_session ON session_event_attributions(session_id);
+
 CREATE TABLE IF NOT EXISTS demux_proposals (
     id TEXT PRIMARY KEY,
     repo_id INTEGER NOT NULL REFERENCES repos(id),

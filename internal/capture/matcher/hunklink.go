@@ -1,8 +1,12 @@
 package matcher
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/satoricorp/gx/internal/capture"
 )
@@ -15,13 +19,14 @@ const (
 
 // HunkLink records how one commit hunk links to an agent session.
 type HunkLink struct {
-	HunkID     string  `json:"hunkID"`
-	SessionID  string  `json:"sessionID,omitempty"`
-	Tier       int     `json:"tier"`
-	Confidence float64 `json:"confidence"`
-	Authorship string  `json:"authorship"`
-	Tool       string  `json:"tool,omitempty"`
-	Model      string  `json:"model,omitempty"`
+	HunkID           string  `json:"hunkID"`
+	SessionID        string  `json:"sessionID,omitempty"`
+	EventFingerprint string  `json:"eventFingerprint,omitempty"`
+	Tier             int     `json:"tier"`
+	Confidence       float64 `json:"confidence"`
+	Authorship       string  `json:"authorship"`
+	Tool             string  `json:"tool,omitempty"`
+	Model            string  `json:"model,omitempty"`
 }
 
 // HunkID builds a stable identifier for a commit hunk.
@@ -67,6 +72,7 @@ func BuildHunkLinks(
 		} else if outcome.EventIndex >= 0 && outcome.EventIndex < len(events) {
 			ev := events[outcome.EventIndex]
 			link.SessionID = ev.SessionID
+			link.EventFingerprint = eventFingerprint(ev)
 			link.Tool = ev.Tool
 			link.Model = ev.Model
 			link.Authorship = AuthorshipAgent
@@ -77,4 +83,29 @@ func BuildHunkLinks(
 		links[i] = link
 	}
 	return links
+}
+
+func eventFingerprint(ev capture.SessionEvent) string {
+	for _, key := range []string{"uuid", "id", "event_id", "eventId", "message_id", "messageId"} {
+		if raw, ok := ev.Raw[key]; ok && len(raw) > 0 {
+			value := strings.Trim(strings.TrimSpace(string(raw)), `"`)
+			if value != "" && value != "null" {
+				return value
+			}
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		ev.Tool,
+		ev.SessionID,
+		strconv.FormatInt(ev.TS, 10),
+		filepath.ToSlash(ev.FilePath),
+		hashText(ev.OldText),
+		hashText(ev.NewText),
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+func hashText(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }

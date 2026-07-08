@@ -48,7 +48,7 @@ func TestPrintAddSummaryIncludesHashesSplitAndEditCommands(t *testing.T) {
 		"Commit abcdef12",
 		"Split recorded the selected changes; remaining edits stay in the current revision",
 		"Edit gx edit zzzzzzchange",
-		"Next gx add -m \"split generated work\"",
+		"Next gx commit -m \"split generated work\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printAddSummary() missing %q in:\n%s", want, text)
@@ -499,14 +499,14 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 		},
 		NeedsMessage: true,
 		Files:        []string{"internal/cli/root.go", "internal/cli/style.go"},
-		Next:         []string{`gx add -m "describe this revision"`, "gx status"},
+		Next:         []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
 	}
 	var out bytes.Buffer
 
 	printCurrentStatusHuman(&out, status)
 	text := out.String()
 	for _, want := range []string{
-		"gx add -m \"describe this revision\"",
+		"gx commit -m \"describe this revision\"",
 		"gx status",
 	} {
 		if !strings.Contains(text, want) {
@@ -1955,7 +1955,6 @@ func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 }
-
 
 func TestPrintGenerateRoundFailureShowsError(t *testing.T) {
 	var out bytes.Buffer

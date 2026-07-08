@@ -8,12 +8,12 @@ import (
 )
 
 const (
-	PlaceholderDescription       = "(no description set)"
-	PendingRemainderDescription  = "gx: pending remainder"
+	PlaceholderDescription      = "(no description set)"
+	PendingRemainderDescription = "gx: pending remainder"
 )
 
 var (
-	ErrNoRecordedAdds     = errors.New("no gx add recorded for this stack")
+	ErrNoRecordedAdds     = errors.New("no gx commit recorded for this stack")
 	ErrEmptyCommitMessage = errors.New("commit message is required")
 )
 
@@ -46,7 +46,7 @@ func validateRecordedChangeDescription(description string) error {
 func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack StackInfo) error {
 	if stack.ID == 0 {
 		return fmt.Errorf(
-			"%w: run `gx add -m \"describe this revision\"` before `gx publish`",
+			"%w: stage changes with `git add`, then run `gx commit -m \"describe this revision\"` before `gx publish`",
 			ErrNoRecordedAdds,
 		)
 	}
@@ -62,7 +62,7 @@ func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack Stack
 	}
 	if len(changes) == 0 {
 		return fmt.Errorf(
-			"%w: run `gx add -m \"...\"` to record at least one change before `gx publish`",
+			"%w: stage changes with `git add`, then run `gx commit -m \"...\"` to record at least one change before `gx publish`",
 			ErrNoRecordedAdds,
 		)
 	}
@@ -72,7 +72,7 @@ func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack Stack
 		}
 	}
 	return fmt.Errorf(
-		"%w: recorded changes have no description; run `gx add -m \"...\"`",
+		"%w: recorded changes have no description; stage changes with `git add`, then run `gx commit -m \"...\"`",
 		ErrNoRecordedAdds,
 	)
 }

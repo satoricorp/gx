@@ -507,6 +507,9 @@ func (s *Service) ensureGitAttachedToStack(ctx context.Context, repo RepoInfo, s
 	if err != nil {
 		return repo, err
 	}
+	if err := s.ensureBranchMutationAllowed(ctx, repo.RootPath, stack.BookmarkName, commitID); err != nil {
+		return repo, err
+	}
 	if err := s.attachGitBranch(ctx, repo.RootPath, stack.BookmarkName, commitID); err != nil {
 		return repo, err
 	}

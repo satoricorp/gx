@@ -93,6 +93,10 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate session_contexts table: %w", err)
 	}
+	if err := ensureSessionEventAttributionsTable(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate session_event_attributions table: %w", err)
+	}
 	if err := repairDanglingSessionLinks(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("repair session links: %w", err)
@@ -283,6 +287,28 @@ func ensureSessionContextsTable(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
+func ensureSessionEventAttributionsTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS session_event_attributions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			repo_id INTEGER NOT NULL REFERENCES repos(id),
+			tool TEXT NOT NULL,
+			session_id TEXT NOT NULL REFERENCES sessions(id),
+			event_fingerprint TEXT NOT NULL,
+			change_id INTEGER NOT NULL REFERENCES changes(id),
+			stack_bookmark TEXT,
+			attributed_via TEXT NOT NULL,
+			confidence REAL,
+			created_at INTEGER NOT NULL,
+			UNIQUE(repo_id, tool, session_id, event_fingerprint)
+		);
+		CREATE INDEX IF NOT EXISTS idx_session_event_attributions_repo ON session_event_attributions(repo_id);
+		CREATE INDEX IF NOT EXISTS idx_session_event_attributions_change ON session_event_attributions(change_id);
+		CREATE INDEX IF NOT EXISTS idx_session_event_attributions_session ON session_event_attributions(session_id);
+	`)
+	return err
+}
+
 func repairDanglingSessionLinks(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		DELETE FROM change_session_provenance
@@ -300,6 +326,14 @@ func repairDanglingSessionLinks(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		DELETE FROM change_sessions
 		WHERE change_id NOT IN (SELECT id FROM changes)
+			OR session_id NOT IN (SELECT id FROM sessions)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		DELETE FROM session_event_attributions
+		WHERE repo_id NOT IN (SELECT id FROM repos)
+			OR change_id NOT IN (SELECT id FROM changes)
 			OR session_id NOT IN (SELECT id FROM sessions)
 	`); err != nil {
 		return err

@@ -108,15 +108,15 @@ func (d *demoSession) addPrompt() error {
 	d.println(demoWhite("We will setup the MCP at the end, but first, let's get comfortable with some commands."))
 	d.println(demoWhite(fmt.Sprintf("We've setup a code change for you inside %s for this demo. To save it, type:", demoWorkspace)))
 	d.println("")
-	d.println(demoMint(`gx add -m "initial change for demo"`))
+	d.println(demoMint(`git add hello.txt && gx commit -m "initial change for demo"`))
 	d.println("")
-	_, err := d.promptCommand(`gx add -m "initial change for demo"`, []string{`gx add -m "initial change for demo"`})
+	_, err := d.promptCommand(`git add hello.txt && gx commit -m "initial change for demo"`, []string{`git add hello.txt && gx commit -m "initial change for demo"`})
 	return err
 }
 
 func (d *demoSession) addOutputAndStacksPrompt() error {
 	d.beginScreen()
-	d.println(demoCommandOutput(`$ gx add -m "initial change for demo"`))
+	d.println(demoCommandOutput(`$ git add hello.txt && gx commit -m "initial change for demo"`))
 	d.println(demoCommandOutput(""))
 	d.println(demoCommandOutput("Revision recorded"))
 	d.println(demoCommandOutput("Message       initial change for demo"))
@@ -150,11 +150,11 @@ func (d *demoSession) stacksOutput() error {
 
 func (d *demoSession) composePrompt() error {
 	d.beginScreen()
-	d.println(demoWhite("The ") + demoWhite("`gx add`") + demoMint(" is very similar to other commands you're already used to, like ") + demoWhite("`git commit`") + demoMint("."))
-	d.println(demoWhite("`gx add`") + demoMint(" should be used sparingly, since we want to use gx to save ourselves time."))
+	d.println(demoWhite("The ") + demoWhite("`gx commit`") + demoMint(" is very similar to other commands you're already used to, like ") + demoWhite("`git commit`") + demoMint("."))
+	d.println(demoWhite("`gx commit`") + demoMint(" should be used sparingly, since we want to use gx to save ourselves time."))
 	d.println("")
 	d.println(demoWhite("Let's automate this process."))
-	d.println(demoWhite("We have new changes in our /tmp directory, but instead of running ") + demoWhite("`gx add`") + demoWhite(", let's try a new command. Type:"))
+	d.println(demoWhite("We have new changes in our /tmp directory, but instead of running ") + demoWhite("`gx commit`") + demoWhite(", let's try a new command. Type:"))
 	d.println("")
 	d.println(demoMint("gx generate"))
 	d.println("")
@@ -175,7 +175,7 @@ func (d *demoSession) composeOutputAndAcceptPrompt() error {
 	d.println(demoCommandOutput("Next: gx status, then gx push"))
 	d.println("")
 	d.println(demoWhite("`gx generate`") + demoMint(" reviews all of your code changes and creates local stacks and revisions for you."))
-	d.println(demoWhite("No more `gx add`!"))
+	d.println(demoWhite("No more manual commits for this demo."))
 	d.println("")
 	d.println(demoWhite("You may notice that the revisions are small. This is to help you during the code review process."))
 	d.println(demoWhite("Smaller code changes make it easier to understand what you're merging and easier to suggest changes."))

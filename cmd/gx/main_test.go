@@ -188,7 +188,7 @@ func TestRootRemovesHiddenDemuxCompatibilityCommand(t *testing.T) {
 
 func TestRootDoesNotExposeRemovedLegacyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"commit", "compose", "publish", "stacks", "codex", "claude"} {
+	for _, name := range []string{"compose", "publish", "stacks", "codex", "claude"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != root {
 			t.Fatalf("unexpected legacy command exposed: %s", cmd.Name())
 		}

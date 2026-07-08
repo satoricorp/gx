@@ -761,6 +761,55 @@ func (s *Store) SessionContext(ctx context.Context, sessionID string) (*SessionC
 	return &context, nil
 }
 
+func (s *Store) WriteSessionEventAttributions(ctx context.Context, attributions []SessionEventAttribution) error {
+	for _, attr := range attributions {
+		if attr.RepoID == 0 || attr.ChangeID == 0 || attr.Tool == "" || attr.SessionID == "" || attr.EventFingerprint == "" || attr.AttributedVia == "" {
+			continue
+		}
+		if attr.CreatedAt == 0 {
+			attr.CreatedAt = time.Now().UnixMilli()
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO session_event_attributions (
+				repo_id, tool, session_id, event_fingerprint, change_id, stack_bookmark,
+				attributed_via, confidence, created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, attr.RepoID, attr.Tool, attr.SessionID, attr.EventFingerprint, attr.ChangeID, attr.StackBookmark, attr.AttributedVia, attr.Confidence, attr.CreatedAt); err != nil {
+			return fmt.Errorf("insert session event attribution: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) AttributedSessionEventKeys(ctx context.Context, repoID int64) (map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tool, session_id, event_fingerprint
+		FROM session_event_attributions
+		WHERE repo_id = ?
+	`, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list session event attributions: %w", err)
+	}
+	defer rows.Close()
+	keys := map[string]struct{}{}
+	for rows.Next() {
+		var tool, sessionID, fingerprint string
+		if err := rows.Scan(&tool, &sessionID, &fingerprint); err != nil {
+			return nil, fmt.Errorf("scan session event attribution: %w", err)
+		}
+		keys[SessionEventAttributionKey(tool, sessionID, fingerprint)] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session event attributions: %w", err)
+	}
+	return keys, nil
+}
+
+func SessionEventAttributionKey(tool, sessionID, fingerprint string) string {
+	return tool + "\x00" + sessionID + "\x00" + fingerprint
+}
+
 func (s *Store) WriteChangeDemuxEvidence(ctx context.Context, evidence ChangeDemuxEvidence) error {
 	if err := writeChangeDemuxEvidence(ctx, s.db, evidence); err != nil {
 		return err

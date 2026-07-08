@@ -55,6 +55,12 @@ type CheckpointOptions struct {
 	BookmarkRecordedCommit bool
 }
 
+type CommitStagedOptions struct {
+	Message             string
+	PreferredSessionIDs []string
+	SessionContexts     []storage.SessionContext
+}
+
 // Engine is GX's authoring seam. CLI and MCP adapters should call this module
 // instead of owning JJ/Git/storage mechanics directly.
 type Engine struct {
@@ -106,6 +112,14 @@ func (e *Engine) Checkpoint(ctx context.Context, opts CheckpointOptions) (Checkp
 		PreferredSessionIDs:    opts.PreferredSessionIDs,
 		SessionContexts:        opts.SessionContexts,
 		BookmarkRecordedCommit: opts.BookmarkRecordedCommit,
+	})
+}
+
+func (e *Engine) CommitStaged(ctx context.Context, opts CommitStagedOptions) (CheckpointResult, error) {
+	return e.vcs.RecordStagedRevision(ctx, vcs.StagedRevisionOptions{
+		Message:             opts.Message,
+		PreferredSessionIDs: opts.PreferredSessionIDs,
+		SessionContexts:     opts.SessionContexts,
 	})
 }
 

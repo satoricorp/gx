@@ -84,6 +84,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newBaseCommand(ctx, engine),
 		newDemoCommand(),
 		newGenerateCommand(ctx, engine),
+		newCommitCommand(ctx, engine),
 		newAddCommand(ctx, engine, "add [filesets...]", "add", true),
 		newEditCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
@@ -116,7 +117,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "set", "login", "demo":
 			cmd.GroupID = groupSetup
-		case "add", "base", "edit", "generate", "review", "status":
+		case "add", "base", "commit", "edit", "generate", "review", "status":
 			cmd.GroupID = groupWork
 		case "push", "sync":
 			cmd.GroupID = groupShip
@@ -328,9 +329,109 @@ func newAddCommand(ctx context.Context, engine *authoring.Engine, use string, he
 	return cmd
 }
 
+func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+	var message string
+	var jsonOut bool
+	var all bool
+	var amend bool
+	var fileMessage string
+	cmd := &cobra.Command{
+		Use:   "commit",
+		Short: "Record staged Git changes as a GX revision",
+		Long: strings.Join([]string{
+			"Record staged Git changes as a GX revision.",
+			"",
+			"Use git add or git add -p to choose scope, then run gx commit -m.",
+			"The resulting revision is JJ-backed and editable with GX/MCP tools.",
+		}, "\n"),
+		Example: strings.Join([]string{
+			`  git add internal/cli/root.go`,
+			`  gx commit -m "record staged CLI change"`,
+			`  git add -p`,
+			`  gx commit -m "record selected hunks"`,
+		}, "\n"),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("gx commit does not accept path arguments; choose scope with git add or git add -p")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				return fmt.Errorf("gx commit -a is not supported; stage changes with git add first")
+			}
+			if amend {
+				return fmt.Errorf("gx commit --amend is not supported; use gx edit <rev> to modify a recorded revision")
+			}
+			if strings.TrimSpace(fileMessage) != "" {
+				return fmt.Errorf("gx commit -F is not supported yet; pass a message with -m")
+			}
+			if strings.TrimSpace(message) == "" {
+				return fmt.Errorf("commit message is required; pass -m \"describe this revision\"")
+			}
+			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{Message: message})
+			if err != nil {
+				if errors.Is(err, vcs.ErrNoStagedChanges) {
+					return fmt.Errorf("no staged changes; run git add first")
+				}
+				return err
+			}
+			if jsonOut {
+				return writeJSON(cmd, commitResultJSON{
+					Result:           result,
+					CreatedBranch:    result.CreatedBranch,
+					ProvenanceStatus: result.ProvenanceStatus,
+				})
+			}
+			if strings.TrimSpace(result.Output) != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(result.Output))
+			}
+			printCommitSummary(cmd.OutOrStdout(), result)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message (required)")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "unsupported; stage changes with git add first")
+	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use gx edit <rev>")
+	cmd.Flags().StringVarP(&fileMessage, "file", "F", "", "unsupported; pass a message with -m")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
+	return cmd
+}
+
 type addResultJSON struct {
 	Result authoring.CheckpointResult `json:"result"`
 	Split  bool                       `json:"split"`
+}
+
+type commitResultJSON struct {
+	Result           authoring.CheckpointResult `json:"result"`
+	CreatedBranch    bool                       `json:"created_branch"`
+	ProvenanceStatus string                     `json:"provenance_status"`
+}
+
+func printCommitSummary(out io.Writer, result authoring.CheckpointResult) {
+	invocation := "gx commit"
+	if result.Change.Description != "" {
+		invocation = fmt.Sprintf("gx commit -m %q", result.Change.Description)
+	}
+	fmt.Fprintln(out, commandLine(invocation, false))
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, success("Revision recorded"))
+	if result.CreatedBranch && result.Stack != nil {
+		fmt.Fprintln(out, labelValue("Created branch", fmt.Sprintf("%s (from %s)", result.Stack.BookmarkName, result.Stack.BaseRef)))
+	}
+	fmt.Fprintln(out, labelValue("Message", result.Change.Description))
+	fmt.Fprintln(out, labelValue("Revision", shortID(result.Change.ChangeID, 12)))
+	if result.Change.CommitID != "" {
+		fmt.Fprintln(out, labelValue("Commit", shortID(result.Change.CommitID, 8)))
+	}
+	if result.Stack != nil {
+		fmt.Fprintln(out, labelValue("Stack", result.Stack.BookmarkName))
+	}
+	fmt.Fprintln(out, labelValue("Provenance", firstNonEmptyString(result.ProvenanceStatus, "absent")))
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, hint("Choose the next manual scope with git add or git add -p."))
+	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
 }
 
 func printAddSummary(out io.Writer, result authoring.CheckpointResult, split bool) {
@@ -354,7 +455,7 @@ func printAddSummary(out io.Writer, result authoring.CheckpointResult, split boo
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, hint("Remaining changes stay in the current revision."))
 	fmt.Fprintln(out, labelValue("Edit", fmt.Sprintf("gx edit %s", result.Change.ChangeID)))
-	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx add -m %q", result.Change.Description)))
+	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
 }
 
 func newBaseCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
@@ -2427,7 +2528,7 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
 	next := []string{"gx generate", "gx status"}
 	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
-		next = []string{`gx add -m "describe this revision"`, "gx status"}
+		next = []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"}
 	}
 	refs := currentStatusRefs{
 		GXBaseRef:      currentStatusBaseStack(currentStatus{Repo: stack.Repo, Stack: stack.Stack}),
@@ -2489,7 +2590,8 @@ func newStackCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comma
 			fmt.Fprintln(out, labelValue("base", firstNonEmptyString(result.Stack.BaseRef, "main")))
 			fmt.Fprintln(out)
 			fmt.Fprintln(out, section("Next"))
-			fmt.Fprintf(out, "  %s\n", command(`gx add -m "first revision"`))
+			fmt.Fprintf(out, "  %s\n", command(`git add <files>`))
+			fmt.Fprintf(out, "  %s\n", command(`gx commit -m "first revision"`))
 			return nil
 		},
 	}
