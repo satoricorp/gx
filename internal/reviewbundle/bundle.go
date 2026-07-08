@@ -187,21 +187,26 @@ type StackPayload struct {
 }
 
 type SessionPayload struct {
-	ID          string           `json:"id"`
-	CreatedAt   int64            `json:"created_at"`
-	EndedAt     *int64           `json:"ended_at,omitempty"`
-	Command     string           `json:"command"`
-	Cwd         string           `json:"cwd"`
-	ClientPID   *int             `json:"client_pid,omitempty"`
-	ExitCode    *int             `json:"exit_code,omitempty"`
-	GXVersion   string           `json:"gx_version"`
-	Source      *string          `json:"source,omitempty"`
-	ProcessName *string          `json:"process_name,omitempty"`
-	ParentPID   *int             `json:"parent_pid,omitempty"`
-	LastSeenAt  *int64           `json:"last_seen_at,omitempty"`
-	EndReason   *string          `json:"end_reason,omitempty"`
-	RepoRoot    *string          `json:"repo_root,omitempty"`
-	Requests    []RequestPayload `json:"requests"`
+	ID               string           `json:"id"`
+	CreatedAt        int64            `json:"created_at"`
+	EndedAt          *int64           `json:"ended_at,omitempty"`
+	Command          string           `json:"command"`
+	Cwd              string           `json:"cwd"`
+	ClientPID        *int             `json:"client_pid,omitempty"`
+	ExitCode         *int             `json:"exit_code,omitempty"`
+	GXVersion        string           `json:"gx_version"`
+	Source           *string          `json:"source,omitempty"`
+	ProcessName      *string          `json:"process_name,omitempty"`
+	ParentPID        *int             `json:"parent_pid,omitempty"`
+	LastSeenAt       *int64           `json:"last_seen_at,omitempty"`
+	EndReason        *string          `json:"end_reason,omitempty"`
+	RepoRoot         *string          `json:"repo_root,omitempty"`
+	Models           []string         `json:"models,omitempty"`
+	InputTokens      int              `json:"input_tokens,omitempty"`
+	OutputTokens     int              `json:"output_tokens,omitempty"`
+	CacheReadTokens  int              `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int              `json:"cache_write_tokens,omitempty"`
+	Requests         []RequestPayload `json:"requests"`
 }
 
 type RequestPayload struct {
@@ -807,7 +812,8 @@ func listStackSessions(ctx context.Context, db *sql.DB, stack []StackPayload) ([
 func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]SessionPayload, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.client_pid, s.exit_code, s.gx_version,
-			s.source, s.process_name, s.parent_pid, s.last_seen_at, s.end_reason, s.repo_root
+			s.source, s.process_name, s.parent_pid, s.last_seen_at, s.end_reason, s.repo_root,
+			s.models_json, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens
 		FROM change_sessions cs
 		JOIN sessions s ON s.id = cs.session_id
 		WHERE cs.change_id = ?
@@ -821,12 +827,15 @@ func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]Sess
 	var sessions []SessionPayload
 	for rows.Next() {
 		var s SessionPayload
+		var modelsJSON string
 		if err := rows.Scan(
 			&s.ID, &s.CreatedAt, &s.EndedAt, &s.Command, &s.Cwd, &s.ClientPID, &s.ExitCode, &s.GXVersion,
 			&s.Source, &s.ProcessName, &s.ParentPID, &s.LastSeenAt, &s.EndReason, &s.RepoRoot,
+			&modelsJSON, &s.InputTokens, &s.OutputTokens, &s.CacheReadTokens, &s.CacheWriteTokens,
 		); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
+		_ = json.Unmarshal([]byte(modelsJSON), &s.Models)
 		requests, err := listSessionRequests(ctx, db, s.ID)
 		if err != nil {
 			return nil, err
