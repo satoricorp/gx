@@ -205,6 +205,9 @@ func (s *Store) UpsertSessionContext(ctx context.Context, session Session, conte
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit session context: %w", err)
 	}
+	if err := s.refreshSessionUsage(ctx, context.SessionID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -244,6 +247,9 @@ func (s *Store) WriteRequest(ctx context.Context, req Request) error {
 	if err != nil {
 		return fmt.Errorf("insert request: %w", err)
 	}
+	if err := s.refreshSessionUsage(ctx, req.SessionID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -273,6 +279,15 @@ func (s *Store) WriteResponse(ctx context.Context, resp Response) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert response: %w", err)
+	}
+	sessionID, err := s.sessionIDForRequest(ctx, resp.RequestID)
+	if err != nil {
+		return err
+	}
+	if sessionID != "" {
+		if err := s.refreshSessionUsage(ctx, sessionID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1640,6 +1655,9 @@ func (s *Store) UpsertCursorMessage(ctx context.Context, msg CursorMessage) (boo
 	if err != nil {
 		return false, fmt.Errorf("cursor message rows affected: %w", err)
 	}
+	if err := s.refreshSessionUsage(ctx, msg.SessionID); err != nil {
+		return false, err
+	}
 	return affected > 0, nil
 }
 
@@ -1657,6 +1675,254 @@ func (s *Store) CountCursorMessages(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("count cursor messages: %w", err)
 	}
 	return count, nil
+}
+
+func (s *Store) sessionIDForRequest(ctx context.Context, requestID string) (string, error) {
+	var sessionID string
+	err := s.db.QueryRowContext(ctx, `SELECT session_id FROM requests WHERE id = ?`, requestID).Scan(&sessionID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find request session: %w", err)
+	}
+	return sessionID, nil
+}
+
+func (s *Store) refreshSessionUsage(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	models, err := s.sessionModels(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	modelsJSON, err := json.Marshal(models)
+	if err != nil {
+		return fmt.Errorf("marshal session models: %w", err)
+	}
+	usage, err := s.sessionTokenUsage(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sessions
+		SET models_json = ?,
+			input_tokens = ?,
+			output_tokens = ?,
+			cache_read_tokens = ?,
+			cache_write_tokens = ?
+		WHERE id = ?
+	`, string(modelsJSON), usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheWriteTokens, sessionID)
+	if err != nil {
+		return fmt.Errorf("update session usage: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) sessionModels(ctx context.Context, sessionID string) ([]string, error) {
+	var models []string
+	seen := map[string]struct{}{}
+	add := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return
+		}
+		if _, ok := seen[model]; ok {
+			return
+		}
+		seen[model] = struct{}{}
+		models = append(models, model)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT model
+		FROM requests
+		WHERE session_id = ? AND model IS NOT NULL AND TRIM(model) != ''
+		ORDER BY created_at ASC, id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list request models: %w", err)
+	}
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan request model: %w", err)
+		}
+		add(model)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close request models: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate request models: %w", err)
+	}
+
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT model
+		FROM session_contexts
+		WHERE session_id = ? AND model IS NOT NULL AND TRIM(model) != ''
+		ORDER BY captured_at ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list session context models: %w", err)
+	}
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan session context model: %w", err)
+		}
+		add(model)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close session context models: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session context models: %w", err)
+	}
+
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT raw_json
+		FROM cursor_messages
+		WHERE session_id = ?
+		ORDER BY created_at ASC, id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("list cursor message models: %w", err)
+	}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan cursor message model: %w", err)
+		}
+		for _, model := range modelsFromRawJSON(raw) {
+			add(model)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close cursor message models: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cursor message models: %w", err)
+	}
+	return models, nil
+}
+
+func (s *Store) sessionTokenUsage(ctx context.Context, sessionID string) (tokenUsage, error) {
+	var total tokenUsage
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT resp.input_tokens, resp.output_tokens, resp.cache_read_tokens, resp.cache_write_tokens, resp.response_body
+		FROM requests req
+		JOIN responses resp ON resp.request_id = req.id
+		WHERE req.session_id = ?
+		ORDER BY resp.created_at ASC, resp.id ASC
+	`, sessionID)
+	if err != nil {
+		return total, fmt.Errorf("list response usage: %w", err)
+	}
+	for rows.Next() {
+		var input, output, cacheRead, cacheWrite sql.NullInt64
+		var body []byte
+		if err := rows.Scan(&input, &output, &cacheRead, &cacheWrite, &body); err != nil {
+			rows.Close()
+			return total, fmt.Errorf("scan response usage: %w", err)
+		}
+		parsed := responseBodyUsage(body)
+		total.InputTokens += usageColumn(input, parsed.InputTokens)
+		total.OutputTokens += usageColumn(output, parsed.OutputTokens)
+		total.CacheReadTokens += usageColumn(cacheRead, parsed.CacheReadTokens)
+		total.CacheWriteTokens += usageColumn(cacheWrite, parsed.CacheWriteTokens)
+	}
+	if err := rows.Close(); err != nil {
+		return total, fmt.Errorf("close response usage: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return total, fmt.Errorf("iterate response usage: %w", err)
+	}
+
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT input_tokens, output_tokens
+		FROM cursor_messages
+		WHERE session_id = ?
+	`, sessionID)
+	if err != nil {
+		return total, fmt.Errorf("list cursor message usage: %w", err)
+	}
+	for rows.Next() {
+		var input, output sql.NullInt64
+		if err := rows.Scan(&input, &output); err != nil {
+			rows.Close()
+			return total, fmt.Errorf("scan cursor message usage: %w", err)
+		}
+		total.InputTokens += usageColumn(input, 0)
+		total.OutputTokens += usageColumn(output, 0)
+	}
+	if err := rows.Close(); err != nil {
+		return total, fmt.Errorf("close cursor message usage: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return total, fmt.Errorf("iterate cursor message usage: %w", err)
+	}
+	return total, nil
+}
+
+func usageColumn(value sql.NullInt64, fallback int) int {
+	if value.Valid {
+		return int(value.Int64)
+	}
+	return fallback
+}
+
+func modelsFromRawJSON(raw []byte) []string {
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+	var models []string
+	collectModels(payload, "", &models)
+	return models
+}
+
+func collectModels(value any, key string, models *[]string) {
+	switch v := value.(type) {
+	case map[string]any:
+		for childKey, childValue := range v {
+			collectModels(childValue, childKey, models)
+		}
+	case []any:
+		for _, childValue := range v {
+			collectModels(childValue, key, models)
+		}
+	case string:
+		if isModelKey(key) && strings.TrimSpace(v) != "" {
+			*models = append(*models, v)
+		}
+	}
+}
+
+func isModelKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	switch key {
+	case "model", "modelid", "model_id", "modelname", "model_name", "selectedmodel", "selected_model":
+		return true
+	default:
+		return false
+	}
+}
+
+type tokenUsage struct {
+	InputTokens      int
+	OutputTokens     int
+	CacheReadTokens  int
+	CacheWriteTokens int
+}
+
+func (u tokenUsage) total() int {
+	return u.InputTokens + u.OutputTokens + u.CacheReadTokens + u.CacheWriteTokens
 }
 
 func (s *Store) AgentLedgerSummary(ctx context.Context, agent string) (AgentLedgerSummary, error) {
@@ -1741,7 +2007,11 @@ func (s *Store) agentLedgerMissingTokens(ctx context.Context, where string) (int
 }
 
 func responseBodyTokens(body []byte) int {
-	latest := 0
+	return responseBodyUsage(body).total()
+}
+
+func responseBodyUsage(body []byte) tokenUsage {
+	var latest tokenUsage
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data:") {
@@ -1750,36 +2020,48 @@ func responseBodyTokens(body []byte) int {
 		if line == "" || line == "[DONE]" || !strings.HasPrefix(line, "{") {
 			continue
 		}
-		if tokens := responseJSONTokens([]byte(line)); tokens > 0 {
-			latest = tokens
+		if usage := responseJSONUsage([]byte(line)); usage.total() > 0 {
+			latest = usage
 		}
 	}
-	if latest > 0 {
+	if latest.total() > 0 {
 		return latest
 	}
-	return responseJSONTokens(body)
+	return responseJSONUsage(body)
 }
 
 func responseJSONTokens(body []byte) int {
+	return responseJSONUsage(body).total()
+}
+
+func responseJSONUsage(body []byte) tokenUsage {
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return 0
+		return tokenUsage{}
 	}
 	if response, _ := payload["response"].(map[string]any); response != nil {
-		if tokens := usageTokens(response["usage"]); tokens > 0 {
-			return tokens
+		if usage := usageFromValue(response["usage"]); usage.total() > 0 {
+			return usage
 		}
 	}
-	return usageTokens(payload["usage"])
+	return usageFromValue(payload["usage"])
 }
 
 func usageTokens(value any) int {
+	return usageFromValue(value).total()
+}
+
+func usageFromValue(value any) tokenUsage {
 	usage, _ := value.(map[string]any)
 	if usage == nil {
-		return 0
+		return tokenUsage{}
 	}
-	return usageTokenValue(usage, "input_tokens", "prompt_tokens") +
-		usageTokenValue(usage, "output_tokens", "completion_tokens")
+	return tokenUsage{
+		InputTokens:      usageTokenValue(usage, "input_tokens", "prompt_tokens"),
+		OutputTokens:     usageTokenValue(usage, "output_tokens", "completion_tokens"),
+		CacheReadTokens:  usageTokenValue(usage, "cache_read_tokens", "cache_read_input_tokens"),
+		CacheWriteTokens: usageTokenValue(usage, "cache_write_tokens", "cache_creation_input_tokens"),
+	}
 }
 
 func usageTokenValue(usage map[string]any, keys ...string) int {

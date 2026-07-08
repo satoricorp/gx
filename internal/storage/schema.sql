@@ -12,7 +12,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     parent_pid INTEGER,
     last_seen_at INTEGER,
     end_reason TEXT,
-    repo_root TEXT
+    repo_root TEXT,
+    models_json TEXT NOT NULL DEFAULT '[]',
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS requests (
