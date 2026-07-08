@@ -148,14 +148,16 @@ jobs:
           if-no-files-found: error
 
       - name: Configure AWS credentials with OIDC
-        if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
+        # Temporarily disabled while GX release publication is CLI-focused.
+        if: ${{ false && env.AWS_ROLE_TO_ASSUME != '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials with access keys
-        if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
+        # Temporarily disabled while GX release publication is CLI-focused.
+        if: ${{ false && env.AWS_ROLE_TO_ASSUME == '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ env.DEPLOY_AWS_ACCESS_KEY_ID }}
@@ -163,6 +165,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Publish downloads to S3
+        # Temporarily disabled while GX release publication is CLI-focused.
+        if: ${{ false }}
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -245,7 +249,8 @@ jobs:
             --paths /GX-macOS.zip /GX-macOS.dmg /menubar/appcast.xml /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
 
       - name: Publish GitHub release assets
-        if: ${{ github.ref_type == 'tag' }}
+        # Temporarily disabled while GX release publication is CLI-focused.
+        if: ${{ false && github.ref_type == 'tag' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
