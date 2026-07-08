@@ -719,7 +719,7 @@ func (r IndexedContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 
 func indexedContextFilter(repoRoot string) any {
 	conditions := []any{
-		[]any{"source_kind", "In", []string{"code_file", "session_transcript"}},
+		[]any{"source_kind", "In", []string{"code_file", "session_transcript", "session_context"}},
 	}
 	if strings.TrimSpace(repoRoot) != "" {
 		conditions = append(conditions, []any{"repo_root", "Eq", strings.TrimSpace(repoRoot)})
@@ -752,6 +752,7 @@ func indexedContextAttributes() []string {
 		"model",
 		"created_at",
 		"provenance_status",
+		"context_format",
 	}
 }
 
@@ -863,7 +864,7 @@ func indexedContextSnippet(row indexedContextRow, namespace string) (ContextSnip
 		if snippet.File != "" && snippet.StartLine > 0 {
 			snippet.Ref = fmt.Sprintf("%s:%d", snippet.File, snippet.StartLine)
 		}
-	case "session_transcript":
+	case "session_transcript", "session_context":
 		snippet.Kind = "indexed_session"
 		if snippet.SessionID != "" {
 			snippet.Ref = firstNonEmpty(snippet.SessionID+"/"+snippet.RequestID, snippet.SessionID)
