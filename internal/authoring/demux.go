@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/provenance"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/structural"
@@ -66,11 +65,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		return DemuxProposal{}, err
 	}
 
-	captureResult, captureErr := MatchWorkingCopy(ctx, repo.RootPath, hunks, nil)
-	if captureErr != nil {
-		captureResult = ComposeCaptureResult{Status: provenance.StatusAbsent}
-	}
-	sessionIDs, sessionContexts, provenanceStatus, err := resolveComposeProvenance(ctx, repo.RootPath, captureResult)
+	sessionIDs, provenanceStatus, err := e.sessionIDsForProposal(ctx, repo.RootPath)
 	if err != nil {
 		return DemuxProposal{}, err
 	}
@@ -83,8 +78,6 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	groups := expandGroupsByChangedSymbols(fileGroups, hunksByFile)
 	revisions := make([]RevisionProposal, 0, len(groups))
 	for index, group := range groups {
-		revisionLinks := hunkLinksForRevision(captureResult.HunkLinks, group.Files)
-		revisionSessionIDs := sessionIDsForRevisionLinks(sessionIDs, revisionLinks, provenanceStatus)
 		revisions = append(revisions, RevisionProposal{
 			ID:               fmt.Sprintf("u%d", index+1),
 			Intent:           proposalIntentForGroup(opts.Intent, group),
@@ -92,10 +85,8 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 			UseHunks:         group.UseHunks,
 			HunkIDs:          hunkIDs(group.Hunks),
 			Hunks:            group.Hunks,
-			ProvenanceStatus: provenanceStatusForRevision(provenanceStatus, revisionSessionIDs),
-			SessionIDs:       revisionSessionIDs,
-			SessionContexts:  sessionContextsForRevision(sessionContexts, revisionLinks),
-			HunkLinks:        revisionLinks,
+			ProvenanceStatus: provenanceStatus,
+			SessionIDs:       sessionIDs,
 			Confidence:       group.Confidence,
 		})
 	}
@@ -113,8 +104,6 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		warnings = append(warnings, "no explicit or repo-local pending session found; proposed revisions will not have exact session provenance")
 	} else if provenanceStatus == "repo_local" {
 		warnings = append(warnings, "repo-local pending session provenance was inferred from captured sessions for this repository")
-	} else if provenanceStatus == provenance.StatusMatched {
-		warnings = append(warnings, "session provenance was matched from agent edit events to changed hunks")
 	}
 
 	proposal := DemuxProposal{
@@ -129,9 +118,6 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		ChangedSymbols:   changedSymbolsForProposal(changedSymbols),
 		Revisions:        revisions,
 		Warnings:         warnings,
-		HunkLinks:        captureResult.HunkLinks,
-		HunkCoverage:     captureResult.HunkCoverage,
-		CaptureTools:     captureResult.Tools,
 	}
 	proposal, _ = shapeDemuxProposalForReview(proposal)
 	proposal = e.annotateSemanticLabels(ctx, proposal)
@@ -496,14 +482,10 @@ func (e *Engine) applyNewStackRoutedDemuxRevisions(ctx context.Context, proposal
 		}
 		var result CheckpointResult
 		var err error
-		contexts, err := storageSessionContexts(revision.SessionContexts)
-		if err != nil {
-			return nil, true, restoreAfterError(err)
-		}
 		if appendToExisting {
-			result, err = e.vcs.RecordCurrentRevisionInStackDeferredReconcileWithSessionContexts(ctx, bookmark, revision.Intent, revision.SessionIDs, contexts)
+			result, err = e.vcs.RecordCurrentRevisionInStackDeferredReconcile(ctx, bookmark, revision.Intent, revision.SessionIDs)
 		} else {
-			result, err = e.vcs.RecordCurrentRevisionInNewStackDeferredReconcileWithSessionContexts(ctx, newStackRouteName(revision), bookmark, routeBaseStack(revision), revision.Intent, revision.SessionIDs, contexts)
+			result, err = e.vcs.RecordCurrentRevisionInNewStackDeferredReconcile(ctx, newStackRouteName(revision), bookmark, routeBaseStack(revision), revision.Intent, revision.SessionIDs)
 			createdBookmarks[bookmark] = struct{}{}
 		}
 		if err != nil {
@@ -583,10 +565,6 @@ func (e *Engine) applyCurrentDemuxRevisionWithValidation(ctx context.Context, re
 	}
 
 	preferred := revision.SessionIDs
-	contexts, err := storageSessionContexts(revision.SessionContexts)
-	if err != nil {
-		return demuxRevisionApplyOutcome{}, err
-	}
 	var result CheckpointResult
 	if revision.UseHunks && len(revision.Hunks) > 0 {
 		patchFile, cleanup, err := writeRevisionPatch(revision.Hunks)
@@ -599,7 +577,6 @@ func (e *Engine) applyCurrentDemuxRevisionWithValidation(ctx context.Context, re
 			Hunk:                   true,
 			PatchFile:              patchFile,
 			PreferredSessionIDs:    preferred,
-			SessionContexts:        contexts,
 			BookmarkRecordedCommit: true,
 		})
 	} else {
@@ -607,7 +584,6 @@ func (e *Engine) applyCurrentDemuxRevisionWithValidation(ctx context.Context, re
 			Intent:                 revision.Intent,
 			Filesets:               revision.Files,
 			PreferredSessionIDs:    preferred,
-			SessionContexts:        contexts,
 			BookmarkRecordedCommit: true,
 		})
 	}
@@ -760,14 +736,10 @@ func (e *Engine) applyRoutedDemuxRevision(ctx context.Context, proposal DemuxPro
 	}
 
 	var result CheckpointResult
-	contexts, err := storageSessionContexts(revision.SessionContexts)
-	if err != nil {
-		return demuxRevisionApplyOutcome{}, restoreAfterError(err)
-	}
 	if targetStack != nil {
-		result, err = e.vcs.RecordCurrentRevisionInStackWithSessionContexts(ctx, targetBookmark, revision.Intent, revision.SessionIDs, contexts)
+		result, err = e.vcs.RecordCurrentRevisionInStack(ctx, targetBookmark, revision.Intent, revision.SessionIDs)
 	} else {
-		result, err = e.vcs.RecordCurrentRevisionInNewStackWithSessionContexts(ctx, newStackRouteName(revision), newStackRouteBookmark(revision), routeBaseStack(revision), revision.Intent, revision.SessionIDs, contexts)
+		result, err = e.vcs.RecordCurrentRevisionInNewStack(ctx, newStackRouteName(revision), newStackRouteBookmark(revision), routeBaseStack(revision), revision.Intent, revision.SessionIDs)
 	}
 	if err != nil {
 		if restoreErr := e.restoreDemuxRevisionAttempt(ctx, proposal.RepoRoot, opID); restoreErr != nil {
@@ -1092,21 +1064,11 @@ type demuxEvidencePayload struct {
 	Files               []string               `json:"files"`
 	HunkIDs             []string               `json:"hunk_ids,omitempty"`
 	Hunks               []HunkRange            `json:"hunks,omitempty"`
-	SessionMatches      []SessionMatchEvidence `json:"session_matches,omitempty"`
 	SemanticLabels      []SemanticLabel        `json:"semantic_labels,omitempty"`
 	FeasibilityWarnings []FeasibilityWarning   `json:"feasibility_warnings,omitempty"`
 	StructuralFacts     []StructuralFact       `json:"structural_facts,omitempty"`
 	StructuralDeps      []StructuralDependency `json:"structural_dependencies,omitempty"`
 	ChangedSymbols      []ChangedSymbol        `json:"changed_symbols,omitempty"`
-}
-
-type SessionMatchEvidence struct {
-	SessionID  string   `json:"session_id"`
-	HunkIDs    []string `json:"hunk_ids"`
-	Tool       string   `json:"tool,omitempty"`
-	Model      string   `json:"model,omitempty"`
-	BestTier   int      `json:"best_tier"`
-	Confidence float64  `json:"confidence"`
 }
 
 func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal, revision RevisionProposal, result CheckpointResult) error {
@@ -1156,7 +1118,6 @@ func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal,
 		Files:               files,
 		HunkIDs:             hunkIDs,
 		Hunks:               revision.Hunks,
-		SessionMatches:      sessionMatchesForEvidence(revision),
 		SemanticLabels:      revision.SemanticLabels,
 		FeasibilityWarnings: relevantFeasibilityWarnings(proposal.FeasibilityWarnings, revision.ID),
 		StructuralFacts:     relevantStructuralFacts(proposal.StructuralFacts, files),
@@ -1192,90 +1153,6 @@ func (e *Engine) writeDemuxEvidence(ctx context.Context, proposal DemuxProposal,
 		return err
 	}
 	return nil
-}
-
-func storageSessionContexts(contexts []SessionContext) ([]storage.SessionContext, error) {
-	if len(contexts) == 0 {
-		return nil, nil
-	}
-	out := make([]storage.SessionContext, 0, len(contexts))
-	for _, context := range contexts {
-		sessionID := strings.TrimSpace(context.SessionID)
-		if sessionID == "" {
-			continue
-		}
-		content, err := json.Marshal(context.ContentRedacted)
-		if err != nil {
-			return nil, fmt.Errorf("marshal session context %s: %w", sessionID, err)
-		}
-		tool := strings.TrimSpace(context.Tool)
-		if tool == "" {
-			tool = "unknown"
-		}
-		format := strings.TrimSpace(context.Format)
-		if format == "" {
-			format = "gx_session_events_v1"
-		}
-		var model *string
-		if value := strings.TrimSpace(context.Model); value != "" {
-			model = &value
-		}
-		capturedAt := context.CapturedAt
-		if capturedAt == 0 {
-			capturedAt = time.Now().UnixMilli()
-		}
-		out = append(out, storage.SessionContext{
-			SessionID:   sessionID,
-			Tool:        tool,
-			Model:       model,
-			Format:      format,
-			ContentJSON: content,
-			CapturedAt:  capturedAt,
-		})
-	}
-	return out, nil
-}
-
-func sessionMatchesForEvidence(revision RevisionProposal) []SessionMatchEvidence {
-	bySession := map[string]*SessionMatchEvidence{}
-	order := []string{}
-	for _, link := range revision.HunkLinks {
-		if link.SessionID == "" || link.Authorship != matcher.AuthorshipAgent || link.Tier <= 0 {
-			continue
-		}
-		match := bySession[link.SessionID]
-		if match == nil {
-			match = &SessionMatchEvidence{
-				SessionID:  link.SessionID,
-				Tool:       link.Tool,
-				Model:      link.Model,
-				BestTier:   link.Tier,
-				Confidence: link.Confidence,
-			}
-			bySession[link.SessionID] = match
-			order = append(order, link.SessionID)
-		}
-		if link.Tier < match.BestTier || match.BestTier == 0 {
-			match.BestTier = link.Tier
-		}
-		if link.Confidence > match.Confidence {
-			match.Confidence = link.Confidence
-		}
-		if match.Tool == "" {
-			match.Tool = link.Tool
-		}
-		if match.Model == "" {
-			match.Model = link.Model
-		}
-		if link.HunkID != "" {
-			match.HunkIDs = append(match.HunkIDs, link.HunkID)
-		}
-	}
-	out := make([]SessionMatchEvidence, 0, len(order))
-	for _, sessionID := range order {
-		out = append(out, *bySession[sessionID])
-	}
-	return out
 }
 
 func relevantFeasibilityWarnings(warnings []FeasibilityWarning, revisionID string) []FeasibilityWarning {
@@ -2548,6 +2425,12 @@ func counterpartKey(file string) string {
 
 func proposalIntent(prefix string, files []string) string {
 	prefix = strings.TrimSpace(prefix)
+	if len(files) == 0 {
+		if prefix == "" {
+			return "update changes"
+		}
+		return prefix + ": changes"
+	}
 	label := files[0]
 	if len(files) > 1 {
 		label = counterpartKey(files[0])
