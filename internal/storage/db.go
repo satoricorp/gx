@@ -89,6 +89,14 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate change_session_provenance table: %w", err)
 	}
+	if err := ensureSessionContextsTable(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate session_contexts table: %w", err)
+	}
+	if err := repairDanglingSessionLinks(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("repair session links: %w", err)
+	}
 	if err := repairChangeRows(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("repair change rows: %w", err)
@@ -259,6 +267,44 @@ func ensureChangeSessionProvenanceTable(ctx context.Context, db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_change_session_provenance_session ON change_session_provenance(session_id);
 	`)
 	return err
+}
+
+func ensureSessionContextsTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS session_contexts (
+			session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+			tool TEXT NOT NULL,
+			model TEXT,
+			format TEXT NOT NULL,
+			content_json BLOB NOT NULL,
+			captured_at INTEGER NOT NULL
+		);
+	`)
+	return err
+}
+
+func repairDanglingSessionLinks(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `
+		DELETE FROM change_session_provenance
+		WHERE change_id NOT IN (SELECT id FROM changes)
+			OR session_id NOT IN (SELECT id FROM sessions)
+			OR NOT EXISTS (
+				SELECT 1
+				FROM change_sessions cs
+				WHERE cs.change_id = change_session_provenance.change_id
+					AND cs.session_id = change_session_provenance.session_id
+			)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		DELETE FROM change_sessions
+		WHERE change_id NOT IN (SELECT id FROM changes)
+			OR session_id NOT IN (SELECT id FROM sessions)
+	`); err != nil {
+		return err
+	}
+	return nil
 }
 
 func ensureStacksTables(ctx context.Context, db *sql.DB) error {

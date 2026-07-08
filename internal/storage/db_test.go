@@ -138,6 +138,103 @@ func TestDemuxProposalRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSessionContextRoundTrip(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	store, err := NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer store.Close()
+
+	model := "gpt-5"
+	if err := store.UpsertSessionContext(ctx, Session{
+		ID:        "session-one",
+		CreatedAt: 1,
+		Command:   "codex",
+		Cwd:       "/repo",
+		GXVersion: "test",
+	}, SessionContext{
+		SessionID:   "session-one",
+		Tool:        "codex",
+		Model:       &model,
+		Format:      "gx_session_events_v1",
+		ContentJSON: []byte(`[{"session_id":"session-one","new_text":"redacted"}]`),
+		CapturedAt:  2,
+	}); err != nil {
+		t.Fatalf("UpsertSessionContext() error = %v", err)
+	}
+
+	got, err := store.SessionContext(ctx, "session-one")
+	if err != nil {
+		t.Fatalf("SessionContext() error = %v", err)
+	}
+	if got == nil {
+		t.Fatal("SessionContext() = nil")
+	}
+	if got.SessionID != "session-one" || got.Tool != "codex" || got.Model == nil || *got.Model != model || got.Format != "gx_session_events_v1" || string(got.ContentJSON) == "" || got.CapturedAt != 2 {
+		t.Fatalf("SessionContext() = %#v", got)
+	}
+}
+
+func TestOpenRepairsDanglingSessionLinks(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() initial error = %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatalf("disable foreign keys: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO repos (id, root_path, backend, created_at, updated_at)
+		VALUES (1, '/repo', 'jj', 1, 1);
+		INSERT INTO changes (id, repo_id, jj_change_id, current_commit_id, description, parent_change_id, status, first_seen_at, updated_at)
+		VALUES (1, 1, 'change-one', 'commit-one', 'one', NULL, 'draft', 1, 1);
+		INSERT INTO sessions (id, created_at, command, cwd, gx_version)
+		VALUES ('live-session', 1, 'codex', '/repo', 'test');
+		INSERT INTO change_sessions (change_id, session_id, created_at)
+		VALUES (1, 'live-session', 1), (999, 'live-session', 2), (1, 'missing-session', 3);
+		INSERT INTO change_session_provenance (change_id, session_id, agent_tool, provider, model_id, source, process_name, created_at)
+		VALUES
+			(1, 'live-session', 'codex', '', '', NULL, NULL, 1),
+			(999, 'live-session', 'codex', '', '', NULL, NULL, 2),
+			(1, 'missing-session', 'codex', '', '', NULL, NULL, 3),
+			(1, 'live-session-no-link', 'codex', '', '', NULL, NULL, 4)
+	`); err != nil {
+		t.Fatalf("insert dangling links: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close() error = %v", err)
+	}
+
+	db, err = Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() repair error = %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM change_sessions`).Scan(&count); err != nil {
+		t.Fatalf("count change_sessions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("change_sessions count = %d, want 1", count)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM change_session_provenance`).Scan(&count); err != nil {
+		t.Fatalf("count change_session_provenance: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("change_session_provenance count = %d, want 1", count)
+	}
+}
+
 func TestListReposOrdersByMostRecentlyUpdated(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
