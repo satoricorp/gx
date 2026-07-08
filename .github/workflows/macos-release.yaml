@@ -1,11 +1,7 @@
 name: Build macOS App
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
+  # Disabled while GX release publication is CLI-focused.
   workflow_dispatch:
 
 permissions:
@@ -18,6 +14,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ false }}
     name: Build GX for macOS
     runs-on: macos-latest
     env:
