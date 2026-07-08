@@ -169,6 +169,15 @@ CREATE TABLE IF NOT EXISTS change_session_provenance (
 CREATE INDEX IF NOT EXISTS idx_change_session_provenance_change ON change_session_provenance(change_id);
 CREATE INDEX IF NOT EXISTS idx_change_session_provenance_session ON change_session_provenance(session_id);
 
+CREATE TABLE IF NOT EXISTS session_contexts (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    tool TEXT NOT NULL,
+    model TEXT,
+    format TEXT NOT NULL,
+    content_json BLOB NOT NULL,
+    captured_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS demux_proposals (
     id TEXT PRIMARY KEY,
     repo_id INTEGER NOT NULL REFERENCES repos(id),

@@ -46,12 +46,13 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		Long:          gxTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if strings.Contains(cmd.CommandPath(), "__") {
-				return
+				return nil
 			}
 			inference.ApplyToEnvironment()
 			telemetry.EmitInstallOnce(ctx)
+			return ensureAutoInitializedRepo(ctx, engine, cmd)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printInitNoteIfNeeded(cmd)
@@ -784,7 +785,7 @@ func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.
 }
 
 func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
-	_, err := engine.Init(ctx, authoring.InitOptions{})
+	_, err := engine.EnsureReadyRepo(ctx)
 	return err
 }
 

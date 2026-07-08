@@ -146,6 +146,15 @@ type ChangeSessionProvenance struct {
 	CreatedAt   int64
 }
 
+type SessionContext struct {
+	SessionID   string
+	Tool        string
+	Model       *string
+	Format      string
+	ContentJSON []byte
+	CapturedAt  int64
+}
+
 type DemuxProposal struct {
 	ID           string
 	RepoID       int64

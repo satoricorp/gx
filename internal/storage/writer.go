@@ -120,6 +120,94 @@ func (s *Store) WriteSession(ctx context.Context, session Session) error {
 	return nil
 }
 
+func (s *Store) UpsertSession(ctx context.Context, session Session) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO sessions (
+			id, created_at, ended_at, command, cwd, client_pid, exit_code, gx_version,
+			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			ended_at = COALESCE(excluded.ended_at, sessions.ended_at),
+			command = CASE WHEN excluded.command != '' THEN excluded.command ELSE sessions.command END,
+			cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE sessions.cwd END,
+			client_pid = COALESCE(excluded.client_pid, sessions.client_pid),
+			exit_code = COALESCE(excluded.exit_code, sessions.exit_code),
+			gx_version = CASE WHEN excluded.gx_version != '' THEN excluded.gx_version ELSE sessions.gx_version END,
+			source = COALESCE(excluded.source, sessions.source),
+			process_name = COALESCE(excluded.process_name, sessions.process_name),
+			parent_pid = COALESCE(excluded.parent_pid, sessions.parent_pid),
+			last_seen_at = COALESCE(excluded.last_seen_at, sessions.last_seen_at),
+			end_reason = COALESCE(excluded.end_reason, sessions.end_reason),
+			repo_root = COALESCE(excluded.repo_root, sessions.repo_root)
+	`,
+		session.ID,
+		session.CreatedAt,
+		session.EndedAt,
+		session.Command,
+		session.Cwd,
+		session.ClientPID,
+		session.ExitCode,
+		session.GXVersion,
+		session.Source,
+		session.ProcessName,
+		session.ParentPID,
+		session.LastSeenAt,
+		session.EndReason,
+		session.RepoRoot,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) UpsertSessionContext(ctx context.Context, session Session, context SessionContext) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin session context: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO sessions (
+			id, created_at, ended_at, command, cwd, client_pid, exit_code, gx_version,
+			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			ended_at = COALESCE(excluded.ended_at, sessions.ended_at),
+			command = CASE WHEN excluded.command != '' THEN excluded.command ELSE sessions.command END,
+			cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE sessions.cwd END,
+			client_pid = COALESCE(excluded.client_pid, sessions.client_pid),
+			exit_code = COALESCE(excluded.exit_code, sessions.exit_code),
+			gx_version = CASE WHEN excluded.gx_version != '' THEN excluded.gx_version ELSE sessions.gx_version END,
+			source = COALESCE(excluded.source, sessions.source),
+			process_name = COALESCE(excluded.process_name, sessions.process_name),
+			parent_pid = COALESCE(excluded.parent_pid, sessions.parent_pid),
+			last_seen_at = COALESCE(excluded.last_seen_at, sessions.last_seen_at),
+			end_reason = COALESCE(excluded.end_reason, sessions.end_reason),
+			repo_root = COALESCE(excluded.repo_root, sessions.repo_root)
+	`, session.ID, session.CreatedAt, session.EndedAt, session.Command, session.Cwd, session.ClientPID, session.ExitCode, session.GXVersion, session.Source, session.ProcessName, session.ParentPID, session.LastSeenAt, session.EndReason, session.RepoRoot); err != nil {
+		return fmt.Errorf("upsert matched session: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO session_contexts (session_id, tool, model, format, content_json, captured_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			tool = excluded.tool,
+			model = excluded.model,
+			format = excluded.format,
+			content_json = excluded.content_json,
+			captured_at = excluded.captured_at
+	`, context.SessionID, context.Tool, context.Model, context.Format, context.ContentJSON, context.CapturedAt); err != nil {
+		return fmt.Errorf("upsert session context: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit session context: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) TouchSession(ctx context.Context, sessionID string, lastSeenAt int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE sessions
@@ -243,6 +331,18 @@ func (s *Store) RecordInitializedRepo(ctx context.Context, rootPath string, now 
 		return fmt.Errorf("record initialized repo: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) IsInitializedRepo(ctx context.Context, rootPath string) (bool, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM initialized_repos
+		WHERE root_path = ?
+	`, rootPath).Scan(&count); err != nil {
+		return false, fmt.Errorf("lookup initialized repo: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (s *Store) ListInitializedRepos(ctx context.Context) ([]InitializedRepo, error) {
@@ -639,6 +739,26 @@ func (s *Store) insertChangeSessionProvenance(ctx context.Context, changeID int6
 		return fmt.Errorf("insert change session provenance: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) SessionContext(ctx context.Context, sessionID string) (*SessionContext, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT session_id, tool, model, format, content_json, captured_at
+		FROM session_contexts
+		WHERE session_id = ?
+	`, sessionID)
+	var context SessionContext
+	var model sql.NullString
+	if err := row.Scan(&context.SessionID, &context.Tool, &model, &context.Format, &context.ContentJSON, &context.CapturedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find session context: %w", err)
+	}
+	if model.Valid {
+		context.Model = &model.String
+	}
+	return &context, nil
 }
 
 func (s *Store) WriteChangeDemuxEvidence(ctx context.Context, evidence ChangeDemuxEvidence) error {
@@ -1086,7 +1206,10 @@ func (s *Store) FindAttachableSessionsForRepo(ctx context.Context, repoRoot stri
 			OR (s.repo_root IS NULL AND s.cwd LIKE ?)
 		)
 		AND NOT EXISTS (
-			SELECT 1 FROM change_sessions cs WHERE cs.session_id = s.id
+			SELECT 1
+			FROM change_sessions cs
+			JOIN changes c ON c.id = cs.change_id
+			WHERE cs.session_id = s.id
 		)
 		ORDER BY COALESCE(s.last_seen_at, s.ended_at, s.created_at) DESC, s.created_at DESC
 		LIMIT ?
