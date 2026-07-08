@@ -166,6 +166,7 @@ type CommitResult struct {
 	OperationID         string
 	Output              string
 	PreferredSessionIDs []string
+	SessionContexts     []storage.SessionContext
 }
 
 type SplitCommitOptions struct {
@@ -184,6 +185,7 @@ type RevisionOptions struct {
 	Hunk                   bool
 	PatchFile              string
 	PreferredSessionIDs    []string
+	SessionContexts        []storage.SessionContext
 	BookmarkRecordedCommit bool
 }
 
@@ -443,6 +445,7 @@ func (s *Service) RecordRevision(ctx context.Context, opts RevisionOptions) (Com
 		return CommitResult{}, err
 	}
 	result.PreferredSessionIDs = opts.PreferredSessionIDs
+	result.SessionContexts = opts.SessionContexts
 	if err := recordCommit(ctx, result); err != nil {
 		return result, fmt.Errorf("record revision metadata: %w", err)
 	}
@@ -3380,7 +3383,7 @@ func recordCommit(ctx context.Context, result CommitResult) error {
 			return err
 		}
 		defer store.Close()
-		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs)
+		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts)
 	})
 }
 
@@ -3669,7 +3672,7 @@ func isSQLiteBusy(err error) bool {
 	return strings.Contains(value, "sqlite_busy") || strings.Contains(value, "database is locked")
 }
 
-func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string) error {
+func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext) error {
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
 		return err
@@ -3696,6 +3699,33 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 	}
 	if err := attachSessions(ctx, store, repo.RootPath, changeID, preferredSessionIDs); err != nil {
 		return err
+	}
+	if err := writeSessionContexts(ctx, store, repo.RootPath, sessionContexts); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeSessionContexts(ctx context.Context, store *storage.Store, repoRoot string, contexts []storage.SessionContext) error {
+	for _, sessionContext := range contexts {
+		if strings.TrimSpace(sessionContext.SessionID) == "" {
+			continue
+		}
+		createdAt := sessionContext.CapturedAt
+		if createdAt == 0 {
+			createdAt = time.Now().UnixMilli()
+		}
+		repoRootValue := repoRoot
+		session := storage.Session{
+			ID:        sessionContext.SessionID,
+			CreatedAt: createdAt,
+			Command:   sessionContext.Tool,
+			Cwd:       repoRoot,
+			RepoRoot:  &repoRootValue,
+		}
+		if err := store.UpsertSessionContext(ctx, session, sessionContext); err != nil {
+			return err
+		}
 	}
 	return nil
 }

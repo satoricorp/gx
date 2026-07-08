@@ -10,6 +10,7 @@ import (
 
 const (
 	StatusExplicit  = "explicit"
+	StatusMatched   = "matched"
 	StatusRepoLocal = "repo_local"
 	StatusAbsent    = "absent"
 )
