@@ -215,6 +215,10 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 	if len(store.requests) == 0 {
 		t.Fatalf("store requests = %#v, want indexed context query", store.requests)
 	}
+	filters := mustReviewResourceJSON(store.requests[0].Filters)
+	if !strings.Contains(filters, "session_context") {
+		t.Fatalf("indexed context filters = %s, want session_context", filters)
+	}
 }
 
 func TestReviewerFromPolicyUsesOpenAIAndAnthropicModels(t *testing.T) {
