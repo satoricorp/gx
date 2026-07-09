@@ -10,6 +10,9 @@ import (
 
 func main() {
 	if err := cli.Execute(context.Background()); err != nil && !errors.Is(err, context.Canceled) {
+		if code := cli.ExitCode(err); code != 0 {
+			os.Exit(code)
+		}
 		os.Exit(1)
 	}
 }

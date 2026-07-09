@@ -654,7 +654,7 @@ func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, r
 	if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, "@-"); err != nil {
 		return CommitResult{}, err
 	}
-	if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", "@-"); err != nil {
+	if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, bookmark, "@-", false); err != nil {
 		return CommitResult{}, err
 	}
 	base := s.publicStackBaseRef(ctx, repo, firstNonEmpty(strings.TrimSpace(baseRef), s.defaultStackBaseRef(repo)))
@@ -1093,7 +1093,7 @@ func (s *Service) editRevision(ctx context.Context, repoRoot, rev string, reatta
 		if err != nil {
 			return err
 		}
-		return s.attachGitBranch(ctx, repoRoot, bookmark, commitID)
+		return s.attachGitBranch(ctx, repoRoot, bookmark, commitID, false)
 	})
 }
 
@@ -1129,7 +1129,7 @@ func (s *Service) ForceGitCheckout(ctx context.Context, repoRoot, checkoutRef st
 		if err != nil {
 			return err
 		}
-		return s.attachGitBranch(ctx, repoRoot, checkoutRef, commitID)
+		return s.attachGitBranch(ctx, repoRoot, checkoutRef, commitID, false)
 	})
 }
 
@@ -1934,7 +1934,7 @@ func (s *Service) createStackUnlocked(ctx context.Context, repo RepoInfo, name s
 	if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, "@"); err != nil {
 		return CreateStackResult{}, err
 	}
-	if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", "@"); err != nil {
+	if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, bookmark, "@", false); err != nil {
 		return CreateStackResult{}, err
 	}
 	now := time.Now().UnixMilli()
@@ -3718,6 +3718,7 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 			stackBookmark = stack.BookmarkName
 		}
 		now := time.Now().UnixMilli()
+		repoRootValue := repo.RootPath
 		for i := range eventAttributions {
 			eventAttributions[i].RepoID = repoID
 			eventAttributions[i].ChangeID = changeID
@@ -3726,6 +3727,22 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 			}
 			if eventAttributions[i].CreatedAt == 0 {
 				eventAttributions[i].CreatedAt = now
+			}
+			if strings.TrimSpace(eventAttributions[i].SessionID) == "" {
+				continue
+			}
+			createdAt := eventAttributions[i].CreatedAt
+			if createdAt == 0 {
+				createdAt = now
+			}
+			if err := store.UpsertSession(ctx, storage.Session{
+				ID:        eventAttributions[i].SessionID,
+				CreatedAt: createdAt,
+				Command:   eventAttributions[i].Tool,
+				Cwd:       repo.RootPath,
+				RepoRoot:  &repoRootValue,
+			}); err != nil {
+				return err
 			}
 		}
 		if err := store.WriteSessionEventAttributions(ctx, eventAttributions); err != nil {
@@ -4538,7 +4555,7 @@ func (s *Service) createDraftStack(ctx context.Context, store *storage.Store, re
 		if err := s.assertBookmarkTargetAvailable(ctx, store, repoID, repo.RootPath, bookmark, targetRev); err != nil {
 			return StackInfo{}, err
 		}
-		if _, err := s.runJJGitBacked(ctx, repo.RootPath, "bookmark", "set", bookmark, "-r", targetRev); err != nil {
+		if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, bookmark, targetRev, false); err != nil {
 			return StackInfo{}, err
 		}
 	}
@@ -4582,9 +4599,6 @@ func (s *Service) defaultStackBaseRef(repo RepoInfo) string {
 		branch := strings.TrimSpace(*repo.BranchName)
 		if base, ok := gxAuthoringBaseFromCheckoutRef(branch); ok {
 			return base
-		}
-		if !isGXStackBookmark(branch) {
-			return branch
 		}
 	}
 	if repo.DefaultBranch != nil && strings.TrimSpace(*repo.DefaultBranch) != "" {
@@ -4782,10 +4796,7 @@ func (s *Service) reattachRecordedContainer(ctx context.Context, repoRoot, stack
 	if err != nil {
 		return RepoInfo{}, err
 	}
-	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, branch, commitID); err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
+	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID, false); err != nil {
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
@@ -4810,10 +4821,7 @@ func (s *Service) reattachRecordedContainerAtRev(ctx context.Context, repoRoot, 
 	if err != nil {
 		return RepoInfo{}, err
 	}
-	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, branch, commitID); err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID); err != nil {
+	if err := s.attachGitBranch(ctx, repoRoot, branch, commitID, false); err != nil {
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
@@ -4828,10 +4836,7 @@ func (s *Service) reattachContainer(ctx context.Context, repoRoot, name string) 
 	if err != nil {
 		return RepoInfo{}, err
 	}
-	if err := s.ensureBranchMutationAllowed(ctx, repoRoot, name, commitID); err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.attachGitBranch(ctx, repoRoot, name, commitID); err != nil {
+	if err := s.attachGitBranch(ctx, repoRoot, name, commitID, false); err != nil {
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
@@ -4865,7 +4870,7 @@ func (s *Service) updateContainerBookmarkAtRev(ctx context.Context, repoRoot, na
 			return RepoInfo{}, err
 		}
 	}
-	if err := s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev); err != nil {
+	if err := s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev, true); err != nil {
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repoRoot)
@@ -4904,7 +4909,7 @@ func (s *Service) updateContainerBookmark(ctx context.Context, repoRoot, name st
 	return s.ResolveJJRepoAtPath(ctx, repoRoot)
 }
 
-func (s *Service) attachGitBranch(ctx context.Context, repoRoot, name, commitID string) error {
+func (s *Service) attachGitBranch(ctx context.Context, repoRoot, name, commitID string, allowProtected bool) error {
 	name = strings.TrimPrefix(strings.TrimSpace(name), "refs/heads/")
 	commitID = strings.TrimSpace(commitID)
 	if name == "" {
@@ -4912,6 +4917,11 @@ func (s *Service) attachGitBranch(ctx context.Context, repoRoot, name, commitID 
 	}
 	if commitID == "" {
 		return fmt.Errorf("git branch %s target commit is empty", name)
+	}
+	if !allowProtected {
+		if err := s.ensureBranchMutationAllowed(ctx, repoRoot, name, commitID); err != nil {
+			return err
+		}
 	}
 	if _, err := s.runner.Run(ctx, repoRoot, "git", "update-ref", "refs/heads/"+name, commitID); err != nil {
 		return err
@@ -4931,7 +4941,7 @@ func (s *Service) reattachGitHeadToBaseRef(ctx context.Context, repo RepoInfo, b
 	if err != nil {
 		return RepoInfo{}, err
 	}
-	if err := s.attachGitBranch(ctx, repo.RootPath, checkoutRef, commitID); err != nil {
+	if err := s.attachGitBranch(ctx, repo.RootPath, checkoutRef, commitID, true); err != nil {
 		return RepoInfo{}, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
@@ -4942,10 +4952,10 @@ func (s *Service) setBookmarkTarget(ctx context.Context, repoRoot, name string) 
 	if err != nil {
 		return err
 	}
-	return s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev)
+	return s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev, true)
 }
 
-func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, targetRev string) error {
+func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, targetRev string, allowBackwards bool) error {
 	targetRev = strings.TrimSpace(targetRev)
 	if targetRev == "" {
 		return fmt.Errorf("container target revision is empty")
@@ -4953,7 +4963,11 @@ func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, ta
 	if err := s.ensureBookmarkMutationAllowed(ctx, repoRoot, name, targetRev); err != nil {
 		return err
 	}
-	_, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", name, "-r", targetRev, "--allow-backwards")
+	args := []string{"bookmark", "set", name, "-r", targetRev}
+	if allowBackwards {
+		args = append(args, "--allow-backwards")
+	}
+	_, err := s.runJJGitBacked(ctx, repoRoot, args...)
 	return err
 }
 

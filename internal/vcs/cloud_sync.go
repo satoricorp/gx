@@ -15,7 +15,7 @@ func (s *Service) SyncCloudBookmarkTip(ctx context.Context, repo RepoInfo, branc
 		return err
 	}
 	remoteRef := branchName + "@origin"
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "bookmark", "set", branchName, "-r", remoteRef, "--allow-backwards"); err != nil {
+	if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, branchName, remoteRef, true); err != nil {
 		return fmt.Errorf("set local bookmark %s: %w", branchName, err)
 	}
 	return nil

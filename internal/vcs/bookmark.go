@@ -435,7 +435,7 @@ func (s *Service) relocateKnownStackBookmarksFromChange(ctx context.Context, sto
 		if err != nil {
 			return err
 		}
-		if _, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", target.Name, "-r", distinctRev, "--allow-backwards"); err != nil {
+		if err := s.setBookmarkTargetAtRev(ctx, repoRoot, target.Name, distinctRev, true); err != nil {
 			return fmt.Errorf("move bookmark %q off shared change: %w", target.Name, err)
 		}
 	}
@@ -507,10 +507,7 @@ func (s *Service) ensureGitAttachedToStack(ctx context.Context, repo RepoInfo, s
 	if err != nil {
 		return repo, err
 	}
-	if err := s.ensureBranchMutationAllowed(ctx, repo.RootPath, stack.BookmarkName, commitID); err != nil {
-		return repo, err
-	}
-	if err := s.attachGitBranch(ctx, repo.RootPath, stack.BookmarkName, commitID); err != nil {
+	if err := s.attachGitBranch(ctx, repo.RootPath, stack.BookmarkName, commitID, false); err != nil {
 		return repo, err
 	}
 	return s.ResolveJJRepoAtPath(ctx, repo.RootPath)
@@ -556,7 +553,7 @@ func (s *Service) repairSharedStackBookmarks(ctx context.Context, store *storage
 			if err != nil {
 				return err
 			}
-			if _, err := s.runJJGitBacked(ctx, repoRoot, "bookmark", "set", name, "-r", targetRev, "--allow-backwards"); err != nil {
+			if err := s.setBookmarkTargetAtRev(ctx, repoRoot, name, targetRev, true); err != nil {
 				return fmt.Errorf("move bookmark %q off shared change: %w", name, err)
 			}
 		}

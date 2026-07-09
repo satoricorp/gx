@@ -87,7 +87,7 @@ func (s *Service) bootstrapAuthoringBaseUnlocked(ctx context.Context, repo RepoI
 		if head, err := s.runStdoutTrimmed(ctx, repo.RootPath, "git", "rev-parse", "--abbrev-ref", "HEAD"); err == nil && strings.TrimSpace(head) != "" {
 			headRev = strings.TrimSpace(head)
 		}
-		if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, baseRef, headRev); err != nil {
+		if err := s.setBookmarkTargetAtRev(ctx, repo.RootPath, baseRef, headRev, true); err != nil {
 			return err
 		}
 	}

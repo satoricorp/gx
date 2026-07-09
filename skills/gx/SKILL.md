@@ -51,7 +51,7 @@ The normal goal is one command per intent.
 - Use `gx stacks` when the user asks what accepted work is queued for publish or needs stack/revision navigation.
 - Use `gx sync` to fetch remote state before publish troubleshooting.
 - Treat `gx publish` as the normal "publish this work" command.
-- Use `gx add` only for explicit direct revision recording. Use utility commands such as `gx base` and `gx edit` only for branch/stack repair, MCP/codegen checkout management, or user-directed editing.
+- Use `gx commit` (after `git add`) for explicit staged revision recording. Use `gx add` only as a deprecated alias for the same path. Use utility commands such as `gx base` and `gx edit` only for branch/stack repair, MCP/codegen checkout management, or user-directed editing.
 - Before a utility edit/switch/base command, say which stack and base branch it will touch.
 - After `gx edit` or raw `jj edit` in a codegen/MCP flow, make sure the visible Git checkout is attached to the real stack branch when one exists, not detached. Return to the real base branch before resuming normal compose work.
 
@@ -65,9 +65,8 @@ gx publish
 Not preferred by default:
 
 ```bash
-gx add -m "message"
-gx status
-jj bookmark list
+git add <files>
+gx commit -m "message"
 gx publish
 ```
 
@@ -152,9 +151,10 @@ git rev-parse --abbrev-ref HEAD
 - `gx` writes JJ `user.name` and `user.email`.
 - `gx compose` proposes ordered revisions from current working-copy changes and stores them in one pending compose proposal. Running it again adds newly changed files to that pending proposal instead of creating a separate proposal.
 - Accepting revisions from compose records them into GX stacks and returns the checkout to the real base branch. Accepted stacks then show in `gx stacks`.
-- `gx` links explicit or unlinked repo-local captured sessions to recorded changes on `gx compose`, `gx add`, and `gx edit`.
+- `gx` links explicit or unlinked repo-local captured sessions to recorded changes on `gx compose`, `gx commit`, and `gx edit`.
 - `gx edit` is the explicit utility command for re-entering a revision. In codegen/MCP and repair flows it reattaches the visible Git checkout to the real stack branch when one exists after JJ edit operations to avoid detached-HEAD confusion.
-- `gx add` is a supported direct revision recording command. From the base branch it creates an inferred stack based on that base; from an active stack branch it records onto the active edited stack.
+- `gx commit` records staged Git changes (`git add` first) as a JJ-backed GX revision. From the base branch it mints a stack from the message; from an active branch it appends to that stack.
+- `gx add` remains as a deprecated alias for direct revision recording; prefer `git add` + `gx commit`.
 - `gx status` shows the current revision, message state, changed files, and next commands. It should point normal work toward `gx compose`.
 - `gx stacks` shows accepted GX stacks/revisions and what `gx publish` will publish. It is interactive for humans and exposes `--agent`, `--json`, and subcommands for programmatic workflows.
 - `gx publish` records pushes locally, exports stacked refs to GitHub, and registers publish/CI status in gx cloud (release builds include production endpoints; use `GX_CLOUD_URL` to override locally).
@@ -171,11 +171,11 @@ jj bookmark create main -r @-
 jj bookmark move main --to @-
 git commit
 git push
-gx add -m "message"
+git add <files> && gx commit -m "message"
 gx edit <revision>
 ```
 
-`gx add` and `gx edit` are available for explicit utility work, but normal work should go through `gx compose`. If utility work leaves the checkout in edit mode, return to the real base branch before composing new work. Attach Git to real base or stack branches only for codegen/MCP or explicit repair. The jj bookmark and raw git commands are implementation details or bypass the gx workflow.
+`gx commit` (with `git add`) and `gx edit` are available for explicit utility work, but normal work should go through `gx compose`. If utility work leaves the checkout in edit mode, return to the real base branch before composing new work. Attach Git to real base or stack branches only for codegen/MCP or explicit repair. The jj bookmark and raw git commands are implementation details or bypass the gx workflow.
 
 ## Decision rule
 

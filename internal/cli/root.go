@@ -343,6 +343,8 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			"",
 			"Use git add or git add -p to choose scope, then run gx commit -m.",
 			"The resulting revision is JJ-backed and editable with GX/MCP tools.",
+			"",
+			"Exit codes: 0 success, 1 general error, 2 no staged changes.",
 		}, "\n"),
 		Example: strings.Join([]string{
 			`  git add internal/cli/root.go`,
@@ -371,9 +373,6 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			}
 			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{Message: message})
 			if err != nil {
-				if errors.Is(err, vcs.ErrNoStagedChanges) {
-					return fmt.Errorf("no staged changes; run git add first")
-				}
 				return err
 			}
 			if jsonOut {
@@ -4424,6 +4423,15 @@ func Execute(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// ExitCode returns a non-zero process exit code when err carries one.
+func ExitCode(err error) int {
+	var coded *vcs.CodedError
+	if errors.As(err, &coded) && coded.Code != 0 {
+		return coded.Code
+	}
+	return 0
 }
 
 func githubRepoFullNameFromRemote(remoteURL string) string {

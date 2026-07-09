@@ -90,9 +90,12 @@ The intended flow should look like:
 ```bash
 gx init
 gx codex
-gx add -m "scaffold app"
-gx add -m "add database schema"
-gx add -m "add secure email ingestion"
+git add .
+gx commit -m "scaffold app"
+git add .
+gx commit -m "add database schema"
+git add .
+gx commit -m "add secure email ingestion"
 gx push
 ```
 

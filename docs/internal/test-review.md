@@ -119,7 +119,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   color is disabled.
 - `TestPromptModifySelection`: verifies the CLI prompt path for selecting a
   revision to modify.
-- `TestPrintAddSummaryIncludesHashesSplitAndEditCommands`: checks `gx add`
+- `TestPrintAddSummaryIncludesHashesSplitAndEditCommands`: checks `gx commit` / `gx add`
   summary includes description, hashes, split status, and follow-up commands.
 - `TestPrintDemuxProposalIncludesFeasibilityWarnings`: checks human demux output
   includes feasibility warning details.
@@ -278,7 +278,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## UX/Test Recommendations
 
-1. Add CLI snapshot tests for the final public design of `gx status`, `gx add`,
+1. Add CLI snapshot tests for the final public design of `gx status`, `gx commit`,
    `gx demux`, `gx demux apply`, `gx pr`, and daemon/capture status.
 2. Add MCP tool tests for argument construction and repair-loop behavior.
 3. Add a daemon-to-authoring integration test proving active session lookup can
