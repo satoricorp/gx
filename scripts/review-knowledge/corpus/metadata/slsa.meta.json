@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://slsa.dev/spec/v1.2/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "eba1494c7431b95d74d4e89242844004bd496b62c9eba9b9532ea1d52366421c",
+  "source_id": "slsa"
+}

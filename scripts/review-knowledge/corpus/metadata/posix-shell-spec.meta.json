@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "0889867a53fe12508a71e8739ec23ecdddc95e6f67697c98e26acc8ff0ec1acd",
+  "source_id": "posix-shell-spec"
+}

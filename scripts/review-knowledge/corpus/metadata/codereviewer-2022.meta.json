@@ -1,0 +1,10 @@
+{
+  "error": "http 403 for https://dl.acm.org/doi/10.1145/3540250.3549081",
+  "fetched_at": "2026-07-08",
+  "final_url": null,
+  "http_status": null,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": null,
+  "source_id": "codereviewer-2022"
+}

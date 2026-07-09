@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://arxiv.org/pdf/2509.01494",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "2e942b6c00f8e1b455e0d959329326d679d392c25f0fb8614a5aac9e92c036ac",
+  "source_id": "swr-bench-2025"
+}

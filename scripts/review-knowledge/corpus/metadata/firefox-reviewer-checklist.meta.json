@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4dd56bd761ea60c149e1ca061fee8d787b03f9d33db78b11469be91fd0e638e8",
+  "source_id": "firefox-reviewer-checklist"
+}

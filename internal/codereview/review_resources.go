@@ -117,20 +117,32 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 		limit = defaultReviewResourceTopK
 	}
 	include := []string{
+		"body",
+		"text",
 		"source_id",
 		"publisher",
 		"url",
+		"source_url",
 		"title",
 		"category",
+		"tier",
 		"authority",
 		"evidence_level",
 		"language_tags",
+		"languages",
 		"framework_tags",
 		"risk_tag_values",
 		"review_tag_values",
+		"precedence_group",
+		"superseded_by",
+		"historical",
+		"section_path",
+		"cwe_ids",
+		"content_sha256",
+		"usefulness_rank",
+		"chunk_id",
 		"chunk_kind",
 		"chunk_index",
-		"text",
 	}
 	broadRows, err := r.Store.Query(ctx, reviewResourceQuery{
 		Vector:            vectors[0],
@@ -162,13 +174,28 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 	if limit <= 0 {
 		limit = defaultReviewResourceTopK
 	}
-	payload := map[string]any{
+	vectorQuery := map[string]any{
 		"rank_by":            []any{"vector", "ANN", req.Vector},
-		"limit":              map[string]any{"total": limit, "per": map[string]any{"attributes": []string{"source_id"}, "limit": 2}},
+		"limit":              map[string]any{"total": limit},
 		"include_attributes": req.IncludeAttributes,
 	}
 	if req.Filters != nil {
-		payload["filters"] = req.Filters
+		vectorQuery["filters"] = req.Filters
+	}
+	payload := vectorQuery
+	if strings.TrimSpace(req.Text) != "" {
+		textQuery := map[string]any{
+			"rank_by":            []any{"body", "BM25", req.Text},
+			"limit":              map[string]any{"total": limit},
+			"include_attributes": req.IncludeAttributes,
+		}
+		if req.Filters != nil {
+			textQuery["filters"] = req.Filters
+		}
+		payload = map[string]any{
+			"queries":   []any{vectorQuery, textQuery},
+			"rerank_by": []any{"RRF"},
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -197,10 +224,16 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 		return nil, fmt.Errorf("query review resources: status %s", resp.Status)
 	}
 	var decoded struct {
-		Rows []reviewResourceRow `json:"rows"`
+		Rows    []reviewResourceRow `json:"rows"`
+		Results []struct {
+			Rows []reviewResourceRow `json:"rows"`
+		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		return nil, fmt.Errorf("decode review resource query: %w", err)
+	}
+	if len(decoded.Rows) == 0 && len(decoded.Results) > 0 {
+		return decoded.Results[0].Rows, nil
 	}
 	return decoded.Rows, nil
 }
@@ -285,13 +318,18 @@ func reviewPolicyQueryText(policy *ReviewPolicy) string {
 }
 
 func reviewResourceBaseFilter() any {
-	return []any{"And", []any{[]any{"source_kind", "Eq", "review_knowledge"}}}
+	return []any{"And", []any{
+		[]any{"source_kind", "Eq", "review_corpus"},
+		[]any{"tier", "NotEq", "research"},
+		[]any{"historical", "Eq", false},
+		[]any{"superseded_by", "Eq", ""},
+	}}
 }
 
 func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 	var conditions []any
 	if len(signals.Categories) > 0 {
-		conditions = append(conditions, []any{"category", "In", signals.Categories})
+		conditions = append(conditions, []any{"tier", "In", signals.Categories})
 	}
 	if len(signals.Languages) > 0 {
 		conditions = append(conditions, []any{"language_tags", "ContainsAny", signals.Languages})
@@ -307,7 +345,10 @@ func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 		return nil
 	}
 	return []any{"And", []any{
-		[]any{"source_kind", "Eq", "review_knowledge"},
+		[]any{"source_kind", "Eq", "review_corpus"},
+		[]any{"tier", "NotEq", "research"},
+		[]any{"historical", "Eq", false},
+		[]any{"superseded_by", "Eq", ""},
 		[]any{"Or", conditions},
 	}}
 }
@@ -323,19 +364,19 @@ func reviewResourceSnippets(rows []reviewResourceRow, limit int, namespace strin
 	seen := map[string]struct{}{}
 	var snippets []ContextSnippet
 	for _, row := range rows {
-		text := stringValue(row["text"])
+		text := firstNonEmpty(stringValue(row["body"]), stringValue(row["text"]))
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
 		sourceID := firstNonEmpty(stringValue(row["source_id"]), stringValue(row["url"]))
-		chunkIndex := stringValue(row["chunk_index"])
+		chunkIndex := firstNonEmpty(stringValue(row["chunk_id"]), stringValue(row["chunk_index"]))
 		key := sourceID + "#" + chunkIndex
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
 		title := stringValue(row["title"])
-		publisher := firstNonEmpty(stringValue(row["publisher"]), publisherFromURLHost(stringValue(row["url"])))
+		publisher := firstNonEmpty(stringValue(row["publisher"]), publisherFromURLHost(firstNonEmpty(stringValue(row["source_url"]), stringValue(row["url"]))))
 		ref := sourceID
 		if chunkIndex != "" {
 			ref += "#" + chunkIndex
@@ -346,7 +387,7 @@ func reviewResourceSnippets(rows []reviewResourceRow, limit int, namespace strin
 			Source:    "turbopuffer:" + namespace,
 			Publisher: publisher,
 			Title:     title,
-			URL:       stringValue(row["url"]),
+			URL:       firstNonEmpty(stringValue(row["source_url"]), stringValue(row["url"])),
 			Text:      reviewResourceSnippetText(title, row, text),
 		})
 		if len(snippets) >= limit {
@@ -363,7 +404,7 @@ func reviewResourceSnippetText(title string, row reviewResourceRow, text string)
 		b.WriteString(title)
 		b.WriteString("\n")
 	}
-	for _, key := range []string{"publisher", "url", "category", "authority", "evidence_level", "language_tags", "framework_tags", "risk_tag_values", "review_tag_values"} {
+	for _, key := range []string{"publisher", "source_url", "url", "tier", "authority", "precedence_group", "section_path", "language_tags", "cwe_ids", "usefulness_rank"} {
 		value := displayAttribute(row[key])
 		if value == "" {
 			continue
@@ -380,13 +421,13 @@ func reviewResourceSnippetText(title string, row reviewResourceRow, text string)
 
 func categoriesForReview(opts Options) []string {
 	if opts.Deep {
-		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain", "performance", "observability"}
+		return []string{"process", "language", "style", "security"}
 	}
 	if strings.TrimSpace(opts.Prompt) != "" {
-		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain", "performance", "observability"}
+		return []string{"process", "language", "style", "security"}
 	}
 	if opts.PatchFocused {
-		return []string{"core-process", "language", "framework", "security", "database", "tooling", "supply-chain"}
+		return []string{"process", "language", "style", "security"}
 	}
 	return categoriesForReviewScope(opts.Scope)
 }
@@ -394,17 +435,17 @@ func categoriesForReview(opts Options) []string {
 func categoriesForReviewScope(scope string) []string {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "security":
-		return []string{"security", "supply-chain", "database"}
+		return []string{"security"}
 	case "dependencies":
-		return []string{"supply-chain", "security", "tooling"}
+		return []string{"security", "style"}
 	case "performance":
-		return []string{"language", "framework", "database", "tooling"}
+		return []string{"language", "style"}
 	case "testing":
-		return []string{"core-process", "tooling"}
+		return []string{"process", "style"}
 	case "docs", "onboarding", "architecture", "maintainability":
-		return []string{"core-process", "language", "framework", "tooling"}
+		return []string{"process", "language", "style"}
 	default:
-		return []string{"core-process", "language", "framework", "security", "database", "tooling"}
+		return []string{"process", "language", "style", "security"}
 	}
 }
 

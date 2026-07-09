@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script nonce="e5494732df382e96d554ebf6e002363a">(()=>{const c=[{id:"deploymentAuthorizedActions",pathTemplate:"/api/agent/deployments/:orgId/authorized_actions",method:"GET",bodyTemplate:void 0,queryKeyTemplate:["DeploymentService","GetDeploymentAuthorizedActions",{request:{deploymentId:":orgId"}}],isInfiniteQuery:!1,priorityRoutes:[]},{id:"findingCounts-sast",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}},queryKeyTemplate:["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}}}],isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>{try{return localStorage.getItem("semgrep-menu-open")!=="false"&&localStorage.getItem("semgrep-duplo-enabled")!=="true"}catch{return!1}}},{id:"findingCounts-sast-duplo",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}},queryKeyTemplate:["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}}}],isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>{try{return localStorage.getItem("semgrep-menu-open")!=="false"&&localStorage.getItem("semgrep-duplo-enabled")==="true"}catch{return!1}}},{id:"findingCounts-sca",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:{issueType:"ISSUE_TYPE_SCA",issueTypes:["ISSUE_TYPE_SCA"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}},queryKeyTemplate:["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SCA",issueTypes:["ISSUE_TYPE_SCA"],filter:{tab:"ISSUE_TAB_OPEN",onPrimaryBranch:!0}}}],isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>{try{return localStorage.getItem("semgrep-menu-open")!=="false"}catch{return!1}}},{id:"findingCounts-secrets",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:{issueType:"ISSUE_TYPE_SECRETS",issueTypes:["ISSUE_TYPE_SECRETS"],filter:{tab:"ISSUE_TAB_OPEN"}},queryKeyTemplate:["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SECRETS",issueTypes:["ISSUE_TYPE_SECRETS"],filter:{tab:"ISSUE_TAB_OPEN"}}}],isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>{try{return localStorage.getItem("semgrep-menu-open")!=="false"}catch{return!1}}},{id:"savedViews",pathTemplate:"/api/deployments/:orgId/findings_saved_views?",method:"GET",bodyTemplate:void 0,queryKeyTemplate:()=>{let e={};try{e=JSON.parse(localStorage.getItem("deployment_data")||"{}")}catch{}return["FindingsSavedViewsService","ListFindingsSavedViews",{request:{deploymentId:String(e?.id??"")}}]},isInfiniteQuery:!1,priorityRoutes:["/orgs/:orgId/findings"],onSuccess:e=>{const t=e,s=[];let i=t.savedViews?.find(n=>n.issueType==="ISSUE_TYPE_SAST")?.issuesFilter??null;if(i){const n={};for(const[a,o]of Object.entries(i))Array.isArray(o)&&o.length===0||o===""||o===0||(n[a]=o);i=n}i!=null&&(i.onPrimaryBranch!==void 0||Array.isArray(i.refs)&&i.refs.length>0||Array.isArray(i.repositoryRefIds)&&i.repositoryRefIds.length>0||i.backlogType==="ISSUE_BACKLOG_TYPE_PREPROD")||(i={...i??{},onPrimaryBranch:!0});const S=localStorage.getItem("semgrep-duplo-enabled")==="true",y=localStorage.getItem("semgrep:optimized-search")==="true";return window.__prefetchSavedFilter=i,window.__prefetchIssueTypes=S?["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"]:["ISSUE_TYPE_SAST"],y?s.push({id:"searchFindingsGrouped-sast",params:{savedFilter:i??null,isDuplo:S}}):S?s.push({id:"findingGroups-sast-duplo",params:{savedFilter:i??null}}):s.push({id:"findingGroups-sast",params:{savedFilter:i??null}}),S?s.push({id:"findingCounts-sast-priority-duplo",params:{savedFilter:i??null}}):s.push({id:"findingCounts-sast-priority",params:{savedFilter:i??null}}),s}},{id:"findingGroups-sast",pathTemplate:"/api/agent/deployments/:orgId/issues/search",method:"POST",bodyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],limit:10,groupBy:"GROUP_BY_RULE",filter:s,sortBy:"SORT_BY_SEVERITY"}},queryKeyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return["FindingGroups",":orgId",{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],limit:10,groupBy:"GROUP_BY_RULE",filter:s,sortBy:"SORT_BY_SEVERITY",cursor:"",deploymentId:":orgId"}]},isInfiniteQuery:!0,priorityRoutes:[],enabled:()=>!1,onSuccess:async e=>{const t=e;if(!t.groups||t.groups.length===0)return[];const s=window.__prefetchSavedFilter??null,r=window.__prefetchIssueTypes??["ISSUE_TYPE_SAST"];return t.groups.filter(i=>i.ruleId).map(i=>({id:"findingDetails-sast",params:{ruleId:i.ruleId,savedFilter:s,issueTypes:r}}))}},{id:"findingGroups-sast-duplo",pathTemplate:"/api/agent/deployments/:orgId/issues/search",method:"POST",bodyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],limit:10,groupBy:"GROUP_BY_RULE",filter:s,sortBy:"SORT_BY_SEVERITY"}},queryKeyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return["FindingGroups",":orgId",{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],limit:10,groupBy:"GROUP_BY_RULE",filter:s,sortBy:"SORT_BY_SEVERITY",cursor:"",deploymentId:":orgId"}]},isInfiniteQuery:!0,priorityRoutes:[],enabled:()=>!1,onSuccess:async e=>{const t=e;if(!t.groups||t.groups.length===0)return[];const s=window.__prefetchSavedFilter??null,r=window.__prefetchIssueTypes??["ISSUE_TYPE_SAST"];return t.groups.filter(i=>i.ruleId).map(i=>({id:"findingDetails-sast",params:{ruleId:i.ruleId,savedFilter:s,issueTypes:r}}))}},{id:"findingCounts-sast-priority",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],filter:s}},queryKeyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST"],filter:s}}]},isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>!1},{id:"findingCounts-sast-priority-duplo",pathTemplate:"/api/agent/deployments/:orgId/issue_counts",method:"POST",bodyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return{issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],filter:s}},queryKeyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return["IssuesService","GetIssueCounts",{request:{deploymentId:":orgId",issueType:"ISSUE_TYPE_SAST",issueTypes:["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"],filter:s}}]},isInfiniteQuery:!1,priorityRoutes:[],enabled:()=>!1},{id:"findingDetails-sast",pathTemplate:"/api/agent/deployments/:orgId/issues/v2",method:"POST",bodyTemplate:e=>{const t=e.issueTypes??["ISSUE_TYPE_SAST"],r={...Object.assign({},e.savedFilter),ruleIds:[Number(e.ruleId)]};return r.timeFilter||(r.since="1970-01-01T00:00:00.000Z",r.timeFilter="TIME_FILTER_RELEVANT_SINCE"),r.onPrimaryBranch===void 0&&!(Array.isArray(r.refs)&&r.refs.length>0)&&!(Array.isArray(r.repositoryRefIds)&&r.repositoryRefIds.length>0)&&r.backlogType!=="ISSUE_BACKLOG_TYPE_PREPROD"&&(r.onPrimaryBranch=!0),{issueType:"ISSUE_TYPE_SAST",issueTypes:t,limit:5,filter:r,deploymentId:":orgId",cursor:""}},queryKeyTemplate:e=>{const t=e.issueTypes??["ISSUE_TYPE_SAST"],r={...Object.assign({},e.savedFilter),ruleIds:[Number(e.ruleId)]};return r.timeFilter||(r.since="1970-01-01T00:00:00.000Z",r.timeFilter="TIME_FILTER_RELEVANT_SINCE"),r.onPrimaryBranch===void 0&&!(Array.isArray(r.refs)&&r.refs.length>0)&&!(Array.isArray(r.repositoryRefIds)&&r.repositoryRefIds.length>0)&&r.backlogType!=="ISSUE_BACKLOG_TYPE_PREPROD"&&(r.onPrimaryBranch=!0),["DeploymentFindings",":orgId",{deploymentId:":orgId",issueType:"ISSUE_TYPE_SAST",issueTypes:t,limit:5,filter:r}]},isInfiniteQuery:!0,priorityRoutes:[],enabled:()=>!1},{id:"searchFindingsGrouped-sast",pathTemplate:"/api/findings/v1/deployments/:orgId/grouped/search",method:"POST",bodyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t;return{common:{issueTypes:e.isDuplo?["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"]:["ISSUE_TYPE_SAST"],limit:10,cursor:"",filter:s},sortBy:"SORT_BY_SEVERITY",findingsPerGroup:5}},queryKeyTemplate:e=>{const t={aiVerdicts:["VERDICT_TRUE_POSITIVE","VERDICT_NO_VERDICT"],tab:"ISSUE_TAB_OPEN",confidences:["CONFIDENCE_HIGH"],severities:["SEVERITY_CRITICAL","SEVERITY_HIGH"],onPrimaryBranch:!0,repositoryDeploymentStatuses:["DEPLOYMENT_STATUS_DEPLOYED"]},s=e.savedFilter??t,r=e.isDuplo?["ISSUE_TYPE_SAST","ISSUE_TYPE_AI_SAST"]:["ISSUE_TYPE_SAST"];return searchFindingsGroupedKey(":orgId",{common:{issueTypes:r,limit:10,cursor:"",filter:s},sortBy:"SORT_BY_SEVERITY",findingsPerGroup:5})},isInfiniteQuery:!0,priorityRoutes:[],enabled:()=>!1}],O=(e,t)=>{const s=e.replace(/\*\*/g,"<<<GLOBSTAR>>>").replace(/\*/g,"[^/]*").replace(/<<<GLOBSTAR>>>/g,".*");return new RegExp(`^${s}$`).test(t)},Y=(e,t)=>e.some(s=>O(s,t)),m=localStorage.getItem("access_token"),f=localStorage.getItem("deployment_data");if(!m||!f)return;let I;try{I=JSON.parse(f)}catch{return}if(!I||!I.id)return;const u=I.id,U=window.location.pathname,P={Authorization:`Bearer ${m}`,"Content-Type":"application/json",Accept:"application/json"},A=typeof Object.hasOwn=="function"?(e,t)=>Object.hasOwn(e,t):(e,t)=>Object.prototype.hasOwnProperty.call(e,t),C=Number(u),T=e=>{if(typeof e=="string")return e===":orgId"?C:e.replace(/:orgId/g,u);if(Array.isArray(e))return e.map(T);if(e&&typeof e=="object"){const t={};for(const s in e)A(e,s)&&(t[s]=T(e[s]));return t}return e},g=[],l=[];c.forEach(e=>{if(e.enabled&&typeof e.enabled=="function")try{if(!e.enabled())return}catch{return}Y(e.priorityRoutes,U)?g.push(e):l.push(e)});const p={};window.__prefetchPromises=p;const E=(e,t)=>{if(typeof e=="string"){let s=e;for(const[r,i]of Object.entries(t))s=s.replaceAll(`:${r}`,String(i));return s}if(Array.isArray(e))return e.map(s=>E(s,t));if(e&&typeof e=="object"){const s={};for(const r in e)A(e,r)&&(s[r]=E(e[r],t));return s}return e},_=(e,t={})=>{let s,r,i;try{let n=typeof e.pathTemplate=="function"?e.pathTemplate(t):e.pathTemplate,a=typeof e.queryKeyTemplate=="function"?e.queryKeyTemplate(t):e.queryKeyTemplate,o=e.bodyTemplate?typeof e.bodyTemplate=="function"?e.bodyTemplate(t):e.bodyTemplate:void 0;if(Object.keys(t).length>0&&(n=E(n,t),a=E(a,t),o&&(o=E(o,t))),s=String(T(n)),r=T(a),i=o?T(o):void 0,typeof r=="string")try{r=JSON.parse(r)}catch{return}if(!Array.isArray(r))return}catch{return}const d={method:e.method,headers:P,credentials:"same-origin",priority:"high"};i&&(d.body=JSON.stringify(i));let S=fetch(s,d).then(n=>n.json());e.onSuccess&&typeof e.onSuccess=="function"&&(S=S.then(n=>{if(n==null)return n;try{const a=e.onSuccess(n,{headers:P,replaceOrgId:T,prefetchPromises:p,orgId:u});return Promise.resolve(a).then(o=>(Array.isArray(o)&&o.forEach(h=>{const R=c.find(D=>D.id===h.id);R&&_(R,h.params||{})}),n)).catch(o=>n)}catch{return n}}));const y=JSON.stringify(r);p[y]={promise:S,queryKey:r,isInfiniteQuery:e.isInfiniteQuery,startTime:performance.now()}};g.forEach(e=>_(e)),l.length>0&&setTimeout(()=>{l.forEach(e=>_(e))},0)})();
+</script>
+
+    <meta charset="utf-8" />
+    <title>Semgrep</title>
+    <link rel="icon" href="/favicon.ico?v1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <script nonce="e5494732df382e96d554ebf6e002363a" type="module" crossorigin src="/static/index-CkxC9vd6.js"></script>
+    <link rel="stylesheet" crossorigin href="/static/monacoEditor-C5upt8zs.css">
+    <link rel="stylesheet" crossorigin href="/static/mantine-dsrd-I8y.css">
+    <link rel="stylesheet" crossorigin href="/static/src-Bz3aTHzg.css">
+    <link rel="stylesheet" crossorigin href="/static/src-Bw4EVBQS.css">
+    <link rel="stylesheet" crossorigin href="/static/src-DHeV1eAJ.css">
+    <link rel="stylesheet" crossorigin href="/static/src-RJNRNEFb.css">
+    <link rel="stylesheet" crossorigin href="/static/index-j4OMH2xp.css">
+  </head>
+  <body>
+    <script nonce="e5494732df382e96d554ebf6e002363a">
+      // required for react-joyride
+      if (global === undefined) {
+        var global = window;
+      }
+    </script>
+
+    <!-- Google Tag Manager -->
+    <script nonce="e5494732df382e96d554ebf6e002363a">
+      (function (w, d, s, l, i) {
+        w[l] = w[l] || [];
+        w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
+        var f = d.getElementsByTagName(s)[0],
+          j = d.createElement(s),
+          dl = l != "dataLayer" ? "&l=" + l : "";
+        j.async = true;
+        j.defer = true;
+        j.src = "https://www.googletagmanager.com/gtm.js?id=" + i + dl;
+        var n = d.querySelector("[nonce]");
+        n && j.setAttribute("nonce", n.nonce || n.getAttribute("nonce"));
+        f.parentNode.insertBefore(j, f);
+      })(window, document, "script", "dataLayer", "GTM-WSN4QTD");
+    </script>
+    <!-- End Google Tag Manager -->
+
+    <!-- Sign in with Google client -->
+    <!-- nosemgrep -->
+    <script nonce="e5494732df382e96d554ebf6e002363a" src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- End Sign in with Google client -->
+    <!-- Fullstory -->
+    <script nonce="e5494732df382e96d554ebf6e002363a">
+      var hostname =
+        window.location && window.location.hostname !== "localhost"
+          ? window.location.hostname
+          : "semgrep.dev";
+      window["_fs_host"] = hostname + "/fs";
+      window["_fs_script"] = hostname + "/fs/s/fs.js";
+      window["_fs_org"] = "S99QT";
+      window["_fs_namespace"] = "FS";
+      !(function (m, n, e, t, l, o, g, y) {
+        var s,
+          f,
+          a = (function (h) {
+            return (
+              !(h in m) ||
+              (m.console &&
+                m.console.log &&
+                m.console.log(
+                  'FullStory namespace conflict. Please set window["_fs_namespace"].'
+                ),
+              !1)
+            );
+          })(e);
+        function p(b) {
+          var h,
+            d = [];
+          function j() {
+            h &&
+              (d.forEach(function (b) {
+                var d;
+                try {
+                  d = b[h[0]] && b[h[0]](h[1]);
+                } catch (h) {
+                  return void (b[3] && b[3](h));
+                }
+                d && d.then ? d.then(b[2], b[3]) : b[2] && b[2](d);
+              }),
+              (d.length = 0));
+          }
+          function r(b) {
+            return function (d) {
+              h || ((h = [b, d]), j());
+            };
+          }
+          return (
+            b(r(0), r(1)),
+            {
+              then: function (b, h) {
+                return p(function (r, i) {
+                  (d.push([b, h, r, i]), j());
+                });
+              },
+            }
+          );
+        }
+        a &&
+          ((g = m[e] =
+            (function () {
+              var b = function (b, d, j, r) {
+                function i(i, c) {
+                  h(b, d, j, i, c, r);
+                }
+                r = r || 2;
+                var c,
+                  u = /Async$/;
+                return u.test(b)
+                  ? ((b = b.replace(u, "")),
+                    "function" == typeof Promise ? new Promise(i) : p(i))
+                  : h(b, d, j, c, c, r);
+              };
+              function h(h, d, j, r, i, c) {
+                return b._api
+                  ? b._api(h, d, j, r, i, c)
+                  : (b.q && b.q.push([h, d, j, r, i, c]), null);
+              }
+              return ((b.q = []), b);
+            })()),
+          (y = function (b) {
+            function h(h) {
+              "function" == typeof h[4] && h[4](new Error(b));
+            }
+            var d = g.q;
+            if (d) {
+              for (var j = 0; j < d.length; j++) h(d[j]);
+              ((d.length = 0), (d.push = h));
+            }
+          }),
+          (function () {
+            (((o = n.createElement(t)).async = !0),
+              (o.crossOrigin = "anonymous"),
+              (o.src = "https://" + l),
+              (o.onerror = function () {
+                y("Error loading " + l);
+              }));
+            var b = n.getElementsByTagName(t)[0];
+            b && b.parentNode
+              ? b.parentNode.insertBefore(o, b)
+              : n.head.appendChild(o);
+          })(),
+          (function () {
+            function b() {}
+            function h(b, h, d) {
+              g(b, h, d, 1);
+            }
+            function d(b, d, j) {
+              h("setProperties", { type: b, properties: d }, j);
+            }
+            function j(b, h) {
+              d("user", b, h);
+            }
+            function r(b, h, d) {
+              (j(
+                {
+                  uid: b,
+                },
+                d
+              ),
+                h && j(h, d));
+            }
+            ((g.identify = r),
+              (g.setUserVars = j),
+              (g.identifyAccount = b),
+              (g.clearUserCookie = b),
+              (g.setVars = d),
+              (g.event = function (b, d, j) {
+                h(
+                  "trackEvent",
+                  {
+                    name: b,
+                    properties: d,
+                  },
+                  j
+                );
+              }),
+              (g.anonymize = function () {
+                r(!1);
+              }),
+              (g.shutdown = function () {
+                h("shutdown");
+              }),
+              (g.restart = function () {
+                h("restart");
+              }),
+              (g.log = function (b, d) {
+                h("log", { level: b, msg: d });
+              }),
+              (g.consent = function (b) {
+                h("setIdentity", { consent: !arguments.length || b });
+              }));
+          })(),
+          (s = "fetch"),
+          (f = "XMLHttpRequest"),
+          (g._w = {}),
+          (g._w[f] = m[f]),
+          (g._w[s] = m[s]),
+          m[s] &&
+            (m[s] = function () {
+              return g._w[s].apply(this, arguments);
+            }),
+          (g._v = "2.0.0"));
+      })(window, document, window._fs_namespace, "script", window._fs_script);
+    </script>
+    <!-- End Fullstory -->
+    <!-- Google Tag Manager (noscript) -->
+    <noscript>
+      <iframe
+        src="https://www.googletagmanager.com/ns.html?id=GTM-WSN4QTD"
+        height="0"
+        width="0"
+        style="display: none; visibility: hidden"
+      ></iframe>
+    </noscript>
+    <!-- End Google Tag Manager (noscript) -->
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <!-- nosemgrep -->
+    <script nonce="e5494732df382e96d554ebf6e002363a"
+      src="https://snjdw73vnmhs.statuspage.io/embed/script.js"
+      async
+      defer
+    ></script>
+    <!-- nosemgrep -->
+  </body>
+</html>

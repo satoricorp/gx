@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://go.dev/doc/effective_go",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "31b3beeb4fea135b85070f0362a1373b5e67981b8d6adc4afbb7291e06cdac5f",
+  "source_id": "effective-go"
+}

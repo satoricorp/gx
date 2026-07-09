@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://doc.rust-lang.org/nomicon/meet-safe-and-unsafe.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "545470fd43474269b72c6b6cbd9fdad7aa2c24a453d6dd8d5aaa23cb06fc23d8",
+  "source_id": "rust-nomicon"
+}

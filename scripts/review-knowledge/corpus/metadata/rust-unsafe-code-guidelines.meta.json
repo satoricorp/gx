@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://rust-lang.github.io/unsafe-code-guidelines/print.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d2d2f391bb567b113daa95dfc844900f5bdc49503172a816c67913a9a5fa5401",
+  "source_id": "rust-unsafe-code-guidelines"
+}

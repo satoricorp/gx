@@ -12,17 +12,18 @@ import (
 func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	store := &recordingReviewResourceStore{
 		rows: []reviewResourceRow{{
-			"source_id":       "owasp-sql-injection",
-			"title":           "OWASP SQL Injection Prevention Cheat Sheet",
-			"url":             "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
-			"category":        "database",
-			"authority":       "standard",
-			"evidence_level":  "E1",
-			"language_tags":   []any{"sql"},
-			"risk_tag_values": []any{"sql-injection"},
-			"chunk_kind":      "source",
-			"chunk_index":     float64(2),
-			"text":            "Prefer parameterized queries and prepared statements.",
+			"source_id":        "owasp-sql-injection",
+			"publisher":        "OWASP",
+			"title":            "OWASP SQL Injection Prevention Cheat Sheet",
+			"source_url":       "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+			"tier":             "security",
+			"authority":        float64(1),
+			"precedence_group": "security-spine",
+			"language_tags":    []any{"sql"},
+			"risk_tag_values":  []any{"sql-injection"},
+			"chunk_id":         "owasp-sql-injection::queries::0002",
+			"chunk_index":      float64(2),
+			"body":             "Prefer parameterized queries and prepared statements.",
 		}},
 	}
 	retriever := ReviewResourceRetriever{
@@ -50,16 +51,16 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	if !containsString(store.requests[0].IncludeAttributes, "publisher") {
 		t.Fatalf("include attributes = %#v, want publisher", store.requests[0].IncludeAttributes)
 	}
-	if !filterContains(store.requests[0].Filters, `"source_kind","Eq","review_knowledge"`) {
+	if !filterContains(store.requests[0].Filters, `"source_kind","Eq","review_corpus"`) {
 		t.Fatalf("broad filter = %#v", store.requests[0].Filters)
 	}
 	filtered := mustReviewResourceJSON(store.requests[1].Filters)
 	for _, want := range []string{
-		`"category","In"`,
+		`"tier","In"`,
 		`"language_tags","ContainsAny"`,
 		`"risk_tag_values","ContainsAny"`,
 		`"review_tag_values","ContainsAny"`,
-		`"database"`,
+		`"security"`,
 		`"sql"`,
 	} {
 		if !strings.Contains(filtered, want) {
@@ -180,6 +181,7 @@ func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	}
 	rows, err := store.Query(context.Background(), reviewResourceQuery{
 		Vector:            []float32{0.1, 0.2},
+		Text:              "code health",
 		Limit:             4,
 		Filters:           reviewResourceBaseFilter(),
 		IncludeAttributes: []string{"title", "text"},
@@ -193,15 +195,26 @@ func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	if gotAuth != "Bearer test-tpuf" {
 		t.Fatalf("auth = %q", gotAuth)
 	}
-	if _, ok := got["rank_by"].([]any); !ok {
-		t.Fatalf("rank_by = %#v", got["rank_by"])
+	if _, ok := got["queries"].([]any); !ok {
+		t.Fatalf("queries = %#v", got["queries"])
 	}
-	limit, ok := got["limit"].(map[string]any)
+	if _, ok := got["rerank_by"].([]any); !ok {
+		t.Fatalf("rerank_by = %#v", got["rerank_by"])
+	}
+	queries := got["queries"].([]any)
+	if len(queries) != 2 {
+		t.Fatalf("queries = %#v", queries)
+	}
+	first, ok := queries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first query = %#v", queries[0])
+	}
+	limit, ok := first["limit"].(map[string]any)
 	if !ok || limit["total"] != float64(4) {
-		t.Fatalf("limit = %#v", got["limit"])
+		t.Fatalf("limit = %#v", first["limit"])
 	}
-	if !filterContains(got["filters"], `"source_kind","Eq","review_knowledge"`) {
-		t.Fatalf("filters = %#v", got["filters"])
+	if !filterContains(first["filters"], `"source_kind","Eq","review_corpus"`) {
+		t.Fatalf("filters = %#v", first["filters"])
 	}
 	if len(rows) != 1 || stringValue(rows[0]["title"]) != "Google Review Standard" {
 		t.Fatalf("rows = %#v", rows)

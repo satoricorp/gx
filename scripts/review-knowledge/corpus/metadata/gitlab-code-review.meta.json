@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://docs.gitlab.com/development/code_review/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "a8f38280b63359e760efb39f88a280d2764ffb56d95f119977992bcf888b91ad",
+  "source_id": "gitlab-code-review"
+}

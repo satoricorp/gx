@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://raw.githubusercontent.com/rust-lang/miri/master/README.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "5871a9c1d4932bf9fe12b510d0464a6b6374489ba53489be0aad977fd7fe1e4a",
+  "source_id": "miri"
+}

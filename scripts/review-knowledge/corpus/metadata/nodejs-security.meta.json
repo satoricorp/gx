@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://nodejs.org/learn/getting-started/security-best-practices",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d2c62c54688ecda1bd0bfeb166b6bd690a3b7759bc39b304ac913cdeb21f8f94",
+  "source_id": "nodejs-security"
+}

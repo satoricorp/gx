@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://conventionalcomments.org/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "856dfee99ed8a0b7ad18e6109f2e02bf4f919c70106f61a6fc6f594554873716",
+  "source_id": "conventional-comments"
+}

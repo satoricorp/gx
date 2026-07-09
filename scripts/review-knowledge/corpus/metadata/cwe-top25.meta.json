@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://cwe.mitre.org/top25/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "1ab8fc01b1630d552ae7f6a8df5cc8ff3356e71c47cb194618fda715772c3304",
+  "source_id": "cwe-top25"
+}

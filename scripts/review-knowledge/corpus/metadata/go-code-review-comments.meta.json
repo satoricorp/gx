@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://go.dev/wiki/CodeReviewComments",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "5fc43d6cd8e6182a66b24363cd7a7fcd8eba9b6a8c4fabc8f3fae2b340d8cbdd",
+  "source_id": "go-code-review-comments"
+}

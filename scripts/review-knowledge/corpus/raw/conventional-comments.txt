@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Conventional Comments</title>
+  <meta property="og:title" content="Conventional Comments" />
+  <meta name="twitter:title" content="Conventional Comments" />
+  <meta name="description" content="Comments that are easy to grok and grep">
+  <meta property="og:description" content="Comments that are easy to grok and grep">
+  <meta name="twitter:description" content="Comments that are easy to grok and grep">
+  <meta name="author" content="Paul Slaughter"/>
+  <link href='/favicon.ico' rel='icon' type='image/x-icon'/>
+  <meta property="og:image" content="https://conventionalcomments.org/logo.png" />
+  <meta name="twitter:image" content="https://conventionalcomments.org/logo.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:site" content="@souldzin" />
+  <meta name="twitter:creator" content="@souldzin" />
+  <meta property="og:url" content="https://conventionalcomments.org/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Conventional Comments" />
+
+  <meta name="generator" content="Hugo 0.139.2">
+  <link rel="canonical" href="https://conventionalcomments.org/" />
+  <link rel="alternate" href="https://conventionalcomments.org/index.xml" type="application/rss+xml" title="Conventional Comments">
+
+  
+  
+  <link rel="alternate" hreflang="en" href="https://conventionalcomments.org/" />
+  
+  <link rel="alternate" hreflang="x-default" href="https://conventionalcomments.org/" />
+  
+  
+  
+  
+  <link rel="alternate" hreflang="es" href="https://conventionalcomments.org/es/" />
+  
+  
+  
+
+  <link rel="stylesheet" href="/css/main.min.9a237cdd9934ae68c83328f53f5e819bf8549b096a89ecaa6f7ad08a4273b252.css" />
+</head>
+
+  <body>
+    
+  <div>
+    <header class="px-2 mb-8 mt-12 sm:mt-16 mx-auto text-center max-w-xl flex flex-col items-center content-center">
+  <h1 class="mx-auto text-2xl sm:text-4xl leading-none">
+    <a href="/" class="hover:no-underline">
+      <strong class="font-bold cc-text-highlight">conventional: </strong><span class="font-light">comments</span>
+    </a>
+    <p class="text-sm font-light">
+      Comments that are easy to <a href="https://en.wikipedia.org/wiki/Grok#In_computer_programmer_culture" rel="nofollow noopener noreferrer">grok</a> and <a href="https://en.wikipedia.org/wiki/Grep" rel="nofollow noopener noreferrer">grep</a>
+    </p>
+  </h1>
+</header>
+<div class="absolute top-0 left-0 right-0 m-4 flex">
+  
+  <nav role="navigation" class="cc-navigation mr-auto">
+    <ul>
+      <li class="!py-0">
+        <button class="flex items-center">
+          <span class="font-medium text-sm">ENGLISH</span>
+          <span class="inline-svg size-2 text-gray-500 ml-2" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><path fill="currentColor" d="M143 352.3L7 216.3c-9.4-9.4-9.4-24.6 0-33.9l22.6-22.6c9.4-9.4 24.6-9.4 33.9 0l96.4 96.4 96.4-96.4c9.4-9.4 24.6-9.4 33.9 0l22.6 22.6c9.4 9.4 9.4 24.6 0 33.9l-136 136c-9.2 9.4-24.4 9.4-33.8 0z"/></svg>
+</span>
+
+        </button>
+        <ul class="!mt-0">
+          
+          <li>
+            <a href="https://conventionalcomments.org/"
+              class="px-2 font-bold text-purple-700 dark:text-purple-500">
+              English
+            </a>
+          </li>
+          
+          <li>
+            <a href="https://conventionalcomments.org/es/"
+              class="px-2 ">
+              Español
+            </a>
+          </li>
+          
+        </ul>
+      </li>
+    </ul>
+  </nav>
+  <div class="js-dark-mode mr-4"></div>
+  <div class="js-stars" data-project-path="conventionalcomments/conventionalcomments.gitlab.io"></div>
+</div>
+
+    <div class="px-2 pb-6 mx-auto max-w-3xl cc-content">
+      <p>Comments like this are unhelpful&hellip;
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/caterpillar.png" alt="Caterpillar" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @caterpillar
+      </div>
+      <div class="cc-flatten-p">
+        This is not worded correctly.
+      </div>
+    </div>
+  </div>
+</div>
+
+</p>
+<p>By simply prefixing the comment with a label, the intention is clear and the tone dramatically changes.
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/caterpillar.png" alt="Caterpillar" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @caterpillar
+      </div>
+      <div class="cc-flatten-p">
+        <strong>suggestion:</strong> This is not worded correctly.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/caterpillar.png" alt="Caterpillar" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @caterpillar
+      </div>
+      <div class="cc-flatten-p">
+        <strong>issue (non-blocking):</strong> This is not worded correctly.
+      </div>
+    </div>
+  </div>
+</div>
+
+</p>
+<p>Labels also prompt the reviewer to give more <strong>actionable</strong> comments.
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/caterpillar.png" alt="Caterpillar" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @caterpillar
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>suggestion:</strong> This is not worded correctly.</p>
+<p>Can we change this to match the wording of the marketing page?</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+</p>
+<p>Labeling comments encourages collaboration and saves <strong>hours</strong> of undercommunication and misunderstandings. They are also parseable by machines!</p>
+<h2 id="examples">
+  <a href="#examples">Examples</a>
+</h2>
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/alice.png" alt="Alice" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @alice
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>suggestion:</strong> Let&rsquo;s avoid using this specific function&hellip;</p>
+<p>If we reference much of a function marked &ldquo;Deprecated&rdquo;, it is almost certain to disagree with us, sooner or later.</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/7ofspades.png" alt="7 of Spades" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @7ofspades
+      </div>
+      <div class="cc-flatten-p">
+        <strong>issue (ux,non-blocking):</strong> These buttons should be red, but let&rsquo;s handle this in a follow-up.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<h2 id="target-audience">
+  <a href="#target-audience">Target audience</a>
+</h2>
+<p>Conventional Comments is a standard for formatting comments of any kind of review/feedback process, such as:</p>
+<ul>
+<li><a href="https://en.wikipedia.org/wiki/Code_review">Code review</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Peer_review">Peer review</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Revision_(writing)">Revising</a> and <a href="https://en.wikipedia.org/wiki/Editing">editing</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Request_for_Comments">RFC</a></li>
+</ul>
+<h2 id="format">
+  <a href="#format">Format</a>
+</h2>
+<p>Adhering to a consistent format improves reader&rsquo;s expectations and machine readability.
+Here&rsquo;s the format we propose:</p>
+<pre tabindex="0"><code>&lt;label&gt; [decorations]: &lt;subject&gt;
+
+[discussion]
+</code></pre><ul>
+<li><em>label</em> - This is a single label that signifies what kind of comment is being left.</li>
+<li><em>subject</em> - This is the main message of the comment.</li>
+<li><em>decorations (optional)</em> - These are extra decorating labels for the comment. They are surrounded by parentheses and comma-separated.</li>
+<li><em>discussion (optional)</em> - This contains supporting statements, context, reasoning, and anything else to help communicate the &ldquo;why&rdquo; and &ldquo;next steps&rdquo; for resolving the comment.</li>
+</ul>
+<p>For example:</p>
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/mouse.png" alt="A. Mouse" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @amouse
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>question (non-blocking):</strong> At this point, does it matter which thread has won?</p>
+<p>Maybe to prevent a race condition we should keep looping until they&rsquo;ve all won?</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<p>Can be automatically parsed into:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-json" data-lang="json"><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">  <span class="nt">&#34;label&#34;</span><span class="p">:</span> <span class="s2">&#34;question&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">  <span class="nt">&#34;subject&#34;</span><span class="p">:</span> <span class="s2">&#34;At this point, does it matter which thread has won?&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">  <span class="nt">&#34;decorations&#34;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&#34;non-blocking&#34;</span><span class="p">],</span>
+</span></span><span class="line"><span class="cl">  <span class="nt">&#34;discussion&#34;</span><span class="p">:</span> <span class="s2">&#34;Maybe to prevent a race condition we should keep looping until they&#39;ve all won?&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><h2 id="labels">
+  <a href="#labels">Labels</a>
+</h2>
+<p>We strongly suggest using the following labels:</p>
+<table>
+  <thead>
+      <tr>
+          <th></th>
+          <th></th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>praise:</strong></td>
+          <td>Praises highlight something positive. Try to leave at least one of these comments per review. <em>Do not</em> leave false praise (which can actually be damaging). <em>Do</em> look for something to sincerely praise.</td>
+      </tr>
+      <tr>
+          <td><strong>nitpick:</strong></td>
+          <td>Nitpicks are trivial preference-based requests. These should be non-blocking by nature.</td>
+      </tr>
+      <tr>
+          <td><strong>suggestion:</strong></td>
+          <td>Suggestions propose improvements to the current subject. It&rsquo;s important to be explicit and clear on <em>what</em> is being suggested and <em>why</em> it is an improvement. Consider using patches and the <em>blocking</em> or <em>non-blocking</em> <a href="/#decorations">decorations</a> to further communicate your intent.</td>
+      </tr>
+      <tr>
+          <td><strong>issue:</strong></td>
+          <td>Issues highlight specific problems with the subject under review. These problems can be user-facing or behind the scenes. It is strongly recommended to pair this comment with a <code>suggestion</code>. If you are not sure if a problem exists or not, consider leaving a <code>question</code>.</td>
+      </tr>
+      <tr>
+          <td><strong>todo:</strong></td>
+          <td>TODO&rsquo;s are small, trivial, but necessary changes. Distinguishing todo comments from issues: or suggestions: helps direct the reader&rsquo;s attention to comments requiring more involvement.</td>
+      </tr>
+      <tr>
+          <td><strong>question:</strong></td>
+          <td>Questions are appropriate if you have a potential concern but are not quite sure if it&rsquo;s relevant or not. Asking the author for clarification or investigation can lead to a quick resolution.</td>
+      </tr>
+      <tr>
+          <td><strong>thought:</strong></td>
+          <td>Thoughts represent an idea that popped up from reviewing. These comments are non-blocking by nature, but they are extremely valuable and can lead to more focused initiatives and mentoring opportunities.</td>
+      </tr>
+      <tr>
+          <td><strong>chore:</strong></td>
+          <td>Chores are simple tasks that must be done before the subject can be &ldquo;officially&rdquo; accepted. Usually, these comments reference some common process. Try to leave a link to the process description so that the reader knows how to resolve the chore.</td>
+      </tr>
+      <tr>
+          <td><strong>note:</strong></td>
+          <td>Notes are always non-blocking and simply highlight something the reader should take note of.</td>
+      </tr>
+  </tbody>
+</table>
+<p>If you like to be a bit more expressive with your labels, you may also consider:</p>
+<table>
+  <thead>
+      <tr>
+          <th></th>
+          <th></th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>typo:</strong></td>
+          <td>Typo comments are like <strong>todo:</strong>, where the main issue is a misspelling.</td>
+      </tr>
+      <tr>
+          <td><strong>polish:</strong></td>
+          <td>Polish comments are like a <strong>suggestion</strong>, where there is nothing necessarily wrong with the relevant content, there&rsquo;s just some ways to immediately improve the quality.</td>
+      </tr>
+      <tr>
+          <td><strong>quibble:</strong></td>
+          <td>Quibbles are very much like <strong>nitpick:</strong>, except it does not conjure up images of lice and animal hygiene practices.</td>
+      </tr>
+  </tbody>
+</table>
+<p>Feel free to diverge from this specific list of labels if it seems appropriate.</p>
+<h2 id="decorations">
+  <a href="#decorations">Decorations</a>
+</h2>
+<p>Decorations give additional context for a comment. They help further classify comments which have the same label (for example, a security suggestion as opposed to a test suggestion).</p>
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/ccat.png" alt="Cheshire Cat" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @cheshirec
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>suggestion (security):</strong> I&rsquo;m a bit concerned that we are implementing our own DOM purifying function here&hellip;</p>
+<p>Could we consider using the framework instead?</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/ccat.png" alt="Cheshire Cat" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @cheshirec
+      </div>
+      <div class="cc-flatten-p">
+        <strong>suggestion (test,if-minor):</strong> It looks like we&rsquo;re missing some unit test coverage that the cat disappears completely.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<p>Decorations may be specific to each organization. If needed, we recommend establishing a minimal set of decorations (leaving room for discretion) with no ambiguity.</p>
+<p>Possible decorations include:</p>
+<table>
+  <thead>
+      <tr>
+          <th></th>
+          <th></th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>(non-blocking)</strong></td>
+          <td>A comment with this decoration <strong>should not</strong> prevent the subject under review from being accepted. This is helpful for organizations that consider comments blocking by default.</td>
+      </tr>
+      <tr>
+          <td><strong>(blocking)</strong></td>
+          <td>A comment with this decoration <strong>should</strong> prevent the subject under review from being accepted, until it is resolved. This is helpful for organizations that consider comments non-blocking by default.</td>
+      </tr>
+      <tr>
+          <td><strong>(if-minor)</strong></td>
+          <td>This decoration gives some freedom to the author that they should resolve the comment only if the changes end up being minor or trivial.</td>
+      </tr>
+  </tbody>
+</table>
+<p>Adding a decoration to a comment should improve understandability and maintain readability. Having a list of many decorations in one comment would conflict with this goal.</p>
+<h2 id="more-examples">
+  <a href="#more-examples">More examples</a>
+</h2>
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/hatter.png" alt="Mad Hatter" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @hatter
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>nitpick:</strong> <code>little star</code> =&gt; <code>little bat</code></p>
+<p>Can we update the other references as well?</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/alice.png" alt="Alice" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @alice
+      </div>
+      <div class="cc-flatten-p">
+        <p><strong>chore:</strong> Let&rsquo;s run the <code>jabber-walk</code> CI job to make sure this doesn&rsquo;t break any known references.</p>
+<p>Here are <a href="https://en.wikipedia.org/wiki/Jabberwocky">the docs</a> for running this job. Feel free to reach out if you need any help!</p>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="mx-4 my-4">
+  <div class="p-2 border rounded flex cc-flatten-p dark:bg-gray-800">
+    <img class="cc-avatar" src="/img/avatars/ccat.png" alt="Cheshire Cat" />
+    <div class="w-full ml-2">
+      <div class="text-gray-600 dark:text-gray-400">
+        @cheshirec
+      </div>
+      <div class="cc-flatten-p">
+        <strong>praise:</strong> Beautiful test!
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<h2 id="want-to-collaborate">
+  <a href="#want-to-collaborate">Want to collaborate?</a>
+</h2>
+<p>If you have a suggestion, comment, idea, or something else altogether,
+please visit the <a href="https://gitlab.com/conventionalcomments/conventionalcomments.gitlab.io">GitLab project</a>
+to collaborate. Issues and Merge Requests are welcome!</p>
+<h2 id="community-built-projects-and-tools">
+  <a href="#community-built-projects-and-tools">Community-built projects and tools</a>
+</h2>
+<p>Check out <a href="https://conventionalcomments.org/neighborhood/">this page</a> for a showcase of projects and tools built by the wider community.</p>
+<h2 id="best-practices-for-written-communication">
+  <a href="#best-practices-for-written-communication">Best practices for written communication</a>
+</h2>
+<p>Check out <a href="https://conventionalcomments.org/communication/">this page</a> for some general
+ideas and principles on improving written review communication.</p>
+<h2 id="prior-art">
+  <a href="#prior-art">Prior art</a>
+</h2>
+<ul>
+<li><a href="https://www.conventionalcommits.org">Conventional Commits</a></li>
+<li><a href="https://github.com/google/eng-practices/blob/57c895ad4b09c8941288c04e44a08797b76b4d4d/review/reviewer/standard.md#mentoring">Google Engineering Practices</a></li>
+</ul>
+<p>The characters used in the examples are respectfully adapted from Lewis Carroll&rsquo;s <a href="https://en.wikipedia.org/wiki/Alice%27s_Adventures_in_Wonderland">Alice in Wonderland</a>, illustrated by <a href="https://en.wikipedia.org/wiki/John_Tenniel">John Tenniel</a>.</p>
+
+    </div>
+  </div>
+
+    <footer class="px-2 my-6 mx-auto max-w-3xl text-xs">
+  <div class="flex justify-around">
+    <div class="text-left flex-1">
+      <div>License</div>
+      <a href="https://creativecommons.org/licenses/by/3.0/">Creative Commons - CC BY 3.0</a>
+    </div>
+    <div class="text-center flex-1">
+      <a href="https://gitlab.com/conventionalcomments/conventionalcomments.gitlab.io" class="svg-link" aria-label="GitLab Repository"><span class="inline-svg" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="currentColor" d="M105.2 24.9c-3.1-8.9-15.7-8.9-18.9 0L29.8 199.7h132c-.1 0-56.6-174.8-56.6-174.8zM.9 287.7c-2.6 8 .3 16.9 7.1 22l247.9 184-226.2-294zm160.8-88l94.3 294 94.3-294zm349.4 88l-28.8-88-226.3 294 247.9-184c6.9-5.1 9.7-14 7.2-22zM425.7 24.9c-3.1-8.9-15.7-8.9-18.9 0l-56.6 174.8h132z"/></svg>
+</span>
+</a>
+    </div>
+    <div class="text-right flex-1">
+      &copy; 2025 <a href="https://souldzin.com">Paul Slaughter</a>
+    </div>
+  </div>
+</footer>
+
+    
+<template id="svg-star"><span class="inline-svg" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="currentColor" d="M528.1 171.5L382 150.2 316.7 17.8c-11.7-23.6-45.6-23.9-57.4 0L194 150.2 47.9 171.5c-26.2 3.8-36.7 36.1-17.7 54.6l105.7 103-25 145.5c-4.5 26.3 23.2 46 46.4 33.7L288 439.6l130.7 68.7c23.2 12.2 50.9-7.4 46.4-33.7l-25-145.5 105.7-103c19-18.5 8.5-50.8-17.7-54.6zM388.6 312.3l23.7 138.4L288 385.4l-124.3 65.3 23.7-138.4-100.6-98 139-20.2 62.2-126 62.2 126 139 20.2-100.6 98z"/></svg>
+</span>
+</template>
+<template id="svg-star-solid"><span class="inline-svg" ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="currentColor" d="M259.3 17.8L194 150.2 47.9 171.5c-26.2 3.8-36.7 36.1-17.7 54.6l105.7 103-25 145.5c-4.5 26.3 23.2 46 46.4 33.7L288 439.6l130.7 68.7c23.2 12.2 50.9-7.4 46.4-33.7l-25-145.5 105.7-103c19-18.5 8.5-50.8-17.7-54.6L382 150.2 316.7 17.8c-11.7-23.6-45.6-23.9-57.4 0z"/></svg>
+</span>
+</template>
+
+    
+
+<script type="text/javascript" src="/out/index.min.0392d7c5f6f1bd7bfc8d26e132f7c681fd789a24d60e622bc469a6f52d2c26c32329f75994acc275f64cc51b0aa3d3b040ca6607135ab1b4abea1a520aeea749.js" integrity="sha512-A5LXxfbxvXv8jSbhMvfGgf14miTWDmIrxGmm9S0sJsMjKfdZlKzCdfZMxRsKo9OwQMpmBxNasbSr6hpSCu6nSQ=="></script>
+  </body>
+</html>

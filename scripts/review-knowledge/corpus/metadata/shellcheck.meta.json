@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.shellcheck.net/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "1a3b92797d24118eb18b6d4f794ddbc7580e76fb31a9fc118019d44596c404b9",
+  "source_id": "shellcheck"
+}

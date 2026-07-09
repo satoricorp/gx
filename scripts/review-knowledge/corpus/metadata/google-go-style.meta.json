@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://google.github.io/styleguide/go/best-practices",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "bc0603d3958e7cb701ad7e8280ce4b11ca383ea129e71f04cd686d9560c1cfc4",
+  "source_id": "google-go-style"
+}

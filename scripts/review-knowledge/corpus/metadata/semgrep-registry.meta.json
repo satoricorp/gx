@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://semgrep.dev/r",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4cebe0982bd2551535c875dad9eaf73cdff7523a908fc6064c6c5a4ad2c742a3",
+  "source_id": "semgrep-registry"
+}

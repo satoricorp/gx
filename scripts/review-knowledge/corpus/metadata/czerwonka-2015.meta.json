@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2015/05/PID3556473.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "23f741d538e21768068183b10fec435c738d9fc2e435def48bcc1251d5b7d613",
+  "source_id": "czerwonka-2015"
+}

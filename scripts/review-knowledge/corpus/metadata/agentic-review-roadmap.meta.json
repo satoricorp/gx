@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://arxiv.org/pdf/2605.17548",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d90d2dd7ff7b6767fe3d8d095331b6a72e1790f00cc03e19b60c34928b76dddc",
+  "source_id": "agentic-review-roadmap"
+}

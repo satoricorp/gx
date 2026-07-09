@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://arxiv.org/pdf/2501.15134",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "417cb93d51662a993fcc32a8af2ff11ca0eaad92a42c08e689a84367abd48d0c",
+  "source_id": "bitsai-cr-2025"
+}

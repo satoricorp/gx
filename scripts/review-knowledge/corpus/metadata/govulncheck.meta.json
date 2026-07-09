@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "f04d42fef06c593b9f16c6e881012b7b9ca9b5009a3a8fd16b42fb23d4c7725b",
+  "source_id": "govulncheck"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://best.openssf.org/Concise-Guide-for-Developing-More-Secure-Software",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "f484e6242a9a87a4365d161eefce1d1268b33acd235a37e5e7bd8c6d10c88643",
+  "source_id": "openssf-concise-guide"
+}

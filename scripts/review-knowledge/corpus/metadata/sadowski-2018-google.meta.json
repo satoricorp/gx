@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://sback.it/publications/icse2018seip.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "299c18e1da4dc75f43327fcf7c9f51232f400aab6873bafb28a6ddf623133eec",
+  "source_id": "sadowski-2018-google"
+}

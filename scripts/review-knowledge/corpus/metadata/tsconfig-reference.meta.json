@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.typescriptlang.org/tsconfig/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "18e4056fb026d4ae635d89d926ff318cb3af5560c806217c8a7e0c7d44c38dce",
+  "source_id": "tsconfig-reference"
+}

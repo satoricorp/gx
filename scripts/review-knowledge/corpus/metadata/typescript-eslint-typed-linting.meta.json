@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://typescript-eslint.io/getting-started/typed-linting/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "be9ddcca45af955dc206066edc3729e7d471216b83d5887e822b9c0daa0b53d6",
+  "source_id": "typescript-eslint-typed-linting"
+}

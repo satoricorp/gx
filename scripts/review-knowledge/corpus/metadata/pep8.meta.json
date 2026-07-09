@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://peps.python.org/pep-0008/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c7154ecef6bc1b1a72accdf883163746bb3b802493431b9bd3ef4e3fcb0c0410",
+  "source_id": "pep8"
+}

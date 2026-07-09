@@ -1,0 +1,151 @@
+queries:
+  - query: "when is it acceptable to use panic in go"
+    expected_source_ids: [google-go-style, uber-go-guide]
+    focus: go
+  - query: "go error wrapping with context"
+    expected_source_ids: [google-go-style, uber-go-guide, go-code-review-comments]
+    focus: go
+  - query: "go init function side effects"
+    expected_source_ids: [google-go-style, uber-go-guide]
+    focus: go
+  - query: "go interface naming and small interfaces"
+    expected_source_ids: [google-go-style, go-code-review-comments]
+    focus: go
+  - query: "go context should not be stored in structs"
+    expected_source_ids: [go-code-review-comments, google-go-style]
+    focus: go
+  - query: "go dependency vulnerability reachable functions"
+    expected_source_ids: [govulncheck, go-security]
+    focus: go
+  - query: "go security best practices for untrusted input"
+    expected_source_ids: [go-security, owasp-asvs]
+    focus: go
+  - query: "go table tests for changed behavior"
+    expected_source_ids: [google-go-style, go-code-review-comments]
+    focus: go
+  - query: "go generics guidance should not come from effective go"
+    expected_source_ids: [google-go-style, uber-go-guide]
+    focus: go
+  - query: "go code review comments for goroutine lifetime"
+    expected_source_ids: [go-code-review-comments, google-go-style]
+    focus: go
+  - query: "typescript strict null checks configuration"
+    expected_source_ids: [tsconfig-reference, typescript-eslint-typed-linting]
+    focus: typescript
+  - query: "typescript unsafe any should be linted"
+    expected_source_ids: [typescript-eslint-typed-linting, eslint-rules]
+    focus: typescript
+  - query: "typescript default export style guidance"
+    expected_source_ids: [google-tsguide, typescript-eslint-typed-linting]
+    focus: typescript
+  - query: "typescript module imports and api shape"
+    expected_source_ids: [google-tsguide]
+    focus: typescript
+  - query: "typescript node security best practices"
+    expected_source_ids: [nodejs-security, owasp-asvs]
+    focus: typescript
+  - query: "typescript eslint rule pages for mechanical style"
+    expected_source_ids: [eslint-rules, typescript-eslint-typed-linting]
+    focus: typescript
+  - query: "typescript typed linting performance tradeoff"
+    expected_source_ids: [typescript-eslint-typed-linting]
+    focus: typescript
+  - query: "javascript security command injection node"
+    expected_source_ids: [nodejs-security, owasp-cheatsheets]
+    focus: typescript
+  - query: "typescript tsconfig unsafe compiler option"
+    expected_source_ids: [tsconfig-reference]
+    focus: typescript
+  - query: "typescript design-level style with no lint rule"
+    expected_source_ids: [google-tsguide]
+    focus: typescript
+  - query: "python line length should follow formatter"
+    expected_source_ids: [ruff, pep8]
+    focus: python
+  - query: "python google docstring convention D211 D212"
+    expected_source_ids: [ruff, google-pyguide]
+    focus: python
+  - query: "python type checking public api boundaries"
+    expected_source_ids: [mypy, typing-python-spec]
+    focus: python
+  - query: "python typing semantics protocol optional"
+    expected_source_ids: [typing-python-spec, mypy]
+    focus: python
+  - query: "python security subprocess shell true"
+    expected_source_ids: [bandit, owasp-cheatsheets]
+    focus: python
+  - query: "python exceptions style google guide"
+    expected_source_ids: [google-pyguide, pep8]
+    focus: python
+  - query: "python imports formatting lint"
+    expected_source_ids: [ruff, google-pyguide, pep8]
+    focus: python
+  - query: "python docstring D203 D213 should not outrank google convention"
+    expected_source_ids: [ruff, google-pyguide]
+    focus: python
+  - query: "python mypy strict optional review"
+    expected_source_ids: [mypy, typing-python-spec]
+    focus: python
+  - query: "python bandit hardcoded password rule"
+    expected_source_ids: [bandit]
+    focus: python
+  - query: "rust unsafe code invariants"
+    expected_source_ids: [rust-nomicon, rust-unsafe-code-guidelines]
+    focus: rust
+  - query: "rust public api naming traits errors"
+    expected_source_ids: [rust-api-guidelines]
+    focus: rust
+  - query: "rust clippy lint complexity"
+    expected_source_ids: [clippy]
+    focus: rust
+  - query: "rust miri undefined behavior tests"
+    expected_source_ids: [miri, rust-nomicon]
+    focus: rust
+  - query: "rust dependency advisory database"
+    expected_source_ids: [rustsec]
+    focus: rust
+  - query: "rust unsafe aliasing and lifetimes"
+    expected_source_ids: [rust-nomicon, rust-unsafe-code-guidelines]
+    focus: rust
+  - query: "rust non normative unsafe code guidelines severity"
+    expected_source_ids: [rust-unsafe-code-guidelines]
+    focus: rust
+  - query: "rust api documentation future proofing"
+    expected_source_ids: [rust-api-guidelines]
+    focus: rust
+  - query: "rust ffi memory safety"
+    expected_source_ids: [rust-nomicon, miri]
+    focus: rust
+  - query: "rust correctness lint should be style tier but retrievable"
+    expected_source_ids: [clippy]
+    focus: rust
+  - query: "preventing sql injection in parameterized queries"
+    expected_source_ids: [owasp-asvs, owasp-sqli-cheatsheet, mysql-prepared-statements]
+    focus: sql
+  - query: "postgres transaction isolation anomaly"
+    expected_source_ids: [postgres-txn-isolation]
+    focus: sql
+  - query: "postgres explain query plan performance"
+    expected_source_ids: [postgres-explain]
+    focus: sql
+  - query: "dbt sql style canonical source"
+    expected_source_ids: [dbt-sql-style, sqlfluff]
+    focus: sql
+  - query: "sqlfluff rule pages for sql lint"
+    expected_source_ids: [sqlfluff]
+    focus: sql
+  - query: "database security least privilege"
+    expected_source_ids: [owasp-db-cheatsheet, owasp-asvs]
+    focus: security
+  - query: "owasp authentication verification requirements"
+    expected_source_ids: [owasp-asvs]
+    focus: security
+  - query: "cwe top 25 cross reference not spine"
+    expected_source_ids: [cwe-top25, owasp-asvs]
+    focus: security
+  - query: "software supply chain scorecard branch protection"
+    expected_source_ids: [openssf-scorecard, slsa]
+    focus: security
+  - query: "how large should a change be for review"
+    expected_source_ids: [google-eng-practices, smartbear-best-practices]
+    focus: process

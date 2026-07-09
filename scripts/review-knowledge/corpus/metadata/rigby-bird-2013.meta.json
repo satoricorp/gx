@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/rigby2013convergent.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "68e2faff6ff924e21f112ab98d8909c865697980d38ebaf11dfdcb7e9662c0f0",
+  "source_id": "rigby-bird-2013"
+}

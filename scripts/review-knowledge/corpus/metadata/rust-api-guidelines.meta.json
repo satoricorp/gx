@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://rust-lang.github.io/api-guidelines/about.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "5f505703d67edbc1e679077a5ee44b139025dc6bc417994905900f2bb0e5afc8",
+  "source_id": "rust-api-guidelines"
+}

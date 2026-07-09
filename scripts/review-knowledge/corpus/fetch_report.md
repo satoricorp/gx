@@ -1,0 +1,132 @@
+# Fetch Report
+
+generated_at: 2026-07-08
+
+- LICENSE google-eng-practices: license=verify; verify before redistribution.
+- OK google-eng-practices: status=200 final_url=https://google.github.io/eng-practices/review/developer/handling-comments.html
+- LICENSE ms-playbook-code-reviews: license=verify; verify before redistribution.
+- OK ms-playbook-code-reviews: status=200 final_url=https://microsoft.github.io/code-with-engineering-playbook/code-reviews/recipes/terraform/
+- LICENSE gitlab-code-review: license=verify; verify before redistribution.
+- OK gitlab-code-review: status=200 final_url=https://docs.gitlab.com/development/code_review/
+- LICENSE firefox-reviewer-checklist: license=verify; verify before redistribution.
+- OK firefox-reviewer-checklist: status=200 final_url=https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html
+- LICENSE smartbear-best-practices: license=verify; verify before redistribution.
+- FAIL smartbear-best-practices: robots.txt disallows fetch: https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
+- LICENSE conventional-comments: license=verify; verify before redistribution.
+- OK conventional-comments: status=200 final_url=https://conventionalcomments.org/
+- LICENSE owasp-asvs: license=verify; verify before redistribution.
+- OK owasp-asvs: status=200 final_url=https://raw.githubusercontent.com/OWASP/ASVS/master/README.md
+- LICENSE owasp-top10: license=verify; verify before redistribution.
+- FAIL owasp-top10: robots.txt disallows fetch: https://owasp.org/Top10/
+- LICENSE cwe-top25: license=verify; verify before redistribution.
+- OK cwe-top25: status=200 final_url=https://cwe.mitre.org/top25/
+- LICENSE owasp-cheatsheets: license=verify; verify before redistribution.
+- FAIL owasp-cheatsheets: robots.txt disallows fetch: https://cheatsheetseries.owasp.org/index.html
+- LICENSE owasp-sqli-cheatsheet: license=verify; verify before redistribution.
+- FAIL owasp-sqli-cheatsheet: robots.txt disallows fetch: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+- LICENSE owasp-db-cheatsheet: license=verify; verify before redistribution.
+- FAIL owasp-db-cheatsheet: robots.txt disallows fetch: https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html
+- LICENSE openssf-concise-guide: license=verify; verify before redistribution.
+- OK openssf-concise-guide: status=200 final_url=https://best.openssf.org/Concise-Guide-for-Developing-More-Secure-Software
+- LICENSE openssf-scorecard: license=verify; verify before redistribution.
+- OK openssf-scorecard: status=200 final_url=https://scorecard.dev/
+- LICENSE slsa: license=verify; verify before redistribution.
+- OK slsa: status=200 final_url=https://slsa.dev/spec/v1.2/
+- LICENSE nist-ssdf-800-218: license=verify; verify before redistribution.
+- FAIL nist-ssdf-800-218: robots.txt disallows fetch: https://csrc.nist.gov/pubs/sp/800/218/final
+- LICENSE semgrep-registry: license=verify; verify before redistribution.
+- OK semgrep-registry: status=200 final_url=https://semgrep.dev/r
+- LICENSE google-tsguide: license=verify; verify before redistribution.
+- OK google-tsguide: status=200 final_url=https://google.github.io/styleguide/tsguide.html
+- LICENSE tsconfig-reference: license=verify; verify before redistribution.
+- OK tsconfig-reference: status=200 final_url=https://www.typescriptlang.org/tsconfig/
+- LICENSE typescript-eslint-typed-linting: license=verify; verify before redistribution.
+- OK typescript-eslint-typed-linting: status=200 final_url=https://typescript-eslint.io/getting-started/typed-linting/
+- LICENSE eslint-rules: license=verify; verify before redistribution.
+- OK eslint-rules: status=200 final_url=https://eslint.org/docs/latest/rules/no-unsafe-finally
+- LICENSE nodejs-security: license=verify; verify before redistribution.
+- OK nodejs-security: status=200 final_url=https://nodejs.org/learn/getting-started/security-best-practices
+- LICENSE pep8: license=verify; verify before redistribution.
+- OK pep8: status=200 final_url=https://peps.python.org/pep-0008/
+- LICENSE google-pyguide: license=verify; verify before redistribution.
+- OK google-pyguide: status=200 final_url=https://google.github.io/styleguide/pyguide.html
+- LICENSE ruff: license=verify; verify before redistribution.
+- FAIL ruff: robots.txt disallows fetch: https://docs.astral.sh/ruff/
+- LICENSE mypy: license=verify; verify before redistribution.
+- FAIL mypy: robots.txt disallows fetch: https://mypy.readthedocs.io/
+- LICENSE typing-python-spec: license=verify; verify before redistribution.
+- FAIL typing-python-spec: robots.txt disallows fetch: https://typing.python.org/
+- LICENSE bandit: license=verify; verify before redistribution.
+- FAIL bandit: robots.txt disallows fetch: https://bandit.readthedocs.io/
+- LICENSE google-go-style: license=verify; verify before redistribution.
+- OK google-go-style: status=200 final_url=https://google.github.io/styleguide/go/best-practices
+- LICENSE go-code-review-comments: license=verify; verify before redistribution.
+- OK go-code-review-comments: status=200 final_url=https://go.dev/wiki/CodeReviewComments
+- LICENSE uber-go-guide: license=verify; verify before redistribution.
+- OK uber-go-guide: status=200 final_url=https://raw.githubusercontent.com/uber-go/guide/master/README.md
+- LICENSE effective-go: license=verify; verify before redistribution.
+- OK effective-go: status=200 final_url=https://go.dev/doc/effective_go
+- LICENSE go-security: license=verify; verify before redistribution.
+- OK go-security: status=200 final_url=https://go.dev/doc/security/best-practices
+- LICENSE govulncheck: license=verify; verify before redistribution.
+- OK govulncheck: status=200 final_url=https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
+- LICENSE rust-api-guidelines: license=verify; verify before redistribution.
+- OK rust-api-guidelines: status=200 final_url=https://rust-lang.github.io/api-guidelines/about.html
+- LICENSE rust-nomicon: license=verify; verify before redistribution.
+- OK rust-nomicon: status=200 final_url=https://doc.rust-lang.org/nomicon/meet-safe-and-unsafe.html
+- LICENSE rust-unsafe-code-guidelines: license=verify; verify before redistribution.
+- OK rust-unsafe-code-guidelines: status=200 final_url=https://rust-lang.github.io/unsafe-code-guidelines/print.html
+- LICENSE clippy: license=verify; verify before redistribution.
+- OK clippy: status=200 final_url=https://doc.rust-lang.org/clippy/installation.html
+- LICENSE miri: license=verify; verify before redistribution.
+- OK miri: status=200 final_url=https://raw.githubusercontent.com/rust-lang/miri/master/README.md
+- LICENSE rustsec: license=verify; verify before redistribution.
+- OK rustsec: status=200 final_url=https://rustsec.org/
+- LICENSE postgres-explain: license=verify; verify before redistribution.
+- OK postgres-explain: status=200 final_url=https://www.postgresql.org/docs/current/using-explain.html
+- LICENSE postgres-txn-isolation: license=verify; verify before redistribution.
+- OK postgres-txn-isolation: status=200 final_url=https://www.postgresql.org/docs/current/transaction-iso.html
+- LICENSE mysql-prepared-statements: license=verify; verify before redistribution.
+- FAIL mysql-prepared-statements: http 403 for https://dev.mysql.com/doc/refman/8.4/en/sql-prepared-statements.html
+- LICENSE dbt-sql-style: license=verify; verify before redistribution.
+- OK dbt-sql-style: status=200 final_url=https://docs.getdbt.com/best-practices/how-we-style/2-how-we-style-our-sql
+- LICENSE dbt-project-style: license=verify; verify before redistribution.
+- OK dbt-project-style: status=200 final_url=https://docs.getdbt.com/best-practices/how-we-style/0-how-we-style-our-dbt-projects
+- LICENSE sqlfluff: license=verify; verify before redistribution.
+- FAIL sqlfluff: robots.txt disallows fetch: https://docs.sqlfluff.com/en/stable/
+- LICENSE google-shellguide: license=verify; verify before redistribution.
+- OK google-shellguide: status=200 final_url=https://google.github.io/styleguide/shellguide.html
+- LICENSE posix-shell-spec: license=verify; verify before redistribution.
+- OK posix-shell-spec: status=200 final_url=https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html
+- LICENSE shellcheck: license=verify; verify before redistribution.
+- OK shellcheck: status=200 final_url=https://www.shellcheck.net/
+- LICENSE bacchelli-bird-2013: license=verify; verify before redistribution.
+- OK bacchelli-bird-2013: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/ICSE202013-codereview.pdf
+- LICENSE sadowski-2018-google: license=verify; verify before redistribution.
+- OK sadowski-2018-google: status=200 final_url=https://sback.it/publications/icse2018seip.pdf
+- LICENSE rigby-bird-2013: license=verify; verify before redistribution.
+- OK rigby-bird-2013: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/rigby2013convergent.pdf
+- LICENSE czerwonka-2015: license=verify; verify before redistribution.
+- OK czerwonka-2015: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2015/05/PID3556473.pdf
+- LICENSE mcintosh-2014: license=verify; verify before redistribution.
+- FAIL mcintosh-2014: http 403 for https://dl.acm.org/doi/10.1145/2597073.2597082
+- LICENSE bosu-2015-useful: license=verify; verify before redistribution.
+- OK bosu-2015-useful: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf
+- LICENSE bitsai-cr-2025: license=verify; verify before redistribution.
+- OK bitsai-cr-2025: status=200 final_url=https://arxiv.org/pdf/2501.15134
+- LICENSE codereviewer-2022: license=verify; verify before redistribution.
+- FAIL codereviewer-2022: http 403 for https://dl.acm.org/doi/10.1145/3540250.3549081
+- LICENSE cr-benchmark-survey-2026: license=verify; verify before redistribution.
+- OK cr-benchmark-survey-2026: status=200 final_url=https://arxiv.org/pdf/2602.13377
+- LICENSE swr-bench-2025: license=verify; verify before redistribution.
+- OK swr-bench-2025: status=200 final_url=https://arxiv.org/pdf/2509.01494
+- LICENSE agentic-review-roadmap: license=verify; verify before redistribution.
+- OK agentic-review-roadmap: status=200 final_url=https://arxiv.org/pdf/2605.17548
+- SKIP mantyla-lassenius-2009: manual source pending. license=verify
+- SKIP beller-2014: manual source pending. license=verify
+- SKIP bavota-russo-2015: manual source pending. license=verify
+- SKIP kemerer-paulk-2009: manual source pending. license=verify
+- SKIP kononenko-2015: manual source pending. license=verify
+- SKIP gunawardena-2023-taxonomy: manual source pending. license=verify
+- SKIP yasa-2025-in-practice: manual source pending. license=verify
+- SKIP watanabe-2024-chatgpt-reviews: manual source pending. license=verify

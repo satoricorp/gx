@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "f8e2cb4e6ecdc4a2c325674b2129b068e0136c5e89a83b091c0455ac4a7fb8a4",
+  "source_id": "bosu-2015-useful"
+}

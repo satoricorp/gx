@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://scorecard.dev/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "e2ed41c121a06c3f8cf4911c36a5ab43f325918d14b09d9472b35d1f9caa3bcc",
+  "source_id": "openssf-scorecard"
+}

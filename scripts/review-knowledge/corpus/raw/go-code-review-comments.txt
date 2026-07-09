@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+
+<link rel="preconnect" href="https://www.googletagmanager.com">
+<script >(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-W8MVQXG');</script>
+  
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#00add8">
+<link rel="canonical" href="https://go.dev/wiki/CodeReviewComments">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons">
+<link rel="stylesheet" href="/css/styles.css">
+<link rel="icon" href="/images/favicon-gopher.png" sizes="any">
+<link rel="apple-touch-icon" href="/images/favicon-gopher-plain.png"/>
+<link rel="icon" href="/images/favicon-gopher.svg" type="image/svg+xml">
+<link rel="me" href="https://hachyderm.io/@golang">
+
+  
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-W8MVQXG');</script>
+  
+<script src="/js/site.js"></script>
+<meta name="og:url" content="https://go.dev/wiki/CodeReviewComments">
+<meta name="og:title" content="Go Wiki: Go Code Review Comments - The Go Programming Language">
+<title>Go Wiki: Go Code Review Comments - The Go Programming Language</title>
+
+<meta name="og:image" content="https://go.dev/doc/gopher/gopher5logo.jpg">
+<meta name="twitter:image" content="https://go.dev/doc/gopher/gopherbelly300.jpg">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@golang">
+</head>
+<body class="Site">
+  
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-W8MVQXG"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  
+
+
+<header class="Site-header js-siteHeader">
+  <div class="Header Header--dark">
+    <nav class="Header-nav">
+      <a href="/">
+        <img
+          class="js-headerLogo Header-logo"
+          src="/images/go-logo-white.svg"
+          alt="Go">
+      </a>
+      <div class="skip-navigation-wrapper">
+        <a class="skip-to-content-link" aria-label="Skip to main content" href="#main-content"> Skip to Main Content </a>
+      </div>
+      <div class="Header-rightContent">
+        <ul class="Header-menu">
+          <li class="Header-menuItem ">
+            <a href="#"  class="js-desktop-menu-hover" aria-label=Why&#32;Go aria-describedby="dropdown-description">
+              Why Go <i class="material-icons" aria-hidden="true">arrow_drop_down</i>
+            </a>
+            <div class="screen-reader-only" id="dropdown-description" hidden>
+              Press Enter to activate/deactivate dropdown
+            </div>
+              <ul class="Header-submenu js-desktop-submenu-hover" aria-label="submenu">
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/solutions/case-studies">
+                          Case Studies
+                          
+                        </a>
+                    </div>
+                    <p>Common problems companies solve with Go</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/solutions/use-cases">
+                          Use Cases
+                          
+                        </a>
+                    </div>
+                    <p>Stories about how and why companies use Go</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/security/">
+                          Security
+                          
+                        </a>
+                    </div>
+                    <p>How Go can help keep you secure by default</p>
+                  </li>
+              </ul>
+          </li>
+          <li class="Header-menuItem ">
+            <a href="/learn/"  aria-label=Learn aria-describedby="dropdown-description">
+              Learn 
+            </a>
+            <div class="screen-reader-only" id="dropdown-description" hidden>
+              Press Enter to activate/deactivate dropdown
+            </div>
+          </li>
+          <li class="Header-menuItem ">
+            <a href="#"  class="js-desktop-menu-hover" aria-label=Docs aria-describedby="dropdown-description">
+              Docs <i class="material-icons" aria-hidden="true">arrow_drop_down</i>
+            </a>
+            <div class="screen-reader-only" id="dropdown-description" hidden>
+              Press Enter to activate/deactivate dropdown
+            </div>
+              <ul class="Header-submenu js-desktop-submenu-hover" aria-label="submenu">
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/ref/spec">
+                          Go Spec
+                          
+                        </a>
+                    </div>
+                    <p>The official Go language specification</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/doc">
+                          Go User Manual
+                          
+                        </a>
+                    </div>
+                    <p>A complete introduction to building software with Go</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="https://pkg.go.dev/std">
+                          Standard library
+                          
+                        </a>
+                    </div>
+                    <p>Reference documentation for Go&#39;s standard library</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/doc/devel/release">
+                          Release Notes
+                          
+                        </a>
+                    </div>
+                    <p>Learn what&#39;s new in each Go release</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/doc/effective_go">
+                          Effective Go
+                          
+                        </a>
+                    </div>
+                    <p>Tips for writing clear, performant, and idiomatic Go code</p>
+                  </li>
+              </ul>
+          </li>
+          <li class="Header-menuItem ">
+            <a href="https://pkg.go.dev"  aria-label=Packages aria-describedby="dropdown-description">
+              Packages 
+            </a>
+            <div class="screen-reader-only" id="dropdown-description" hidden>
+              Press Enter to activate/deactivate dropdown
+            </div>
+          </li>
+          <li class="Header-menuItem ">
+            <a href="#"  class="js-desktop-menu-hover" aria-label=Community aria-describedby="dropdown-description">
+              Community <i class="material-icons" aria-hidden="true">arrow_drop_down</i>
+            </a>
+            <div class="screen-reader-only" id="dropdown-description" hidden>
+              Press Enter to activate/deactivate dropdown
+            </div>
+              <ul class="Header-submenu js-desktop-submenu-hover" aria-label="submenu">
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/talks/">
+                          Recorded Talks
+                          
+                        </a>
+                    </div>
+                    <p>Videos from prior events</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="https://www.meetup.com/pro/go">
+                          Meetups
+                           <i class="material-icons">open_in_new</i>
+                        </a>
+                    </div>
+                    <p>Meet other local Go developers</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/wiki/Conferences">
+                          Conferences
+                           <i class="material-icons">open_in_new</i>
+                        </a>
+                    </div>
+                    <p>Learn and network with Go developers from around the world</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/blog">
+                          Go blog
+                          
+                        </a>
+                    </div>
+                    <p>The Go project&#39;s official blog.</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        <a href="/help">
+                          Go project
+                          
+                        </a>
+                    </div>
+                    <p>Get help and stay informed from Go</p>
+                  </li>
+                  <li class="Header-submenuItem">
+                    <div>
+                        Get connected
+                    </div>
+                    <p></p>
+                      <div class="Header-socialIcons">
+                        
+                        <a class="Header-socialIcon" aria-label="Get connected with google-groups (Opens in new window)" href="https://groups.google.com/g/golang-nuts"><img src="/images/logos/social/google-groups.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with github (Opens in new window)" href="https://github.com/golang"><img src="/images/logos/social/github.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with bluesky (Opens in new window)" href="https://bsky.app/profile/golang.org"><img src="/images/logos/social/bluesky.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with mastodon (Opens in new window)" href="https://hachyderm.io/@golang"><img src="/images/logos/social/mastodon.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with twitter (Opens in new window)" href="https://twitter.com/golang"><img src="/images/logos/social/twitter.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with reddit (Opens in new window)" href="https://www.reddit.com/r/golang/"><img src="/images/logos/social/reddit.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with slack (Opens in new window)" href="https://invite.slack.golangbridge.org/"><img src="/images/logos/social/slack.svg" /></a>
+                        <a class="Header-socialIcon" aria-label="Get connected with stack-overflow (Opens in new window)" href="https://stackoverflow.com/tags/go"><img src="/images/logos/social/stack-overflow.svg" /></a>
+                      </div>
+                  </li>
+              </ul>
+          </li>
+        </ul>
+        <button class="Header-navOpen js-headerMenuButton Header-navOpen--white" aria-label="Open navigation.">
+        </button>
+      </div>
+    </nav>
+    
+  </div>
+</header>
+<aside class="NavigationDrawer js-header">
+  <nav class="NavigationDrawer-nav">
+    <div class="NavigationDrawer-header">
+      <a href="/">
+        <img class="NavigationDrawer-logo" src="/images/go-logo-blue.svg" alt="Go.">
+      </a>
+    </div>
+    <ul class="NavigationDrawer-list">
+        
+          <li class="NavigationDrawer-listItem js-mobile-subnav-trigger  NavigationDrawer-hasSubnav">
+            <a href="#"><span>Why Go</span> <i class="material-icons">navigate_next</i></a>
+
+            <div class="NavigationDrawer NavigationDrawer-submenuItem">
+              <nav class="NavigationDrawer-nav">
+                <div class="NavigationDrawer-header">
+                  <a href="#"><i class="material-icons">navigate_before</i>Why Go</a>
+                </div>
+                <ul class="NavigationDrawer-list">
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/solutions/case-studies">
+                          Case Studies
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/solutions/use-cases">
+                          Use Cases
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/security/">
+                          Security
+                          
+                        </a>
+                      
+                    </li>
+                </ul>
+              </div>
+            </div>
+          </li>
+
+        
+        
+          <li class="NavigationDrawer-listItem ">
+            <a href="/learn/">Learn</a>
+          </li>
+        
+        
+          <li class="NavigationDrawer-listItem js-mobile-subnav-trigger  NavigationDrawer-hasSubnav">
+            <a href="#"><span>Docs</span> <i class="material-icons">navigate_next</i></a>
+
+            <div class="NavigationDrawer NavigationDrawer-submenuItem">
+              <nav class="NavigationDrawer-nav">
+                <div class="NavigationDrawer-header">
+                  <a href="#"><i class="material-icons">navigate_before</i>Docs</a>
+                </div>
+                <ul class="NavigationDrawer-list">
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/ref/spec">
+                          Go Spec
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/doc">
+                          Go User Manual
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="https://pkg.go.dev/std">
+                          Standard library
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/doc/devel/release">
+                          Release Notes
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/doc/effective_go">
+                          Effective Go
+                          
+                        </a>
+                      
+                    </li>
+                </ul>
+              </div>
+            </div>
+          </li>
+
+        
+        
+          <li class="NavigationDrawer-listItem ">
+            <a href="https://pkg.go.dev">Packages</a>
+          </li>
+        
+        
+          <li class="NavigationDrawer-listItem js-mobile-subnav-trigger  NavigationDrawer-hasSubnav">
+            <a href="#"><span>Community</span> <i class="material-icons">navigate_next</i></a>
+
+            <div class="NavigationDrawer NavigationDrawer-submenuItem">
+              <nav class="NavigationDrawer-nav">
+                <div class="NavigationDrawer-header">
+                  <a href="#"><i class="material-icons">navigate_before</i>Community</a>
+                </div>
+                <ul class="NavigationDrawer-list">
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/talks/">
+                          Recorded Talks
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="https://www.meetup.com/pro/go">
+                          Meetups
+                           <i class="material-icons">open_in_new</i>
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/wiki/Conferences">
+                          Conferences
+                           <i class="material-icons">open_in_new</i>
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/blog">
+                          Go blog
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <a href="/help">
+                          Go project
+                          
+                        </a>
+                      
+                    </li>
+                    <li class="NavigationDrawer-listItem">
+                        <div>Get connected</div>
+                        <div class="Header-socialIcons">
+                          
+                            <a class="Header-socialIcon" href="https://groups.google.com/g/golang-nuts"><img src="/images/logos/social/google-groups.svg" /></a>
+                            <a class="Header-socialIcon" href="https://github.com/golang"><img src="/images/logos/social/github.svg" /></a>
+                            <a class="Header-socialIcon" href="https://bsky.app/profile/golang.org"><img src="/images/logos/social/bluesky.svg" /></a>
+                            <a class="Header-socialIcon" href="https://hachyderm.io/@golang"><img src="/images/logos/social/mastodon.svg" /></a>
+                            <a class="Header-socialIcon" href="https://twitter.com/golang"><img src="/images/logos/social/twitter.svg" /></a>
+                            <a class="Header-socialIcon" href="https://www.reddit.com/r/golang/"><img src="/images/logos/social/reddit.svg" /></a>
+                            <a class="Header-socialIcon" href="https://invite.slack.golangbridge.org/"><img src="/images/logos/social/slack.svg" /></a>
+                            <a class="Header-socialIcon" href="https://stackoverflow.com/tags/go"><img src="/images/logos/social/stack-overflow.svg" /></a>
+                        </div>
+                    </li>
+                </ul>
+              </div>
+            </div>
+          </li>
+
+        
+    </ul>
+  </nav>
+</aside>
+<div class="NavigationDrawer-scrim js-scrim" role="presentation"></div>
+<main class="SiteContent SiteContent--default" id="main-content">
+  
+
+
+<article class="Doc Article">
+
+
+
+
+
+<h1>Go Wiki: Go Code Review Comments</h1>
+
+
+
+
+
+
+<div id="nav" class="TOC"></div>
+
+
+
+<div class='markdown'>
+<p>This page collects common comments made during reviews of Go code, so
+that a single detailed explanation can be referred to by shorthands.
+This is a laundry list of common style issues, not a comprehensive style guide.</p>
+<p>You can view this as a supplement to <a href="https://go.dev/doc/effective_go" rel="noreferrer" target="_blank">Effective Go</a>.</p>
+<p>Additional comments related to testing can be found at <a href="/wiki/TestComments">Go Test Comments</a></p>
+<p>Google has published a longer <a href="https://google.github.io/styleguide/go/decisions" rel="noreferrer" target="_blank">Go Style Guide</a>.</p>
+<p><strong>Please <a href="https://go.dev/issue/new?title=wiki%3A+CodeReviewComments+change&amp;body=&amp;labels=Documentation" rel="noreferrer" target="_blank">discuss changes</a> before editing this page</strong>, even <em>minor</em> ones. Many people have opinions and this is not the place for edit wars.</p>
+<ul>
+<li><a href="#gofmt">Gofmt</a></li>
+<li><a href="#comment-sentences">Comment Sentences</a></li>
+<li><a href="#contexts">Contexts</a></li>
+<li><a href="#copying">Copying</a></li>
+<li><a href="#crypto-rand">Crypto Rand</a></li>
+<li><a href="#declaring-empty-slices">Declaring Empty Slices</a></li>
+<li><a href="#doc-comments">Doc Comments</a></li>
+<li><a href="#dont-panic">Don&rsquo;t Panic</a></li>
+<li><a href="#error-strings">Error Strings</a></li>
+<li><a href="#examples">Examples</a></li>
+<li><a href="#goroutine-lifetimes">Goroutine Lifetimes</a></li>
+<li><a href="#handle-errors">Handle Errors</a></li>
+<li><a href="#imports">Imports</a></li>
+<li><a href="#import-blank">Import Blank</a></li>
+<li><a href="#import-dot">Import Dot</a></li>
+<li><a href="#in-band-errors">In-Band Errors</a></li>
+<li><a href="#indent-error-flow">Indent Error Flow</a></li>
+<li><a href="#initialisms">Initialisms</a></li>
+<li><a href="#interfaces">Interfaces</a></li>
+<li><a href="#line-length">Line Length</a></li>
+<li><a href="#mixed-caps">Mixed Caps</a></li>
+<li><a href="#named-result-parameters">Named Result Parameters</a></li>
+<li><a href="#naked-returns">Naked Returns</a></li>
+<li><a href="#package-comments">Package Comments</a></li>
+<li><a href="#package-names">Package Names</a></li>
+<li><a href="#pass-values">Pass Values</a></li>
+<li><a href="#receiver-names">Receiver Names</a></li>
+<li><a href="#receiver-type">Receiver Type</a></li>
+<li><a href="#synchronous-functions">Synchronous Functions</a></li>
+<li><a href="#useful-test-failures">Useful Test Failures</a></li>
+<li><a href="#variable-names">Variable Names</a></li>
+</ul>
+<h2 id="gofmt">Gofmt</h2>
+<p>Run <a href="https://pkg.go.dev/cmd/gofmt/" rel="noreferrer" target="_blank">gofmt</a> on your code to automatically fix the majority of mechanical style issues. Almost all Go code in the wild uses <code>gofmt</code>. The rest of this document addresses non-mechanical style points.</p>
+<p>An alternative is to use <a href="https://pkg.go.dev/golang.org/x/tools/cmd/goimports" rel="noreferrer" target="_blank">goimports</a>, a superset of <code>gofmt</code> which additionally adds (and removes) import lines as necessary.</p>
+<h2 id="comment-sentences">Comment Sentences</h2>
+<p>See <a href="https://go.dev/doc/effective_go#commentary" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#commentary</a>. Comments documenting declarations should be full sentences, even if that seems a little redundant. This approach makes them format well when extracted into godoc documentation. Comments should begin with the name of the thing being described and end in a period:</p>
+<pre><code class="language-go">// Request represents a request to run a command.
+type Request struct { ...
+
+// Encode writes the JSON encoding of req to w.
+func Encode(w io.Writer, req *Request) { ...
+</code></pre>
+<p>and so on.</p>
+<h2 id="contexts">Contexts</h2>
+<p>Values of the context.Context type carry security credentials,
+tracing information, deadlines, and cancellation signals across API
+and process boundaries. Go programs pass Contexts explicitly along
+the entire function call chain from incoming RPCs and HTTP requests
+to outgoing requests.</p>
+<p>Most functions that use a Context should accept it as their first parameter:</p>
+<pre><code>func F(ctx context.Context, /* other arguments */) {}
+</code></pre>
+<p>A function that is never request-specific may use context.Background(),
+but err on the side of passing a Context even if you think you don&rsquo;t need
+to. The default case is to pass a Context; only use context.Background()
+directly if you have a good reason why the alternative is a mistake.</p>
+<p>Don&rsquo;t add a Context member to a struct type; instead add a ctx parameter
+to each method on that type that needs to pass it along. The one exception
+is for methods whose signature must match an interface in the standard library
+or in a third party library.</p>
+<p>Don&rsquo;t create custom Context types or use interfaces other than Context in
+function signatures.</p>
+<p>If you have application data to pass around, put it in a parameter,
+in the receiver, in globals, or, if it truly belongs there, in a Context value.</p>
+<p>Contexts are immutable, so it&rsquo;s fine to pass the same ctx to multiple
+calls that share the same deadline, cancellation signal, credentials,
+parent trace, etc.</p>
+<h2 id="copying">Copying</h2>
+<p>To avoid unexpected aliasing, be careful when copying a struct from another package.
+For example, the bytes.Buffer type contains a <code>[]byte</code> slice. If you copy a <code>Buffer</code>,
+the slice in the copy may alias the array in the original, causing subsequent method
+calls to have surprising effects.</p>
+<p>In general, do not copy a value of type <code>T</code> if its methods are associated with the
+pointer type, <code>*T</code>.</p>
+<h2 id="crypto-rand">Crypto Rand</h2>
+<p>Do not use package <a href="https://pkg.go.dev/math/rand" rel="noreferrer" target="_blank"><code>math/rand</code></a>
+or <a href="https://pkg.go.dev/math/rand/v2" rel="noreferrer" target="_blank"><code>math/rand/v2</code></a> to generate keys, even throwaway ones.
+Seeded with <a href="https://pkg.go.dev/time#Time.Nanosecond" rel="noreferrer" target="_blank"><code>Time.Nanoseconds()</code></a>,
+there are just a few bits of entropy.
+Instead, use <a href="https://pkg.go.dev/crypto/rand#pkg-variables" rel="noreferrer" target="_blank"><code>crypto/rand.Reader</code></a>.
+If you need text, use <a href="https://pkg.go.dev/crypto/rand#Text" rel="noreferrer" target="_blank"><code>crypto/rand.Text</code></a>,
+or alternatively, encode random bytes with <a href="https://pkg.go.dev/encoding/hex" rel="noreferrer" target="_blank"><code>encoding/hex</code></a>
+or <a href="https://pkg.go.dev/encoding/base64" rel="noreferrer" target="_blank"><code>encoding/base64</code></a>.</p>
+<pre><code class="language-go">import (
+    &quot;crypto/rand&quot;
+    &quot;fmt&quot;
+)
+
+func Key() string {
+  return rand.Text()
+}
+</code></pre>
+<h2 id="declaring-empty-slices">Declaring Empty Slices</h2>
+<p>When declaring an empty slice, prefer</p>
+<pre><code class="language-go">var t []string
+</code></pre>
+<p>over</p>
+<pre><code class="language-go">t := []string{}
+</code></pre>
+<p>The former declares a nil slice value, while the latter is non-nil but zero-length. They are functionally equivalent—their <code>len</code> and <code>cap</code> are both zero—but the nil slice is the preferred style.</p>
+<p>Note that there are limited circumstances where a non-nil but zero-length slice is preferred, such as when encoding JSON objects (a <code>nil</code> slice encodes to <code>null</code>, while <code>[]string{}</code> encodes to the JSON array <code>[]</code>).</p>
+<p>When designing interfaces, avoid making a distinction between a nil slice and a non-nil, zero-length slice, as this can lead to subtle programming errors.</p>
+<p>For more discussion about nil in Go see Francesc Campoy&rsquo;s talk <a href="https://www.youtube.com/watch?v=ynoY2xz-F8s" rel="noreferrer" target="_blank">Understanding Nil</a>.</p>
+<h2 id="doc-comments">Doc Comments</h2>
+<p>All top-level, exported names should have doc comments, as should non-trivial unexported type or function declarations. See <a href="https://go.dev/doc/effective_go#commentary" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#commentary</a> for more information about commentary conventions.</p>
+<h2 id="dont-panic">Don&rsquo;t Panic</h2>
+<p>See <a href="https://go.dev/doc/effective_go#errors" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#errors</a>. Don&rsquo;t use panic for normal error handling. Use error and multiple return values.</p>
+<h2 id="error-strings">Error Strings</h2>
+<p>Error strings should not be capitalized (unless beginning with proper nouns or acronyms) or end with punctuation, since they are usually printed following other context. That is, use <code>fmt.Errorf(&quot;something bad&quot;)</code> not <code>fmt.Errorf(&quot;Something bad&quot;)</code>, so that <code>log.Printf(&quot;Reading %s: %v&quot;, filename, err)</code> formats without a spurious capital letter mid-message. This does not apply to logging, which is implicitly line-oriented and not combined inside other messages.</p>
+<h2 id="examples">Examples</h2>
+<p>When adding a new package, include examples of intended usage: a runnable Example,
+or a simple test demonstrating a complete call sequence.</p>
+<p>Read more about <a href="https://go.dev/blog/examples" rel="noreferrer" target="_blank">testable Example() functions</a>.</p>
+<h2 id="goroutine-lifetimes">Goroutine Lifetimes</h2>
+<p>When you spawn goroutines, make it clear when - or whether - they exit.</p>
+<p>Goroutines can leak by blocking on channel sends or receives: the garbage collector
+will not terminate a goroutine even if the channels it is blocked on are unreachable.</p>
+<p>Even when goroutines do not leak, leaving them in-flight when they are no longer
+needed can cause other subtle and hard-to-diagnose problems. Sends on closed channels
+panic. Modifying still-in-use inputs &ldquo;after the result isn&rsquo;t needed&rdquo; can still lead
+to data races. And leaving goroutines in-flight for arbitrarily long can lead to
+unpredictable memory usage.</p>
+<p>Try to keep concurrent code simple enough that goroutine lifetimes are obvious.
+If that just isn&rsquo;t feasible, document when and why the goroutines exit.</p>
+<h2 id="handle-errors">Handle Errors</h2>
+<p>See <a href="https://go.dev/doc/effective_go#errors" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#errors</a>. Do not discard errors using <code>_</code> variables. If a function returns an error, check it to make sure the function succeeded. Handle the error, return it, or, in truly exceptional situations, panic.</p>
+<h2 id="imports">Imports</h2>
+<p>Avoid renaming imports except to avoid a name collision; good package names
+should not require renaming. In the event of collision, prefer to rename the most
+local or project-specific import.</p>
+<p>Imports are organized in groups, with blank lines between them.
+The standard library packages are always in the first group.</p>
+<pre><code class="language-go">package main
+
+import (
+    &quot;fmt&quot;
+    &quot;hash/adler32&quot;
+    &quot;os&quot;
+
+    &quot;github.com/foo/bar&quot;
+    &quot;rsc.io/goversion/version&quot;
+)
+</code></pre>
+<p><a href="https://pkg.go.dev/golang.org/x/tools/cmd/goimports">goimports</a> will do this for you.</p>
+<h2 id="import-blank">Import Blank</h2>
+<p>Packages that are imported only for their side effects (using the syntax <code>import _ &quot;pkg&quot;</code>) should only be imported in the main package of a program, or in tests
+that require them.</p>
+<h2 id="import-dot">Import Dot</h2>
+<p>The import . form can be useful in tests that, due to circular dependencies, cannot be made part of the package being tested:</p>
+<pre><code class="language-go">package foo_test
+
+import (
+    &quot;bar/testutil&quot; // also imports &quot;foo&quot;
+    . &quot;foo&quot;
+)
+</code></pre>
+<p>In this case, the test file cannot be in package foo because it uses bar/testutil, which imports foo. So we use the &lsquo;import .&rsquo; form to let the file pretend to be part of package foo even though it is not. Except for this one case, do not use import . in your programs. It makes the programs much harder to read because it is unclear whether a name like Quux is a top-level identifier in the current package or in an imported package.</p>
+<h2 id="in-band-errors">In-Band Errors</h2>
+<p>In C and similar languages, it&rsquo;s common for functions to return values like -1
+or null to signal errors or missing results:</p>
+<pre><code class="language-go">// Lookup returns the value for key or &quot;&quot; if there is no mapping for key.
+func Lookup(key string) string
+
+// Failing to check for an in-band error value can lead to bugs:
+Parse(Lookup(key))  // returns &quot;parse failure for value&quot; instead of &quot;no value for key&quot;
+</code></pre>
+<p>Go&rsquo;s support for multiple return values provides a better solution.
+Instead of requiring clients to check for an in-band error value, a function should return
+an additional value to indicate whether its other return values are valid. This return
+value may be an error, or a boolean when no explanation is needed.
+It should be the final return value.</p>
+<pre><code class="language-go">// Lookup returns the value for key or ok=false if there is no mapping for key.
+func Lookup(key string) (value string, ok bool)
+</code></pre>
+<p>This prevents the caller from using the result incorrectly:</p>
+<pre><code class="language-go">Parse(Lookup(key))  // compile-time error
+</code></pre>
+<p>And encourages more robust and readable code:</p>
+<pre><code class="language-go">value, ok := Lookup(key)
+if !ok {
+    return fmt.Errorf(&quot;no value for %q&quot;, key)
+}
+return Parse(value)
+</code></pre>
+<p>This rule applies to exported functions but is also useful
+for unexported functions.</p>
+<p>Return values like nil, &ldquo;&rdquo;, 0, and -1 are fine when they are
+valid results for a function, that is, when the caller need not
+handle them differently from other values.</p>
+<p>Some standard library functions, like those in package &ldquo;strings&rdquo;,
+return in-band error values. This greatly simplifies string-manipulation
+code at the cost of requiring more diligence from the programmer.
+In general, Go code should return additional values for errors.</p>
+<h2 id="indent-error-flow">Indent Error Flow</h2>
+<p>Try to keep the normal code path at a minimal indentation, and indent the error handling, dealing with it first. This improves the readability of the code by permitting visually scanning the normal path quickly. For instance, don&rsquo;t write:</p>
+<pre><code class="language-go">if err != nil {
+    // error handling
+} else {
+    // normal code
+}
+</code></pre>
+<p>Instead, write:</p>
+<pre><code class="language-go">if err != nil {
+    // error handling
+    return // or continue, etc.
+}
+// normal code
+</code></pre>
+<p>If the <code>if</code> statement has an initialization statement, such as:</p>
+<pre><code class="language-go">if x, err := f(); err != nil {
+    // error handling
+    return
+} else {
+    // use x
+}
+</code></pre>
+<p>then this may require moving the short variable declaration to its own line:</p>
+<pre><code class="language-go">x, err := f()
+if err != nil {
+    // error handling
+    return
+}
+// use x
+</code></pre>
+<h2 id="initialisms">Initialisms</h2>
+<p>Words in names that are initialisms or acronyms (e.g. &ldquo;URL&rdquo; or &ldquo;NATO&rdquo;) have a consistent case. For example, &ldquo;URL&rdquo; should appear as &ldquo;URL&rdquo; or &ldquo;url&rdquo; (as in &ldquo;urlPony&rdquo;, or &ldquo;URLPony&rdquo;), never as &ldquo;Url&rdquo;. As an example: ServeHTTP not ServeHttp. For identifiers with multiple initialized &ldquo;words&rdquo;, use for example &ldquo;xmlHTTPRequest&rdquo; or &ldquo;XMLHTTPRequest&rdquo;.</p>
+<p>This rule also applies to &ldquo;ID&rdquo; when it is short for &ldquo;identifier&rdquo; (which is pretty much all cases when it&rsquo;s not the &ldquo;id&rdquo; as in &ldquo;ego&rdquo;, &ldquo;superego&rdquo;), so write &ldquo;appID&rdquo; instead of &ldquo;appId&rdquo;.</p>
+<p>Code generated by the protocol buffer compiler is exempt from this rule. Human-written code is held to a higher standard than machine-written code.</p>
+<h2 id="interfaces">Interfaces</h2>
+<p>Go interfaces generally belong in the package that uses values of the
+interface type, not the package that implements those values. The
+implementing package should return concrete (usually pointer or struct)
+types: that way, new methods can be added to implementations without
+requiring extensive refactoring.</p>
+<p>Do not define interfaces on the implementor side of an API &ldquo;for mocking&rdquo;;
+instead, design the API so that it can be tested using the public API of
+the real implementation.</p>
+<p>Do not define interfaces before they are used: without a realistic example
+of usage, it is too difficult to see whether an interface is even necessary,
+let alone what methods it ought to contain.</p>
+<pre><code class="language-go">package consumer  // consumer.go
+
+type Thinger interface { Thing() bool }
+
+func Foo(t Thinger) string { … }
+</code></pre>
+<pre><code class="language-go">package consumer // consumer_test.go
+
+type fakeThinger struct{ … }
+func (t fakeThinger) Thing() bool { … }
+…
+if Foo(fakeThinger{…}) == &quot;x&quot; { … }
+</code></pre>
+<pre><code class="language-go">// DO NOT DO IT!!!
+package producer
+
+type Thinger interface { Thing() bool }
+
+type defaultThinger struct{ … }
+func (t defaultThinger) Thing() bool { … }
+
+func NewThinger() Thinger { return defaultThinger{ … } }
+</code></pre>
+<p>Instead return a concrete type and let the consumer mock the producer implementation.</p>
+<pre><code class="language-go">package producer
+
+type Thinger struct{ … }
+func (t Thinger) Thing() bool { … }
+
+func NewThinger() Thinger { return Thinger{ … } }
+</code></pre>
+<h2 id="line-length">Line Length</h2>
+<p>There is no rigid line length limit in Go code, but avoid uncomfortably long lines.
+Similarly, don&rsquo;t add line breaks to keep lines short when they are more readable long&ndash;for example,
+if they are repetitive.</p>
+<p>Most of the time when people wrap lines &ldquo;unnaturally&rdquo; (in the middle of function calls or
+function declarations, more or less, say, though some exceptions are around), the wrapping would be
+unnecessary if they had a reasonable number of parameters and reasonably short variable names.
+Long lines seem to go with long names, and getting rid of the long names helps a lot.</p>
+<p>In other words, break lines because of the semantics of what you&rsquo;re writing (as a general rule)
+and not because of the length of the line. If you find that this produces lines that are too long,
+then change the names or the semantics and you&rsquo;ll probably get a good result.</p>
+<p>This is, actually, exactly the same advice about how long a function should be. There&rsquo;s no rule
+&ldquo;never have a function more than N lines long&rdquo;, but there is definitely such a thing as too long
+of a function, and of too repetitive tiny functions, and the solution is to change where the function
+boundaries are, not to start counting lines.</p>
+<h2 id="mixed-caps">Mixed Caps</h2>
+<p>See <a href="https://go.dev/doc/effective_go#mixed-caps" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#mixed-caps</a>. This applies even when it breaks conventions in other languages. For example an unexported constant is <code>maxLength</code> not <code>MaxLength</code> or <code>MAX_LENGTH</code>.</p>
+<p>Also see <a href="/wiki/CodeReviewComments#initialisms">Initialisms</a>.</p>
+<h2 id="named-result-parameters">Named Result Parameters</h2>
+<p>Consider what it will look like in godoc. Named result parameters like:</p>
+<pre><code class="language-go">func (n *Node) Parent1() (node *Node) {}
+func (n *Node) Parent2() (node *Node, err error) {}
+</code></pre>
+<p>will be repetitive in godoc; better to use:</p>
+<pre><code class="language-go">func (n *Node) Parent1() *Node {}
+func (n *Node) Parent2() (*Node, error) {}
+</code></pre>
+<p>On the other hand, if a function returns two or three parameters of the same type,
+or if the meaning of a result isn&rsquo;t clear from context, adding names may be useful
+in some contexts. Don&rsquo;t name result parameters just to avoid declaring a var inside
+the function; that trades off a minor implementation brevity at the cost of
+unnecessary API verbosity.</p>
+<pre><code class="language-go">func (f *Foo) Location() (float64, float64, error)
+</code></pre>
+<p>is less clear than:</p>
+<pre><code class="language-go">// Location returns f's latitude and longitude.
+// Negative values mean south and west, respectively.
+func (f *Foo) Location() (lat, long float64, err error)
+</code></pre>
+<p>Naked returns are okay if the function is a handful of lines. Once it&rsquo;s a medium
+sized function, be explicit with your return values. Corollary: it&rsquo;s not worth it
+to name result parameters just because it enables you to use naked returns.
+Clarity of docs is always more important than saving a line or two in your function.</p>
+<p>Finally, in some cases you need to name a result parameter in order to change
+it in a deferred closure. That is always OK.</p>
+<h2 id="naked-returns">Naked Returns</h2>
+<p>A <code>return</code> statement without arguments returns the named return values. This is known as a &ldquo;naked&rdquo; return.</p>
+<pre><code class="language-go">func split(sum int) (x, y int) {
+    x = sum * 4 / 9
+    y = sum - x
+    return
+}
+</code></pre>
+<p>See <a href="#named-result-parameters">Named Result Parameters</a>.</p>
+<h2 id="package-comments">Package Comments</h2>
+<p>Package comments, like all comments to be presented by godoc, must appear adjacent to the package clause, with no blank line.</p>
+<pre><code class="language-go">// Package math provides basic constants and mathematical functions.
+package math
+</code></pre>
+<pre><code class="language-go">/*
+Package template implements data-driven templates for generating textual
+output such as HTML.
+....
+*/
+package template
+</code></pre>
+<p>For &ldquo;package main&rdquo; comments, other styles of comment are fine after the binary name (and it may be capitalized if it comes first), For example, for a <code>package main</code> in the directory <code>seedgen</code> you could write:</p>
+<pre><code class="language-go">// Binary seedgen ...
+package main
+</code></pre>
+<p>or</p>
+<pre><code class="language-go">// Command seedgen ...
+package main
+</code></pre>
+<p>or</p>
+<pre><code class="language-go">// Program seedgen ...
+package main
+</code></pre>
+<p>or</p>
+<pre><code class="language-go">// The seedgen command ...
+package main
+</code></pre>
+<p>or</p>
+<pre><code class="language-go">// The seedgen program ...
+package main
+</code></pre>
+<p>or</p>
+<pre><code class="language-go">// Seedgen ..
+package main
+</code></pre>
+<p>These are examples, and sensible variants of these are acceptable.</p>
+<p>Note that starting the sentence with a lower-case word is not among the
+acceptable options for package comments, as these are publicly-visible and
+should be written in proper English, including capitalizing the first word
+of the sentence. When the binary name is the first word, capitalizing it is
+required even though it does not strictly match the spelling of the
+command-line invocation.</p>
+<p>See <a href="https://go.dev/doc/effective_go#commentary" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#commentary</a> for more information about commentary conventions.</p>
+<h2 id="package-names">Package Names</h2>
+<p>All references to names in your package will be done using the package name,
+so you can omit that name from the identifiers. For example, if you are in package chubby,
+you don&rsquo;t need type ChubbyFile, which clients will write as <code>chubby.ChubbyFile</code>.
+Instead, name the type <code>File</code>, which clients will write as <code>chubby.File</code>.
+Avoid meaningless package names like util, common, misc, api, types, and interfaces. See <a href="https://go.dev/doc/effective_go#package-names" rel="noreferrer" target="_blank">https://go.dev/doc/effective_go#package-names</a> and
+<a href="https://go.dev/blog/package-names" rel="noreferrer" target="_blank">https://go.dev/blog/package-names</a> for more.</p>
+<h2 id="pass-values">Pass Values</h2>
+<p>Don&rsquo;t pass pointers as function arguments just to save a few bytes. If a function refers to its argument <code>x</code> only as <code>*x</code> throughout, then the argument shouldn&rsquo;t be a pointer. Common instances of this include passing a pointer to a string (<code>*string</code>) or a pointer to an interface value (<code>*io.Reader</code>). In both cases the value itself is a fixed size and can be passed directly. This advice does not apply to large structs, or even small structs that might grow.</p>
+<h2 id="receiver-names">Receiver Names</h2>
+<p>The name of a method&rsquo;s receiver should be a reflection of its identity; often a one or two letter abbreviation of its type suffices (such as &ldquo;c&rdquo; or &ldquo;cl&rdquo; for &ldquo;Client&rdquo;). Don&rsquo;t use generic names such as &ldquo;me&rdquo;, &ldquo;this&rdquo; or &ldquo;self&rdquo;, identifiers typical of object-oriented languages that gives the method a special meaning. In Go, the receiver of a method is just another parameter and therefore, should be named accordingly. The name need not be as descriptive as that of a method argument, as its role is obvious and serves no documentary purpose. It can be very short as it will appear on almost every line of every method of the type; familiarity admits brevity. Be consistent, too: if you call the receiver &ldquo;c&rdquo; in one method, don&rsquo;t call it &ldquo;cl&rdquo; in another.</p>
+<h2 id="receiver-type">Receiver Type</h2>
+<p>Choosing whether to use a value or pointer receiver on methods can be difficult, especially to new Go programmers. If in doubt, use a pointer, but there are times when a value receiver makes sense, usually for reasons of efficiency, such as for small unchanging structs or values of basic type. Some useful guidelines:</p>
+<ul>
+<li>If the receiver is a map, func or chan, don&rsquo;t use a pointer to them. If the receiver is a slice and the method doesn&rsquo;t reslice or reallocate the slice, don&rsquo;t use a pointer to it.</li>
+<li>If the method needs to mutate the receiver, the receiver must be a pointer.</li>
+<li>If the receiver is a struct that contains a sync.Mutex or similar synchronizing field, the receiver must be a pointer to avoid copying.</li>
+<li>If the receiver is a large struct or array, a pointer receiver is more efficient. How large is large? Assume it&rsquo;s equivalent to passing all its elements as arguments to the method. If that feels too large, it&rsquo;s also too large for the receiver.</li>
+<li>Can function or methods, either concurrently or when called from this method, be mutating the receiver? A value type creates a copy of the receiver when the method is invoked, so outside updates will not be applied to this receiver. If changes must be visible in the original receiver, the receiver must be a pointer.</li>
+<li>If the receiver is a struct, array or slice and any of its elements is a pointer to something that might be mutating, prefer a pointer receiver, as it will make the intention clearer to the reader.</li>
+<li>If the receiver is a small array or struct that is naturally a value type (for instance, something like the time.Time type), with no mutable fields and no pointers, or is just a simple basic type such as int or string, a value receiver makes sense. A value receiver can reduce the amount of garbage that can be generated; if a value is passed to a value method, an on-stack copy can be used instead of allocating on the heap. (The compiler tries to be smart about avoiding this allocation, but it can&rsquo;t always succeed.) Don&rsquo;t choose a value receiver type for this reason without profiling first.</li>
+<li>Don&rsquo;t mix receiver types. Choose either pointers or struct types for all available methods.</li>
+<li>Finally, when in doubt, use a pointer receiver.</li>
+</ul>
+<h2 id="synchronous-functions">Synchronous Functions</h2>
+<p>Prefer synchronous functions - functions which return their results directly or finish any callbacks or channel ops before returning - over asynchronous ones.</p>
+<p>Synchronous functions keep goroutines localized within a call, making it easier to reason about their lifetimes and avoid leaks and data races. They&rsquo;re also easier to test: the caller can pass an input and check the output without the need for polling or synchronization.</p>
+<p>If callers need more concurrency, they can add it easily by calling the function from a separate goroutine. But it is quite difficult - sometimes impossible - to remove unnecessary concurrency at the caller side.</p>
+<h2 id="useful-test-failures">Useful Test Failures</h2>
+<p>Tests should fail with helpful messages saying what was wrong, with what inputs, what was actually got, and what was expected. It may be tempting to write a bunch of assertFoo helpers, but be sure your helpers produce useful error messages. Assume that the person debugging your failing test is not you, and is not your team. A typical Go test fails like:</p>
+<pre><code class="language-go">if got != tt.want {
+    t.Errorf(&quot;Foo(%q) = %d; want %d&quot;, tt.in, got, tt.want) // or Fatalf, if test can't test anything more past this point
+}
+</code></pre>
+<p>Note that the order here is actual != expected, and the message uses that order too. Some test frameworks encourage writing these backwards: 0 != x, &ldquo;expected 0, got x&rdquo;, and so on. Go does not.</p>
+<p>If that seems like a lot of typing, you may want to write a <a href="TableDrivenTests">table-driven test</a>.</p>
+<p>Another common technique to disambiguate failing tests when using a test helper with different input is to wrap each caller with a different TestFoo function, so the test fails with that name:</p>
+<pre><code class="language-go">func TestSingleValue(t *testing.T) { testHelper(t, []int{80}) }
+func TestNoValues(t *testing.T)    { testHelper(t, []int{}) }
+</code></pre>
+<p>In any case, the onus is on you to fail with a helpful message to whoever&rsquo;s debugging your code in the future.</p>
+<h2 id="variable-names">Variable Names</h2>
+<p>Variable names in Go should be short rather than long. This is especially true for local variables with limited scope. Prefer <code>c</code> to <code>lineCount</code>. Prefer <code>i</code> to <code>sliceIndex</code>.</p>
+<p>The basic rule: the further from its declaration that a name is used, the more descriptive the name must be. For a method receiver, one or two letters is sufficient. Common variables such as loop indices and readers can be a single letter (<code>i</code>, <code>r</code>). More unusual things and global variables need more descriptive names.</p>
+<p>See also the longer discussion in <a href="https://google.github.io/styleguide/go/decisions#variable-names" rel="noreferrer" target="_blank">the Google Go Style Guide</a>.</p>
+</div>
+
+
+
+
+
+<hr>
+<p>
+<i>This content is part of the <a href="/wiki/">Go Wiki</a>.</i>
+</p>
+
+
+
+</article>
+
+
+
+</main>
+<footer class="Site-footer">
+  <div class="Footer">
+    <div class="Container">
+      <div class="Footer-links">
+          <div class="Footer-linkColumn">
+            <a href="/solutions/" class="Footer-link Footer-link--primary" aria-describedby="footer-description">
+              Why Go
+            </a>
+              <a href="/solutions/use-cases" class="Footer-link" aria-describedby="footer-description">
+                Use Cases
+              </a>
+              <a href="/solutions/case-studies" class="Footer-link" aria-describedby="footer-description">
+                Case Studies
+              </a>
+          </div>
+          <div class="Footer-linkColumn">
+            <a href="/learn/" class="Footer-link Footer-link--primary" aria-describedby="footer-description">
+              Get Started
+            </a>
+              <a href="/play" class="Footer-link" aria-describedby="footer-description">
+                Playground
+              </a>
+              <a href="/tour/" class="Footer-link" aria-describedby="footer-description">
+                Tour
+              </a>
+              <a href="https://stackoverflow.com/questions/tagged/go?tab=Newest" class="Footer-link" aria-describedby="footer-description">
+                Stack Overflow
+              </a>
+              <a href="/help/" class="Footer-link" aria-describedby="footer-description">
+                Help
+              </a>
+          </div>
+          <div class="Footer-linkColumn">
+            <a href="https://pkg.go.dev" class="Footer-link Footer-link--primary" aria-describedby="footer-description">
+              Packages
+            </a>
+              <a href="/pkg/" class="Footer-link" aria-describedby="footer-description">
+                Standard Library
+              </a>
+              <a href="https://pkg.go.dev/about" class="Footer-link" aria-describedby="footer-description">
+                About Go Packages
+              </a>
+              <a href="https://pkg.go.dev/api" class="Footer-link" aria-describedby="footer-description">
+                pkg.go.dev API
+              </a>
+          </div>
+          <div class="Footer-linkColumn">
+            <a href="/project" class="Footer-link Footer-link--primary" aria-describedby="footer-description">
+              About
+            </a>
+              <a href="/dl/" class="Footer-link" aria-describedby="footer-description">
+                Download
+              </a>
+              <a href="/blog/" class="Footer-link" aria-describedby="footer-description">
+                Blog
+              </a>
+              <a href="https://github.com/golang/go/issues" class="Footer-link" aria-describedby="footer-description">
+                Issue Tracker
+              </a>
+              <a href="/doc/devel/release" class="Footer-link" aria-describedby="footer-description">
+                Release Notes
+              </a>
+              <a href="/brand" class="Footer-link" aria-describedby="footer-description">
+                Brand Guidelines
+              </a>
+              <a href="/conduct" class="Footer-link" aria-describedby="footer-description">
+                Code of Conduct
+              </a>
+          </div>
+          <div class="Footer-linkColumn">
+            <a href="/wiki/#the-go-community" class="Footer-link Footer-link--primary" aria-describedby="footer-description">
+              Connect
+            </a>
+              <a href="https://bsky.app/profile/golang.org" class="Footer-link" aria-describedby="footer-description">
+                Bluesky
+              </a>
+              <a href="https://hachyderm.io/@golang" class="Footer-link" aria-describedby="footer-description">
+                Mastodon
+              </a>
+              <a href="https://www.twitter.com/golang" class="Footer-link" aria-describedby="footer-description">
+                Twitter
+              </a>
+              <a href="https://github.com/golang" class="Footer-link" aria-describedby="footer-description">
+                GitHub
+              </a>
+              <a href="https://invite.slack.golangbridge.org/" class="Footer-link" aria-describedby="footer-description">
+                Slack
+              </a>
+              <a href="https://reddit.com/r/golang" class="Footer-link" aria-describedby="footer-description">
+                r/golang
+              </a>
+              <a href="https://www.meetup.com/pro/go" class="Footer-link" aria-describedby="footer-description">
+                Meetup
+              </a>
+              <a href="https://golangweekly.com/" class="Footer-link" aria-describedby="footer-description">
+                Golang Weekly
+              </a>
+          </div>
+      </div>
+    </div>
+  </div>
+  <div class="screen-reader-only" id="footer-description" hidden>
+          Opens in new window.
+  </div>
+  <div class="Footer">
+    <div class="Container Container--fullBleed">
+      <div class="Footer-bottom">
+        <img class="Footer-gopher" src="/images/gophers/pilot-bust.svg" alt="The Go Gopher">
+        <ul class="Footer-listRow">
+          <li class="Footer-listItem">
+            <a href="/copyright" aria-describedby="footer-description">Copyright</a>
+          </li>
+          <li class="Footer-listItem">
+            <a href="/tos" aria-describedby="footer-description">Terms of Service</a>
+          </li>
+          <li class="Footer-listItem">
+            <a href="http://www.google.com/intl/en/policies/privacy/" aria-describedby="footer-description"
+              target="_blank"
+              rel="noopener">
+              Privacy Policy
+            </a>
+            </li>
+          <li class="Footer-listItem">
+            <a
+              href="/s/website-issue" aria-describedby="footer-description"
+              target="_blank"
+              rel="noopener"
+              >
+              Report an Issue
+            </a>
+          </li>
+          <li class="Footer-listItem go-Footer-listItem">
+            <button class="go-Button go-Button--text go-Footer-toggleTheme js-toggleTheme" aria-label="Toggle theme">
+              <img
+                data-value="auto"
+                class="go-Icon go-Icon--inverted"
+                height="24"
+                width="24"
+                src="/images/icons/brightness_6_gm_grey_24dp.svg"
+                alt="System theme">
+              <img
+                data-value="dark"
+                class="go-Icon go-Icon--inverted"
+                height="24"
+                width="24"
+                src="/images/icons/brightness_2_gm_grey_24dp.svg"
+                alt="Dark theme">
+              <img
+                data-value="light"
+                class="go-Icon go-Icon--inverted"
+                height="24"
+                width="24"
+                src="/images/icons/light_mode_gm_grey_24dp.svg"
+                alt="Light theme">
+            </button>
+          </li>
+        </ul>
+        <a class="Footer-googleLogo" target="_blank" href="https://google.com" rel="noopener">
+          <img class="Footer-googleLogoImg" src="/images/google-white.png" alt="Google logo">
+        </a>
+      </div>
+    </div>
+  </div>
+  <script src="/js/jquery.js"></script>
+  <script src="/js/carousels.js"></script>
+  <script src="/js/searchBox.js"></script>
+  <script src="/js/misc.js"></script>
+  <script src="/js/hats.js"></script>
+  <script src="/js/playground.js"></script>
+  <script src="/js/godocs.js"></script>
+  <script async src="/js/copypaste.js"></script>
+</footer>
+<section class="Cookie-notice js-cookieNotice">
+  <div>go.dev uses cookies from Google to deliver and enhance the quality of its services and to
+  analyze traffic. <a target=_blank href="https://policies.google.com/technologies/cookies">Learn more.</a></div>
+  <div><button class="go-Button">Okay</button></div>
+</section>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

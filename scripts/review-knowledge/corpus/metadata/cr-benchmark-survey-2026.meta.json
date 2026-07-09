@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://arxiv.org/pdf/2602.13377",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d1c7bc7b0edad0aedc14a4b51c2a3d488bf8b46233fceb163df5f073900dae42",
+  "source_id": "cr-benchmark-survey-2026"
+}

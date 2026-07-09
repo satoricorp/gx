@@ -1,7 +1,7 @@
 # Review Knowledge Index
 
-This directory seeds a TurboPuffer corpus for review guidance that can later be
-queried by `gx review --deep` and GitHub PR review generation.
+This directory builds the versioned TurboPuffer corpora used by `gx review
+--deep` and GitHub PR review generation.
 
 The corpus is retrieval context, not a replacement for GX heuristics. Keep the
 deterministic review rules in code. Use this index for official standards,
@@ -10,10 +10,11 @@ model can cite or use as supporting context.
 
 ## Files
 
-- `urls.json`: source URLs plus GX-specific seed notes from the initial review
-  rules discussion.
-- `index_review_resources.py`: fetches, extracts, chunks, embeds, and upserts
-  seed notes plus fetched source text into TurboPuffer.
+- `sources.yaml`: approved v2 source manifest. This supersedes `urls.json`.
+- `golden_queries.yaml`: 50-query eval gate manifest.
+- `index_review_resources.py`: validates, fetches, normalizes, chunks, embeds,
+  indexes, refreshes, and scaffolds eval output.
+- `urls.json`: retained only as the v1 manifest/reference.
 
 ## Source Policy
 
@@ -36,10 +37,10 @@ there is no primary source. If a seed note is opinionated, keep it in
 
 ## Current Coverage
 
-The initial manifest covers core review process, web/security standards,
-supply-chain standards, TypeScript/JavaScript, Python, Go, and Rust. It now
-also includes broad public and enterprise review coverage for Java, C, C++,
-SQL, C#, shell, PHP, Kotlin, and Swift.
+The v2 manifest covers review process, cross-cutting security, TypeScript,
+Python, Go, Rust, SQL, shell, style/linter sources, and empirical research.
+Research sources are routed to `research-corpus-v1` and are not used for
+review-time retrieval.
 
 Treat SQL and shell as cross-cutting review profiles as much as languages. A
 TypeScript, Python, Java, Go, Rust, or C# change can still need SQL review when
@@ -64,11 +65,11 @@ export GX_OPENAI_BASE_URL=https://api.openai.com
 export GX_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 export GX_EMBEDDING_DIMENSIONS=512
 export GX_TPUF_BASE_URL=https://gcp-us-central1.turbopuffer.com
+export GX_REVIEW_CANDIDATE_NAMESPACE=review-corpus-v2
 export GX_REVIEW_KNOWLEDGE_NAMESPACE=gx-review-knowledge
+export GX_RESEARCH_CORPUS_NAMESPACE=research-corpus-v1
 export GX_REVIEW_RESOURCES=1
 export GX_REVIEW_RESOURCES_TOP_K=8
-export GX_REVIEW_KNOWLEDGE_CHUNK_CHARS=2400
-export GX_REVIEW_KNOWLEDGE_OVERLAP_CHARS=350
 ```
 
 The default namespace is intentionally separate from `GX_TPUF_NAMESPACE`
@@ -82,37 +83,65 @@ shallow retrieval limit; the default is 8 so repo-local policy files can remain
 in the model context alongside review resources. `gx review --deep` raises the
 minimum resource limit to 24.
 
-The manifest keeps display fields such as `languages`, `frameworks`,
-`risk_tags`, and `review_tags` as readable strings. The index also writes
-array-backed filter fields named `language_tags`, `framework_tags`,
-`risk_tag_values`, and `review_tag_values` so review can query exact tags with
-TurboPuffer `ContainsAny` filters.
+The v2 index stores filterable metadata including `tier`, `languages`,
+`authority`, `precedence_group`, `superseded_by`, `historical`, `section_path`,
+`cwe_ids`, `content_sha256`, `fetched_at`, and `usefulness_rank`. The `body`
+field is full-text indexed for BM25; runtime retrieval uses vector + BM25
+multi-query RRF.
 
 ## Usage
 
 Validate the manifest without network or API calls:
 
 ```bash
-python3 scripts/review-knowledge/index_review_resources.py --dry-run
+python3 scripts/review-knowledge/index_review_resources.py dry-run
 ```
 
-Index only the curated seed notes from `urls.json`:
+Fetch and normalize sources:
 
 ```bash
-python3 scripts/review-knowledge/index_review_resources.py --seed-only
+python3 scripts/review-knowledge/index_review_resources.py fetch
 ```
 
-Fetch source pages and index both seed notes and fetched source chunks:
+Chunk normalized sources and write build artifacts:
 
 ```bash
-python3 scripts/review-knowledge/index_review_resources.py
+python3 scripts/review-knowledge/index_review_resources.py chunk
 ```
 
-Smoke test a small subset:
+Index normalized chunks into candidate `review-corpus-v2` and
+`research-corpus-v1`:
 
 ```bash
-python3 scripts/review-knowledge/index_review_resources.py --limit 3 --seed-only
+python3 scripts/review-knowledge/index_review_resources.py index
 ```
+
+Smoke test a small subset without network/API calls:
+
+```bash
+python3 scripts/review-knowledge/index_review_resources.py dry-run --limit 3
+python3 scripts/review-knowledge/index_review_resources.py chunk --limit 3 --seed-only
+```
+
+Run the eval gate. Without API credentials this writes a skipped report; with
+`OPENAI_API_KEY` and `TURBOPUFFER_API_KEY` it compares `gx-review-knowledge`
+against `review-corpus-v2` and writes recall/precedence results:
+
+```bash
+python3 scripts/review-knowledge/index_review_resources.py eval
+```
+
+After the eval gate passes, promote the same v2 review chunks into the
+production namespace (`gx-review-knowledge`) so production can cut over without
+changing namespace names:
+
+```bash
+python3 scripts/review-knowledge/index_review_resources.py promote
+```
+
+`promote` upserts `source_kind=review_corpus` rows into `gx-review-knowledge`.
+It does not delete legacy `source_kind=review_knowledge` rows, so old readers
+continue working during the application rollout.
 
 ## Retrieval Shape
 
@@ -130,6 +159,9 @@ Suggested priority when constructing model context:
 2. retrieved official standards and language/tool docs
 3. prior repo findings or human review comments
 4. seed notes from this manifest
+
+Do not delete legacy `source_kind=review_knowledge` rows until v2 passes the
+eval gate and completes the 7-day soak.
 
 This keeps the index useful without making imported guidance more authoritative
 than repo-local policy or deterministic GX findings.

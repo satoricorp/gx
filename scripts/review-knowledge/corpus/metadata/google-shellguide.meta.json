@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://google.github.io/styleguide/shellguide.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "669506058c90194a26ea3b0cefea9d67f401884d5650ee0db868fde76d473089",
+  "source_id": "google-shellguide"
+}

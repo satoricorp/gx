@@ -1,0 +1,10 @@
+{
+  "error": "http 403 for https://dev.mysql.com/doc/refman/8.4/en/sql-prepared-statements.html",
+  "fetched_at": "2026-07-08",
+  "final_url": null,
+  "http_status": null,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": null,
+  "source_id": "mysql-prepared-statements"
+}

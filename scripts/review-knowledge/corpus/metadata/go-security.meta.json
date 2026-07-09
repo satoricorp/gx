@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://go.dev/doc/security/best-practices",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "730275bcd9ca3cbc20b055852073cdaa7fb33f03eb0da76e74e52bb3f01661a9",
+  "source_id": "go-security"
+}

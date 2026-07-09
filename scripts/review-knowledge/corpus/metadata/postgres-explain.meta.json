@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.postgresql.org/docs/current/using-explain.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8f1746d862bea8e55bd88f9a9cb5cffc4d6b194d1bb07e840b54d34ea8710410",
+  "source_id": "postgres-explain"
+}

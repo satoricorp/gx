@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://eslint.org/docs/latest/rules/no-unsafe-finally",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4f4714c94e8845ff620e6e0a0ebc76a5c1856e53a6c937a0e9f835e08976b5d7",
+  "source_id": "eslint-rules"
+}

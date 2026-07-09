@@ -1,0 +1,10 @@
+{
+  "error": "robots.txt disallows fetch: https://cheatsheetseries.owasp.org/index.html",
+  "fetched_at": "2026-07-08",
+  "final_url": null,
+  "http_status": null,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": null,
+  "source_id": "owasp-cheatsheets"
+}

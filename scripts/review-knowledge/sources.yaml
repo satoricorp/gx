@@ -1,0 +1,364 @@
+# Approved source manifest for review-corpus-v2 and research-corpus-v1.
+# This supersedes urls.json for v2. Defaults: authority: 2,
+# precedence_group: null, superseded_by: null, historical: false,
+# crawl_depth: 0, fetch: html, license: verify.
+sources:
+  - id: google-eng-practices
+    url: https://google.github.io/eng-practices/review/
+    tier: process
+    authority: 1
+    crawl_depth: 2
+    notes: "Subsumes former standard.html, looking-for.html, small-cls.html entries. Covers reviewer + author guides."
+  - id: ms-playbook-code-reviews
+    url: https://microsoft.github.io/code-with-engineering-playbook/code-reviews/
+    tier: process
+    crawl_depth: 1
+    notes: "Subsumes former reviewer-guidance entry."
+  - id: gitlab-code-review
+    url: https://docs.gitlab.com/development/code_review/
+    tier: process
+  - id: firefox-reviewer-checklist
+    url: https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html
+    tier: process
+  - id: smartbear-best-practices
+    url: https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
+    tier: process
+    notes: "Cisco study summary; source of 200-400 LOC and <500 LOC/hr findings."
+  - id: conventional-comments
+    url: https://conventionalcomments.org/
+    tier: process
+    notes: "Comment labeling taxonomy; candidate output format for machine-generated comments."
+  - id: owasp-asvs
+    url: https://github.com/OWASP/ASVS
+    tier: security
+    authority: 1
+    precedence_group: security-spine
+    fetch: github-md
+    crawl_depth: 2
+    notes: "SPINE of security rules per precedence table. Fetch 5.0 markdown from repo, not the project landing page."
+  - id: owasp-top10
+    url: https://owasp.org/Top10/
+    tier: security
+    precedence_group: security-spine
+    crawl_depth: 1
+    notes: "Cross-reference metadata; ranked below ASVS."
+  - id: cwe-top25
+    url: https://cwe.mitre.org/top25/
+    tier: security
+    precedence_group: security-spine
+    notes: "Cross-reference metadata (cwe_ids); ranked below ASVS."
+  - id: owasp-cheatsheets
+    url: https://cheatsheetseries.owasp.org/index.html
+    tier: security
+    crawl_depth: 1
+    notes: "Crawl subsumes SQLi + Database Security cheatsheet entries below; dedup by URL."
+  - id: owasp-sqli-cheatsheet
+    url: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+    tier: security
+    languages: [sql]
+  - id: owasp-db-cheatsheet
+    url: https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html
+    tier: security
+    languages: [sql]
+  - id: openssf-concise-guide
+    url: https://best.openssf.org/Concise-Guide-for-Developing-More-Secure-Software
+    tier: security
+  - id: openssf-scorecard
+    url: https://scorecard.dev/
+    tier: security
+    notes: "Supply chain checks."
+  - id: slsa
+    url: https://slsa.dev/
+    tier: security
+    crawl_depth: 1
+    notes: "Supply chain levels."
+  - id: nist-ssdf-800-218
+    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    tier: security
+    authority: 3
+    fetch: pdf
+    notes: "Process compliance, not code review. Retained for completeness; candidate for retrieval exclusion - low authority keeps it deprioritized."
+  - id: semgrep-registry
+    url: https://semgrep.dev/r
+    tier: security
+    notes: "JS app, not crawlable HTML - use registry API or github.com/semgrep/semgrep-rules for rule text. Prior art for rule taxonomy."
+  - id: google-tsguide
+    url: https://google.github.io/styleguide/tsguide.html
+    tier: language
+    languages: [typescript]
+    precedence_group: ts-style
+    notes: "Wins on design-level topics with no lint rule; loses to ts-eslint on mechanical conflicts. Default-export ban: encode as prefer-named with framework exceptions."
+  - id: tsconfig-reference
+    url: https://www.typescriptlang.org/tsconfig/
+    tier: language
+    languages: [typescript]
+    authority: 3
+    notes: "Reference material for config review."
+  - id: typescript-eslint-typed-linting
+    url: https://typescript-eslint.io/getting-started/typed-linting/
+    tier: language
+    languages: [typescript]
+    authority: 1
+    precedence_group: ts-style
+  - id: eslint-rules
+    url: https://eslint.org/docs/latest/rules/
+    tier: style
+    languages: [typescript, javascript]
+    crawl_depth: 1
+    notes: "DECISION-B tier. Large crawl; rule pages are atomic chunks."
+  - id: nodejs-security
+    url: https://nodejs.org/en/learn/getting-started/security-best-practices
+    tier: security
+    languages: [typescript, javascript]
+  - id: pep8
+    url: https://peps.python.org/pep-0008/
+    tier: language
+    languages: [python]
+    precedence_group: python-style
+    notes: "Formatting sections: chunk-level superseded_by: ruff per spec Phase 2."
+  - id: google-pyguide
+    url: https://google.github.io/styleguide/pyguide.html
+    tier: language
+    languages: [python]
+    authority: 3
+    precedence_group: python-style
+  - id: ruff
+    url: https://docs.astral.sh/ruff/
+    tier: style
+    languages: [python]
+    authority: 1
+    precedence_group: python-style
+    crawl_depth: 1
+    notes: "WINNER of python-style group. Pin google docstring convention (D211/D212); tag D203/D213 chunks superseded."
+  - id: mypy
+    url: https://mypy.readthedocs.io/
+    tier: language
+    languages: [python]
+    crawl_depth: 1
+    notes: "Tag tool-specific behavior chunks; typing spec (typing-python) is authoritative on semantics."
+  - id: typing-python-spec
+    url: https://typing.python.org/
+    tier: language
+    languages: [python]
+    authority: 1
+    crawl_depth: 1
+  - id: bandit
+    url: https://bandit.readthedocs.io/
+    tier: security
+    languages: [python]
+    crawl_depth: 1
+  - id: google-go-style
+    url: https://google.github.io/styleguide/go/
+    tier: language
+    languages: [go]
+    authority: 1
+    precedence_group: go-guidance
+    crawl_depth: 1
+    notes: "WINNER of go-guidance group."
+  - id: go-code-review-comments
+    url: https://go.dev/wiki/CodeReviewComments
+    tier: language
+    languages: [go]
+    precedence_group: go-guidance
+  - id: uber-go-guide
+    url: https://github.com/uber-go/guide
+    tier: language
+    languages: [go]
+    precedence_group: go-guidance
+    fetch: github-md
+    notes: "Supplemental strictness; where stricter than Google (init(), error wrapping), Uber's rule is adopted."
+  - id: effective-go
+    url: https://go.dev/doc/effective_go
+    tier: language
+    languages: [go]
+    authority: 4
+    precedence_group: go-guidance
+    historical: true
+    notes: "Officially frozen, predates generics. NEVER served as rule source; background only."
+  - id: go-security
+    url: https://go.dev/security/best-practices
+    tier: security
+    languages: [go]
+  - id: govulncheck
+    url: https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
+    tier: security
+    languages: [go]
+    authority: 3
+  - id: rust-api-guidelines
+    url: https://rust-lang.github.io/api-guidelines/about.html
+    tier: language
+    languages: [rust]
+    authority: 1
+    crawl_depth: 1
+  - id: rust-nomicon
+    url: https://doc.rust-lang.org/nomicon/
+    tier: language
+    languages: [rust]
+    crawl_depth: 1
+    notes: "Unsafe semantics background."
+  - id: rust-unsafe-code-guidelines
+    url: https://rust-lang.github.io/unsafe-code-guidelines/
+    tier: language
+    languages: [rust]
+    authority: 3
+    crawl_depth: 1
+    notes: "Explicitly non-normative WIP - rules derived from it must be advisory severity only."
+  - id: clippy
+    url: https://doc.rust-lang.org/clippy/
+    tier: style
+    languages: [rust]
+    crawl_depth: 1
+    notes: "DECISION-B tier for lint-level content; correctness lints are tier language."
+  - id: miri
+    url: https://github.com/rust-lang/miri/
+    tier: language
+    languages: [rust]
+    authority: 3
+    fetch: github-md
+  - id: rustsec
+    url: https://rustsec.org/
+    tier: security
+    languages: [rust]
+    authority: 3
+  - id: postgres-explain
+    url: https://www.postgresql.org/docs/current/using-explain.html
+    tier: language
+    languages: [sql]
+  - id: postgres-txn-isolation
+    url: https://www.postgresql.org/docs/current/transaction-iso.html
+    tier: language
+    languages: [sql]
+  - id: mysql-prepared-statements
+    url: https://dev.mysql.com/doc/refman/8.4/en/sql-prepared-statements.html
+    tier: language
+    languages: [sql]
+  - id: dbt-sql-style
+    url: https://docs.getdbt.com/best-practices/how-we-style/2-how-we-style-our-sql
+    tier: style
+    languages: [sql]
+    authority: 1
+    precedence_group: sql-style
+    notes: "Canonical SQL style source (Mozilla + GitLab guides removed as redundant)."
+  - id: dbt-project-style
+    url: https://docs.getdbt.com/best-practices/how-we-style/0-how-we-style-our-dbt-projects
+    tier: style
+    languages: [sql]
+    authority: 3
+  - id: sqlfluff
+    url: https://docs.sqlfluff.com/en/stable/
+    tier: style
+    languages: [sql]
+    precedence_group: sql-style
+    crawl_depth: 1
+    notes: "Crawl covers the former separate /reference/rules.html entry; dedup by URL."
+  - id: google-shellguide
+    url: https://google.github.io/styleguide/shellguide.html
+    tier: language
+    languages: [shell]
+    authority: 1
+  - id: posix-shell-spec
+    url: https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html
+    tier: language
+    languages: [shell]
+    authority: 4
+    notes: "Spec reference; background only."
+  - id: shellcheck
+    url: https://www.shellcheck.net/
+    tier: style
+    languages: [shell]
+    notes: "Homepage is thin - the value is the wiki: fetch github.com/koalaman/shellcheck/wiki check pages instead."
+  - id: bacchelli-bird-2013
+    url: https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
+    tier: research
+    fetch: pdf
+    notes: "Foundational MCR study; review motivations != defect finding. PDF linked from pub page."
+  - id: sadowski-2018-google
+    url: https://sback.it/publications/icse2018seip.pdf
+    tier: research
+    fetch: pdf
+    notes: "Modern Code Review: A Case Study at Google."
+  - id: rigby-bird-2013
+    url: https://www.microsoft.com/en-us/research/publication/convergent-software-peer-review-practices/
+    tier: research
+    fetch: pdf
+    notes: "Convergent practices: small changes, fast turnaround. Empirical basis for demux/stacking."
+  - id: czerwonka-2015
+    url: https://www.microsoft.com/en-us/research/wp-content/uploads/2015/05/PID3556473.pdf
+    tier: research
+    fetch: pdf
+    notes: "Code Reviews Do Not Find Bugs (ICSE 2015)."
+  - id: mcintosh-2014
+    url: https://dl.acm.org/doi/10.1145/2597073.2597082
+    tier: research
+    fetch: pdf
+    notes: "Review coverage/participation vs post-release defects (MSR 2014). ACM page may gate PDF - fall back to author preprint, mark manual if blocked."
+  - id: bosu-2015-useful
+    url: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf
+    tier: research
+    fetch: pdf
+    notes: "Usefulness hierarchy for review comments - drives usefulness_rank field in rule schema."
+  - id: bitsai-cr-2025
+    url: https://arxiv.org/abs/2501.15134
+    tier: research
+    fetch: pdf
+    notes: "BitsAI-CR (ByteDance, FSE 2025). Precision-tracked rule library in production. Closest prior art to GX ruleset. READ FIRST."
+  - id: codereviewer-2022
+    url: https://dl.acm.org/doi/10.1145/3540250.3549081
+    tier: research
+    fetch: pdf
+    notes: "Li et al., CodeReviewer dataset/benchmark (ESEC/FSE 2022). Fall back to arXiv 2203.09095 if gated."
+  - id: cr-benchmark-survey-2026
+    url: https://arxiv.org/abs/2602.13377
+    tier: research
+    fetch: pdf
+    notes: "Survey of code review benchmarks, pre-LLM and LLM era. Use bibliography for backfill."
+  - id: swr-bench-2025
+    url: https://arxiv.org/abs/2509.01494
+    tier: research
+    fetch: pdf
+    notes: "SWR-Bench: LLM review comment generation on real-world PRs."
+  - id: agentic-review-roadmap
+    url: https://arxiv.org/abs/2605.17548
+    tier: research
+    fetch: pdf
+    notes: "Rethinking Code Review in the Age of AI - agentic review vision paper."
+  - id: mantyla-lassenius-2009
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Mantyla & Lassenius, 'What Types of Defects Are Really Discovered in Code Reviews?', IEEE TSE 35(3), 2009. ~75% evolvability finding. Source via doi 10.1109/TSE.2008.71."
+  - id: beller-2014
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Beller et al., 'Modern code reviews in open-source projects: Which problems do they fix?', MSR 2014. 3:1 maintainability:functional ratio; 10-35% no-op comments."
+  - id: bavota-russo-2015
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Bavota & Russo, 'Four Eyes Are Better Than Two', ICSME 2015."
+  - id: kemerer-paulk-2009
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Kemerer & Paulk, review rate (LOC/hr) vs defect removal effectiveness, IEEE TSE 2009. Empirical basis for speed limits."
+  - id: kononenko-2015
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Kononenko et al., developers' perception of code review quality (ICSME 2015)."
+  - id: gunawardena-2023-taxonomy
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Gunawardena, Tempero & Blincoe, 'Concerns identified in code review: A fine-grained, faceted classification', Information and Software Technology 153 (2023) 107054. CANDIDATE RULE CATEGORY SPINE - prioritize sourcing."
+  - id: yasa-2025-in-practice
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Yasa et al., 'Automated code review in practice', ICSE SEIP 2025."
+  - id: watanabe-2024-chatgpt-reviews
+    url: null
+    tier: research
+    fetch: manual
+    notes: "Watanabe et al., 'Do developers like reviews by ChatGPT?', EASE 2024."

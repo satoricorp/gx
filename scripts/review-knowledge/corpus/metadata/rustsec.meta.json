@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://rustsec.org/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "66fb02bedb2fa503feadec938f543b72c26bdea23b235555e1c2c487740ebea3",
+  "source_id": "rustsec"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://raw.githubusercontent.com/uber-go/guide/master/README.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "cccd7ce1e1f67a6fd4c6a9b9c8c09bb1463135595a35c320b79e96c315e6ab57",
+  "source_id": "uber-go-guide"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://doc.rust-lang.org/clippy/installation.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "2c8dd344b0b3d0b10c5d427d732089b16b9452d6db6d78f4598eccb175f696bc",
+  "source_id": "clippy"
+}

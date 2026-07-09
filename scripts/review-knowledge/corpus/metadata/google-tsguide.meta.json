@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://google.github.io/styleguide/tsguide.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "f175e2dbbea31bc40a73e757bbea11f53ad1580bd5d6aa4d10288fa6505832bb",
+  "source_id": "google-tsguide"
+}

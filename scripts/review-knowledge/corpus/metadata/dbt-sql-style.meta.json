@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://docs.getdbt.com/best-practices/how-we-style/2-how-we-style-our-sql",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "6e5b591b08badf4af728ee915ac1b677a7195b73914fb3b3d2083f01aa29facc",
+  "source_id": "dbt-sql-style"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/ICSE202013-codereview.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ba5cae57480e6ebf34ea0a7a122a5249772589bf436d7ee7864f5cc527703f4c",
+  "source_id": "bacchelli-bird-2013"
+}

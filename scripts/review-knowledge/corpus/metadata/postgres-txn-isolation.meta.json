@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "57f82c2ac657f15216b63a6333d9e48ce8ea0d1c350a903e95b3a32a04d0e206",
+  "source_id": "postgres-txn-isolation"
+}

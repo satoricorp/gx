@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://microsoft.github.io/code-with-engineering-playbook/code-reviews/recipes/terraform/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "93ae1547f55fbca2a8572d4c5777fdac51ce0aa92a1fa9bd053424cb871c0c58",
+  "source_id": "ms-playbook-code-reviews"
+}

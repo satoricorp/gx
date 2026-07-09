@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://google.github.io/eng-practices/review/developer/handling-comments.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8cc110848e5a104be8bfee2872c6f4cad7f6f22361d70ae00530f62d5e7fe871",
+  "source_id": "google-eng-practices"
+}

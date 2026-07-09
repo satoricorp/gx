@@ -1,0 +1,10 @@
+{
+  "error": "robots.txt disallows fetch: https://csrc.nist.gov/pubs/sp/800/218/final",
+  "fetched_at": "2026-07-08",
+  "final_url": null,
+  "http_status": null,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": null,
+  "source_id": "nist-ssdf-800-218"
+}

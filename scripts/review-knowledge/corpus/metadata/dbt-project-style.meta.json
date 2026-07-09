@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-07-08",
+  "final_url": "https://docs.getdbt.com/best-practices/how-we-style/0-how-we-style-our-dbt-projects",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "415ea6ffffb8e9adbf5da719bf31af48c68e7dffb86feafc4557358d350c51f1",
+  "source_id": "dbt-project-style"
+}

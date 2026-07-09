@@ -906,7 +906,7 @@ func indexedPRContextSnippets(ctx context.Context, artifact reviewbundle.Artifac
 	var snippets []codereview.ContextSnippet
 	var sources []string
 	if cfg.TurboPufferNamespace != "" {
-		rows := queryPRTurboPuffer(ctx, cfg, cfg.TurboPufferNamespace, vectors[0], []any{"Or", []any{[]any{"source_kind", "Eq", "code_file"}, []any{"source_kind", "Eq", "session_transcript"}}}, 6)
+		rows := queryPRTurboPuffer(ctx, cfg, cfg.TurboPufferNamespace, vectors[0], queryText, "text", []any{"Or", []any{[]any{"source_kind", "Eq", "code_file"}, []any{"source_kind", "Eq", "session_transcript"}}}, 6)
 		if len(rows) > 0 {
 			snippets = append(snippets, rowsToPRContextSnippets(rows, "turbopuffer:"+cfg.TurboPufferNamespace)...)
 			sources = append(sources, "indexed code/session")
@@ -916,7 +916,12 @@ func indexedPRContextSnippets(ctx context.Context, artifact reviewbundle.Artifac
 	if reviewNamespace == "" {
 		reviewNamespace = "gx-review-knowledge"
 	}
-	rows := queryPRTurboPuffer(ctx, cfg, reviewNamespace, vectors[0], []any{"And", []any{[]any{"source_kind", "Eq", "review_knowledge"}}}, 4)
+	rows := queryPRTurboPuffer(ctx, cfg, reviewNamespace, vectors[0], queryText, "body", []any{"And", []any{
+		[]any{"source_kind", "Eq", "review_corpus"},
+		[]any{"tier", "NotEq", "research"},
+		[]any{"historical", "Eq", false},
+		[]any{"superseded_by", "Eq", ""},
+	}}, 4)
 	if len(rows) > 0 {
 		snippets = append(snippets, rowsToPRContextSnippets(rows, "turbopuffer:"+reviewNamespace)...)
 		sources = append(sources, "review resources")
@@ -924,16 +929,31 @@ func indexedPRContextSnippets(ctx context.Context, artifact reviewbundle.Artifac
 	return snippets, sortedUnique(sources)
 }
 
-func queryPRTurboPuffer(ctx context.Context, cfg semantic.Config, namespace string, vector []float32, filters any, limit int) []map[string]any {
-	payload := map[string]any{
+func queryPRTurboPuffer(ctx context.Context, cfg semantic.Config, namespace string, vector []float32, text string, textAttribute string, filters any, limit int) []map[string]any {
+	vectorQuery := map[string]any{
 		"rank_by": []any{"vector", "ANN", vector},
 		"limit":   map[string]any{"total": limit},
 		"include_attributes": []string{
-			"text", "source_kind", "source_id", "file_path", "symbol", "start_line", "end_line", "title", "url", "category",
+			"body", "text", "source_kind", "source_id", "file_path", "symbol", "start_line", "end_line", "title", "url", "source_url", "category", "tier",
 		},
 	}
 	if filters != nil {
-		payload["filters"] = filters
+		vectorQuery["filters"] = filters
+	}
+	payload := vectorQuery
+	if strings.TrimSpace(text) != "" {
+		textQuery := map[string]any{
+			"rank_by":            []any{textAttribute, "BM25", text},
+			"limit":              map[string]any{"total": limit},
+			"include_attributes": vectorQuery["include_attributes"],
+		}
+		if filters != nil {
+			textQuery["filters"] = filters
+		}
+		payload = map[string]any{
+			"queries":   []any{vectorQuery, textQuery},
+			"rerank_by": []any{"RRF"},
+		}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -955,10 +975,16 @@ func queryPRTurboPuffer(ctx context.Context, cfg semantic.Config, namespace stri
 		return nil
 	}
 	var decoded struct {
-		Rows []map[string]any `json:"rows"`
+		Rows    []map[string]any `json:"rows"`
+		Results []struct {
+			Rows []map[string]any `json:"rows"`
+		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		return nil
+	}
+	if len(decoded.Rows) == 0 && len(decoded.Results) > 0 {
+		return decoded.Results[0].Rows
 	}
 	return decoded.Rows
 }
@@ -966,11 +992,11 @@ func queryPRTurboPuffer(ctx context.Context, cfg semantic.Config, namespace stri
 func rowsToPRContextSnippets(rows []map[string]any, source string) []codereview.ContextSnippet {
 	var snippets []codereview.ContextSnippet
 	for _, row := range rows {
-		text := stringAny(row["text"])
+		text := firstNonEmpty(stringAny(row["body"]), stringAny(row["text"]))
 		if text == "" {
 			continue
 		}
-		ref := firstNonEmpty(stringAny(row["file_path"]), stringAny(row["source_id"]), stringAny(row["url"]), stringAny(row["title"]))
+		ref := firstNonEmpty(stringAny(row["file_path"]), stringAny(row["source_id"]), stringAny(row["source_url"]), stringAny(row["url"]), stringAny(row["title"]))
 		kind := firstNonEmpty(stringAny(row["source_kind"]), "indexed_context")
 		snippets = append(snippets, codereview.ContextSnippet{
 			Kind:        kind,
@@ -979,7 +1005,7 @@ func rowsToPRContextSnippets(rows []map[string]any, source string) []codereview.
 			SourceLabel: ref,
 			Publisher:   firstNonEmpty(stringAny(row["publisher"]), "this repo"),
 			Text:        limitText(text, maxPRContextSnippetSize),
-			URL:         stringAny(row["url"]),
+			URL:         firstNonEmpty(stringAny(row["source_url"]), stringAny(row["url"])),
 		})
 	}
 	return snippets
