@@ -868,3 +868,169 @@ func TestSessionEventAttributionsDedupeSameEvent(t *testing.T) {
 		t.Fatalf("sessionEventAttributionsFromOutcomes() = %d attributions, want 1 deduped", len(got))
 	}
 }
+
+func gitStagedNames(t *testing.T, root string) string {
+	t.Helper()
+	cmd := exec.Command("git", "diff", "--cached", "--name-only")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git diff --cached --name-only: %v\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestStagedCommitAfterExternalCheckout(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	runGit(t, root, "checkout", "-b", "side")
+	if err := os.WriteFile(filepath.Join(root, "s.txt"), []byte("s\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "s.txt")
+
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "side work"})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision() after external checkout error = %v", err)
+	}
+	if result.Stack == nil || result.Stack.BookmarkName != "side" {
+		t.Fatalf("stack = %v, want bookmark side", result.Stack)
+	}
+	if branch := gitCurrentBranch(t, root); branch != "side" {
+		t.Fatalf("current branch = %q, want side", branch)
+	}
+	if staged := gitStagedNames(t, root); staged != "" {
+		t.Fatalf("staged files remain after commit: %q", staged)
+	}
+}
+
+func TestStatusSnapshotPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	runGit(t, root, "checkout", "-b", "topic")
+	if err := os.WriteFile(filepath.Join(root, "p.txt"), []byte("p\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "p.txt")
+
+	if _, err := svc.StatusSnapshot(context.Background()); err != nil {
+		t.Fatalf("StatusSnapshot() error = %v", err)
+	}
+	if staged := gitStagedNames(t, root); staged != "p.txt" {
+		t.Fatalf("staged files after StatusSnapshot = %q, want p.txt", staged)
+	}
+}
+
+func TestStagedCommitAfterRawGitCommitSyncs(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "raw.txt"), []byte("raw\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "raw.txt")
+	runGit(t, root, "commit", "-m", "raw commit outside gx")
+
+	if err := os.WriteFile(filepath.Join(root, "next.txt"), []byte("next\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "next.txt")
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "after raw commit"})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision() after raw git commit error = %v", err)
+	}
+	if result.Change.CommitID == "" {
+		t.Fatal("recorded change has no commit id")
+	}
+	if staged := gitStagedNames(t, root); staged != "" {
+		t.Fatalf("staged files remain after commit: %q", staged)
+	}
+}
+
+func TestStagedCommitReportsJJClobberedIndex(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "c.txt")
+	runJJ(t, root, "status")
+	if staged := gitStagedNames(t, root); staged != "" {
+		t.Skip("this jj version does not rewrite the git index on snapshot")
+	}
+
+	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "clobbered"})
+	if err == nil {
+		t.Fatal("RecordStagedRevision() error = nil, want clobbered-index explanation")
+	}
+	if !strings.Contains(err.Error(), "re-run git add") {
+		t.Fatalf("error = %v, want intent-to-add explanation with re-run git add", err)
+	}
+	var coded *CodedError
+	if !errors.As(err, &coded) || coded.Code != ExitCodeNoStagedChanges {
+		t.Fatalf("error = %v, want CodedError code %d", err, ExitCodeNoStagedChanges)
+	}
+}
+
+func TestStagedCommitRollbackDeletesMintedBranch(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "mint.txt"), []byte("m\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "mint.txt")
+	beforeCached := gitCachedDiff(t, root)
+
+	stagedCommitAfterImportHook = func() error { return fmt.Errorf("injected mint failure") }
+	t.Cleanup(func() { stagedCommitAfterImportHook = nil })
+
+	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "minted branch rollback"})
+	if err == nil || !strings.Contains(err.Error(), "injected mint failure") {
+		t.Fatalf("RecordStagedRevision() error = %v, want injected failure", err)
+	}
+	if branch := gitCurrentBranch(t, root); branch != "main" {
+		t.Fatalf("branch after rollback = %q, want main", branch)
+	}
+	branches := exec.Command("git", "branch", "--list", "feature/*", "bug/*")
+	branches.Dir = root
+	if out, _ := branches.CombinedOutput(); strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("minted branch left behind after rollback:\n%s", out)
+	}
+	if after := gitCachedDiff(t, root); string(after) != string(beforeCached) {
+		t.Fatalf("cached diff changed after rollback:\nbefore=%q\nafter=%q", beforeCached, after)
+	}
+}
+
+func TestStagedCommitSelfInitializesPlainGitRepo(t *testing.T) {
+	if _, err := exec.LookPath("jj"); err != nil {
+		t.Skip("jj executable not found")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	runGit(t, root, "config", "user.name", "Test User")
+	runGit(t, root, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "init")
+
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	if err := gxconfig.Save(gxconfig.Config{User: gxconfig.User{Name: "Test User", Email: "test@example.com"}}); err != nil {
+		t.Fatalf("gxconfig.Save() error = %v", err)
+	}
+	prev, _ := os.Getwd()
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	if err := os.WriteFile(filepath.Join(root, "n.txt"), []byte("n\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "n.txt")
+
+	svc := NewServiceWithRunner(ExecRunner{})
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "first ever"})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision() in plain git repo error = %v", err)
+	}
+	if result.Change.CommitID == "" {
+		t.Fatal("recorded change has no commit id")
+	}
+}

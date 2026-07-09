@@ -41,6 +41,16 @@ type StatusSnapshot struct {
 }
 
 func (s *Service) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
+	var snapshot StatusSnapshot
+	err := s.preservingGitIndexForCwd(ctx, func() error {
+		var snapErr error
+		snapshot, snapErr = s.statusSnapshotUnguarded(ctx)
+		return snapErr
+	})
+	return snapshot, err
+}
+
+func (s *Service) statusSnapshotUnguarded(ctx context.Context) (StatusSnapshot, error) {
 	stack, err := s.Stack(ctx)
 	if err != nil {
 		return StatusSnapshot{}, err

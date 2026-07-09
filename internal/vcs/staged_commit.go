@@ -55,62 +55,125 @@ type StagedRevisionOptions struct {
 	SessionContexts     []storage.SessionContext
 }
 
+// stagedCapture is the git-only snapshot of the user's staged selection.
+// It must be taken before any jj process runs: jj rewrites the colocated git
+// index (staged entries become intent-to-add placeholders) whenever it
+// snapshots the working copy or imports an externally moved git HEAD.
+type stagedCapture struct {
+	originalBranch string
+	headCommit     string
+	stagedFiles    []string
+	treeOID        string
+}
+
 func (s *Service) RecordStagedRevision(ctx context.Context, opts StagedRevisionOptions) (CommitResult, error) {
 	if err := ValidateCommitMessage(opts.Message); err != nil {
 		return CommitResult{}, err
 	}
-	repo, err := s.configuredJJRepo(ctx)
+	cwd, err := os.Getwd()
 	if err != nil {
 		return CommitResult{}, err
 	}
+	repoRoot, err := s.runTrimmed(ctx, cwd, "git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return CommitResult{}, fmt.Errorf("gx commit must run inside a git repository: %w", err)
+	}
+	repoRoot = strings.TrimSpace(repoRoot)
 	var result CommitResult
-	err = withRepoLock(repo.RootPath, func() error {
+	err = withRepoLock(repoRoot, func() error {
+		capture, captureErr := s.captureStagedState(ctx, repoRoot)
+		if captureErr != nil {
+			return captureErr
+		}
+		repo, repoErr := s.readyStagedCommitRepo(ctx, repoRoot)
+		if repoErr != nil {
+			return repoErr
+		}
 		var commitErr error
-		result, commitErr = s.recordStagedRevisionUnlocked(ctx, repo, opts)
+		result, commitErr = s.recordStagedRevisionUnlocked(ctx, repo, capture, opts)
 		return commitErr
 	})
 	return result, err
 }
 
-func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInfo, opts StagedRevisionOptions) (result CommitResult, err error) {
-	repoRoot := repo.RootPath
+// captureStagedState reads everything gx commit needs from git alone.
+func (s *Service) captureStagedState(ctx context.Context, repoRoot string) (stagedCapture, error) {
 	originalBranch, err := s.currentStagedCommitBranch(ctx, repoRoot)
 	if err != nil {
-		return CommitResult{}, err
+		return stagedCapture{}, err
 	}
 	if err := s.preflightStagedIndex(ctx, repoRoot); err != nil {
-		return CommitResult{}, err
+		return stagedCapture{}, err
 	}
 	headCommit, err := s.runTrimmed(ctx, repoRoot, "git", "rev-parse", "HEAD")
 	if err != nil {
 		if isUnbornHEADError(err) {
-			return CommitResult{}, fmt.Errorf("repository has no commits yet; make an initial commit before gx commit")
+			return stagedCapture{}, fmt.Errorf("repository has no commits yet; make an initial commit before gx commit")
 		}
-		return CommitResult{}, fmt.Errorf("read HEAD: %w", err)
+		return stagedCapture{}, fmt.Errorf("read HEAD: %w", err)
 	}
-	preWCChangeID, err := s.changeIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@")
+	stagedFiles, err := s.stagedFileNames(ctx, repoRoot)
 	if err != nil {
-		return CommitResult{}, fmt.Errorf("read jj working copy: %w", err)
+		return stagedCapture{}, err
 	}
+	treeOID, err := s.runTrimmed(ctx, repoRoot, "git", "write-tree")
+	if err != nil {
+		return stagedCapture{}, fmt.Errorf("write staged tree: %w", err)
+	}
+	return stagedCapture{
+		originalBranch: originalBranch,
+		headCommit:     strings.TrimSpace(headCommit),
+		stagedFiles:    stagedFiles,
+		treeOID:        strings.TrimSpace(treeOID),
+	}, nil
+}
+
+// readyStagedCommitRepo resolves the configured jj repo, initializing it first
+// when gx has never run here. Runs only after captureStagedState.
+func (s *Service) readyStagedCommitRepo(ctx context.Context, repoRoot string) (RepoInfo, error) {
+	repo, err := s.configuredJJRepo(ctx)
+	if err == nil {
+		return repo, nil
+	}
+	if _, initErr := s.InitAtPath(ctx, repoRoot, InitOptions{}); initErr != nil {
+		return RepoInfo{}, fmt.Errorf("initialize gx repo: %w", initErr)
+	}
+	return s.configuredJJRepo(ctx)
+}
+
+func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInfo, capture stagedCapture, opts StagedRevisionOptions) (result CommitResult, err error) {
+	repoRoot := repo.RootPath
+	originalBranch := capture.originalBranch
+	headCommit := capture.headCommit
+	stagedFiles := capture.stagedFiles
+	treeOID := capture.treeOID
+
 	jjParent, err := s.commitIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@-")
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("read jj parent: %w", err)
 	}
-	if strings.TrimSpace(jjParent) != strings.TrimSpace(headCommit) {
-		return CommitResult{}, fmt.Errorf("git HEAD and gx working-copy parent diverged; run gx sync or check out the matching branch before gx commit")
+	preImportWCChangeID := ""
+	if strings.TrimSpace(jjParent) != headCommit {
+		// jj has not seen the user's git checkout yet (branch switch or raw
+		// git commit). The staged tree is already captured, so let jj catch
+		// up and re-check rather than failing. The import strands the old
+		// working-copy change if a snapshot made it non-empty; remember it
+		// so it can be abandoned after the commit succeeds.
+		preImportWCChangeID, _ = s.changeIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@")
+		if _, importErr := s.runner.Run(ctx, repoRoot, "jj", "git", "import"); importErr != nil {
+			return CommitResult{}, fmt.Errorf("sync jj with the git checkout: %w", importErr)
+		}
+		jjParent, err = s.commitIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@-")
+		if err != nil {
+			return CommitResult{}, fmt.Errorf("read jj parent: %w", err)
+		}
+		if strings.TrimSpace(jjParent) != headCommit {
+			return CommitResult{}, fmt.Errorf("git HEAD and gx working-copy parent diverged; check out the branch you want to commit on and retry")
+		}
 	}
-
-	stagedFiles, err := s.stagedFileNames(ctx, repoRoot)
+	preWCChangeID, err := s.changeIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@")
 	if err != nil {
-		return CommitResult{}, err
-	}
-	treeOID, err := s.runTrimmed(ctx, repoRoot, "git", "write-tree")
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("write staged tree: %w", err)
-	}
-	stagedPatch, err := s.runTrimmed(ctx, repoRoot, "git", "diff", "--cached", "--binary")
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("snapshot staged diff: %w", err)
+		return CommitResult{}, fmt.Errorf("read jj working copy: %w", err)
 	}
 
 	opID, err := s.currentOperationIgnoreWorkingCopy(ctx, repoRoot)
@@ -132,20 +195,11 @@ func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInf
 				_, _ = s.runner.Run(ctx, repoRoot, "git", "update-ref", "-d", "refs/heads/"+stackBookmark)
 			}
 			_, _ = s.runner.Run(ctx, repoRoot, "git", "reset", "--mixed", headCommit)
-			if treeOID != "" {
-				_, _ = s.runner.Run(ctx, repoRoot, "git", "restore", "--source="+treeOID, "--staged", ":/")
-			} else if strings.TrimSpace(stagedPatch) != "" {
-				patchPath := filepath.Join(repoRoot, ".gx", "rollback-staged.patch")
-				_ = os.MkdirAll(filepath.Dir(patchPath), 0o755)
-				if writeErr := os.WriteFile(patchPath, []byte(stagedPatch), 0o600); writeErr == nil {
-					_, _ = s.runner.Run(ctx, repoRoot, "git", "apply", "--cached", "--whitespace=nowarn", patchPath)
-					_ = os.Remove(patchPath)
-				}
-			}
+			_, _ = s.runner.Run(ctx, repoRoot, "git", "restore", "--source="+treeOID, "--staged", ":/")
 		}
 	}()
 
-	sessionIDs, sessionContexts, eventAttributions := s.matchStagedSessions(ctx, repoRoot)
+	sessionIDs, sessionContexts, eventAttributions := s.matchStagedSessions(ctx, repoRoot, headCommit, treeOID)
 
 	name, email, err := s.commitTreeIdentity(ctx, repoRoot)
 	if err != nil {
@@ -197,6 +251,11 @@ func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInf
 	}
 	if err := s.abandonOrphanWorkingCopyChange(ctx, repoRoot, preWCChangeID); err != nil {
 		return CommitResult{}, err
+	}
+	if preImportWCChangeID != "" && preImportWCChangeID != preWCChangeID {
+		if err := s.abandonOrphanWorkingCopyChange(ctx, repoRoot, preImportWCChangeID); err != nil {
+			return CommitResult{}, err
+		}
 	}
 	change, err := s.CurrentChange(ctx, repoRoot, "@-")
 	if err != nil {
@@ -274,9 +333,30 @@ func (s *Service) preflightStagedIndex(ctx context.Context, repoRoot string) err
 	if files, err := s.stagedFileNames(ctx, repoRoot); err != nil {
 		return err
 	} else if len(files) == 0 {
+		if s.indexHasIntentToAddEntries(ctx, repoRoot) {
+			return codedError(ExitCodeNoStagedChanges, fmt.Errorf(
+				"%w: the staged selection was reset to intent-to-add entries (jj commands rewrite the git index; git add -N does too); re-run git add",
+				ErrNoStagedChanges))
+		}
 		return codedError(ExitCodeNoStagedChanges, fmt.Errorf("%w; run git add first", ErrNoStagedChanges))
 	}
 	return nil
+}
+
+// indexHasIntentToAddEntries reports whether the index holds intent-to-add
+// placeholders (git status --porcelain " A" lines). jj leaves the index in
+// this state after snapshotting, which silently discards prior git add runs.
+func (s *Service) indexHasIntentToAddEntries(ctx context.Context, repoRoot string) bool {
+	out, err := s.runTrimmed(ctx, repoRoot, "git", "status", "--porcelain")
+	if err != nil {
+		return false
+	}
+	for _, line := range splitLines(out) {
+		if len(line) >= 2 && line[0] == ' ' && line[1] == 'A' {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCachedRawDiff(raw string) (intentToAdd bool, submodule bool) {
@@ -417,6 +497,9 @@ func (s *Service) abandonOrphanWorkingCopyChange(ctx context.Context, repoRoot, 
 	if changeID == "" {
 		return nil
 	}
+	if current, err := s.changeIDForRevIgnoreWorkingCopy(ctx, repoRoot, "@"); err == nil && strings.TrimSpace(current) == changeID {
+		return nil
+	}
 	desc, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "--ignore-working-copy", "-r", changeID, "--no-graph", "-T", "description")
 	if err != nil || strings.TrimSpace(desc) != "" {
 		return nil
@@ -435,11 +518,13 @@ func (s *Service) abandonOrphanWorkingCopyChange(ctx context.Context, repoRoot, 
 	return err
 }
 
-func (s *Service) matchStagedSessions(ctx context.Context, repoRoot string) ([]string, []storage.SessionContext, []storage.SessionEventAttribution) {
+func (s *Service) matchStagedSessions(ctx context.Context, repoRoot, headCommit, treeOID string) ([]string, []storage.SessionContext, []storage.SessionEventAttribution) {
 	if !s.hasKnownAttachableSessions(ctx, repoRoot) {
 		return nil, nil, nil
 	}
-	diff, err := s.runTrimmed(ctx, repoRoot, "git", "-c", "core.quotePath=false", "diff", "--cached", "--unified=0", "--no-ext-diff")
+	// Diff the captured OIDs rather than the live index: by the time matching
+	// runs, jj may already have rewritten the index.
+	diff, err := s.runTrimmed(ctx, repoRoot, "git", "-c", "core.quotePath=false", "diff", "--unified=0", "--no-ext-diff", headCommit, treeOID)
 	if err != nil || strings.TrimSpace(diff) == "" {
 		return nil, nil, nil
 	}

@@ -1973,18 +1973,22 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 		Hidden:  hidden,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if jsonOut {
-				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
-				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
-				if writeErr := writeJSON(cmd, stack); writeErr != nil {
-					return writeErr
+			// Status is read-only: protect the user's staged git index from
+			// jj's index rewriting while we inspect the repo.
+			return engine.PreservingGitIndex(ctx, func() error {
+				if jsonOut {
+					stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+					stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
+					if writeErr := writeJSON(cmd, stack); writeErr != nil {
+						return writeErr
+					}
+					return err
 				}
-				return err
-			}
-			if len(args) > 0 && !agentOut {
-				return fmt.Errorf("stack selector is only supported with --agent")
-			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, interactive, jsonOut)
+				if len(args) > 0 && !agentOut {
+					return fmt.Errorf("stack selector is only supported with --agent")
+				}
+				return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, interactive, jsonOut)
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
@@ -2011,24 +2015,26 @@ func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 		Short: "List all non-merged GX features",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
-			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
-			if jsonOut {
-				if writeErr := writeJSON(cmd, stack); writeErr != nil {
-					return writeErr
+			return engine.PreservingGitIndex(ctx, func() error {
+				stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
+				if jsonOut {
+					if writeErr := writeJSON(cmd, stack); writeErr != nil {
+						return writeErr
+					}
+					return err
 				}
-				return err
-			}
-			if err != nil {
-				return err
-			}
-			if agentOut {
-				printStatusAgent(cmd.OutOrStdout(), stack, "")
+				if err != nil {
+					return err
+				}
+				if agentOut {
+					printStatusAgent(cmd.OutOrStdout(), stack, "")
+					return nil
+				}
+				printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
+				fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
 				return nil
-			}
-			printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
-			fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
-			return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
@@ -2747,24 +2753,26 @@ func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 		Short: "List all non-merged GX stacks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
-			stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
-			if jsonOut {
-				if writeErr := writeJSON(cmd, stack); writeErr != nil {
-					return writeErr
+			return engine.PreservingGitIndex(ctx, func() error {
+				stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
+				if jsonOut {
+					if writeErr := writeJSON(cmd, stack); writeErr != nil {
+						return writeErr
+					}
+					return err
 				}
-				return err
-			}
-			if err != nil {
-				return err
-			}
-			if agentOut {
-				printStatusAgent(cmd.OutOrStdout(), stack, "")
+				if err != nil {
+					return err
+				}
+				if agentOut {
+					printStatusAgent(cmd.OutOrStdout(), stack, "")
+					return nil
+				}
+				printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
+				fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
 				return nil
-			}
-			printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
-			fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
-			return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")

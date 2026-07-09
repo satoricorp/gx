@@ -191,6 +191,13 @@ func (e *Engine) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 	return e.vcs.StatusSnapshot(ctx)
 }
 
+// PreservingGitIndex runs fn with the colocated Git index protected from jj's
+// index rewriting; use it around read-only flows that must not disturb what
+// the user staged with git add.
+func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {
+	return e.vcs.PreservingGitIndexForCwd(ctx, fn)
+}
+
 func (e *Engine) CurrentChange(ctx context.Context, repoRoot, rev string) (ChangeInfo, error) {
 	return e.vcs.CurrentChange(ctx, repoRoot, rev)
 }

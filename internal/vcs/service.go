@@ -3072,15 +3072,41 @@ func (s *Service) Revisions(ctx context.Context) ([]RevisionSummary, error) {
 }
 
 func (s *Service) Stack(ctx context.Context) (StackSummary, error) {
-	repo, err := s.ResolveJJRepo(ctx)
+	var summary StackSummary
+	err := s.preservingGitIndexForCwd(ctx, func() error {
+		repo, err := s.ResolveJJRepo(ctx)
+		if err != nil {
+			return err
+		}
+		model, err := s.loadStackReadModel(ctx, repo)
+		if err != nil {
+			return err
+		}
+		summary = stackSummaryForStack(model.repo, model.currentStack, model.currentStackFound, model.stacks, model.currentRevisions, model.currentPublishedCount)
+		return nil
+	})
+	return summary, err
+}
+
+// PreservingGitIndexForCwd runs fn with the colocated Git index protected:
+// jj rewrites the index (staged entries become intent-to-add) whenever it
+// snapshots or imports, and read-only operations must not surface that.
+func (s *Service) PreservingGitIndexForCwd(ctx context.Context, fn func() error) error {
+	return s.preservingGitIndexForCwd(ctx, fn)
+}
+
+// preservingGitIndexForCwd applies preservingGitIndex to the git repo that
+// contains the current working directory; outside a git repo it runs fn as-is.
+func (s *Service) preservingGitIndexForCwd(ctx context.Context, fn func() error) error {
+	cwd, err := os.Getwd()
 	if err != nil {
-		return StackSummary{}, err
+		return fn()
 	}
-	model, err := s.loadStackReadModel(ctx, repo)
-	if err != nil {
-		return StackSummary{}, err
+	root, err := s.runTrimmed(ctx, cwd, "git", "rev-parse", "--show-toplevel")
+	if err != nil || strings.TrimSpace(root) == "" {
+		return fn()
 	}
-	return stackSummaryForStack(model.repo, model.currentStack, model.currentStackFound, model.stacks, model.currentRevisions, model.currentPublishedCount), nil
+	return s.preservingGitIndex(ctx, strings.TrimSpace(root), fn)
 }
 
 func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot, fallbackBaseRef string, stack StackInfo, bookmarkTargets map[string]string) bool {

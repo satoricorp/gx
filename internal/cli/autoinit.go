@@ -14,7 +14,14 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 	if shouldSkipAutoInit(cmd) {
 		return nil
 	}
-	result, err := engine.EnsureReadyRepo(ctx)
+	var result authoring.EnsureReadyResult
+	// Guard the index: autoinit runs jj, and jj rewrites the git index on
+	// snapshot/import, which would silently discard the user's git add state.
+	err := engine.PreservingGitIndex(ctx, func() error {
+		var readyErr error
+		result, readyErr = engine.EnsureReadyRepo(ctx)
+		return readyErr
+	})
 	if err != nil {
 		return err
 	}
@@ -52,7 +59,10 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		case "init", "version", "login", "auth", "set", "demo":
+		// commit skips autoinit because autoinit runs jj, and jj rewrites the
+		// git index (staged entries become intent-to-add) before gx commit can
+		// capture them; RecordStagedRevision self-initializes after capture.
+		case "init", "version", "login", "auth", "set", "demo", "commit":
 			return true
 		}
 	}
