@@ -90,7 +90,6 @@ resources_dir="$app_path/Contents/Resources"
 mkdir -p "$resources_dir/bin"
 cp "$menubar_dir/bin/gx" "$resources_dir/bin/gx"
 chmod 755 "$resources_dir/bin/gx"
-ln -sf gx "$resources_dir/bin/gxg"
 ln -sf gx "$resources_dir/bin/gxr"
 ln -sf gx "$resources_dir/bin/gxs"
 

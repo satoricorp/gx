@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -196,7 +197,14 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			var staleRepairErr error
 			var missingBaseRepair vcs.RebaseOntoDefaultResult
 			var missingBaseErr error
+			codex := gxservice.CheckCodexConfig()
+			var codexRepairErr error
+			codexRepaired := false
 			if fix {
+				if !codex.Correct {
+					codex, codexRepairErr = gxservice.RepairCodexConfig(ctx, gxservice.ExecRunner{})
+					codexRepaired = codexRepairErr == nil && codex.Correct
+				}
 				staleRepair, staleRepairErr = vcs.NewService().CleanupStaleStacks(ctx)
 				if staleRepairErr != nil {
 					return staleRepairErr
@@ -208,6 +216,15 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			missingBase, missingDetectErr := doctorMissingStackBaseRefs(ctx, fix, missingBaseRepair)
 			if jsonOut {
 				payload := map[string]any{"doctor": doctorStatusJSON(ctx)}
+				payload["codex"] = codexDoctorJSON{
+					ConfigPath: codex.ConfigPath,
+					Found:      codex.Found,
+					Correct:    codex.Correct,
+					BaseURL:    codex.Value,
+					Expected:   gxservice.OpenAIBaseURL(),
+					Repaired:   codexRepaired,
+					Error:      errorString(codexRepairErr),
+				}
 				if missingBaseErr == nil && (len(missingBaseRepair.Fixed) > 0 || len(missingBaseRepair.Actions) > 0) {
 					payload["missing_base_refs"] = missingBaseRepair
 				}
@@ -227,6 +244,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			}
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(cmd.OutOrStdout(), capture)
+			printDoctorCodexRouting(cmd.OutOrStdout(), codex, fix, codexRepaired, codexRepairErr)
 			printDoctorMissingBaseRefRepair(cmd.OutOrStdout(), missingBaseRepair, missingBaseErr)
 			printDoctorStaleStacks(cmd.OutOrStdout(), fix, stale, staleErr)
 			printDoctorMissingStackBaseRefs(cmd.OutOrStdout(), fix, missingBase, missingDetectErr, missingBaseRepair, missingBaseErr)
@@ -266,6 +284,51 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe gx workflow state issues")
 	return cmd
+}
+
+func printDoctorCodexRouting(w io.Writer, status gxservice.CodexStatus, fixed, repaired bool, repairErr error) {
+	fixHint := " (run `gx doctor --fix`)"
+	if fixed {
+		fixHint = ""
+	}
+	switch {
+	case repairErr != nil:
+		fmt.Fprintln(w, labelWarningValue("Codex capture", "repair failed: "+repairErr.Error()))
+		return
+	case repaired:
+		fmt.Fprintln(w, labelValue("Codex capture", "updated: routed through "+gxservice.OpenAIBaseURL()))
+	case status.Correct:
+		fmt.Fprintln(w, labelValue("Codex capture", success("ok")+": "+gxservice.OpenAIBaseURL()))
+	case !status.Found:
+		fmt.Fprintln(w, labelWarningValue("Codex capture", "config not found: "+status.ConfigPath+fixHint))
+		return
+	default:
+		current := status.Value
+		if current == "" {
+			current = "unset"
+		}
+		fmt.Fprintln(w, labelWarningValue("Codex capture", "not routed through gx proxy: "+current+fixHint))
+		return
+	}
+	if !ambientProxyReachable() {
+		fmt.Fprintln(w, labelWarningValue("Codex capture", "gx capture service is not listening on "+gxservice.ProxyAddress()+" — codex calls will fail (run `gx ops capture start`)"))
+	}
+}
+
+func ambientProxyReachable() bool {
+	conn, err := net.DialTimeout("tcp", gxservice.ProxyAddress(), 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func printDoctorMissingBaseRefRepair(w io.Writer, result vcs.RebaseOntoDefaultResult, err error) {
@@ -383,6 +446,31 @@ func newRepairCommand(ctx context.Context) *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
+		Use:   "usage",
+		Short: "Backfill token usage from captured response bodies",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := storage.Open(ctx)
+			if err != nil {
+				return err
+			}
+			store, err := storage.NewStore(ctx, db)
+			if err != nil {
+				_ = db.Close()
+				return err
+			}
+			defer store.Close()
+			result, err := store.BackfillUsage(ctx)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintln(out, labelValue("Responses scanned", fmt.Sprintf("%d", result.ResponsesScanned)))
+			fmt.Fprintln(out, labelValue("Responses updated", fmt.Sprintf("%d", result.ResponsesUpdated)))
+			fmt.Fprintln(out, labelValue("Sessions refreshed", fmt.Sprintf("%d", result.SessionsRefreshed)))
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
 		Use:   "workflow",
 		Short: "Repair safe gx workflow ref state",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -444,6 +532,16 @@ type launchAgentStatusJSON struct {
 	Label string `json:"label"`
 	Path  string `json:"path"`
 	OK    bool   `json:"ok"`
+}
+
+type codexDoctorJSON struct {
+	ConfigPath string `json:"config_path"`
+	Found      bool   `json:"found"`
+	Correct    bool   `json:"correct"`
+	BaseURL    string `json:"base_url"`
+	Expected   string `json:"expected"`
+	Repaired   bool   `json:"repaired,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type doctorJSON struct {

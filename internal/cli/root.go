@@ -76,7 +76,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newInternalDaemonCommand(ctx),
 		newVersionCommand(),
 		newDoctorCommand(ctx),
-		newLoginCommand(ctx),
 		newAuthCommand(ctx),
 		newSetCommand(ctx),
 		newInitCommand(ctx, engine),
@@ -86,7 +85,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newDemoCommand(),
 		newGenerateCommand(ctx, engine),
 		newCommitCommand(ctx, engine),
-		newAddCommand(ctx, engine, "add [filesets...]", "add", true),
 		newEditCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
 		newReportCommand(ctx, engine),
@@ -116,9 +114,9 @@ func NewRoot(ctx context.Context) *cobra.Command {
 func assignCommandGroups(root *cobra.Command) {
 	for _, cmd := range root.Commands() {
 		switch cmd.Name() {
-		case "init", "auth", "set", "login", "demo":
+		case "init", "auth", "set", "demo":
 			cmd.GroupID = groupSetup
-		case "add", "base", "commit", "edit", "review", "status":
+		case "base", "commit", "edit", "review", "status":
 			cmd.GroupID = groupWork
 		case "push", "sync":
 			cmd.GroupID = groupShip
@@ -286,62 +284,6 @@ func initOutput(cmd *cobra.Command, quiet bool) io.Writer {
 	return cmd.OutOrStdout()
 }
 
-func newAddCommand(ctx context.Context, engine *authoring.Engine, use string, helpName string, hidden bool) *cobra.Command {
-	var message string
-	var interactive bool
-	var hunk bool
-	var patchFile string
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:   use,
-		Short: "Create the next GX change from your current work",
-		Long: strings.Join([]string{
-			"Create the next GX change from your current work.",
-			"",
-			"A non-empty commit message is required; pass it with -m.",
-			"",
-			"From the base branch, gx add records the current work into a new inferred GX stack based on that base.",
-			"From an active stack branch, gx add records onto the active edited stack/revision and should only run after intentionally choosing that stack.",
-		}, "\n"),
-		Example: strings.Join([]string{
-			`  gx add -m "describe this revision"`,
-			`  gx add -i internal/termstyle/theme.go -m "update terminal theme"`,
-			`  gx add --hunk --patch-file /tmp/selected.patch -m "record selected hunks"`,
-		}, "\n"),
-		Hidden: hidden,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := engine.Checkpoint(ctx, authoring.CheckpointOptions{
-				Intent:      message,
-				Filesets:    args,
-				Interactive: interactive,
-				Hunk:        hunk,
-				PatchFile:   patchFile,
-			})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, addResultJSON{
-					Result: result,
-					Split:  interactive || len(args) > 0 || hunk,
-				})
-			}
-			if strings.TrimSpace(result.Output) != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(result.Output))
-			}
-			printAddSummary(cmd.OutOrStdout(), result, interactive || len(args) > 0)
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message (required)")
-	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "interactively choose changes to add")
-	cmd.Flags().BoolVar(&hunk, "hunk", false, "select changes from a patch file (agent-friendly)")
-	cmd.Flags().StringVar(&patchFile, "patch-file", "", "path to a unified patch file used with --hunk")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	setHelpName(cmd, helpName)
-	return cmd
-}
-
 func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var message string
 	var jsonOut bool
@@ -424,11 +366,6 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	return cmd
 }
 
-type addResultJSON struct {
-	Result authoring.CheckpointResult `json:"result"`
-	Split  bool                       `json:"split"`
-}
-
 type commitResultJSON struct {
 	Result           authoring.CheckpointResult `json:"result"`
 	CreatedBranch    bool                       `json:"created_branch"`
@@ -457,30 +394,6 @@ func printCommitSummary(out io.Writer, result authoring.CheckpointResult) {
 	fmt.Fprintln(out, labelValue("Provenance", firstNonEmptyString(result.ProvenanceStatus, "absent")))
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, hint("Choose the next manual scope with git add or git add -p."))
-	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
-}
-
-func printAddSummary(out io.Writer, result authoring.CheckpointResult, split bool) {
-	invocation := "gx add"
-	if result.Change.Description != "" {
-		invocation = fmt.Sprintf("gx add -m %q", result.Change.Description)
-	}
-	fmt.Fprintln(out, commandLine(invocation, false))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, success("Revision recorded"))
-	fmt.Fprintln(out, labelValue("Message", result.Change.Description))
-	fmt.Fprintln(out, labelValue("Revision", shortID(result.Change.ChangeID, 12)))
-	if result.Change.CommitID != "" {
-		fmt.Fprintln(out, labelValue("Commit", shortID(result.Change.CommitID, 8)))
-	}
-	if split {
-		fmt.Fprintln(out, labelValue("Split", "recorded the selected changes; remaining edits stay in the current revision"))
-	} else {
-		fmt.Fprintln(out, labelValue("Split", "recorded the current revision and opened the next one"))
-	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, hint("Remaining changes stay in the current revision."))
-	fmt.Fprintln(out, labelValue("Edit", fmt.Sprintf("gx edit %s", result.Change.ChangeID)))
 	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
 }
 
@@ -539,221 +452,6 @@ func printBaseSummary(out io.Writer, result authoring.BaseResult, updated bool) 
 	}
 }
 
-func newDemuxCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var intent string
-	var raw bool
-	var planOnly bool
-	var autoAccept bool
-	var model string
-	var maxWarnings int
-	var excludeFilesets []string
-	cmd := &cobra.Command{
-		Use:    "demux [filesets...]",
-		Short:  "Compose ordered GX revisions from the current working copy",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
-				if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
-					return authoring.DemuxPlanPacket{}, err
-				}
-				return engine.DemuxChanges(ctx, authoring.ProposeDemuxOptions{
-					Intent:          intent,
-					Filesets:        args,
-					ExcludeFilesets: excludeFilesets,
-					PlanOnly:        planOnly,
-					Model:           model,
-					MaxWarnings:     maxWarnings,
-					ProgressWriter:  progress,
-				})
-			}
-			var (
-				packet authoring.DemuxPlanPacket
-				err    error
-			)
-			if !jsonOut && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
-				packet, err = runDemuxWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), run)
-			} else {
-				var progress io.Writer
-				if !jsonOut {
-					progress = cmd.ErrOrStderr()
-				}
-				packet, err = run(progress)
-			}
-			if cmd.Name() == "compose" {
-				emitComposeRunTelemetry(ctx, packet, err, composeRunTelemetryOptions{
-					JSON:         jsonOut,
-					Raw:          raw,
-					PlanOnly:     planOnly,
-					Filesets:     args,
-					ExcludeCount: len(excludeFilesets),
-					HasIntent:    strings.TrimSpace(intent) != "",
-					ModelSet:     strings.TrimSpace(model) != "",
-				})
-			}
-			if err != nil {
-				if strings.TrimSpace(packet.Proposal.ID) != "" {
-					if jsonOut {
-						_ = writeJSON(cmd, map[string]any{
-							"error":  err.Error(),
-							"packet": packet,
-						})
-						return err
-					}
-					printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-				}
-				return err
-			}
-			if autoAccept {
-				if reason := demuxAutoAcceptBlockedReason(packet); reason != "" {
-					if jsonOut {
-						_ = writeJSON(cmd, map[string]any{
-							"error":  reason,
-							"packet": packet,
-						})
-						return fmt.Errorf("%s", reason)
-					}
-					printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-					return fmt.Errorf("%s", reason)
-				}
-				result, err := engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
-					ReturnToDefaultBranch: cmd.Name() == "compose",
-				})
-				if err != nil {
-					return err
-				}
-				if jsonOut {
-					return writeJSON(cmd, result)
-				}
-				printDemuxApplySummary(cmd.OutOrStdout(), result)
-				return nil
-			}
-			if jsonOut {
-				return writeJSON(cmd, packet)
-			}
-			if !raw && !planOnly && useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
-				action, err := runDemuxInteractive(cmd.InOrStdin(), cmd.OutOrStdout(), packet.Proposal)
-				if err != nil {
-					return err
-				}
-				result, applied, err := applyDemuxInteractiveAction(ctx, engine, packet, action, cmd.Name() == "compose")
-				if err != nil {
-					return err
-				}
-				if applied {
-					printDemuxApplySummary(cmd.OutOrStdout(), result)
-				}
-				return nil
-			}
-			printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVarP(&autoAccept, "auto-accept", "a", false, "accept a ready compose proposal")
-	cmd.Flags().StringVar(&intent, "intent", "", "optional intent prefix for proposed revisions")
-	cmd.Flags().BoolVar(&raw, "raw", false, "show full compose diagnostics in human output")
-	cmd.Flags().BoolVar(&planOnly, "plan", false, "stop after local deterministic planning; do not call OpenAI")
-	cmd.Flags().StringVar(&model, "model", "", "OpenAI model for compose AI repair; defaults to GX_DEMUX_REVIEW_MODEL or gpt-4.1-mini")
-	cmd.Flags().IntVar(&maxWarnings, "max-warnings", 0, "maximum warning-severity diagnostics to send to the model; defaults to 50")
-	cmd.Flags().StringArrayVar(&excludeFilesets, "exclude", nil, "exclude changed file or directory from compose; may be repeated")
-	cmd.AddCommand(newDemuxListCommand(ctx, engine))
-	cmd.AddCommand(newDemuxReviewCommand(ctx, engine))
-	cmd.AddCommand(newDemuxFixCommand(ctx, engine))
-	cmd.AddCommand(newDemuxShowCommand(ctx, engine))
-	cmd.AddCommand(newDemuxApplyCommand(ctx, engine))
-	cmd.AddCommand(newDemuxApplyPlanCommand(ctx, engine))
-	cmd.AddCommand(newDemuxReviewPlanCommand(ctx, engine))
-	cmd.AddCommand(newComposeDoctorCommand(ctx, engine))
-	return cmd
-}
-
-func shouldRunDemuxInteractiveOnError(packet authoring.DemuxPlanPacket, raw bool, planOnly bool, in io.Reader, out io.Writer) bool {
-	return demuxErrorHasInteractiveProposal(packet, raw, planOnly) && useStatusInteractive(in, out)
-}
-
-func demuxErrorHasInteractiveProposal(packet authoring.DemuxPlanPacket, raw bool, planOnly bool) bool {
-	return strings.TrimSpace(packet.Proposal.ID) != "" && !raw && !planOnly
-}
-
-const demuxPartialComposeWarning = "Partial generate plan: these revisions do not cover all current changes. Run gx generate again for the remaining changes."
-
-func saveDemuxPacketProposal(ctx context.Context, engine *authoring.Engine, packet authoring.DemuxPlanPacket) (authoring.DemuxPlanPacket, error) {
-	saved, err := engine.SaveDemuxProposal(ctx, packet.Proposal)
-	if err != nil {
-		return authoring.DemuxPlanPacket{}, err
-	}
-	packet.Proposal = saved
-	packet.Review.Proposal = saved
-	packet.StructuralFacts = saved.StructuralFacts
-	packet.StructuralDeps = saved.StructuralDeps
-	packet.ChangedSymbols = saved.ChangedSymbols
-	packet.FeasibilityWarnings = saved.FeasibilityWarnings
-	packet.Warnings = saved.Warnings
-	return packet, nil
-}
-
-func newComposeDoctorCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Check jj provisioning, capture parsers, and compose matcher coverage",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			report, err := engine.RunComposeDoctor(ctx)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, report)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), section("Compose"))
-			if report.JJOK {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("jj", success("ok")+": "+report.JJVersion))
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("jj", danger("fail")+": not available"))
-			}
-			if report.JJRepoOK {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("jj repo", success("ok")))
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("jj repo", danger("fail")+": not colocated"))
-			}
-			if len(report.ParsersReachable) > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Capture parsers", success("ok")+": "+strings.Join(report.ParsersReachable, ", ")))
-			}
-			if len(report.ParsersMissing) > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Missing parsers", danger("warn")+": "+strings.Join(report.ParsersMissing, ", ")))
-			}
-			if report.LastCoverageFound {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Last hunk coverage", fmt.Sprintf("%.0f%%", report.LastHunkCoverage*100)))
-			}
-			if report.FeasibilityHint != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Feasibility", muted(report.FeasibilityHint)))
-			}
-			for _, warning := range report.Warnings {
-				fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Warning", warning))
-			}
-			if !report.OK {
-				return fmt.Errorf("compose doctor found issues")
-			}
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	return cmd
-}
-
-func newComposeCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	cmd := newDemuxCommand(ctx, engine)
-	cmd.Use = "compose [filesets...]"
-	cmd.Short = "Compose ordered GX revisions from the current working copy"
-	cmd.Hidden = false
-	configureComposeApplyDefaults(cmd)
-	renameDemuxCommandSurface(cmd)
-	return cmd
-}
-
 func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var jsonOut bool
 	var intent string
@@ -764,7 +462,6 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 	var legacy bool
 	cmd := &cobra.Command{
 		Use:     "generate [filesets...]",
-		Aliases: []string{"gxg"},
 		Short:   "Save your work in branches & commits",
 		Hidden:  true,
 		Args:    cobra.ArbitraryArgs,
@@ -938,202 +635,6 @@ func generateIsMCP() bool {
 	return strings.TrimSpace(os.Getenv("GX_MCP")) != ""
 }
 
-func configureComposeApplyDefaults(cmd *cobra.Command) {
-	for _, sub := range cmd.Commands() {
-		switch sub.Name() {
-		case "apply", "apply-plan":
-			sub.Annotations = map[string]string{"returnToDefaultBranch": "true"}
-		}
-	}
-}
-
-func renameDemuxCommandSurface(cmd *cobra.Command) {
-	for _, sub := range cmd.Commands() {
-		sub.Short = strings.ReplaceAll(sub.Short, "demux", "compose")
-		sub.Short = strings.ReplaceAll(sub.Short, "Demux", "Compose")
-	}
-}
-
-func newDemuxListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var includeApplied bool
-	var limit int
-	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"proposals"},
-		Short:   "List saved compose proposals for the current repo",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			proposals, err := engine.ListDemuxProposals(ctx, authoring.ListDemuxProposalsOptions{
-				IncludeApplied: includeApplied,
-				Limit:          limit,
-			})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, proposals)
-			}
-			printDemuxProposalList(cmd.OutOrStdout(), proposals)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&includeApplied, "all", false, "include applied and expired proposals")
-	cmd.Flags().IntVar(&limit, "limit", 20, "maximum proposals to list; use 0 for no limit")
-	return cmd
-}
-
-func newDemuxReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var raw bool
-	cmd := &cobra.Command{
-		Use:   "review <proposal-id>",
-		Short: "Review a saved compose proposal for deterministic warnings",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			packet, err := engine.ShowDemuxProposal(ctx, args[0])
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, packet)
-			}
-			printDemuxReviewPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&raw, "raw", false, "show full review diagnostics in human output")
-	return cmd
-}
-
-func newDemuxFixCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var model string
-	var maxWarnings int
-	var planOnly bool
-	cmd := &cobra.Command{
-		Use:   "fix <proposal-id>",
-		Short: "Repair a compose proposal",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !jsonOut {
-				mode := "deterministic repair, then AI if still needed"
-				if planOnly {
-					mode = "deterministic repair only"
-				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Repairing compose proposal %s (%s)...\n", args[0], mode)
-			}
-			result, err := engine.ReviewDemuxProposalWithAI(ctx, args[0], authoring.DemuxAIReviewOptions{
-				Model:       model,
-				MaxWarnings: maxWarnings,
-				PlanOnly:    planOnly,
-			})
-			if err != nil {
-				if jsonOut {
-					_ = writeJSON(cmd, map[string]any{
-						"error":  err.Error(),
-						"result": result,
-					})
-					return err
-				}
-				if result.Proposal.ID != "" {
-					printDemuxAIReviewResult(cmd.OutOrStdout(), result)
-				}
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			printDemuxAIReviewResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&planOnly, "plan", false, "stop after local deterministic repair; do not call OpenAI")
-	cmd.Flags().StringVar(&model, "model", "", "OpenAI model for AI compose fix; defaults to GX_DEMUX_REVIEW_MODEL or gpt-4.1-mini")
-	cmd.Flags().IntVar(&maxWarnings, "max-warnings", 0, "maximum warning-severity diagnostics to send to the model; defaults to 50")
-	return cmd
-}
-
-func newDemuxShowCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var raw bool
-	var proposalID string
-	cmd := &cobra.Command{
-		Use:   "show <proposal-or-revision-id>",
-		Short: "Show a saved compose proposal or proposed revision",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(proposalID) == "" && demuxShowTargetIsProposal(args[0]) {
-				packet, err := engine.ShowDemuxProposal(ctx, args[0])
-				if err != nil {
-					return err
-				}
-				if jsonOut {
-					return writeJSON(cmd, packet)
-				}
-				printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-				return nil
-			}
-			view, err := engine.ShowDemuxRevision(ctx, proposalID, args[0])
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, view)
-			}
-			printDemuxRevisionView(cmd.OutOrStdout(), view, demuxPrintOptions{Raw: raw})
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&raw, "raw", false, "show full revision diagnostics in human output")
-	cmd.Flags().StringVar(&proposalID, "proposal", "", "compose proposal id; defaults to latest pending proposal in the current repo")
-	return cmd
-}
-
-func demuxShowTargetIsProposal(target string) bool {
-	target = strings.TrimSpace(strings.ToLower(target))
-	if strings.HasPrefix(target, "demux-") {
-		return true
-	}
-	if !strings.HasPrefix(target, "d") || len(target) < 2 {
-		return false
-	}
-	_, err := strconv.Atoi(strings.TrimPrefix(target, "d"))
-	return err == nil
-}
-
-func newDemuxApplyCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var allowWarnings bool
-	cmd := &cobra.Command{
-		Use:    "apply <proposal-id>",
-		Short:  "Apply a pending GX compose proposal",
-		Hidden: true,
-		Args:   cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := engine.ApplyDemuxProposalWithOptions(ctx, args[0], authoring.ApplyDemuxOptions{
-				AllowWarnings:         allowWarnings,
-				ReturnToDefaultBranch: composeReturnToDefaultBranch(cmd),
-			})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			printDemuxApplySummary(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&allowWarnings, "allow-warnings", false, "apply despite blocking feasibility warnings")
-	return cmd
-}
-
 func printDemuxApplySummary(out io.Writer, result authoring.ApplyDemuxResult) {
 	fmt.Fprintln(out, success("Generated revisions applied"))
 	fmt.Fprintln(out, labelValue("Plan", result.Proposal.ID))
@@ -1156,101 +657,7 @@ func printDemuxPartialFollowup(out io.Writer) {
 	fmt.Fprintln(out, muted("Selected generated changes were applied. Run "+command("gx generate")+" again for the remaining changes."))
 }
 
-func newDemuxReviewPlanCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var planFile string
-	var raw bool
-	cmd := &cobra.Command{
-		Use:    "review-plan --plan-file <path>",
-		Short:  "Review an LLM-authored GX revision plan without applying it",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(planFile) == "" {
-				return fmt.Errorf("--plan-file is required")
-			}
-			data, err := os.ReadFile(planFile)
-			if err != nil {
-				return fmt.Errorf("read revision plan: %w", err)
-			}
-			var proposal authoring.DemuxProposal
-			if err := json.Unmarshal(data, &proposal); err != nil {
-				return fmt.Errorf("decode revision plan: %w", err)
-			}
-			result, err := engine.ReviewDemuxPlan(ctx, proposal)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, section("Revision plan review"))
-			fmt.Fprintln(out, labelValue("Valid", fmt.Sprintf("%t", result.Valid)))
-			if len(result.Errors) > 0 {
-				fmt.Fprintln(out)
-				fmt.Fprintln(out, section("Errors"))
-				for _, reviewErr := range result.Errors {
-					fmt.Fprintf(out, "  %s %s\n", danger("!"), reviewErr)
-				}
-			}
-			printDemuxProposal(out, result.Proposal, demuxPrintOptions{Raw: raw})
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&planFile, "plan-file", "", "path to a JSON compose proposal containing LLM-authored revisions")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&raw, "raw", false, "show full compose diagnostics in human output")
-	return cmd
-}
-
-func newDemuxApplyPlanCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var planFile string
-	var allowWarnings bool
-	cmd := &cobra.Command{
-		Use:    "apply-plan --plan-file <path>",
-		Short:  "Apply an LLM-authored GX revision plan",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(planFile) == "" {
-				return fmt.Errorf("--plan-file is required")
-			}
-			data, err := os.ReadFile(planFile)
-			if err != nil {
-				return fmt.Errorf("read revision plan: %w", err)
-			}
-			var proposal authoring.DemuxProposal
-			if err := json.Unmarshal(data, &proposal); err != nil {
-				return fmt.Errorf("decode revision plan: %w", err)
-			}
-			result, err := engine.ApplyDemuxPlanWithOptions(ctx, proposal, authoring.ApplyDemuxOptions{
-				AllowWarnings:         allowWarnings,
-				ReturnToDefaultBranch: composeReturnToDefaultBranch(cmd),
-			})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, section("Revision plan applied"))
-			fmt.Fprintln(out, labelValue("Proposal", result.Proposal.ID))
-			fmt.Fprintln(out, labelValue("Revisions", fmt.Sprintf("%d", len(result.Revisions))))
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&planFile, "plan-file", "", "path to a JSON compose proposal containing LLM-authored revisions")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&allowWarnings, "allow-warnings", false, "apply despite blocking feasibility warnings")
-	return cmd
-}
-
-func composeReturnToDefaultBranch(cmd *cobra.Command) bool {
-	return cmd != nil && cmd.Annotations["returnToDefaultBranch"] == "true"
-}
+const demuxPartialComposeWarning = "Partial generate plan: these revisions do not cover all current changes. Run gx generate again for the remaining changes."
 
 type demuxPrintOptions struct {
 	Raw bool
@@ -1281,148 +688,11 @@ func demuxProposalIsPartial(proposal authoring.DemuxProposal) bool {
 	return false
 }
 
-func printDemuxAcceptHint(out io.Writer, packet authoring.DemuxPlanPacket) {
-	if packet.State != authoring.DemuxWorkflowReadyToApply || strings.TrimSpace(packet.Proposal.ID) == "" {
-		return
-	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, labelValue("Generate", "gx generate"))
-	if demuxProposalIsPartial(packet.Proposal) {
-		fmt.Fprintln(out, labelValue("Then", "gx generate"))
-	}
-}
-
-func printDemuxReviewPacket(out io.Writer, packet authoring.DemuxPlanPacket, opts demuxPrintOptions) {
-	proposal := packet.Proposal
-	review := packet.Review
-	fmt.Fprintln(out, commandLine("gx generate", true))
-	fmt.Fprintln(out)
-	printDemuxProposalSummary(out, proposal, packet.State)
-	if len(review.Errors) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Blocking warnings"))
-		for _, reviewErr := range review.Errors {
-			fmt.Fprintf(out, "  %s\n", muted(reviewErr))
-		}
-	}
-	if len(review.RepairHints) > 0 {
-		fmt.Fprintln(out)
-		if opts.Raw {
-			fmt.Fprintln(out, section("Repair hints"))
-			for _, repairHint := range review.RepairHints {
-				fmt.Fprintf(out, "  %s %s\n", muted("-"), formatRepairHint(repairHint))
-			}
-		} else {
-			fmt.Fprintln(out, labelValue("Repair hints", fmt.Sprintf("%d hidden; use --raw or --json", len(review.RepairHints))))
-		}
-	}
-	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(proposal.FeasibilityWarnings)
-	if len(blockingWarnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Blocking warnings"))
-		for _, warning := range blockingWarnings {
-			details := warning.Source
-			if warning.RevisionID != "" {
-				details += " / " + warning.RevisionID
-			}
-			fmt.Fprintf(out, "  %s  %s\n", muted(firstNonEmptyString(warning.RevisionID, warningMarker(warning.Severity))), muted(warning.Message+"  ["+details+"]"))
-		}
-	}
-	if opts.Raw && len(diagnosticWarnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Diagnostics"))
-		for _, warning := range diagnosticWarnings {
-			details := warning.Source
-			if warning.RevisionID != "" {
-				details += " / " + warning.RevisionID
-			}
-			fmt.Fprintf(out, "  %s  %s\n", muted(firstNonEmptyString(warning.RevisionID, warningMarker(warning.Severity))), muted(warning.Message+"  ["+details+"]"))
-		}
-	}
-	if opts.Raw && len(proposal.Warnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Diagnostics"))
-		for _, warning := range proposal.Warnings {
-			fmt.Fprintf(out, "  %s %s\n", danger("!"), warning)
-		}
-	} else if !opts.Raw && len(proposal.Warnings)+len(diagnosticWarnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, labelValue("Diagnostics", fmt.Sprintf("%d hidden; use --raw or --json", len(proposal.Warnings)+len(diagnosticWarnings))))
-	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Next"))
-	if packet.State == authoring.DemuxWorkflowReadyToApply {
-		fmt.Fprintf(out, "  %s\n", command("gx generate"))
-	} else {
-		fmt.Fprintf(out, "  %s\n", command("gx generate"))
-	}
-}
-
-func printDemuxAIReviewResult(out io.Writer, result authoring.DemuxAIReviewResult) {
-	fmt.Fprintln(out, commandLine("gx generate", true))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Generate fix"))
-	fmt.Fprintln(out, labelValue("Plan", result.Proposal.ID))
-	fmt.Fprintln(out, labelValue("Model", result.Model))
-	fmt.Fprintln(out, labelValue("Updated", yesNo(result.Updated)))
-	fmt.Fprintln(out, labelValue("State", string(result.State)))
-	fmt.Fprintln(out, labelValue("Valid", fmt.Sprintf("%t", result.Review.Valid)))
-	fmt.Fprintln(out, labelValue("Revisions", fmt.Sprintf("%d", len(result.Proposal.Revisions))))
-	fmt.Fprintln(out, labelValue("Blocking issues", fmt.Sprintf("%d", demuxBlockingIssueCount(result))))
-	if diagnostics := demuxHiddenDiagnosticCount(result); diagnostics > 0 {
-		fmt.Fprintln(out, labelValue("Diagnostics", fmt.Sprintf("%d hidden; use --raw or --json", diagnostics)))
-	}
-	if result.WarningsTotal > 0 || result.RepairHintTotal > 0 {
-		fmt.Fprintln(out, labelValue("Sent", fmt.Sprintf("%d/%d warnings, %d/%d repair hints", result.WarningsSent, result.WarningsTotal, result.RepairHintSent, result.RepairHintTotal)))
-	}
-	if len(result.Notes) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Notes"))
-		for _, note := range result.Notes {
-			fmt.Fprintf(out, "  %s %s\n", muted("-"), note)
-		}
-	}
-	if len(result.Review.Errors) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Errors"))
-		for _, reviewErr := range result.Review.Errors {
-			fmt.Fprintf(out, "  %s %s\n", danger("!"), reviewErr)
-		}
-	}
-	fmt.Fprintln(out)
-	if result.State == authoring.DemuxWorkflowReadyToApply {
-		fmt.Fprintln(out, labelValue("Generate", "gx generate"))
-	} else {
-		fmt.Fprintln(out, labelValue("Review", "gx generate --raw"))
-	}
-}
-
-func demuxBlockingIssueCount(result authoring.DemuxAIReviewResult) int {
-	blocking := 0
-	for _, warning := range result.Proposal.FeasibilityWarnings {
-		if warning.Severity == "warning" {
-			blocking++
-		}
-	}
-	return blocking + len(result.Review.Errors)
-}
-
-func demuxHiddenDiagnosticCount(result authoring.DemuxAIReviewResult) int {
-	return len(result.Proposal.FeasibilityWarnings) + len(result.Proposal.Warnings) + len(result.Review.RepairHints)
-}
-
 func yesNo(value bool) string {
 	if value {
 		return "yes"
 	}
 	return "no"
-}
-
-func reviewFeasibilityWarnings(warnings []authoring.FeasibilityWarning, raw bool) ([]authoring.FeasibilityWarning, int) {
-	if raw {
-		return warnings, 0
-	}
-	return nil, len(warnings)
 }
 
 func splitFeasibilityWarnings(warnings []authoring.FeasibilityWarning) ([]authoring.FeasibilityWarning, []authoring.FeasibilityWarning) {
@@ -1436,170 +706,6 @@ func splitFeasibilityWarnings(warnings []authoring.FeasibilityWarning) ([]author
 		diagnostics = append(diagnostics, warning)
 	}
 	return blocking, diagnostics
-}
-
-func formatRepairHint(repairHint authoring.RepairHint) string {
-	parts := []string{repairHint.Kind}
-	if repairHint.RevisionID != "" {
-		parts = append(parts, repairHint.RevisionID)
-	}
-	if repairHint.HunkID != "" {
-		parts = append(parts, repairHint.HunkID)
-	}
-	if repairHint.File != "" {
-		parts = append(parts, repairHint.File)
-	}
-	if repairHint.DependsOn != "" {
-		parts = append(parts, "depends on "+repairHint.DependsOn)
-	}
-	if repairHint.Symbol != "" {
-		parts = append(parts, repairHint.Symbol)
-	}
-	if repairHint.Suggestion != "" {
-		parts = append(parts, repairHint.Suggestion)
-	}
-	return strings.Join(parts, " - ")
-}
-
-func printDemuxProposalList(out io.Writer, proposals []authoring.DemuxProposalSummary) {
-	fmt.Fprintln(out, section("Generate plans"))
-	if len(proposals) == 0 {
-		fmt.Fprintln(out, muted("No generate plans found."))
-		return
-	}
-	for _, proposal := range proposals {
-		marker := " "
-		if proposal.LatestPendingForShow {
-			marker = "*"
-		}
-		details := []string{
-			string(proposal.Status),
-			fmt.Sprintf("%d revisions", proposal.RevisionCount),
-			fmt.Sprintf("%d files", len(proposal.Files)),
-		}
-		if proposal.HiddenDiagnosticCount > 0 {
-			details = append(details, fmt.Sprintf("%d diagnostics", proposal.HiddenDiagnosticCount))
-		}
-		id := proposal.ID
-		if proposal.Alias != "" {
-			id = fmt.Sprintf("%s  %s", proposal.Alias, muted(proposal.ID))
-		}
-		fmt.Fprintf(out, "%s %s  %s  %s\n", marker, id, muted(strings.Join(details, " / ")), muted(formatMillis(proposal.CreatedAt)))
-		if proposal.FirstRevisionIntent != "" {
-			fmt.Fprintf(out, "    %s\n", proposal.FirstRevisionIntent)
-		}
-		if proposal.LatestPendingForShow {
-			fmt.Fprintf(out, "    %s\n", muted("default for revisions: gx generate --json"))
-		}
-	}
-}
-
-func formatMillis(ms int64) string {
-	if ms <= 0 {
-		return "unknown time"
-	}
-	return time.UnixMilli(ms).Format("2006-01-02 15:04:05")
-}
-
-func printDemuxRevisionView(out io.Writer, view authoring.DemuxRevisionView, opts demuxPrintOptions) {
-	revision := view.Revision
-	fmt.Fprintln(out, commandLine("gx generate", true))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Generate revision"))
-	fmt.Fprintln(out, labelValue("Plan", view.ProposalID))
-	fmt.Fprintln(out, labelValue("Plan status", string(view.ProposalStatus)))
-	fmt.Fprintln(out, labelValue("Base revision", view.ProposedChangeID))
-	fmt.Fprintln(out, labelValue("Revision", revision.ID))
-	fmt.Fprintln(out, labelValue("Intent", revision.Intent))
-	fmt.Fprintln(out, labelValue("Mode", demuxRevisionMode(revision)))
-	if revision.Confidence > 0 {
-		fmt.Fprintln(out, labelValue("Confidence", fmt.Sprintf("%.2f", revision.Confidence)))
-	}
-	if opts.Raw && revision.ProvenanceStatus != "" {
-		provenance := revision.ProvenanceStatus
-		if len(revision.SessionIDs) > 0 {
-			provenance += " " + strings.Join(revision.SessionIDs, ", ")
-		}
-		fmt.Fprintln(out, labelValue("Provenance", provenance))
-	}
-	if len(revision.DependsOn) > 0 {
-		fmt.Fprintln(out, labelValue("Depends on", strings.Join(revision.DependsOn, ", ")))
-	}
-	if len(revision.Files) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Files"))
-		for _, file := range revision.Files {
-			fmt.Fprintf(out, "  %s\n", file)
-		}
-	}
-	if len(view.ChangedSymbols) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Changed symbols"))
-		for _, symbol := range view.ChangedSymbols {
-			label := symbol.Symbol
-			if symbol.Kind != "" {
-				label = symbol.Kind + " " + label
-			}
-			fmt.Fprintf(out, "  %s %s  %s\n", muted("-"), label, muted(symbol.File))
-		}
-	}
-	if opts.Raw {
-		printDemuxRevisionDiagnostics(out, view)
-	} else {
-		diagnostics := len(view.FeasibilityWarnings) + len(view.StructuralDeps)
-		if diagnostics > 0 {
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, labelValue("Diagnostics", fmt.Sprintf("%d hidden; use --raw or --json", diagnostics)))
-		}
-	}
-	if len(view.Hunks) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Diff"))
-		for index, hunk := range view.Hunks {
-			if index > 0 {
-				fmt.Fprintln(out)
-			}
-			if hunk.ID != "" {
-				details := hunk.ID
-				if hunk.Symbol != "" {
-					details += " / " + hunk.Symbol
-				}
-				fmt.Fprintf(out, "%s %s\n", muted("hunk"), muted(details))
-			}
-			fmt.Fprint(out, hunk.Patch)
-			if !strings.HasSuffix(hunk.Patch, "\n") {
-				fmt.Fprintln(out)
-			}
-		}
-	}
-}
-
-func demuxRevisionMode(revision authoring.RevisionProposal) string {
-	if revision.UseHunks {
-		return fmt.Sprintf("hunk (%d)", len(revision.HunkIDs))
-	}
-	return "file"
-}
-
-func printDemuxRevisionDiagnostics(out io.Writer, view authoring.DemuxRevisionView) {
-	if len(view.FeasibilityWarnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Feasibility warnings"))
-		for _, warning := range view.FeasibilityWarnings {
-			details := warning.Source
-			if warning.RevisionID != "" {
-				details += " / " + warning.RevisionID
-			}
-			fmt.Fprintf(out, "  %s %s  %s\n", warningMarker(warning.Severity), warning.Message, muted("["+details+"]"))
-		}
-	}
-	if len(view.StructuralDeps) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Structural dependencies"))
-		for _, dep := range view.StructuralDeps {
-			fmt.Fprintf(out, "  %s %s -> %s  %s\n", muted("-"), dep.FromFile, dep.ToFile, muted(dep.Symbol))
-		}
-	}
 }
 
 func printDemuxProposal(out io.Writer, proposal authoring.DemuxProposal, opts demuxPrintOptions) {
@@ -1741,16 +847,6 @@ func demuxProposalFileCount(proposal authoring.DemuxProposal) int {
 	return len(seen)
 }
 
-type composeRunTelemetryOptions struct {
-	JSON         bool
-	Raw          bool
-	PlanOnly     bool
-	Filesets     []string
-	ExcludeCount int
-	HasIntent    bool
-	ModelSet     bool
-}
-
 type generateRunTelemetryOptions struct {
 	JSON         bool
 	Raw          bool
@@ -1759,39 +855,6 @@ type generateRunTelemetryOptions struct {
 	HasIntent    bool
 	ModelSet     bool
 	Duration     time.Duration
-}
-
-func emitComposeRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, runErr error, opts composeRunTelemetryOptions) {
-	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	}
-	props := map[string]any{
-		"status":                   status,
-		"state":                    string(packet.State),
-		"proposal_status":          string(packet.Proposal.Status),
-		"revision_count":           len(packet.Proposal.Revisions),
-		"stack_count":              len(demuxStackDisplayGroups(packet.Proposal.Revisions)),
-		"hunk_count":               len(packet.Proposal.Hunks),
-		"file_count":               demuxProposalFileCount(packet.Proposal),
-		"warning_count":            len(packet.Proposal.Warnings) + len(packet.Proposal.FeasibilityWarnings),
-		"blocking_warning_count":   len(blockingWarnings),
-		"diagnostic_warning_count": len(diagnosticWarnings),
-		"repair_hint_count":        len(packet.Review.RepairHints),
-		"review_error_count":       len(packet.Review.Errors),
-		"json":                     opts.JSON,
-		"raw":                      opts.Raw,
-		"plan_only":                opts.PlanOnly,
-		"fileset_count":            len(opts.Filesets),
-		"exclude_count":            opts.ExcludeCount,
-		"has_intent":               opts.HasIntent,
-		"model_set":                opts.ModelSet,
-	}
-	if packet.Proposal.HunkCoverage > 0 {
-		props["hunk_coverage"] = packet.Proposal.HunkCoverage
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIGenerateRun, props)
 }
 
 func emitGenerateRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, result authoring.ApplyDemuxResult, runErr error, opts generateRunTelemetryOptions) {
@@ -2594,53 +1657,6 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	}, nil
 }
 
-func newStackCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var newName string
-	var jsonOut bool
-	var agentOut bool
-	cmd := &cobra.Command{
-		Use:    "stack --new <name>",
-		Short:  "Create a GX stack",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			newName = strings.TrimSpace(newName)
-			if newName == "" {
-				return fmt.Errorf("stack name is required; use gx stack --new <name>")
-			}
-			result, err := engine.CreateStack(ctx, newName)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			out := cmd.OutOrStdout()
-			if agentOut {
-				fmt.Fprintf(out, "created=true stack=%s ref=%s base=%s current_revision=%s\n",
-					quoteAgent(result.Stack.Name),
-					quoteAgent(result.Stack.BookmarkName),
-					quoteAgent(result.Stack.BaseRef),
-					quoteAgent(shortID(result.CurrentChange.ChangeID, 12)),
-				)
-				return nil
-			}
-			fmt.Fprintln(out, labelValue("created", result.Stack.Name))
-			fmt.Fprintln(out, labelValue("stack", result.Stack.BookmarkName))
-			fmt.Fprintln(out, labelValue("base", firstNonEmptyString(result.Stack.BaseRef, "main")))
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, section("Next"))
-			fmt.Fprintf(out, "  %s\n", command(`git add <files>`))
-			fmt.Fprintf(out, "  %s\n", command(`gx commit -m "first revision"`))
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&newName, "new", "n", "", "create and switch to a new stack")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	return cmd
-}
-
 func printCurrentStatusHuman(out io.Writer, status currentStatus) {
 	fmt.Fprintln(out, commandLine("gx status", true))
 	fmt.Fprintln(out)
@@ -2741,81 +1757,6 @@ func printCurrentStatusAgent(out io.Writer, status currentStatus) {
 	for _, file := range status.Files {
 		fmt.Fprintf(out, "file %s\n", quoteAgent(file))
 	}
-}
-
-func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var agentOut bool
-	var showAll bool
-	cmd := &cobra.Command{
-		Use:   "stacks [stack]",
-		Short: "Browse GX stacks and revisions",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if jsonOut {
-				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
-				if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
-					return enrichErr
-				}
-				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
-				if writeErr := writeJSON(cmd, stack); writeErr != nil {
-					return writeErr
-				}
-				return err
-			}
-			if len(args) > 0 && !agentOut {
-				return fmt.Errorf("stack selector is only supported with --agent")
-			}
-			return printStacks(ctx, engine, cmd.InOrStdin(), cmd.OutOrStdout(), agentOut, firstArg(args), stackDisplayOptions{ShowAll: showAll}, true, jsonOut)
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
-	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
-		flag.Hidden = true
-	}
-	cmd.AddCommand(
-		newStacksListCommand(ctx, engine),
-		newStacksEditCommand(ctx, engine),
-		newStacksDiffCommand(),
-	)
-	return cmd
-}
-
-func newStacksListCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var agentOut bool
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all non-merged GX stacks",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return engine.PreservingGitIndex(ctx, func() error {
-				stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
-				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
-				if jsonOut {
-					if writeErr := writeJSON(cmd, stack); writeErr != nil {
-						return writeErr
-					}
-					return err
-				}
-				if err != nil {
-					return err
-				}
-				if agentOut {
-					printStatusAgent(cmd.OutOrStdout(), stack, "")
-					return nil
-				}
-				printDeletedEmptyStacksNotice(cmd.OutOrStdout(), prunedEmpty)
-				fmt.Fprint(cmd.OutOrStdout(), renderStacksSummary(stack, nil, currentStackIndex(stack), true, 0))
-				return nil
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	return cmd
 }
 
 func newStacksEditCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
@@ -4564,8 +3505,6 @@ func newOpsIngestCommand(ctx context.Context) *cobra.Command {
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
-	case "gxg":
-		args = append([]string{"generate"}, args...)
 	case "gxr":
 		args = append([]string{"review"}, args...)
 	case "gxs":

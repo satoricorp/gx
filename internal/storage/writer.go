@@ -1951,7 +1951,10 @@ func (s *Store) sessionTokenUsage(ctx context.Context, sessionID string) (tokenU
 			rows.Close()
 			return total, fmt.Errorf("scan response usage: %w", err)
 		}
-		parsed := responseBodyUsage(body)
+		var parsed tokenUsage
+		if !input.Valid && !output.Valid {
+			parsed = responseBodyUsage(body)
+		}
 		total.InputTokens += usageColumn(input, parsed.InputTokens)
 		total.OutputTokens += usageColumn(output, parsed.OutputTokens)
 		total.CacheReadTokens += usageColumn(cacheRead, parsed.CacheReadTokens)
@@ -2176,12 +2179,23 @@ func usageFromValue(value any) tokenUsage {
 	if usage == nil {
 		return tokenUsage{}
 	}
-	return tokenUsage{
+	out := tokenUsage{
 		InputTokens:      usageTokenValue(usage, "input_tokens", "prompt_tokens"),
 		OutputTokens:     usageTokenValue(usage, "output_tokens", "completion_tokens"),
 		CacheReadTokens:  usageTokenValue(usage, "cache_read_tokens", "cache_read_input_tokens"),
 		CacheWriteTokens: usageTokenValue(usage, "cache_write_tokens", "cache_creation_input_tokens"),
 	}
+	if out.CacheReadTokens == 0 {
+		for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+			if details, _ := usage[key].(map[string]any); details != nil {
+				if cached := usageTokenValue(details, "cached_tokens"); cached > 0 {
+					out.CacheReadTokens = cached
+					break
+				}
+			}
+		}
+	}
+	return out
 }
 
 func usageTokenValue(usage map[string]any, keys ...string) int {

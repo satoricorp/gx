@@ -2,228 +2,271 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/x/term"
-	"github.com/satoricorp/gx/internal/termstyle"
 	"github.com/spf13/cobra"
+
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
-const demoWorkspace = "/tmp/gx-demo"
+// demoSkipExec is set by tests to exercise copy without running real commands.
+var demoSkipExec bool
 
 func newDemoCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:    "demo",
-		Short:  "Walk through how GX works",
-		Hidden: true,
+		Use:   "demo",
+		Short: "Interactive first-run walkthrough",
 		Long: strings.Join([]string{
-			"Walk through how GX works.",
+			"Walk through the core gx loop in a scratch repository.",
 			"",
-			"The demo is interactive and self-contained. It explains the core GX workflow,",
-			"asks you to type a few commands, then shows the outputs you would see while",
-			"working with stacks, revisions, compose proposals, publishing, and MCP setup.",
+			"Your real working copy is never touched. Press Enter to advance",
+			"each step; type q to quit.",
 		}, "\n"),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDemo(cmd.InOrStdin(), cmd.OutOrStdout())
+			return runDemo(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
 }
 
 type demoSession struct {
-	in         *bufio.Reader
-	out        io.Writer
-	revisionID string
-	reviewURL  string
-	mcpDir     string
-	fullScreen bool
+	ctx     context.Context
+	in      *bufio.Reader
+	out     io.Writer
+	scratch string
+	gxBin   string
 }
 
-func runDemo(in io.Reader, out io.Writer) error {
+func runDemo(ctx context.Context, in io.Reader, out io.Writer) error {
+	scratch, err := os.MkdirTemp("", "gx-demo-*")
+	if err != nil {
+		return fmt.Errorf("create demo scratch repo: %w", err)
+	}
+	defer os.RemoveAll(scratch)
+
 	session := demoSession{
-		in:         bufio.NewReader(in),
-		out:        out,
-		revisionID: "demo-r1",
-		reviewURL:  "https://gx.run/reviews/demo-stack",
-		mcpDir:     demoMCPDir(),
-		fullScreen: demoUseFullScreen(out),
+		ctx:     ctx,
+		in:      bufio.NewReader(in),
+		out:     out,
+		scratch: scratch,
+		gxBin:   demoGxBinary(),
 	}
 	return session.run()
 }
 
 func (d *demoSession) run() error {
-	if err := setupDemoWorkspace(); err != nil {
+	if err := d.seedScratch(); err != nil {
 		return err
 	}
-	d.enterFullScreen()
-	defer d.exitFullScreen()
-	if err := d.welcome(); err != nil {
+	d.printWelcome()
+	if err := d.waitContinue(); err != nil {
 		return err
 	}
-	if err := d.addPrompt(); err != nil {
+	if err := d.stepInit(); err != nil {
 		return err
 	}
-	if err := d.addOutputAndStacksPrompt(); err != nil {
+	if err := d.stepAuth(); err != nil {
 		return err
 	}
-	if err := d.stacksOutput(); err != nil {
+	if err := d.stepStage(); err != nil {
 		return err
 	}
-	if err := d.automaticModeNote(); err != nil {
+	if err := d.stepCommit(); err != nil {
 		return err
 	}
-	if err := d.publishPrompt(); err != nil {
+	if err := d.stepPush(); err != nil {
 		return err
 	}
-	if err := d.reviewURLScreen(); err != nil {
-		return err
-	}
-	if err := d.mcpScreen(); err != nil {
-		return err
-	}
-	return d.finish()
-}
-
-func (d *demoSession) welcome() error {
-	d.beginScreen()
-	d.println(demoMint("Welcome to gx!"))
-	d.println(demoWhite("gx creates stacks and revisions autonomously."))
-	d.println(demoWhite("If you're familiar with git, you can think of stacks like branches, and revisions like commits."))
-	d.println(demoWhite("The difference is that gx can easily edit, combine and mutate stacks and revisions."))
-	d.println("")
-	return d.wait()
-}
-
-func (d *demoSession) addPrompt() error {
-	d.beginScreen()
-	d.println(demoWhite("gx is meant to be used through our MCP server, however, you can use it through the CLI."))
-	d.println(demoWhite("We will setup the MCP at the end, but first, let's get comfortable with some commands."))
-	d.println(demoWhite(fmt.Sprintf("We've setup a code change for you inside %s for this demo. To save it, type:", demoWorkspace)))
-	d.println("")
-	d.println(demoMint(`git add hello.txt && gx commit -m "initial change for demo"`))
-	d.println("")
-	_, err := d.promptCommand(`git add hello.txt && gx commit -m "initial change for demo"`, []string{`git add hello.txt && gx commit -m "initial change for demo"`})
-	return err
-}
-
-func (d *demoSession) addOutputAndStacksPrompt() error {
-	d.beginScreen()
-	d.println(demoCommandOutput(`$ git add hello.txt && gx commit -m "initial change for demo"`))
-	d.println(demoCommandOutput(""))
-	d.println(demoCommandOutput("Revision recorded"))
-	d.println(demoCommandOutput("Message       initial change for demo"))
-	d.println(demoCommandOutput("Revision      " + d.revisionID))
-	d.println(demoCommandOutput("Stack         demo-stack"))
-	d.println(demoCommandOutput("Files         hello.txt"))
-	d.println("")
-	d.println(demoMint("You saved our initial change! ") + demoWhite("If you ever want to edit this revision, you can type ") + demoWhite("`gx edit <revision-id>`") + demoMint("."))
-	d.println(demoWhite("To see our change, type:"))
-	d.println("")
-	d.println(demoMint("gx stacks"))
-	d.println("")
-	_, err := d.promptCommand("gx stacks", []string{"gx stacks"})
-	return err
-}
-
-func (d *demoSession) stacksOutput() error {
-	d.beginScreen()
-	d.println(demoCommandOutput("$ gx stacks"))
-	d.println(demoCommandOutput("● demo-stack"))
-	d.println(demoCommandOutput("    demo-stack  main · draft · ↑1"))
-	d.println(demoCommandOutput("    * demo-r1  initial change for demo"))
-	d.println(demoCommandOutput("        hello.txt"))
-	d.println(demoCommandOutput(""))
-	d.println(demoCommandOutput("j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local"))
-	d.println("")
-	d.println(demoWhite("This command is interactive, and you can view diffs and edit revisions here."))
-	d.println("")
-	return d.wait()
-}
-
-func (d *demoSession) automaticModeNote() error {
-	d.beginScreen()
-	d.println(demoWhite("`gx commit`") + demoMint(" records one focused revision at a time."))
-	d.println(demoWhite("For bulk organization, ") + demoWhite("`gx generate`") + demoMint(" can automatically split your working copy into smaller revisions."))
-	d.println("")
-	d.println(demoWhite("Inspect what is ready to push. Type:"))
-	d.println("")
-	d.println(demoMint("gx status"))
-	d.println("")
-	_, err := d.promptCommand("gx status", []string{"gx status"})
-	return err
-}
-
-func (d *demoSession) publishPrompt() error {
-	d.beginScreen()
-	d.println(demoMint("That was much easier! The benefit of gx is organizing your work to help yourself and your team review code faster."))
-	d.println("")
-	d.println(demoMint("Our changes are still local (and now viewable in ") + demoWhite("`gx status`") + demoMint("). They aren't on the server yet, so let's push our changes. Type:"))
-	d.println("")
-	d.println(demoMint("git push"))
-	d.println("")
-	if _, err := d.promptCommand("git push", []string{"git push"}); err != nil {
-		return err
-	}
-	d.println("")
-	d.println(demoWhite("This is just like a normal `git push`, but the GX hook also sends sessions and metadata for review."))
-	d.println(demoWhite("When GitHub is configured, gx also creates or updates the matching PR."))
-	d.println("")
-	return d.wait()
-}
-
-func (d *demoSession) reviewURLScreen() error {
-	d.beginScreen()
-	d.println(demoCommandOutput("$ git push"))
-	d.println(demoCommandOutput("Pushing 1 stack with 3 revisions"))
-	d.println(demoCommandOutput("Synced       gx session context"))
-	d.println(demoCommandOutput("Review       " + d.reviewURL))
-	d.println("")
-	d.println(demoMint("You can go review your new change request at the above URL."))
-	d.println(demoMint("Open that link, and then come back for one last tip."))
-	d.println("")
-	return d.wait()
-}
-
-func (d *demoSession) mcpScreen() error {
-	d.beginScreen()
-	d.println(demoWhite("Command line tools are very helpful for both humans and agents,"))
-	d.println(demoWhite("but to take full advantage of gx, you'll want to install the MCP server."))
-	d.println("")
-	d.println(demoWhite("The MCP server exposes gx_sync, gx_generate, gx_status, gx_push,"))
-	d.println(demoWhite("gx_review, and gx_set_base so your coding agent can save with GX first."))
-	d.println("")
-	for _, item := range d.mcpInstructions() {
-		d.println(demoWhite("> " + item.Name))
-		for _, line := range item.Lines {
-			d.println("  " + demoMint(line))
-		}
-	}
-	d.println("")
-	d.println(demoWhite(`Ask your agent to "save work", "save using gx", or "save with gx".`))
-	d.println(demoWhite("It should run gx_generate, inspect gx_status, and gx_push ready stacks."))
-	d.println("")
-	return d.wait()
-}
-
-func (d *demoSession) finish() error {
-	d.beginScreen()
-	d.println(demoMint("Congrats for finishing the gx demo!"))
-	d.println("")
-	d.println(demoWhite("You should have the basic commands to begin using gx through the CLI and MCP."))
-	d.println(demoWhite("If you have questions, please say hi: hi@satori.sh"))
-	d.println("")
-	d.println(demoWhite("Thank you for using gx, and we look forward to building great things together."))
-	d.println(demoWhite("- Joe (Founder)"))
+	d.printDone()
 	return nil
 }
 
-func (d *demoSession) wait() error {
-	fmt.Fprintf(d.out, "%s ", demoGold("[Enter] to continue"))
+func (d *demoSession) seedScratch() error {
+	if demoSkipExec {
+		return nil
+	}
+	if err := runInDir(d.scratch, "git", "init", "-q"); err != nil {
+		return fmt.Errorf("git init scratch repo: %w", err)
+	}
+	if err := runInDir(d.scratch, "git", "config", "user.name", "gx demo"); err != nil {
+		return err
+	}
+	if err := runInDir(d.scratch, "git", "config", "user.email", "demo@gx.local"); err != nil {
+		return err
+	}
+	readme := filepath.Join(d.scratch, "README.md")
+	if err := os.WriteFile(readme, []byte("# gx demo\n"), 0o644); err != nil {
+		return fmt.Errorf("seed demo readme: %w", err)
+	}
+	if err := runInDir(d.scratch, "git", "add", "README.md"); err != nil {
+		return err
+	}
+	if err := runInDir(d.scratch, "git", "commit", "-q", "-m", "initial commit"); err != nil {
+		return err
+	}
+	path := filepath.Join(d.scratch, "rate_limiter.go")
+	content := "package main\n\nfunc rateLimit() {}\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("seed demo file: %w", err)
+	}
+	return nil
+}
+
+func (d *demoSession) printWelcome() {
+	d.println("")
+	d.println("  " + accent("gx") + " — version control that captures how code was made")
+	d.println("")
+	d.println("  " + muted("5 steps · 2 minutes · runs in a scratch repo, your work is untouched"))
+	d.println("")
+}
+
+func (d *demoSession) stepInit() error {
+	d.printStepHeader("1/5", "init")
+	d.println("  Set up gx in a repository.")
+	d.println("")
+	d.println("    $ " + command("gx init"))
+	d.println("")
+	d.println("  Installs hooks and starts ambient capture. From here on,")
+	d.println("  every AI session that touches this repo is recorded —")
+	d.println("  models, tokens, and context ride along with your commits.")
+	d.println("")
+	d.println("  " + muted("↵ run it"))
+	d.println("")
+	if err := d.waitContinue(); err != nil {
+		return err
+	}
+	// Accept identity/setup defaults via a dedicated stdin so the walkthrough
+	// stdin is not consumed by init prompts. Screen copy still shows `gx init`.
+	return d.runAndShowDisplay("gx init", d.gxBin, "init")
+}
+
+func (d *demoSession) stepAuth() error {
+	d.printStepHeader("2/5", "sign in")
+	d.println("  Connect to gx cloud.")
+	d.println("")
+	d.println("    $ " + command("gx auth login"))
+	d.println("")
+	d.println("  GitHub device login. Captures stay on your machine")
+	d.println("  until you choose to share them.")
+	d.println("")
+
+	if demoAlreadySignedIn() {
+		d.println("  " + success("already signed in ✓"))
+		d.println("")
+		d.println("  " + muted("↵ continue"))
+		d.println("")
+		return d.waitContinue()
+	}
+
+	d.println("  " + muted("↵ run it"))
+	d.println("")
+	if err := d.waitContinue(); err != nil {
+		return err
+	}
+	if demoSkipExec || !demoIsTTY(d.out) {
+		d.println("  " + muted("Skipped in this session — run gx auth login when you are ready."))
+		d.println("")
+		return nil
+	}
+	if !d.confirm("Run gx auth login now?") {
+		d.println("  " + muted("Skipped — run gx auth login when you are ready."))
+		d.println("")
+		return nil
+	}
+	return d.runAndShowDisplay("gx auth login", d.gxBin, "auth", "login")
+}
+
+func (d *demoSession) stepStage() error {
+	d.printStepHeader("3/5", "stage")
+	d.println("  Choose what goes in — plain git.")
+	d.println("")
+	d.println("    $ " + command("git add -p"))
+	d.println("")
+	d.println("  gx doesn't replace staging. Pick files and hunks")
+	d.println("  exactly like you always have.")
+	d.println("")
+	d.println("  " + muted("↵ run it"))
+	d.println("")
+	if err := d.waitContinue(); err != nil {
+		return err
+	}
+	// Non-interactive stand-in for git add -p: stage the seeded file.
+	if err := d.runAndShow("git", "add", "rate_limiter.go"); err != nil {
+		return err
+	}
+	d.println("  " + muted("(demo staged the seeded file; use git add -p in your own repo)"))
+	d.println("")
+	return nil
+}
+
+func (d *demoSession) stepCommit() error {
+	d.printStepHeader("4/5", "commit")
+	d.println("  Record it as a gx revision.")
+	d.println("")
+	d.println("    $ " + command(`gx commit -m "add rate limiter"`))
+	d.println("")
+	d.println("  Looks like a commit. Records more: the sessions, models,")
+	d.println("  and tokens behind the change — provenance your reviewer")
+	d.println("  can actually use.")
+	d.println("")
+	d.println("  " + muted("↵ run it"))
+	d.println("")
+	if err := d.waitContinue(); err != nil {
+		return err
+	}
+	return d.runAndShowDisplay(`gx commit -m "add rate limiter"`, d.gxBin, "commit", "-m", "add rate limiter")
+}
+
+func (d *demoSession) stepPush() error {
+	d.printStepHeader("5/5", "push")
+	d.println("  Ship it.")
+	d.println("")
+	d.println("    $ " + command("git push"))
+	d.println("")
+	d.println("  Your branch goes up like always. gx attaches the context,")
+	d.println("  so reviewers see the why — not just the diff.")
+	d.println("")
+	d.println("  " + muted("↵ run it"))
+	d.println("")
+	if err := d.waitContinue(); err != nil {
+		return err
+	}
+	d.println("  $ git push")
+	d.println("  " + muted("To github.com:you/your-repo.git"))
+	d.println("  " + muted(" * [new branch]      feature/rate-limiter -> feature/rate-limiter"))
+	d.println("  " + success("gx attached session context for review"))
+	d.println("")
+	d.println("  " + muted("(simulated — this scratch repo has no remote)"))
+	d.println("")
+	return nil
+}
+
+func (d *demoSession) printDone() {
+	d.println("  " + section("── done ───────────────────────────────────────────"))
+	d.println("")
+	d.println("  That's the loop: stage with git, commit with gx.")
+	d.println("")
+	d.println("    " + command("gx status") + "    your stacks at a glance")
+	d.println("    " + command("gx review") + "    context-aware code review")
+	d.println("    " + command("gx doctor") + "    check and fix your setup")
+	d.println("")
+}
+
+func (d *demoSession) printStepHeader(step, title string) {
+	d.println("")
+	d.println("  " + section(fmt.Sprintf("── %s · %s ─────────────────────────────────────────", step, title)))
+	d.println("")
+}
+
+func (d *demoSession) waitContinue() error {
 	raw, err := d.in.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
@@ -231,124 +274,106 @@ func (d *demoSession) wait() error {
 	if isDemoCancel(raw) {
 		return fmt.Errorf("demo canceled")
 	}
-	d.println("")
 	return nil
 }
 
-func (d *demoSession) promptCommand(defaultValue string, accepted []string) (string, error) {
-	fmt.Fprintf(d.out, "%s ", demoWhite(">"))
+func (d *demoSession) confirm(prompt string) bool {
+	fmt.Fprintf(d.out, "  %s [y/N] ", muted(prompt))
 	raw, err := d.in.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
+	if err != nil {
+		return false
 	}
-	if isDemoCancel(raw) {
-		return "", fmt.Errorf("demo canceled")
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
 	}
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		value = defaultValue
+}
+
+func (d *demoSession) runAndShow(name string, args ...string) error {
+	display := strings.Join(append([]string{filepath.Base(name)}, args...), " ")
+	return d.runAndShowDisplay(display, name, args...)
+}
+
+func (d *demoSession) runAndShowDisplay(display, name string, args ...string) error {
+	d.println("  $ " + display)
+	if demoSkipExec {
+		d.println("  " + muted("(skipped)"))
+		d.println("")
+		return nil
 	}
-	if len(accepted) > 0 && !demoAcceptedCommand(value, accepted) {
-		fmt.Fprintf(d.out, "%s\n", demoGold(fmt.Sprintf("Using `%s` for the walkthrough.", defaultValue)))
-		value = defaultValue
+	cmd := exec.CommandContext(d.ctx, name, args...)
+	cmd.Dir = d.scratch
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// Keep demo stdin for Enter/q; feed defaults to child prompts.
+	if name == d.gxBin && len(args) > 0 && args[0] == "init" {
+		cmd.Stdin = strings.NewReader("\n\n\n")
 	}
-	return value, nil
+	output, err := cmd.CombinedOutput()
+	text := strings.TrimRight(string(output), "\n")
+	if text != "" {
+		for _, line := range strings.Split(text, "\n") {
+			d.println("  " + line)
+		}
+	}
+	d.println("")
+	if err != nil {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return nil
 }
 
 func (d *demoSession) println(value string) {
 	fmt.Fprintln(d.out, value)
 }
 
-func (d *demoSession) enterFullScreen() {
-	if !d.fullScreen {
-		return
+func demoAlreadySignedIn() bool {
+	creds, err := cloud.LoadCloudCredentials()
+	if err != nil || creds == nil {
+		return false
 	}
-	fmt.Fprint(d.out, "\x1b[?1049h\x1b[H")
+	return strings.TrimSpace(creds.Login) != "" || strings.TrimSpace(creds.UserID) != ""
 }
 
-func (d *demoSession) exitFullScreen() {
-	if !d.fullScreen {
-		return
+func demoGxBinary() string {
+	if bin := strings.TrimSpace(os.Getenv("GX_DEMO_BIN")); bin != "" {
+		return bin
 	}
-	fmt.Fprint(d.out, "\x1b[?1049l")
-}
-
-func (d *demoSession) beginScreen() {
-	if d.fullScreen {
-		fmt.Fprint(d.out, "\x1b[2J\x1b[H")
-	}
-	d.println("")
-}
-
-type demoMCPInstruction struct {
-	Name  string
-	Lines []string
-}
-
-func (d *demoSession) mcpInstructions() []demoMCPInstruction {
-	start := fmt.Sprintf("npm --prefix %s run start", d.mcpDir)
-	return []demoMCPInstruction{
-		{Name: "Cursor", Lines: []string{fmt.Sprintf("cursor mcp add gx -- %s", start)}},
-		{Name: "Codex", Lines: []string{
-			`Add to ~/.codex/config.toml:`,
-			`[mcp_servers.gx]`,
-			`command = "npm"`,
-			fmt.Sprintf(`args = ["--prefix", "%s", "run", "start"]`, d.mcpDir),
-		}},
-		{Name: "Claude Code", Lines: []string{fmt.Sprintf("claude mcp add gx -- %s", start)}},
-		{Name: "Opencode", Lines: []string{fmt.Sprintf("opencode mcp add gx -- %s", start)}},
-		{Name: "Antigravity", Lines: []string{
-			`Add a stdio MCP server named "gx":`,
-			`command: npm`,
-			fmt.Sprintf(`args: --prefix %s run start`, d.mcpDir),
-		}},
-	}
-}
-
-func setupDemoWorkspace() error {
-	if err := os.MkdirAll(demoWorkspace, 0o755); err != nil {
-		return fmt.Errorf("create demo workspace: %w", err)
-	}
-	files := map[string]string{
-		"hello.txt": "hello gx\n",
-		"README.md": strings.Join([]string{
-			"# GX demo",
-			"",
-			"This temporary workspace is used by `gx demo`.",
-			"",
-		}, "\n"),
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(demoWorkspace, name), []byte(content), 0o644); err != nil {
-			return fmt.Errorf("write demo file %s: %w", name, err)
+	if exe, err := os.Executable(); err == nil {
+		base := filepath.Base(exe)
+		if base == "gx" || strings.HasPrefix(base, "gx-") {
+			return exe
 		}
+	}
+	if path, err := exec.LookPath("gx"); err == nil {
+		return path
+	}
+	return "gx"
+}
+
+func demoIsTTY(out io.Writer) bool {
+	file, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	return term.IsTerminal(file.Fd())
+}
+
+func runInDir(dir, name string, args ...string) error {
+	if demoSkipExec && name != "git" {
+		return nil
+	}
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-func demoMCPDir() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "mcp"
-	}
-	return filepath.Join(cwd, "mcp")
-}
-
-func demoAcceptedCommand(value string, accepted []string) bool {
-	normalized := normalizeDemoCommand(value)
-	for _, candidate := range accepted {
-		if normalized == normalizeDemoCommand(candidate) {
-			return true
-		}
-	}
-	return false
-}
-
-func normalizeDemoCommand(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.ReplaceAll(value, `"`, `'`)
-	value = strings.Join(strings.Fields(value), " ")
-	return strings.ReplaceAll(value, "shift + a", "shift+a")
 }
 
 func isDemoCancel(value string) bool {
@@ -358,45 +383,4 @@ func isDemoCancel(value string) bool {
 	default:
 		return false
 	}
-}
-
-func demoMint(text string) string {
-	return accent(text)
-}
-
-func demoGold(text string) string {
-	return demoANSI("38;2;245;194;107", text)
-}
-
-func demoWhite(text string) string {
-	return demoANSI("38;2;250;250;250", text)
-}
-
-func demoItalic(text string) string {
-	if text == "" || !termstyle.Enabled() {
-		return text
-	}
-	return "\x1b[3m" + text + "\x1b[0m"
-}
-
-func demoCommandOutput(text string) string {
-	return demoANSI("38;2;212;212;216", text)
-}
-
-func demoANSI(code, text string) string {
-	if text == "" || !termstyle.Enabled() {
-		return text
-	}
-	return "\x1b[" + code + "m" + text + "\x1b[0m"
-}
-
-func demoUseFullScreen(out io.Writer) bool {
-	file, ok := out.(*os.File)
-	if !ok {
-		return false
-	}
-	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
-		return false
-	}
-	return term.IsTerminal(file.Fd())
 }
