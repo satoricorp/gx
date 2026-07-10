@@ -10,10 +10,17 @@ import (
 type ProposalStatus string
 
 const (
-	ProposalPending ProposalStatus = "pending"
-	ProposalApplied ProposalStatus = "applied"
-	ProposalExpired ProposalStatus = "expired"
+	ProposalPending          ProposalStatus = "pending"
+	ProposalPartiallyApplied ProposalStatus = "partially_applied"
+	ProposalApplied          ProposalStatus = "applied"
+	ProposalExpired          ProposalStatus = "expired"
 )
+
+type DemuxApplyCheckpoint struct {
+	RevisionID string `json:"revision_id"`
+	ChangeID   string `json:"change_id,omitempty"`
+	CommitID   string `json:"commit_id,omitempty"`
+}
 
 type HunkRange struct {
 	ID         string `json:"id"`
@@ -73,6 +80,7 @@ type StructuralFact struct {
 	Language          string             `json:"language"`
 	DefinedSymbols    []string           `json:"defined_symbols,omitempty"`
 	ReferencedSymbols []string           `json:"referenced_symbols,omitempty"`
+	Imports           []string           `json:"imports,omitempty"`
 	Symbols           []StructuralSymbol `json:"symbols,omitempty"`
 }
 
@@ -126,24 +134,27 @@ type ConfidenceReason struct {
 }
 
 type DemuxProposal struct {
-	ID                  string                 `json:"id"`
-	RepoRoot            string                 `json:"repo_root"`
-	ProposedChangeID    string                 `json:"proposed_change_id"`
-	ProposedCommitID    string                 `json:"proposed_commit_id"`
-	Status              ProposalStatus         `json:"status"`
-	PlanInstructions    []string               `json:"plan_instructions,omitempty"`
-	Hunks               []HunkRange            `json:"hunks,omitempty"`
-	StructuralFacts     []StructuralFact       `json:"structural_facts,omitempty"`
-	StructuralDeps      []StructuralDependency `json:"structural_dependencies,omitempty"`
-	ChangedSymbols      []ChangedSymbol        `json:"changed_symbols,omitempty"`
-	Revisions           []RevisionProposal     `json:"revisions"`
-	FeasibilityWarnings []FeasibilityWarning   `json:"feasibility_warnings,omitempty"`
-	Warnings            []string               `json:"warnings,omitempty"`
-	HunkLinks           []matcher.HunkLink     `json:"hunk_links,omitempty"`
-	HunkCoverage        float64                `json:"hunk_coverage,omitempty"`
-	CaptureTools        []string               `json:"capture_tools,omitempty"`
-	Confidence          PlanConfidence         `json:"confidence_summary,omitempty"`
-	CreatedAt           int64                  `json:"created_at"`
+	ID                          string                 `json:"id"`
+	RepoRoot                    string                 `json:"repo_root"`
+	ProposedChangeID            string                 `json:"proposed_change_id"`
+	ProposedCommitID            string                 `json:"proposed_commit_id"`
+	Status                      ProposalStatus         `json:"status"`
+	PlanInstructions            []string               `json:"plan_instructions,omitempty"`
+	Hunks                       []HunkRange            `json:"hunks,omitempty"`
+	StructuralFacts             []StructuralFact       `json:"structural_facts,omitempty"`
+	StructuralDeps              []StructuralDependency `json:"structural_dependencies,omitempty"`
+	ChangedSymbols              []ChangedSymbol        `json:"changed_symbols,omitempty"`
+	Revisions                   []RevisionProposal     `json:"revisions"`
+	FeasibilityWarnings         []FeasibilityWarning   `json:"feasibility_warnings,omitempty"`
+	Warnings                    []string               `json:"warnings,omitempty"`
+	HunkLinks                   []matcher.HunkLink     `json:"hunk_links,omitempty"`
+	HunkCoverage                float64                `json:"hunk_coverage,omitempty"`
+	CaptureTools                []string               `json:"capture_tools,omitempty"`
+	Confidence                  PlanConfidence         `json:"confidence_summary,omitempty"`
+	AppliedRevisionIDs          []string               `json:"applied_revision_ids,omitempty"`
+	EvidenceRecordedRevisionIDs []string               `json:"evidence_recorded_revision_ids,omitempty"`
+	ApplyCheckpoints            []DemuxApplyCheckpoint `json:"apply_checkpoints,omitempty"`
+	CreatedAt                   int64                  `json:"created_at"`
 }
 
 type DemuxRevisionView struct {

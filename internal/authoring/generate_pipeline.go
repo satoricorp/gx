@@ -2,6 +2,7 @@ package authoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -170,6 +171,7 @@ func (p generatePipeline) repairLowConfidenceDraft(ctx context.Context, proposal
 }
 
 func (p generatePipeline) preflightHighConfidencePlan(ctx context.Context, proposal DemuxProposal, opts ProposeDemuxOptions) (DemuxProposal, error) {
+	coverageInput := proposal
 	review, err := p.engine.ReviewDemuxPlan(ctx, proposal)
 	if err != nil {
 		return proposal, err
@@ -177,6 +179,12 @@ func (p generatePipeline) preflightHighConfidencePlan(ctx context.Context, propo
 	proposal = annotateGenerateLogicConfidence(reviewedProposalOrFallback(review, proposal))
 	if demuxWorkflowState(review, proposal) != DemuxWorkflowReadyToApply {
 		return proposal, nil
+	}
+	if checked, downgraded := coverageCheckedGenerateProposal(coverageInput, proposal, opts.Intent); downgraded {
+		if saved, saveErr := p.engine.SaveDemuxProposal(ctx, checked); saveErr == nil {
+			checked = saved
+		}
+		return checked, nil
 	}
 	if !generateApplyPreflightEnabled() {
 		proposal = appendGeneratePipelineWarning(proposal, "skipped disposable apply preflight for fast generate path; set GX_GENERATE_VERIFY=1 to force it")
@@ -235,6 +243,43 @@ func (p generatePipeline) preflightHighConfidencePlan(ctx context.Context, propo
 	return fallback, nil
 }
 
+func coverageCheckedGenerateProposal(coverageInput, readyProposal DemuxProposal, intent string) (DemuxProposal, bool) {
+	if err := validateDemuxPatchCoverage(coverageInput); err != nil {
+		return conservativeCoverageMismatchProposal(readyProposal, intent, err), true
+	}
+	if err := validateDemuxPatchCoverage(readyProposal); err != nil {
+		return conservativeCoverageMismatchProposal(readyProposal, intent, err), true
+	}
+	return readyProposal, false
+}
+
+func conservativeCoverageMismatchProposal(proposal DemuxProposal, intent string, err error) DemuxProposal {
+	fallback := conservativeGenerateProposal(proposal, intent, "simplified generate plan after patch coverage mismatch")
+	fallback = appendGeneratePipelineWarning(fallback, fmt.Sprintf("patch coverage mismatch: %v; using conservative revision grouping", err))
+	if coverageErr := validateDemuxPatchCoverage(fallback); coverageErr == nil {
+		return fallback
+	}
+	fallback.Revisions = conservativeGenerateWholePlanRevisions(proposal, intent, "simplified generate plan after patch coverage mismatch")
+	fallback.FeasibilityWarnings = feasibilityWarningsForProposal(fallback)
+	fallback = annotateGenerateLogicConfidence(fallback)
+	return fallback
+}
+
+func generateLLMRepairEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_GENERATE_LLM_REPAIR"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func generateRefineUsesLLMRepair(review ReviewDemuxResult, proposal DemuxProposal) bool {
+	needsRepair := demuxWorkflowState(review, proposal) != DemuxWorkflowReadyToApply ||
+		proposal.Confidence.EffectiveConfidence < generateHighLogicConfidence
+	return needsRepair && generateLLMRepairEnabled()
+}
+
 func generateApplyPreflightEnabled() bool {
 	if strings.TrimSpace(os.Getenv("GX_COMPOSE_SKIP_APPLY_PREFLIGHT")) == "1" {
 		return false
@@ -247,165 +292,13 @@ func generateApplyPreflightEnabled() bool {
 	}
 }
 
-func generateLLMRepairEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_GENERATE_LLM_REPAIR"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
 func polishGenerateProposal(proposal DemuxProposal) DemuxProposal {
-	proposal = coalesceKnownGenerateRevisions(proposal)
 	proposal = coalesceDocumentationRevisions(proposal)
 	for index := range proposal.Revisions {
 		proposal.Revisions[index].Intent = generateRevisionIntent(proposal.Revisions[index])
 	}
-	proposal = applyKnownGenerateRoutes(proposal)
 	proposal = groupGenerateRevisionsByRoute(proposal)
 	return proposal
-}
-
-func applyKnownGenerateRoutes(proposal DemuxProposal) DemuxProposal {
-	for index := range proposal.Revisions {
-		if target := knownGenerateRevisionRoute(cleanFiles(proposal.Revisions[index].Files)); target != "" {
-			proposal.Revisions[index].TargetStack = target
-			proposal.Revisions[index].RouteConfidence = maxFloat(proposal.Revisions[index].RouteConfidence, 0.96)
-			proposal.Revisions[index].RouteSource = "deterministic_file_domain"
-		}
-	}
-	return proposal
-}
-
-func coalesceKnownGenerateRevisions(proposal DemuxProposal) DemuxProposal {
-	targetByUnit := map[string]int{}
-	out := make([]RevisionProposal, 0, len(proposal.Revisions))
-	for _, revision := range proposal.Revisions {
-		files := cleanFiles(revision.Files)
-		unit := knownGenerateRevisionUnit(files)
-		if unit == "" {
-			revision.Files = files
-			out = append(out, revision)
-			continue
-		}
-		if existingIndex, ok := targetByUnit[unit]; ok {
-			merged := mergeWholeFileGenerateRevision(out[existingIndex], revision, files, "coalesced "+unit+" files into one reviewable unit")
-			out[existingIndex] = merged
-			continue
-		}
-		targetByUnit[unit] = len(out)
-		revision.Files = files
-		revision.UseHunks = false
-		revision.Hunks = nil
-		revision.HunkIDs = nil
-		out = append(out, revision)
-	}
-	proposal.Revisions = out
-	return proposal
-}
-
-func mergeWholeFileGenerateRevision(base RevisionProposal, revision RevisionProposal, files []string, reason string) RevisionProposal {
-	base.Files = cleanFiles(append(base.Files, files...))
-	base.UseHunks = false
-	base.Hunks = nil
-	base.HunkIDs = nil
-	base.Confidence = maxFloat(base.Confidence, revision.Confidence)
-	if base.RouteConfidence == 0 || (revision.RouteConfidence > 0 && revision.RouteConfidence < base.RouteConfidence) {
-		base.RouteConfidence = revision.RouteConfidence
-	}
-	base.ShapeReasons = appendUniqueString(base.ShapeReasons, reason)
-	base.SessionIDs = uniqueStrings(append(base.SessionIDs, revision.SessionIDs...))
-	return base
-}
-
-func knownGenerateRevisionUnit(files []string) string {
-	if len(files) == 0 {
-		return ""
-	}
-	if containsOnlyPathPrefix(files, "apps/menubar/") {
-		return "menubar app"
-	}
-	if containsOnlyStorageSemanticLabelFiles(files) {
-		return "semantic label storage"
-	}
-	if containsOnlyGenerateConfidenceMetadataFiles(files) {
-		return "generate confidence metadata"
-	}
-	return ""
-}
-
-func knownGenerateRevisionRoute(files []string) string {
-	if len(files) == 0 {
-		return ""
-	}
-	switch {
-	case containsOnlyPathPrefix(files, "apps/menubar/"):
-		return "feature/apps-menubar"
-	case containsOnlyDocumentationFiles(files):
-		return "docs/documentation"
-	case containsOnlyStorageSemanticLabelFiles(files):
-		return "feature/stack-management"
-	case containsOnlyPathPrefix(files, "internal/cli/"):
-		return "feature/cli"
-	case containsOnlyPathPrefix(files, "internal/reviewbundle/"):
-		return "feature/provider-runtime"
-	case containsOnlyPathPrefix(files, "test/e2e/"):
-		return "test/e2e-tests"
-	case containsOnlyPathPrefix(files, "internal/authoring/"):
-		return "feature/demux-routing"
-	default:
-		return ""
-	}
-}
-
-func containsOnlyPathPrefix(files []string, prefix string) bool {
-	if len(files) == 0 {
-		return false
-	}
-	for _, file := range files {
-		if !strings.HasPrefix(file, prefix) {
-			return false
-		}
-	}
-	return true
-}
-
-func containsOnlyStorageSemanticLabelFiles(files []string) bool {
-	if len(files) == 0 {
-		return false
-	}
-	allowed := map[string]struct{}{
-		"internal/storage/schema.sql": {},
-		"internal/storage/db.go":      {},
-		"internal/storage/types.go":   {},
-		"internal/storage/writer.go":  {},
-	}
-	for _, file := range files {
-		if _, ok := allowed[file]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func containsOnlyGenerateConfidenceMetadataFiles(files []string) bool {
-	if len(files) == 0 {
-		return false
-	}
-	allowed := map[string]struct{}{
-		"internal/authoring/demux.go":          {},
-		"internal/authoring/demux_ai.go":       {},
-		"internal/authoring/demux_pipeline.go": {},
-		"internal/authoring/demux_routing.go":  {},
-		"internal/authoring/proposal.go":       {},
-	}
-	for _, file := range files {
-		if _, ok := allowed[file]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func groupGenerateRevisionsByRoute(proposal DemuxProposal) DemuxProposal {
@@ -477,41 +370,10 @@ func coalesceDocumentationRevisions(proposal DemuxProposal) DemuxProposal {
 
 func generateRevisionIntent(revision RevisionProposal) string {
 	files := cleanFiles(revision.Files)
-	if containsAllFiles(files, "internal/authoring/generate_pipeline.go", "internal/authoring/generate_pipeline_test.go") {
-		return "add confidence-gated generate pipeline"
-	}
-	if containsAllFiles(files, "internal/storage/schema.sql", "internal/storage/db.go", "internal/storage/types.go", "internal/storage/writer.go") {
-		return "add semantic label registry storage"
-	}
-	if containsOnlyPathPrefix(files, "apps/menubar/") {
-		return "update menubar app release workflow"
-	}
-	if containsAllFiles(files, "internal/authoring/demux_ai.go", "internal/authoring/proposal.go") {
-		return "add generate confidence metadata"
-	}
-	if containsAllFiles(files, "internal/cli/root.go", "internal/cli/root_test.go") {
-		return "add gx generate --legacy flag"
-	}
-	if len(files) == 1 && files[0] == "test/e2e/gx_e2e_test.go" {
-		return "update e2e coverage for current GX workflow"
-	}
 	if containsOnlyDocumentationFiles(files) {
-		return "update GX documentation"
+		return "update documentation"
 	}
 	return revision.Intent
-}
-
-func containsAllFiles(files []string, required ...string) bool {
-	seen := map[string]struct{}{}
-	for _, file := range files {
-		seen[file] = struct{}{}
-	}
-	for _, file := range required {
-		if _, ok := seen[file]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func uniqueStrings(values []string) []string {
@@ -557,8 +419,10 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 	score := 0.95
 	var reasons []ConfidenceReason
 	routeRisks := 0
-	hunkSplitCount := 0
+	oversizedRevisions := 0
+	targetSizedRevisions := 0
 	sharedFileRisks := 0
+	hunkSplitCount := 0
 	add := func(kind, severity, message, suggestion string, delta float64) {
 		reasons = append(reasons, ConfidenceReason{Kind: kind, Severity: severity, Message: message, Suggestion: suggestion, Delta: delta})
 		score += delta
@@ -568,14 +432,24 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 	}
 	fileOwners := map[string]string{}
 	for _, revision := range proposal.Revisions {
-		if revision.UseHunks {
-			hunkSplitCount++
-		}
 		if len(revision.Files) == 0 {
 			add("empty_revision", "risk", fmt.Sprintf("revision %s has no files", revision.ID), "drop empty revisions or assign covered files/hunks to them", -0.30)
 		}
+		effectiveLOC := revision.EffectiveLOC
+		if effectiveLOC <= 0 {
+			effectiveLOC = demuxRevisionMetrics(proposal, revision).EffectiveLOC
+		}
+		switch {
+		case effectiveLOC > defaultDemuxReviewShapePolicy.SoftMaxLOC:
+			oversizedRevisions++
+		case effectiveLOC >= defaultDemuxReviewShapePolicy.TargetMinLOC && effectiveLOC <= defaultDemuxReviewShapePolicy.TargetMaxLOC:
+			targetSizedRevisions++
+		}
 		if strings.TrimSpace(revision.TargetStack) != "" && revision.RouteConfidence > 0 && revision.RouteConfidence < generateMediumLogicConfidence {
 			routeRisks++
+		}
+		if revision.UseHunks {
+			hunkSplitCount++
 		}
 		for _, file := range revision.Files {
 			file = strings.TrimSpace(file)
@@ -613,9 +487,9 @@ func generateLogicConfidence(proposal DemuxProposal) PlanConfidence {
 	}
 	if len(reasons) == 0 {
 		reasons = append(reasons, ConfidenceReason{
-			Kind:     "whole_file_plan",
+			Kind:     "reviewable_plan",
 			Severity: "positive",
-			Message:  "whole-file deterministic plan has no blocking logic risks",
+			Message:  "deterministic plan has no blocking logic risks",
 		})
 	}
 	if score < 0 {
@@ -696,6 +570,199 @@ func conservativeGenerateProposal(proposal DemuxProposal, intent, reason string)
 }
 
 func conservativeGenerateRevisions(proposal DemuxProposal, intent, reason string) []RevisionProposal {
+	if normalized, err := normalizeDemuxProposal(proposal); err == nil {
+		return markConservativeGenerateRevisions(normalized.Revisions, reason)
+	} else if revisions, ok := repairConservativeGenerateRevisions(proposal, err, reason); ok {
+		return revisions
+	}
+	return conservativeGenerateWholePlanRevisions(proposal, intent, reason)
+}
+
+func markConservativeGenerateRevisions(revisions []RevisionProposal, reason string) []RevisionProposal {
+	out := make([]RevisionProposal, 0, len(revisions))
+	for _, revision := range revisions {
+		revision.Confidence = maxFloat(revision.Confidence, 0.90)
+		revision.ShapeReasons = appendUniqueString(revision.ShapeReasons, reason)
+		out = append(out, revision)
+	}
+	return out
+}
+
+func repairConservativeGenerateRevisions(proposal DemuxProposal, validationErr error, reason string) ([]RevisionProposal, bool) {
+	repaired := proposal
+	switch e := demuxValidationRepair(validationErr).(type) {
+	case duplicateOwnerRepair:
+		revisions, ok := mergeConservativeImplicatedRevisions(proposal.Revisions, e.revisionIDs, reason)
+		if !ok {
+			return nil, false
+		}
+		repaired.Revisions = revisions
+	case removeHunkReferenceRepair:
+		revisions, ok := removeConservativeHunkReference(proposal.Revisions, e.revisionID, e.hunkID, reason)
+		if !ok {
+			return nil, false
+		}
+		repaired.Revisions = revisions
+	case removeDependencyRepair:
+		revisions, ok := removeConservativeDependency(proposal.Revisions, e.revisionID, e.dependsOn, reason)
+		if !ok {
+			return nil, false
+		}
+		repaired.Revisions = revisions
+	default:
+		return nil, false
+	}
+	normalized, err := normalizeDemuxProposal(repaired)
+	if err != nil {
+		return nil, false
+	}
+	return markConservativeGenerateRevisions(normalized.Revisions, reason), true
+}
+
+type duplicateOwnerRepair struct {
+	revisionIDs []string
+}
+
+type removeHunkReferenceRepair struct {
+	revisionID string
+	hunkID     string
+}
+
+type removeDependencyRepair struct {
+	revisionID string
+	dependsOn  string
+}
+
+func demuxValidationRepair(err error) any {
+	var duplicateHunk DuplicateHunkAssignmentError
+	if errors.As(err, &duplicateHunk) {
+		return duplicateOwnerRepair{revisionIDs: []string{duplicateHunk.FirstOwnerID, duplicateHunk.SecondOwnerID}}
+	}
+	var duplicateWhole DuplicateWholeFileOwnerError
+	if errors.As(err, &duplicateWhole) {
+		return duplicateOwnerRepair{revisionIDs: []string{duplicateWhole.FirstOwnerID, duplicateWhole.SecondOwnerID}}
+	}
+	var mixed MixedHunkWholeFileCoverageError
+	if errors.As(err, &mixed) {
+		return duplicateOwnerRepair{revisionIDs: []string{mixed.HunkRevisionID, mixed.WholeRevisionID}}
+	}
+	var unknownHunk UnknownHunkReferenceError
+	if errors.As(err, &unknownHunk) && strings.TrimSpace(unknownHunk.RevisionID) != "" && strings.TrimSpace(unknownHunk.HunkID) != "" {
+		return removeHunkReferenceRepair{revisionID: unknownHunk.RevisionID, hunkID: unknownHunk.HunkID}
+	}
+	var dangling DanglingDependsOnError
+	if errors.As(err, &dangling) && strings.TrimSpace(dangling.RevisionID) != "" && strings.TrimSpace(dangling.DependsOn) != "" {
+		return removeDependencyRepair{revisionID: dangling.RevisionID, dependsOn: dangling.DependsOn}
+	}
+	return nil
+}
+
+func mergeConservativeImplicatedRevisions(revisions []RevisionProposal, revisionIDs []string, reason string) ([]RevisionProposal, bool) {
+	ids := stringSet(revisionIDs)
+	if len(ids) == 0 {
+		return nil, false
+	}
+	var merged RevisionProposal
+	var files []string
+	mergedAny := false
+	out := make([]RevisionProposal, 0, len(revisions))
+	for _, revision := range revisions {
+		if _, ok := ids[revision.ID]; !ok {
+			out = append(out, revision)
+			continue
+		}
+		if !mergedAny {
+			merged = revision
+			mergedAny = true
+		}
+		files = append(files, revision.Files...)
+		files = append(files, proposalFilesFromHunks(revision.Hunks)...)
+	}
+	if !mergedAny {
+		return nil, false
+	}
+	files = cleanFiles(files)
+	if len(files) == 0 {
+		return nil, false
+	}
+	merged.Files = files
+	merged.UseHunks = false
+	merged.HunkIDs = nil
+	merged.Hunks = nil
+	merged.DependsOn = nil
+	merged.Confidence = maxFloat(merged.Confidence, 0.90)
+	merged.ShapeReasons = appendUniqueString(merged.ShapeReasons, reason)
+	result := make([]RevisionProposal, 0, len(out)+1)
+	inserted := false
+	for _, revision := range revisions {
+		if _, ok := ids[revision.ID]; ok {
+			if !inserted {
+				result = append(result, merged)
+				inserted = true
+			}
+			continue
+		}
+		result = append(result, revision)
+	}
+	return result, true
+}
+
+func removeConservativeHunkReference(revisions []RevisionProposal, revisionID, hunkID, reason string) ([]RevisionProposal, bool) {
+	out := make([]RevisionProposal, 0, len(revisions))
+	changed := false
+	for _, revision := range revisions {
+		if revision.ID != revisionID {
+			out = append(out, revision)
+			continue
+		}
+		revision.HunkIDs = removeString(revision.HunkIDs, hunkID)
+		var hunks []HunkRange
+		for _, hunk := range revision.Hunks {
+			if hunk.ID != hunkID {
+				hunks = append(hunks, hunk)
+			}
+		}
+		revision.Hunks = hunks
+		if revision.UseHunks && len(revision.HunkIDs) == 0 && len(revision.Hunks) == 0 {
+			return nil, false
+		}
+		revision.ShapeReasons = appendUniqueString(revision.ShapeReasons, reason)
+		out = append(out, revision)
+		changed = true
+	}
+	return out, changed
+}
+
+func removeConservativeDependency(revisions []RevisionProposal, revisionID, dependsOn, reason string) ([]RevisionProposal, bool) {
+	out := make([]RevisionProposal, 0, len(revisions))
+	changed := false
+	for _, revision := range revisions {
+		if revision.ID == revisionID {
+			next := removeString(revision.DependsOn, dependsOn)
+			if len(next) != len(revision.DependsOn) {
+				revision.DependsOn = next
+				revision.ShapeReasons = appendUniqueString(revision.ShapeReasons, reason)
+				changed = true
+			}
+		}
+		out = append(out, revision)
+	}
+	return out, changed
+}
+
+func removeString(values []string, remove string) []string {
+	remove = strings.TrimSpace(remove)
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == remove {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
+func conservativeGenerateWholePlanRevisions(proposal DemuxProposal, intent, reason string) []RevisionProposal {
 	if len(proposal.Revisions) == 0 {
 		files := demuxProposalCoveredFiles(proposal)
 		if len(files) == 0 {
@@ -744,7 +811,7 @@ func conservativeGenerateRevisions(proposal DemuxProposal, intent, reason string
 		out = append(out, revision)
 	}
 	if len(out) == 0 {
-		return conservativeGenerateRevisions(DemuxProposal{Hunks: proposal.Hunks}, intent, reason)
+		return conservativeGenerateWholePlanRevisions(DemuxProposal{Hunks: proposal.Hunks}, intent, reason)
 	}
 	for index := range out {
 		if strings.TrimSpace(out[index].ID) == "" {

@@ -3,6 +3,7 @@ package authoring
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/provenance"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/structural"
@@ -59,6 +61,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	}
 	hunks := parseGitHunks(diff)
 	hunks = filterHunksByFiles(hunks, files)
+	captureEvidence, captureWarning := matchWorkingCopyForGeneratePlanning(ctx, repo.RootPath, hunks)
 
 	anchor, err := e.wipePendingDemuxProposals(ctx, repo, current.ChangeID)
 	if err != nil {
@@ -76,18 +79,21 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	hunksByFile := hunksByFile(hunks)
 	fileGroups := orderGroupsByStructuralDependencies(groupFiles(files), facts)
 	groups := expandGroupsByChangedSymbols(fileGroups, hunksByFile)
+	var sessionGroupingFallback bool
+	groups, _, sessionGroupingValid := groupDemuxHunksWithSessionAffinity(groups, hunks, captureEvidence.HunkLinks, facts)
+	if !sessionGroupingValid {
+		sessionGroupingFallback = true
+	}
 	revisions := make([]RevisionProposal, 0, len(groups))
 	for index, group := range groups {
 		revisions = append(revisions, RevisionProposal{
-			ID:               fmt.Sprintf("u%d", index+1),
-			Intent:           proposalIntentForGroup(opts.Intent, group),
-			Files:            group.Files,
-			UseHunks:         group.UseHunks,
-			HunkIDs:          hunkIDs(group.Hunks),
-			Hunks:            group.Hunks,
-			ProvenanceStatus: provenanceStatus,
-			SessionIDs:       sessionIDs,
-			Confidence:       group.Confidence,
+			ID:         fmt.Sprintf("u%d", index+1),
+			Intent:     proposalIntentForGroup(opts.Intent, group),
+			Files:      group.Files,
+			UseHunks:   group.UseHunks,
+			HunkIDs:    hunkIDs(group.Hunks),
+			Hunks:      group.Hunks,
+			Confidence: group.Confidence,
 		})
 	}
 
@@ -100,7 +106,13 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	} else {
 		warnings = append(warnings, "lightweight structural dependency edges were used for initial revision ordering")
 	}
-	if provenanceStatus == "absent" {
+	if captureWarning != "" {
+		warnings = append(warnings, captureWarning)
+	}
+	if sessionGroupingFallback {
+		warnings = append(warnings, "session-aware grouping produced invalid hunk coverage; using baseline grouping")
+	}
+	if provenanceStatus == "absent" && len(captureEvidence.SessionIDs) == 0 {
 		warnings = append(warnings, "no explicit or repo-local pending session found; proposed revisions will not have exact session provenance")
 	} else if provenanceStatus == "repo_local" {
 		warnings = append(warnings, "repo-local pending session provenance was inferred from captured sessions for this repository")
@@ -119,6 +131,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 		Revisions:        revisions,
 		Warnings:         warnings,
 	}
+	proposal = applyCaptureEvidenceToProposal(proposal, captureEvidence, sessionIDs, provenanceStatus)
 	proposal, _ = shapeDemuxProposalForReview(proposal)
 	proposal = e.annotateSemanticLabels(ctx, proposal)
 	proposal, err = e.planDemuxRoutes(ctx, proposal)
@@ -137,6 +150,7 @@ func (e *Engine) ProposeDemux(ctx context.Context, opts ProposeDemuxOptions) (De
 	}
 	proposal = normalizeConventionalDemuxStackRoutes(proposal)
 	proposal, _ = shapeDemuxProposalForReview(proposal)
+	proposal = applyCaptureEvidenceToProposal(proposal, captureEvidence, sessionIDs, provenanceStatus)
 	proposal = e.annotateSemanticLabels(ctx, proposal)
 	proposal.FeasibilityWarnings = feasibilityWarningsForProposal(proposal)
 	return e.SaveDemuxProposal(ctx, proposal)
@@ -255,6 +269,21 @@ func (e *Engine) sessionIDsForProposal(ctx context.Context, repoRoot string) ([]
 
 func (e *Engine) ApplyDemuxProposal(ctx context.Context, proposalID string) (ApplyDemuxResult, error) {
 	return e.ApplyDemuxProposalWithOptions(ctx, proposalID, ApplyDemuxOptions{})
+}
+
+func shortCommitList(commitIDs []string, limit int) string {
+	values := make([]string, 0, len(commitIDs))
+	for _, id := range commitIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		values = append(values, shortID(id, 12))
+	}
+	if limit > 0 && len(values) > limit {
+		return fmt.Sprintf("%s, and %d more", strings.Join(values[:limit], ", "), len(values)-limit)
+	}
+	return strings.Join(values, ", ")
 }
 
 func (e *Engine) ApplyDemuxProposalWithOptions(ctx context.Context, proposalID string, opts ApplyDemuxOptions) (result ApplyDemuxResult, err error) {
@@ -519,7 +548,7 @@ func (e *Engine) editDemuxApplySourceIfNeeded(ctx context.Context, repoRoot, wor
 	if strings.TrimSpace(workRev) == "@" {
 		return nil
 	}
-	if err := e.vcs.EditWorkingCopyRevision(ctx, repoRoot, source.changeRef()); err != nil {
+	if err := e.vcs.EditWorkingCopyRevision(ctx, repoRoot, source.revisionRef()); err != nil {
 		return fmt.Errorf("edit compose source revision %s: %w", shortID(source.ChangeID, 12), err)
 	}
 	return nil
@@ -846,8 +875,15 @@ func (e *Engine) demuxApplySourceLocation(ctx context.Context, change ChangeInfo
 	if err != nil {
 		return demuxSourceLocation{}, err
 	}
+	source := demuxSourceLocation{ChangeID: change.ChangeID, CommitID: change.CommitID}
+	checkoutRef := firstNonEmpty(base.CurrentRef, base.BaseRef)
+	if status.Stack != nil && demuxSourceStackMatchesCheckout(*status.Stack, checkoutRef) {
+		stack := *status.Stack
+		source.Stack = &stack
+		source.GitCheckoutRef = firstNonEmpty(base.CurrentRef, stack.BookmarkName, base.BaseRef)
+		return source, nil
+	}
 	if base.OnBase {
-		checkoutRef := firstNonEmpty(base.CurrentRef, base.BaseRef)
 		if strings.TrimSpace(base.BaseRef) != "" && checkoutRef != strings.TrimSpace(base.BaseRef) {
 			checkoutRef = strings.TrimSpace(base.BaseRef)
 		}
@@ -857,20 +893,23 @@ func (e *Engine) demuxApplySourceLocation(ctx context.Context, change ChangeInfo
 			GitCheckoutRef: checkoutRef,
 		}, nil
 	}
-	if status.Stack == nil {
-		return demuxSourceLocation{
-			ChangeID:       change.ChangeID,
-			CommitID:       change.CommitID,
-			GitCheckoutRef: base.BaseRef,
-			ForceBase:      true,
-		}, nil
-	}
 	return demuxSourceLocation{
 		ChangeID:       change.ChangeID,
 		CommitID:       change.CommitID,
-		GitCheckoutRef: firstNonEmpty(base.CurrentRef, base.BaseRef),
-		ForceBase:      true,
+		GitCheckoutRef: checkoutRef,
 	}, nil
+}
+
+func demuxSourceStackMatchesCheckout(stack StackInfo, checkoutRef string) bool {
+	bookmark := strings.TrimSpace(stack.BookmarkName)
+	if bookmark == "" {
+		return false
+	}
+	checkoutRef = strings.TrimPrefix(strings.TrimSpace(checkoutRef), "refs/heads/")
+	if checkoutRef == "" {
+		return false
+	}
+	return checkoutRef == bookmark
 }
 
 func (s demuxSourceLocation) matches(target string) bool {
@@ -900,7 +939,7 @@ func (s demuxSourceLocation) restoreCheckout(ctx context.Context, e *Engine, rep
 		if _, err := e.Switch(ctx, s.Stack.BookmarkName); err != nil {
 			return err
 		}
-		if err := e.vcs.EditWorkingCopyRevision(ctx, repoRoot, s.revisionRef()); err != nil {
+		if err := e.vcs.EditWorkingCopyRevision(ctx, repoRoot, s.revisionRef()); err != nil && !missingDemuxSourceRevision(err) {
 			return err
 		}
 		return e.vcs.ForceGitCheckoutPreservingWorktree(ctx, repoRoot, s.Stack.BookmarkName)
@@ -914,6 +953,17 @@ func (s demuxSourceLocation) revisionRef() string {
 
 func (s demuxSourceLocation) changeRef() string {
 	return firstNonEmpty(s.ChangeID, s.CommitID)
+}
+
+func missingDemuxSourceRevision(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "doesn't exist") ||
+		strings.Contains(text, "does not exist") ||
+		strings.Contains(text, "no such revision") ||
+		strings.Contains(text, "not found")
 }
 
 func (s demuxSourceLocation) restoreVisibleGitCheckout(ctx context.Context, e *Engine, repoRoot string) error {
@@ -939,6 +989,10 @@ func (s demuxSourceLocation) restoreVisibleGitCheckout(ctx context.Context, e *E
 }
 
 func (s *demuxSourceLocation) returnToDefaultBranch(ctx context.Context, e *Engine, repoRoot string) error {
+	if s.Stack != nil && strings.TrimSpace(s.Stack.BookmarkName) != "" {
+		s.GitCheckoutRef = strings.TrimSpace(s.Stack.BookmarkName)
+		return nil
+	}
 	base, err := e.Base(ctx)
 	if err != nil {
 		return err
@@ -1266,7 +1320,7 @@ func (e *Engine) ReviewDemuxPlan(ctx context.Context, proposal DemuxProposal) (R
 			Valid:       false,
 			Proposal:    proposal,
 			Errors:      []string{err.Error()},
-			RepairHints: repairHintsForReviewError(proposal, err.Error()),
+			RepairHints: repairHintsForReviewError(proposal, err),
 		}, nil
 	}
 	normalized.FeasibilityWarnings = feasibilityWarningsForProposal(normalized)
@@ -1378,7 +1432,108 @@ var (
 	mixedCoverageErrorPattern  = regexp.MustCompile(`^hunk ([^ ]+) in (.+) is covered by hunk revision ([^ ]+) and whole-file revision ([^ ]+)$`)
 )
 
-func repairHintsForReviewError(proposal DemuxProposal, message string) []RepairHint {
+type DuplicateHunkAssignmentError struct {
+	HunkID        string
+	FirstOwnerID  string
+	SecondOwnerID string
+}
+
+func (e DuplicateHunkAssignmentError) Error() string {
+	return fmt.Sprintf("hunk %s is assigned to both revision %s and revision %s", e.HunkID, e.FirstOwnerID, e.SecondOwnerID)
+}
+
+type DuplicateWholeFileOwnerError struct {
+	File          string
+	FirstOwnerID  string
+	SecondOwnerID string
+}
+
+func (e DuplicateWholeFileOwnerError) Error() string {
+	return fmt.Sprintf("file %s is assigned to both revision %s and revision %s", e.File, e.FirstOwnerID, e.SecondOwnerID)
+}
+
+type MixedHunkWholeFileCoverageError struct {
+	HunkID          string
+	File            string
+	HunkRevisionID  string
+	WholeRevisionID string
+}
+
+func (e MixedHunkWholeFileCoverageError) Error() string {
+	return fmt.Sprintf("hunk %s in %s is covered by hunk revision %s and whole-file revision %s", e.HunkID, e.File, e.HunkRevisionID, e.WholeRevisionID)
+}
+
+type MissingHunkOwnerError struct {
+	HunkID string
+	File   string
+}
+
+func (e MissingHunkOwnerError) Error() string {
+	return fmt.Sprintf("hunk %s in %s is not assigned to any revision", e.HunkID, e.File)
+}
+
+type UnknownHunkReferenceError struct {
+	RevisionID string
+	HunkID     string
+}
+
+func (e UnknownHunkReferenceError) Error() string {
+	return fmt.Sprintf("revision %s references unknown hunk %s", e.RevisionID, e.HunkID)
+}
+
+type HunkPatchBodyMismatchError struct {
+	RevisionID string
+	HunkID     string
+	File       string
+}
+
+func (e HunkPatchBodyMismatchError) Error() string {
+	return fmt.Sprintf("revision %s hunk %s in %s patch does not match source hunk patch", e.RevisionID, e.HunkID, e.File)
+}
+
+type DanglingDependsOnError struct {
+	RevisionID string
+	DependsOn  string
+}
+
+func (e DanglingDependsOnError) Error() string {
+	return fmt.Sprintf("revision %s depends on unknown or later revision %s", e.RevisionID, e.DependsOn)
+}
+
+func repairHintsForReviewError(proposal DemuxProposal, err error) []RepairHint {
+	if err == nil {
+		return nil
+	}
+	var missing MissingHunkOwnerError
+	if errors.As(err, &missing) {
+		return []RepairHint{{
+			Kind:       "unassigned_hunk",
+			HunkID:     missing.HunkID,
+			File:       missing.File,
+			Candidates: revisionIDs(proposal.Revisions),
+			Suggestion: fmt.Sprintf("assign hunk %s to an existing revision or create a new revision for %s", missing.HunkID, missing.File),
+		}}
+	}
+	var duplicateHunk DuplicateHunkAssignmentError
+	if errors.As(err, &duplicateHunk) {
+		return []RepairHint{{
+			Kind:       "duplicate_hunk_assignment",
+			HunkID:     duplicateHunk.HunkID,
+			Candidates: []string{duplicateHunk.FirstOwnerID, duplicateHunk.SecondOwnerID},
+			Suggestion: fmt.Sprintf("keep hunk %s in exactly one revision", duplicateHunk.HunkID),
+		}}
+	}
+	var mixed MixedHunkWholeFileCoverageError
+	if errors.As(err, &mixed) {
+		return []RepairHint{{
+			Kind:       "mixed_hunk_and_whole_file",
+			HunkID:     mixed.HunkID,
+			File:       mixed.File,
+			Candidates: []string{mixed.HunkRevisionID, mixed.WholeRevisionID},
+			Suggestion: fmt.Sprintf("choose hunk-level or whole-file coverage for %s, not both", mixed.File),
+		}}
+	}
+	message := err.Error()
 	switch {
 	case unassignedHunkErrorPattern.MatchString(message):
 		match := unassignedHunkErrorPattern.FindStringSubmatch(message)
@@ -1537,14 +1692,14 @@ func normalizeDemuxProposal(proposal DemuxProposal) (DemuxProposal, error) {
 					continue
 				}
 				if owner, ok := usedHunks[id]; ok {
-					return DemuxProposal{}, fmt.Errorf("hunk %s is assigned to both revision %s and revision %s", id, owner, revision.ID)
+					return DemuxProposal{}, DuplicateHunkAssignmentError{HunkID: id, FirstOwnerID: owner, SecondOwnerID: revision.ID}
 				}
 				hunk, ok := hunksByID[id]
 				if !ok {
 					hunk = findRevisionHunkByID(revision.Hunks, id)
 				}
 				if hunk.ID == "" || hunk.Patch == "" {
-					return DemuxProposal{}, fmt.Errorf("revision %s references unknown hunk %s", revision.ID, id)
+					return DemuxProposal{}, UnknownHunkReferenceError{RevisionID: revision.ID, HunkID: id}
 				}
 				resolved = append(resolved, hunk)
 				usedHunks[id] = revision.ID
@@ -1564,7 +1719,7 @@ func normalizeDemuxProposal(proposal DemuxProposal) (DemuxProposal, error) {
 					continue
 				}
 				if owner, ok := wholeFileOwners[file]; ok {
-					return DemuxProposal{}, fmt.Errorf("file %s is assigned to both revision %s and revision %s", file, owner, revision.ID)
+					return DemuxProposal{}, DuplicateWholeFileOwnerError{File: file, FirstOwnerID: owner, SecondOwnerID: revision.ID}
 				}
 				wholeFileOwners[file] = revision.ID
 			}
@@ -1575,7 +1730,7 @@ func normalizeDemuxProposal(proposal DemuxProposal) (DemuxProposal, error) {
 				continue
 			}
 			if _, ok := revisionIDs[dep]; !ok {
-				return DemuxProposal{}, fmt.Errorf("revision %s depends on unknown or later revision %s", revision.ID, dep)
+				return DemuxProposal{}, DanglingDependsOnError{RevisionID: revision.ID, DependsOn: dep}
 			}
 		}
 	}
@@ -1597,11 +1752,11 @@ func reviewDemuxHunkCoverage(hunks []HunkRange, usedHunks map[string]string, who
 		fileOwner, hasFileOwner := wholeFileOwners[hunk.File]
 		switch {
 		case hasHunkOwner && hasFileOwner:
-			return fmt.Errorf("hunk %s in %s is covered by hunk revision %s and whole-file revision %s", hunk.ID, hunk.File, hunkOwner, fileOwner)
+			return MixedHunkWholeFileCoverageError{HunkID: hunk.ID, File: hunk.File, HunkRevisionID: hunkOwner, WholeRevisionID: fileOwner}
 		case hasHunkOwner || hasFileOwner:
 			continue
 		default:
-			return fmt.Errorf("hunk %s in %s is not assigned to any revision", hunk.ID, hunk.File)
+			return MissingHunkOwnerError{HunkID: hunk.ID, File: hunk.File}
 		}
 	}
 	return nil
@@ -1611,6 +1766,7 @@ func feasibilityWarnings(revisions []RevisionProposal, hunks []HunkRange, facts 
 	var warnings []FeasibilityWarning
 	warnings = append(warnings, unmappedHunkWarnings(revisions, hunks)...)
 	warnings = append(warnings, structuralOrderWarnings(revisions, facts)...)
+	warnings = append(warnings, crossStackDependencyWarnings(revisions, facts)...)
 	warnings = append(warnings, testSeparationWarnings(revisions)...)
 	return warnings
 }
@@ -1630,6 +1786,7 @@ func structuralFactsForProposal(proposal DemuxProposal) structural.Facts {
 			Language:          fact.Language,
 			DefinedSymbols:    append([]string(nil), fact.DefinedSymbols...),
 			ReferencedSymbols: append([]string(nil), fact.ReferencedSymbols...),
+			Imports:           append([]string(nil), fact.Imports...),
 			Symbols:           structuralSymbolsForProposal(fact.File, fact.Symbols),
 		})
 	}
@@ -1760,6 +1917,76 @@ func inferredDependencyWarning(revisions []RevisionProposal, fromIndex, toIndex 
 			target.ID,
 		),
 	}, true
+}
+
+func crossStackDependencyWarnings(revisions []RevisionProposal, facts structural.Facts) []FeasibilityWarning {
+	if len(revisions) < 2 || len(facts.Edges) == 0 {
+		return nil
+	}
+	index := structuralRevisionIndex(revisions)
+	var warnings []FeasibilityWarning
+	seen := map[string]struct{}{}
+	for _, edge := range facts.Edges {
+		fromIndex, hasFrom := index.sourceRevision(edge.FromFile, edge.Symbol)
+		toIndex, hasTo := index.targetRevision(edge.ToFile, edge.Symbol)
+		if !hasFrom || !hasTo || fromIndex == toIndex {
+			continue
+		}
+		source := revisions[fromIndex]
+		target := revisions[toIndex]
+		sourceRoute := dependencyRouteKey(source)
+		targetRoute := dependencyRouteKey(target)
+		if sourceRoute == targetRoute || dependencyRouteSatisfiedByBase(source, targetRoute) {
+			continue
+		}
+		key := source.ID + "|" + target.ID + "|" + sourceRoute + "|" + targetRoute + "|" + edge.FromFile + "|" + edge.ToFile + "|" + edge.Symbol
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		warnings = append(warnings, FeasibilityWarning{
+			RevisionID: source.ID,
+			Severity:   "warning",
+			Source:     "cross_stack_dependency",
+			DependsOn:  target.ID,
+			Symbol:     edge.Symbol,
+			FromFile:   edge.FromFile,
+			ToFile:     edge.ToFile,
+			Message: fmt.Sprintf(
+				"%s in %s depends on %s in %s via %s, but the revisions route to different stacks (%s -> %s); merge the routes or make %s stack on %s",
+				source.ID,
+				dependencyRouteLabel(sourceRoute),
+				target.ID,
+				dependencyRouteLabel(targetRoute),
+				edge.Symbol,
+				dependencyRouteLabel(sourceRoute),
+				dependencyRouteLabel(targetRoute),
+				dependencyRouteLabel(sourceRoute),
+				dependencyRouteLabel(targetRoute),
+			),
+		})
+	}
+	return warnings
+}
+
+func dependencyRouteKey(revision RevisionProposal) string {
+	if target := strings.TrimSpace(revision.TargetStack); target != "" {
+		return target
+	}
+	return "(source stack)"
+}
+
+func dependencyRouteLabel(route string) string {
+	route = strings.TrimSpace(route)
+	if route == "" || route == "(source stack)" {
+		return "source stack"
+	}
+	return route
+}
+
+func dependencyRouteSatisfiedByBase(source RevisionProposal, targetRoute string) bool {
+	base := strings.TrimSpace(source.BaseStack)
+	return base != "" && base == strings.TrimSpace(targetRoute)
 }
 
 func revisionDependsOn(revision RevisionProposal, dependencyID string) bool {
@@ -2226,6 +2453,456 @@ func symbolGroupsForFile(file string, hunks []HunkRange) []demuxGroup {
 	return groups
 }
 
+func groupDemuxHunksWithSessionAffinity(groups []demuxGroup, hunks []HunkRange, links []matcher.HunkLink, facts structural.Facts) ([]demuxGroup, bool, bool) {
+	if len(groups) < 2 || len(links) == 0 {
+		return groups, false, true
+	}
+	sessionsByHunk := sessionIDsByHunkFromLinks(links)
+	if len(sessionsByHunk) == 0 {
+		return groups, false, true
+	}
+
+	uf := newDemuxGroupUnion(len(groups))
+	for left := 0; left < len(groups); left++ {
+		for right := left + 1; right < len(groups); right++ {
+			if !demuxGroupsShareAcceptedSession(groups[left], groups[right], sessionsByHunk) {
+				continue
+			}
+			if !sessionAffinitySupported(groups[left], groups[right], facts) {
+				continue
+			}
+			if !sessionAffinityUnionWithinLOCLimit(groups, uf, left, right, defaultDemuxReviewShapePolicy.ClusterMaxLOC) {
+				continue
+			}
+			uf.union(left, right)
+		}
+	}
+
+	candidate, changed := mergeDemuxGroupsByUnion(groups, hunks, uf)
+	if !changed {
+		return groups, false, true
+	}
+	out, valid := finalizeSessionAwareGroups(groups, candidate, hunks)
+	return out, valid, valid
+}
+
+func sessionIDsByHunkFromLinks(links []matcher.HunkLink) map[string]map[string]struct{} {
+	out := map[string]map[string]struct{}{}
+	for _, link := range links {
+		if strings.TrimSpace(link.HunkID) == "" || strings.TrimSpace(link.SessionID) == "" {
+			continue
+		}
+		if link.Authorship != matcher.AuthorshipAgent || link.Tier > matcher.TierFuzzy {
+			continue
+		}
+		if out[link.HunkID] == nil {
+			out[link.HunkID] = map[string]struct{}{}
+		}
+		out[link.HunkID][link.SessionID] = struct{}{}
+	}
+	return out
+}
+
+func demuxGroupsShareAcceptedSession(left, right demuxGroup, sessionsByHunk map[string]map[string]struct{}) bool {
+	leftSessions := map[string]struct{}{}
+	for _, hunk := range left.Hunks {
+		for sessionID := range sessionsByHunk[hunk.ID] {
+			leftSessions[sessionID] = struct{}{}
+		}
+	}
+	if len(leftSessions) == 0 {
+		return false
+	}
+	for _, hunk := range right.Hunks {
+		for sessionID := range sessionsByHunk[hunk.ID] {
+			if _, ok := leftSessions[sessionID]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sessionAffinitySupported(left, right demuxGroup, facts structural.Facts) bool {
+	if demuxGroupsHaveClearDistinctSameFileSymbols(left, right) {
+		return false
+	}
+	return demuxGroupsShareFile(left, right) ||
+		demuxGroupsShareChangedSymbol(left, right) ||
+		demuxGroupsSharePackageDir(left, right) ||
+		demuxGroupsAreCounterparts(left, right) ||
+		demuxGroupsHaveStructuralEdge(left, right, facts)
+}
+
+func sessionAffinityUnionWithinLOCLimit(groups []demuxGroup, uf demuxGroupUnion, left, right, maxLOC int) bool {
+	if maxLOC <= 0 {
+		return true
+	}
+	leftRoot := uf.find(left)
+	rightRoot := uf.find(right)
+	if leftRoot == rightRoot {
+		return true
+	}
+	total := 0
+	for index, group := range groups {
+		root := uf.find(index)
+		if root != leftRoot && root != rightRoot {
+			continue
+		}
+		total += demuxGroupEffectiveLOC(group)
+		if total > maxLOC {
+			return false
+		}
+	}
+	return true
+}
+
+func demuxGroupEffectiveLOC(group demuxGroup) int {
+	loc := 0
+	for _, hunk := range group.Hunks {
+		loc += hunkEffectiveLOC(hunk)
+	}
+	return loc
+}
+
+func demuxGroupsHaveClearDistinctSameFileSymbols(left, right demuxGroup) bool {
+	leftSymbol := demuxGroupSingleSymbolKey(left)
+	rightSymbol := demuxGroupSingleSymbolKey(right)
+	if leftSymbol == "" || rightSymbol == "" || leftSymbol == rightSymbol {
+		return false
+	}
+	for _, leftFile := range left.Files {
+		for _, rightFile := range right.Files {
+			if leftFile == rightFile {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func demuxGroupSingleSymbolKey(group demuxGroup) string {
+	key := ""
+	for _, hunk := range group.Hunks {
+		if strings.TrimSpace(hunk.Symbol) == "" {
+			return ""
+		}
+		next := hunk.SymbolKind + ":" + hunk.Symbol
+		if key == "" {
+			key = next
+			continue
+		}
+		if key != next {
+			return ""
+		}
+	}
+	return key
+}
+
+func demuxGroupsShareFile(left, right demuxGroup) bool {
+	files := stringSet(left.Files)
+	for _, file := range right.Files {
+		if _, ok := files[file]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func demuxGroupsShareChangedSymbol(left, right demuxGroup) bool {
+	symbols := map[string]struct{}{}
+	for _, hunk := range left.Hunks {
+		if strings.TrimSpace(hunk.Symbol) == "" {
+			continue
+		}
+		symbols[hunk.SymbolKind+":"+hunk.Symbol] = struct{}{}
+	}
+	if len(symbols) == 0 {
+		return false
+	}
+	for _, hunk := range right.Hunks {
+		if strings.TrimSpace(hunk.Symbol) == "" {
+			continue
+		}
+		if _, ok := symbols[hunk.SymbolKind+":"+hunk.Symbol]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func demuxGroupsSharePackageDir(left, right demuxGroup) bool {
+	leftDirs := demuxGroupPackageDirs(left)
+	for dir := range demuxGroupPackageDirs(right) {
+		if _, ok := leftDirs[dir]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func demuxGroupPackageDirs(group demuxGroup) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, file := range group.Files {
+		dir := filepath.ToSlash(filepath.Dir(file))
+		if dir == "" || dir == "." {
+			continue
+		}
+		out[dir] = struct{}{}
+	}
+	return out
+}
+
+func demuxGroupsAreCounterparts(left, right demuxGroup) bool {
+	keys := map[string]struct{}{}
+	for _, file := range left.Files {
+		key := counterpartKey(file)
+		if key != "" {
+			keys[key] = struct{}{}
+		}
+	}
+	if len(keys) == 0 {
+		return false
+	}
+	for _, file := range right.Files {
+		if _, ok := keys[counterpartKey(file)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func demuxGroupsHaveStructuralEdge(left, right demuxGroup, facts structural.Facts) bool {
+	if len(facts.Edges) == 0 {
+		return false
+	}
+	leftFiles := stringSet(left.Files)
+	rightFiles := stringSet(right.Files)
+	for _, edge := range facts.Edges {
+		_, fromLeft := leftFiles[edge.FromFile]
+		_, toLeft := leftFiles[edge.ToFile]
+		_, fromRight := rightFiles[edge.FromFile]
+		_, toRight := rightFiles[edge.ToFile]
+		if (fromLeft && toRight) || (fromRight && toLeft) {
+			return true
+		}
+	}
+	return false
+}
+
+type demuxGroupUnion struct {
+	parent []int
+}
+
+func newDemuxGroupUnion(size int) demuxGroupUnion {
+	parent := make([]int, size)
+	for index := range parent {
+		parent[index] = index
+	}
+	return demuxGroupUnion{parent: parent}
+}
+
+func (u demuxGroupUnion) find(index int) int {
+	for u.parent[index] != index {
+		u.parent[index] = u.parent[u.parent[index]]
+		index = u.parent[index]
+	}
+	return index
+}
+
+func (u demuxGroupUnion) union(left, right int) {
+	leftRoot := u.find(left)
+	rightRoot := u.find(right)
+	if leftRoot == rightRoot {
+		return
+	}
+	if rightRoot < leftRoot {
+		leftRoot, rightRoot = rightRoot, leftRoot
+	}
+	u.parent[rightRoot] = leftRoot
+}
+
+func mergeDemuxGroupsByUnion(groups []demuxGroup, hunks []HunkRange, uf demuxGroupUnion) ([]demuxGroup, bool) {
+	components := map[int][]int{}
+	order := make([]int, 0, len(groups))
+	for index := range groups {
+		root := uf.find(index)
+		if _, ok := components[root]; !ok {
+			order = append(order, root)
+		}
+		components[root] = append(components[root], index)
+	}
+	changed := false
+	for _, indexes := range components {
+		if len(indexes) > 1 {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return groups, false
+	}
+	hunkOrder := demuxHunkOrder(hunks)
+	out := make([]demuxGroup, 0, len(order))
+	for _, root := range order {
+		out = append(out, mergeDemuxGroupComponent(groups, components[root], hunkOrder))
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := demuxGroupSortKey(out[i], hunkOrder)
+		right := demuxGroupSortKey(out[j], hunkOrder)
+		if left.hunkIndex != right.hunkIndex {
+			return left.hunkIndex < right.hunkIndex
+		}
+		if left.fileRank != right.fileRank {
+			return left.fileRank < right.fileRank
+		}
+		return left.file < right.file
+	})
+	return out, true
+}
+
+func mergeDemuxGroupComponent(groups []demuxGroup, indexes []int, hunkOrder map[string]int) demuxGroup {
+	var files []string
+	var hunks []HunkRange
+	seenHunks := map[string]struct{}{}
+	useHunks := false
+	confidence := 0.0
+	for _, index := range indexes {
+		group := groups[index]
+		files = append(files, group.Files...)
+		useHunks = useHunks || group.UseHunks
+		if group.Confidence > confidence {
+			confidence = group.Confidence
+		}
+		for _, hunk := range group.Hunks {
+			if _, ok := seenHunks[hunk.ID]; ok {
+				continue
+			}
+			seenHunks[hunk.ID] = struct{}{}
+			hunks = append(hunks, hunk)
+		}
+	}
+	sort.SliceStable(hunks, func(i, j int) bool {
+		return hunkOrder[hunks[i].ID] < hunkOrder[hunks[j].ID]
+	})
+	merged := demuxGroup{
+		Files:      cleanFiles(files),
+		Hunks:      hunks,
+		UseHunks:   useHunks,
+		Confidence: confidence,
+	}
+	if symbolKey := demuxGroupSingleSymbolKey(merged); symbolKey != "" {
+		kind, symbol, _ := strings.Cut(symbolKey, ":")
+		merged.Symbol = symbol
+		merged.SymbolKind = kind
+	}
+	return merged
+}
+
+type demuxGroupOrderKey struct {
+	hunkIndex int
+	fileRank  int
+	file      string
+}
+
+func demuxGroupSortKey(group demuxGroup, hunkOrder map[string]int) demuxGroupOrderKey {
+	minHunk := len(hunkOrder) + 1
+	for _, hunk := range group.Hunks {
+		if index, ok := hunkOrder[hunk.ID]; ok && index < minHunk {
+			minHunk = index
+		}
+	}
+	file := ""
+	if len(group.Files) > 0 {
+		file = group.Files[0]
+	}
+	return demuxGroupOrderKey{hunkIndex: minHunk, fileRank: fileOrderRank(file), file: file}
+}
+
+func demuxHunkOrder(hunks []HunkRange) map[string]int {
+	out := map[string]int{}
+	for index, hunk := range hunks {
+		out[hunk.ID] = index
+	}
+	return out
+}
+
+func finalizeSessionAwareGroups(baseline, candidate []demuxGroup, hunks []HunkRange) ([]demuxGroup, bool) {
+	if !validDemuxGroupHunkCoverage(candidate, hunks) {
+		return baseline, false
+	}
+	if !validDemuxGroupSymbolSeparation(candidate) {
+		return baseline, false
+	}
+	return candidate, true
+}
+
+func validDemuxGroupHunkCoverage(groups []demuxGroup, hunks []HunkRange) bool {
+	expected := map[string]struct{}{}
+	for _, hunk := range hunks {
+		if strings.TrimSpace(hunk.ID) == "" {
+			return false
+		}
+		expected[hunk.ID] = struct{}{}
+	}
+	counts := map[string]int{}
+	wholeFileOwners := map[string]int{}
+	hunkFileOwners := map[string]int{}
+	for _, group := range groups {
+		if group.UseHunks {
+			for _, hunk := range group.Hunks {
+				hunkFileOwners[hunk.File]++
+			}
+		} else {
+			for _, file := range group.Files {
+				wholeFileOwners[file]++
+			}
+		}
+		for _, hunk := range group.Hunks {
+			if _, ok := expected[hunk.ID]; !ok {
+				return false
+			}
+			counts[hunk.ID]++
+			if counts[hunk.ID] > 1 {
+				return false
+			}
+		}
+	}
+	for id := range expected {
+		if counts[id] != 1 {
+			return false
+		}
+	}
+	for file, count := range wholeFileOwners {
+		if count > 1 {
+			return false
+		}
+		if hunkFileOwners[file] > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validDemuxGroupSymbolSeparation(groups []demuxGroup) bool {
+	for _, group := range groups {
+		symbolsByFile := map[string]map[string]struct{}{}
+		for _, hunk := range group.Hunks {
+			if strings.TrimSpace(hunk.Symbol) == "" {
+				continue
+			}
+			if symbolsByFile[hunk.File] == nil {
+				symbolsByFile[hunk.File] = map[string]struct{}{}
+			}
+			symbolsByFile[hunk.File][hunk.SymbolKind+":"+hunk.Symbol] = struct{}{}
+			if len(symbolsByFile[hunk.File]) > 1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func orderGroupsByStructuralDependencies(groups [][]string, facts structural.Facts) [][]string {
 	if len(groups) < 2 || len(facts.Edges) == 0 {
 		return groups
@@ -2310,6 +2987,7 @@ func structuralFacts(facts structural.Facts) []StructuralFact {
 			Language:          fact.Language,
 			DefinedSymbols:    fact.DefinedSymbols,
 			ReferencedSymbols: fact.ReferencedSymbols,
+			Imports:           fact.Imports,
 			Symbols:           structuralSymbols(fact.Symbols),
 		})
 	}
@@ -2615,7 +3293,7 @@ func demuxPlanningContract() []string {
 		"Return a compose proposal with the same id, repo_root, proposed_change_id, and proposed_commit_id.",
 		"Create ordered revisions with one logical intent each.",
 		"For hunk-level revisions, set use_hunks=true and hunk_ids to ids from top-level hunks; do not copy patch payloads.",
-		"Assign every top-level hunk exactly once, either by hunk_id or by one whole-file revision for that hunk's file.",
+		"Assign every top-level hunk exactly once; use hunk_ids for precise revisions, or a whole-file revision when the whole file is one logical intent.",
 		"Do not mix hunk-level and whole-file revisions for the same file.",
 		"Prefer grouping hunks that share the same changed symbol unless they represent separate intents.",
 		"Use structural_dependencies as ordering hints: to_file should usually appear before from_file.",

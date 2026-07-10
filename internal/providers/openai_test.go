@@ -52,6 +52,80 @@ func TestOpenAIResponsesAssembleUsage(t *testing.T) {
 	}
 }
 
+func TestSummarizeOpenAIResponsesJSONUsage(t *testing.T) {
+	body := []byte(`{
+		"id": "resp_1",
+		"object": "response",
+		"status": "completed",
+		"usage": {
+			"input_tokens": 56294,
+			"input_tokens_details": {"cached_tokens": 53120},
+			"output_tokens": 416,
+			"output_tokens_details": {"reasoning_tokens": 162},
+			"total_tokens": 56710
+		}
+	}`)
+
+	summary, err := summarizeOpenAIJSON(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Usage.InputTokens == nil || *summary.Usage.InputTokens != 56294 {
+		t.Fatalf("expected input tokens, got %+v", summary.Usage)
+	}
+	if summary.Usage.OutputTokens == nil || *summary.Usage.OutputTokens != 416 {
+		t.Fatalf("expected output tokens, got %+v", summary.Usage)
+	}
+	if summary.Usage.CacheReadTokens == nil || *summary.Usage.CacheReadTokens != 53120 {
+		t.Fatalf("expected cached tokens, got %+v", summary.Usage)
+	}
+	if summary.FinishReason == nil || *summary.FinishReason != "completed" {
+		t.Fatalf("expected finish reason from status, got %+v", summary)
+	}
+}
+
+func TestSummarizeOpenAIChatCompletionsCachedTokens(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl_1",
+		"object": "chat.completion",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+		"usage": {
+			"prompt_tokens": 100,
+			"prompt_tokens_details": {"cached_tokens": 75},
+			"completion_tokens": 10
+		}
+	}`)
+
+	summary, err := summarizeOpenAIJSON(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Usage.CacheReadTokens == nil || *summary.Usage.CacheReadTokens != 75 {
+		t.Fatalf("expected cached tokens, got %+v", summary.Usage)
+	}
+	if summary.FinishReason == nil || *summary.FinishReason != "stop" {
+		t.Fatalf("expected finish reason, got %+v", summary)
+	}
+}
+
+func TestOpenAIResponsesAssembleStatusFinishReason(t *testing.T) {
+	stream := []byte("event: response.created\n" +
+		"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"usage\":{\"input_tokens\":100,\"input_tokens_details\":{\"cached_tokens\":80},\"output_tokens\":25}}}\n\n")
+
+	_, summary, err := (OpenAIResponses{}).Assemble(bytes.NewReader(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.FinishReason == nil || *summary.FinishReason != "completed" {
+		t.Fatalf("expected final status as finish reason, got %+v", summary.FinishReason)
+	}
+	if summary.Usage.CacheReadTokens == nil || *summary.Usage.CacheReadTokens != 80 {
+		t.Fatalf("expected cached tokens, got %+v", summary.Usage)
+	}
+}
+
 func TestSummarizeOpenAICompactionUsage(t *testing.T) {
 	body := []byte(`{
 		"id": "resp_compact_1",

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +23,12 @@ import (
 )
 
 const workingCopyCommitSHA = "working"
+const captureMatchMaxSessions = 64
+const captureMatchMaxEvents = 2000
+const captureMatchMaxVSCDBBytes = 4 * 1024 * 1024
+const captureMatchJSONLTailBytes = 4 * 1024 * 1024
+
+var matchWorkingCopyForGenerate = MatchWorkingCopy
 
 // ComposeCaptureResult holds matcher output for a working-copy compose run.
 type ComposeCaptureResult struct {
@@ -30,10 +38,14 @@ type ComposeCaptureResult struct {
 	SessionIDs   []string           `json:"session_ids,omitempty"`
 	Contexts     []SessionContext   `json:"session_contexts,omitempty"`
 	Status       string             `json:"status"`
+	Warnings     []string           `json:"warnings,omitempty"`
 }
 
 // MatchWorkingCopy attaches capture matcher evidence to demux hunks.
 func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, tools []string) (ComposeCaptureResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ComposeCaptureResult{}, err
+	}
 	repoRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return ComposeCaptureResult{}, fmt.Errorf("repo path: %w", err)
@@ -58,6 +70,9 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 	since := now.Add(-7 * 24 * time.Hour)
 	until := now.Add(time.Hour)
 
+	if err := ctx.Err(); err != nil {
+		return ComposeCaptureResult{}, err
+	}
 	discovered, err := parsers.DiscoverSessions(parsers.DiscoverOptions{
 		HomeDir:  home,
 		RepoRoot: repoRoot,
@@ -68,6 +83,10 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 	if err != nil {
 		return ComposeCaptureResult{}, fmt.Errorf("discover sessions: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return ComposeCaptureResult{}, err
+	}
+	discovered = capCaptureSessions(discovered, captureMatchMaxSessions)
 
 	inventory := capture.NewInventoryCollector()
 	claudeParser := &claude.Parser{Inventory: inventory}
@@ -75,9 +94,12 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 	cursorParser := &cursorparser.Parser{Inventory: inventory, Since: since, Until: until}
 	activeParsers := buildCaptureParsers(tools, claudeParser, codexParser, cursorParser)
 
-	events, err := parsers.ParseAll(discovered, repoRoot, activeParsers)
+	events, captureWarnings, err := parseCaptureSessionsBounded(ctx, discovered, repoRoot, activeParsers, captureMatchMaxEvents)
 	if err != nil {
 		return ComposeCaptureResult{}, fmt.Errorf("parse sessions: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return ComposeCaptureResult{}, err
 	}
 	eligibleEvents := filterCaptureEvents(events, excluder)
 
@@ -106,6 +128,7 @@ func MatchWorkingCopy(ctx context.Context, repoRoot string, hunks []HunkRange, t
 		SessionIDs:   sessionIDs,
 		Contexts:     contexts,
 		Status:       status,
+		Warnings:     captureWarnings,
 	}, nil
 }
 
@@ -125,16 +148,37 @@ func resolveComposeProvenance(ctx context.Context, repoRoot string, capture Comp
 	return attachment.SessionIDs, nil, attachment.Status, nil
 }
 
-func hunkLinksForRevision(links []matcher.HunkLink, files []string) []matcher.HunkLink {
-	if len(links) == 0 || len(files) == 0 {
+func hunkLinksForRevision(links []matcher.HunkLink, files []string, hunkIDs ...[]string) []matcher.HunkLink {
+	if len(links) == 0 {
+		return nil
+	}
+	hunkIDSet := map[string]struct{}{}
+	if len(hunkIDs) > 0 {
+		for _, id := range hunkIDs[0] {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				hunkIDSet[id] = struct{}{}
+			}
+		}
+	}
+	if len(hunkIDSet) == 0 && len(files) == 0 {
 		return nil
 	}
 	fileSet := map[string]struct{}{}
 	for _, file := range files {
-		fileSet[file] = struct{}{}
+		file = strings.TrimSpace(file)
+		if file != "" {
+			fileSet[file] = struct{}{}
+		}
 	}
 	var out []matcher.HunkLink
 	for _, link := range links {
+		if len(hunkIDSet) > 0 {
+			if _, ok := hunkIDSet[link.HunkID]; ok {
+				out = append(out, link)
+			}
+			continue
+		}
 		parts := strings.SplitN(link.HunkID, ":", 3)
 		if len(parts) < 2 {
 			continue
@@ -300,16 +344,18 @@ func remapHunkLinkIDs(links []matcher.HunkLink, demuxHunks []HunkRange, eligible
 	if len(links) != len(eligible) {
 		return links
 	}
-	fileToDemuxID := map[string]string{}
+	fileToDemuxIDs := map[string][]string{}
 	for _, hunk := range demuxHunks {
-		fileToDemuxID[hunk.File] = hunk.ID
+		fileToDemuxIDs[hunk.File] = append(fileToDemuxIDs[hunk.File], hunk.ID)
 	}
 	out := make([]matcher.HunkLink, len(links))
 	for i, link := range links {
 		out[i] = link
 		if i < len(eligible) {
-			if id, ok := fileToDemuxID[eligible[i].FilePath]; ok {
-				out[i].HunkID = id
+			ids := fileToDemuxIDs[eligible[i].FilePath]
+			if len(ids) > 0 {
+				out[i].HunkID = ids[0]
+				fileToDemuxIDs[eligible[i].FilePath] = ids[1:]
 			}
 		}
 	}
@@ -486,4 +532,217 @@ func readLastComposeHunkCoverage(repoRoot string) (float64, bool) {
 		}
 	}
 	return payload.HunkCoverage, true
+}
+
+func matchWorkingCopyForGeneratePlanning(ctx context.Context, repoRoot string, hunks []HunkRange) (ComposeCaptureResult, string) {
+	capture, err := matchWorkingCopyForGenerate(ctx, repoRoot, hunks, nil)
+	if err == nil {
+		return capture, ""
+	}
+	return ComposeCaptureResult{}, fmt.Sprintf("capture matching skipped: %v", err)
+}
+
+func applyCaptureEvidenceToProposal(proposal DemuxProposal, capture ComposeCaptureResult, fallbackSessionIDs []string, fallbackStatus string) DemuxProposal {
+	if len(capture.HunkLinks) > 0 || capture.HunkCoverage > 0 || len(capture.Tools) > 0 {
+		proposal.HunkLinks = append([]matcher.HunkLink(nil), capture.HunkLinks...)
+		proposal.HunkCoverage = capture.HunkCoverage
+		proposal.CaptureTools = normalizeCaptureTools(capture.Tools)
+	}
+	proposal.Warnings = appendCaptureWarnings(proposal.Warnings, capture.Warnings)
+	if strings.TrimSpace(fallbackStatus) == "" {
+		fallbackStatus = provenance.StatusAbsent
+	}
+	for index := range proposal.Revisions {
+		revision := &proposal.Revisions[index]
+		links := hunkLinksForRevision(proposal.HunkLinks, revision.Files, revision.HunkIDs)
+		revision.HunkLinks = links
+		if sessionIDs := sessionIDsFromHunkLinks(links); len(sessionIDs) > 0 {
+			revision.SessionIDs = sessionIDs
+			if strings.TrimSpace(capture.Status) != "" {
+				revision.ProvenanceStatus = capture.Status
+			} else {
+				revision.ProvenanceStatus = "matcher"
+			}
+			continue
+		}
+		revision.SessionIDs = append([]string(nil), fallbackSessionIDs...)
+		revision.ProvenanceStatus = fallbackStatus
+	}
+	return proposal
+}
+
+func appendCaptureWarnings(existing []string, incoming []string) []string {
+	if len(incoming) == 0 {
+		return existing
+	}
+	seen := map[string]struct{}{}
+	for _, warning := range existing {
+		seen[warning] = struct{}{}
+	}
+	out := append([]string(nil), existing...)
+	for _, warning := range incoming {
+		warning = strings.TrimSpace(warning)
+		if warning == "" {
+			continue
+		}
+		if _, ok := seen[warning]; ok {
+			continue
+		}
+		seen[warning] = struct{}{}
+		out = append(out, warning)
+	}
+	return out
+}
+
+func parseCaptureSessionsBounded(ctx context.Context, sessions []parsers.DiscoveredSession, repoRoot string, parserList []parsers.Parser, maxEvents int) ([]capture.SessionEvent, []string, error) {
+	byTool := map[string]parsers.Parser{}
+	for _, parser := range parserList {
+		byTool[parser.Tool()] = parser
+	}
+	var events []capture.SessionEvent
+	var warnings []string
+	for _, session := range sessions {
+		if err := ctx.Err(); err != nil {
+			return nil, warnings, err
+		}
+		parser, ok := byTool[session.Tool]
+		if !ok {
+			continue
+		}
+		parsePath, cleanup, sessionWarnings, skip := prepareCaptureSessionForParse(session)
+		warnings = append(warnings, sessionWarnings...)
+		if cleanup != nil {
+			defer cleanup()
+		}
+		if skip {
+			continue
+		}
+		parsed, err := parser.ParseFile(parsePath, repoRoot)
+		if err != nil {
+			return nil, warnings, fmt.Errorf("parse %s (%s): %w", session.Path, session.Tool, err)
+		}
+		events = append(events, parsed...)
+		if maxEvents > 0 && len(events) >= maxEvents {
+			warnings = append(warnings, fmt.Sprintf("capture: truncated parsed events at %d events", maxEvents))
+			return append([]capture.SessionEvent(nil), events[:maxEvents]...), warnings, nil
+		}
+	}
+	return events, warnings, nil
+}
+
+func capCaptureSessions(sessions []parsers.DiscoveredSession, maxSessions int) []parsers.DiscoveredSession {
+	if maxSessions <= 0 || len(sessions) <= maxSessions {
+		return sessions
+	}
+	out := append([]parsers.DiscoveredSession(nil), sessions...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return captureSessionModTime(out[i].Path).After(captureSessionModTime(out[j].Path))
+	})
+	return out[:maxSessions]
+}
+
+func prepareCaptureSessionForParse(session parsers.DiscoveredSession) (path string, cleanup func(), warnings []string, skip bool) {
+	info, err := os.Stat(session.Path)
+	if err != nil {
+		return session.Path, nil, nil, false
+	}
+	size := info.Size()
+	if session.Kind == parsers.SessionKindCursorVSCDB && size > captureMatchMaxVSCDBBytes {
+		return session.Path, nil, []string{fmt.Sprintf("capture: skipped cursor state.vscdb (%s > %s cap)", humanBytes(size), humanBytes(captureMatchMaxVSCDBBytes))}, true
+	}
+	if isCaptureJSONLSession(session) && size > captureMatchJSONLTailBytes {
+		tailPath, tailCleanup, err := tailCaptureJSONLSession(session.Path, captureMatchJSONLTailBytes)
+		if err != nil {
+			return session.Path, nil, []string{fmt.Sprintf("capture: skipped %s session %s tail read: %v", session.Tool, captureSessionLabel(session), err)}, true
+		}
+		return tailPath, tailCleanup, []string{fmt.Sprintf("capture: tailed %s session %s (%s, last %s read)", session.Tool, captureSessionLabel(session), humanBytes(size), humanBytes(captureMatchJSONLTailBytes))}, false
+	}
+	return session.Path, nil, nil, false
+}
+
+func captureSessionModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+func isCaptureJSONLSession(session parsers.DiscoveredSession) bool {
+	return session.Kind == parsers.SessionKindJSONL || strings.HasSuffix(session.Path, ".jsonl")
+}
+
+func tailCaptureJSONLSession(path string, maxBytes int64) (string, func(), error) {
+	if maxBytes <= 0 {
+		return path, nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	start := info.Size() - maxBytes
+	if start < 0 {
+		start = 0
+	}
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return "", nil, err
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return "", nil, err
+	}
+	if start > 0 {
+		if idx := strings.IndexByte(string(data), '\n'); idx >= 0 {
+			data = data[idx+1:]
+		} else {
+			data = nil
+		}
+	}
+	dir, err := os.MkdirTemp("", "gx-capture-tail-*")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	dst := filepath.Join(dir, filepath.Base(path))
+	if filepath.Base(filepath.Dir(path)) == "subagents" {
+		dst = filepath.Join(dir, filepath.Base(filepath.Dir(filepath.Dir(path))), "subagents", filepath.Base(path))
+	} else if parent := filepath.Base(filepath.Dir(path)); parent != "." && parent != string(filepath.Separator) {
+		dst = filepath.Join(dir, parent, filepath.Base(path))
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return dst, cleanup, nil
+}
+
+func captureSessionLabel(session parsers.DiscoveredSession) string {
+	if strings.TrimSpace(session.SessionID) != "" {
+		return session.SessionID
+	}
+	return filepath.Base(session.Path)
+}
+
+func humanBytes(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%dB", size)
+	}
+	value := float64(size)
+	for _, suffix := range []string{"KB", "MB", "GB", "TB"} {
+		value /= unit
+		if value < unit {
+			return fmt.Sprintf("%.1f%s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1fPB", value/unit)
 }

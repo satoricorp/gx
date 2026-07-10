@@ -30,14 +30,20 @@ func (OpenAIResponses) Assemble(events io.Reader) ([]byte, Summary, error) {
 		}
 		if response, _ := payload["response"].(map[string]any); response != nil {
 			last = response
-			mergeOpenAIResponseSummary(&summary, response)
-			continue
+		} else {
+			last = payload
 		}
-		last = payload
-		mergeOpenAIResponseSummary(&summary, payload)
+		if usage, _ := last["usage"].(map[string]any); usage != nil {
+			mergeUsage(&summary.Usage, openAIUsage(usage))
+		}
 	}
 	if last == nil {
 		last = map[string]any{}
+	}
+	if finish := asString(last["finish_reason"]); finish != "" {
+		summary.FinishReason = stringPtr(finish)
+	} else if status := asString(last["status"]); status != "" {
+		summary.FinishReason = stringPtr(status)
 	}
 	body, err := json.Marshal(last)
 	if err != nil {
@@ -206,24 +212,31 @@ func summarizeOpenAIJSON(body []byte) (Summary, error) {
 			}
 		}
 	}
+	if summary.FinishReason == nil {
+		if finish := asString(payload["finish_reason"]); finish != "" {
+			summary.FinishReason = stringPtr(finish)
+		} else if status := asString(payload["status"]); status != "" {
+			summary.FinishReason = stringPtr(status)
+		}
+	}
 	return summary, nil
-}
-
-func mergeOpenAIResponseSummary(summary *Summary, payload map[string]any) {
-	if usage, _ := payload["usage"].(map[string]any); usage != nil {
-		summary.Usage = openAIUsage(usage)
-	}
-	if finish := asString(payload["finish_reason"]); finish != "" {
-		summary.FinishReason = stringPtr(finish)
-	}
-	if status := asString(payload["status"]); status != "" && summary.FinishReason == nil {
-		summary.FinishReason = stringPtr(status)
-	}
 }
 
 func openAIUsage(usage map[string]any) Usage {
 	return Usage{
-		InputTokens:  firstInt(usage["prompt_tokens"], usage["input_tokens"]),
-		OutputTokens: firstInt(usage["completion_tokens"], usage["output_tokens"]),
+		InputTokens:     firstInt(usage["prompt_tokens"], usage["input_tokens"]),
+		OutputTokens:    firstInt(usage["completion_tokens"], usage["output_tokens"]),
+		CacheReadTokens: openAICachedTokens(usage),
 	}
+}
+
+func openAICachedTokens(usage map[string]any) *int {
+	for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+		if details, _ := usage[key].(map[string]any); details != nil {
+			if cached := optInt(details["cached_tokens"]); cached != nil {
+				return cached
+			}
+		}
+	}
+	return nil
 }
