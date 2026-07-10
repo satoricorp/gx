@@ -442,10 +442,6 @@ func normalizeSemanticLabelTokens(tokens []string) []string {
 		}
 		seen[token] = struct{}{}
 	}
-	has := func(token string) bool {
-		_, ok := seen[token]
-		return ok
-	}
 	allSame := true
 	for _, token := range tokens[1:] {
 		if token != tokens[0] {
@@ -454,51 +450,9 @@ func normalizeSemanticLabelTokens(tokens []string) []string {
 		}
 	}
 	if allSame {
-		switch tokens[0] {
-		case "e2e":
-			return []string{"e2e", "coverage"}
-		case "documentation", "docs", "readme":
-			return []string{"gx", "documentation"}
-		case "demux":
-			return []string{"demux", "routing"}
-		case "semantic":
-			return []string{"semantic", "labels"}
-		default:
-			return []string{tokens[0]}
-		}
+		return []string{tokens[0]}
 	}
-	switch {
-	case has("e2e") && has("coverage"):
-		return []string{"e2e", "coverage"}
-	case has("e2e") && has("gx"):
-		return []string{"e2e", "coverage"}
-	case has("gx") && has("workflow"):
-		return []string{"gx", "workflow"}
-	case has("gx") && has("documentation"):
-		return []string{"gx", "documentation"}
-	case has("documentation") && has("readme"):
-		return []string{"gx", "documentation"}
-	case has("docs") && has("documentation"):
-		return []string{"gx", "documentation"}
-	case has("apps") && has("menubar"):
-		return []string{"menubar", "app"}
-	case has("registry") && has("storage"):
-		return []string{"semantic", "label", "storage"}
-	case has("generate") && has("pipeline"):
-		return []string{"generate", "pipeline"}
-	case has("confidence") && has("metadata"):
-		return []string{"confidence", "metadata"}
-	case has("semantic") && has("labels"):
-		return []string{"semantic", "labels"}
-	case has("review") && has("context"):
-		return []string{"review", "context"}
-	case has("provider") && has("runtime"):
-		return []string{"provider", "runtime"}
-	case has("stack") && has("management"):
-		return []string{"stack", "management"}
-	default:
-		return dedupeSemanticTokens(tokens)
-	}
+	return dedupeSemanticTokens(tokens)
 }
 
 func dedupeSemanticTokens(tokens []string) []string {
@@ -735,33 +689,7 @@ func (e *Engine) pruneSemanticLabelRegistry(ctx context.Context, store *storage.
 }
 
 func semanticLabelMergeTarget(label string) string {
-	canonical := canonicalSemanticLabel(label)
-	lower := strings.ToLower(strings.TrimSpace(label))
-	switch lower {
-	case "coverage gx":
-		return "e2e coverage"
-	case "docs index mdx", "readme docs documentation", "docs documentation", "documentation readme":
-		return "gx documentation"
-	case "e2e gx", "e2e gx e2e":
-		return "e2e coverage"
-	case "e2e e2e":
-		return "e2e coverage"
-	case "documentation documentation":
-		return "gx documentation"
-	case "demux demux":
-		return "demux routing"
-	case "gxgenerate attaches repo":
-		return "gx generate"
-	case "gxsync pulls cloud":
-		return "gx sync"
-	}
-	if strings.HasPrefix(lower, "h") {
-		tokens := semanticTokens(lower)
-		if len(tokens) == 0 {
-			return ""
-		}
-	}
-	return canonical
+	return canonicalSemanticLabel(label)
 }
 
 func semanticLabelStore(ctx context.Context, repoRoot string) (*storage.Store, int64, func(), error) {

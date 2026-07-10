@@ -1,13 +1,14 @@
 package authoring
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
-func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
+func TestGenerateLogicConfidencePenalizesRiskyRouteAndDependencyPlans(t *testing.T) {
 	proposal := DemuxProposal{
 		Hunks: []HunkRange{{ID: "h1", File: "alpha.go"}},
 		Revisions: []RevisionProposal{{
@@ -17,7 +18,7 @@ func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
 			UseHunks:         true,
 			HunkIDs:          []string{"h1"},
 			TargetStack:      "feature/alpha",
-			RouteConfidence:  0.5,
+			RouteConfidence:  0.49,
 			ProvenanceStatus: "absent",
 			Confidence:       0.5,
 		}},
@@ -38,8 +39,8 @@ func TestGenerateLogicConfidencePenalizesRiskyHunkAndRoutePlans(t *testing.T) {
 	if got.Confidence.EffectiveConfidence != got.Confidence.LogicConfidence {
 		t.Fatalf("effective confidence = %.2f, want logic %.2f", got.Confidence.EffectiveConfidence, got.Confidence.LogicConfidence)
 	}
-	if len(got.Confidence.LogicReasons) < 2 {
-		t.Fatalf("logic reasons = %#v, want hunk and dependency risks", got.Confidence.LogicReasons)
+	if !hasConfidenceReason(got.Confidence.LogicReasons, "low_confidence_route") || !hasConfidenceReason(got.Confidence.LogicReasons, "structural_dependency") {
+		t.Fatalf("logic reasons = %#v, want route and dependency risks", got.Confidence.LogicReasons)
 	}
 	for _, reason := range got.Confidence.LogicReasons {
 		if reason.Severity == "positive" {
@@ -88,11 +89,11 @@ func TestGenerateLLMRepairDefaultsOff(t *testing.T) {
 	}
 }
 
-func TestConservativeGenerateProposalProducesHighConfidenceWholeFilePlan(t *testing.T) {
+func TestConservativeGenerateProposalPreservesValidHunkLevelPlan(t *testing.T) {
 	proposal := DemuxProposal{
 		Hunks: []HunkRange{
-			{ID: "h1", File: "alpha.go"},
-			{ID: "h2", File: "alpha.go"},
+			{ID: "h1", File: "alpha.go", Patch: "@@\n+const first = true\n"},
+			{ID: "h2", File: "alpha.go", Patch: "@@\n+const second = true\n"},
 		},
 		Revisions: []RevisionProposal{
 			{ID: "u1", Intent: "first", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h1"}, ProvenanceStatus: "explicit", SessionIDs: []string{"s1"}},
@@ -102,21 +103,159 @@ func TestConservativeGenerateProposalProducesHighConfidenceWholeFilePlan(t *test
 
 	got := conservativeGenerateProposal(proposal, "ship alpha", "test fallback")
 
-	if len(got.Revisions) != 1 {
-		t.Fatalf("fallback revisions = %#v, want one whole-file revision", got.Revisions)
+	if len(got.Revisions) != 2 {
+		t.Fatalf("fallback revisions = %#v, want precise hunk-level revisions preserved", got.Revisions)
 	}
-	revision := got.Revisions[0]
-	if revision.UseHunks || len(revision.HunkIDs) != 0 || len(revision.Hunks) != 0 {
-		t.Fatalf("fallback revision = %#v, want whole-file coverage", revision)
+	for _, revision := range got.Revisions {
+		if !revision.UseHunks || len(revision.HunkIDs) != 1 || len(revision.Hunks) != 1 {
+			t.Fatalf("fallback revision = %#v, want hunk-level coverage", revision)
+		}
 	}
-	if len(revision.Files) != 1 || revision.Files[0] != "alpha.go" {
-		t.Fatalf("fallback files = %#v, want alpha.go", revision.Files)
+	if got.Revisions[0].ProvenanceStatus != "explicit" || len(got.Revisions[0].SessionIDs) != 1 || got.Revisions[0].SessionIDs[0] != "s1" {
+		t.Fatalf("fallback provenance = %q/%#v, want explicit session", got.Revisions[0].ProvenanceStatus, got.Revisions[0].SessionIDs)
 	}
-	if revision.ProvenanceStatus != "explicit" || len(revision.SessionIDs) != 1 || revision.SessionIDs[0] != "s1" {
-		t.Fatalf("fallback provenance = %q/%#v, want explicit session", revision.ProvenanceStatus, revision.SessionIDs)
+	if _, err := normalizeDemuxProposal(got); err != nil {
+		t.Fatalf("normalizeDemuxProposal(fallback) error = %v", err)
 	}
-	if got.Confidence.EffectiveConfidence < generateHighLogicConfidence {
-		t.Fatalf("fallback confidence = %.2f, want high", got.Confidence.EffectiveConfidence)
+}
+
+func TestConservativeGenerateProposalRepairsDuplicateHunkByFlatteningImplicatedRevisions(t *testing.T) {
+	proposal := DemuxProposal{
+		Hunks: []HunkRange{
+			{ID: "h1", File: "alpha.go", Patch: "@@\n+const alpha = true\n"},
+			{ID: "h2", File: "beta.go", Patch: "@@\n+const beta = true\n"},
+		},
+		Revisions: []RevisionProposal{
+			{ID: "u1", Intent: "alpha first", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h1"}},
+			{ID: "u2", Intent: "alpha duplicate", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h1"}},
+			{ID: "u3", Intent: "beta", Files: []string{"beta.go"}, UseHunks: true, HunkIDs: []string{"h2"}},
+		},
+	}
+
+	got := conservativeGenerateProposal(proposal, "ship alpha", "test fallback")
+
+	if len(got.Revisions) != 2 {
+		t.Fatalf("fallback revisions = %#v, want duplicate owners merged only", got.Revisions)
+	}
+	if got.Revisions[0].ID != "u1" || got.Revisions[0].UseHunks || len(got.Revisions[0].Files) != 1 || got.Revisions[0].Files[0] != "alpha.go" {
+		t.Fatalf("merged duplicate revision = %#v, want whole-file alpha u1", got.Revisions[0])
+	}
+	if got.Revisions[1].ID != "u3" || !got.Revisions[1].UseHunks || len(got.Revisions[1].HunkIDs) != 1 || got.Revisions[1].HunkIDs[0] != "h2" {
+		t.Fatalf("unimplicated revision = %#v, want beta hunk preserved", got.Revisions[1])
+	}
+	if _, err := normalizeDemuxProposal(got); err != nil {
+		t.Fatalf("normalizeDemuxProposal(fallback) error = %v", err)
+	}
+}
+
+func TestConservativeGenerateProposalRepairsDuplicateWholeFileOwnerByFlatteningImplicatedRevisions(t *testing.T) {
+	proposal := DemuxProposal{
+		Hunks: []HunkRange{
+			{ID: "h1", File: "alpha.go", Patch: "@@\n+const alpha = true\n"},
+			{ID: "h2", File: "beta.go", Patch: "@@\n+const beta = true\n"},
+		},
+		Revisions: []RevisionProposal{
+			{ID: "u1", Intent: "alpha first", Files: []string{"alpha.go"}},
+			{ID: "u2", Intent: "alpha duplicate", Files: []string{"alpha.go"}},
+			{ID: "u3", Intent: "beta", Files: []string{"beta.go"}, UseHunks: true, HunkIDs: []string{"h2"}},
+		},
+	}
+
+	got := conservativeGenerateProposal(proposal, "ship alpha", "test fallback")
+
+	if len(got.Revisions) != 2 || got.Revisions[0].ID != "u1" || got.Revisions[0].UseHunks || got.Revisions[1].ID != "u3" || !got.Revisions[1].UseHunks {
+		t.Fatalf("fallback revisions = %#v, want only duplicate whole-file owners merged", got.Revisions)
+	}
+	if _, err := normalizeDemuxProposal(got); err != nil {
+		t.Fatalf("normalizeDemuxProposal(fallback) error = %v", err)
+	}
+}
+
+func TestConservativeGenerateProposalFallsBackToWholePlanForUnrepairableValidation(t *testing.T) {
+	proposal := DemuxProposal{
+		Hunks: []HunkRange{
+			{ID: "h1", File: "alpha.go", Patch: "@@\n+const first = true\n"},
+			{ID: "h2", File: "alpha.go", Patch: "@@\n+const second = true\n"},
+		},
+		Revisions: []RevisionProposal{
+			{ID: "u1", Intent: "alpha first", Files: []string{"alpha.go"}, UseHunks: true, HunkIDs: []string{"h1"}},
+		},
+	}
+
+	got := conservativeGenerateProposal(proposal, "ship alpha", "test fallback")
+
+	if len(got.Revisions) != 1 || got.Revisions[0].UseHunks || len(got.Revisions[0].Files) != 1 || got.Revisions[0].Files[0] != "alpha.go" {
+		t.Fatalf("fallback revisions = %#v, want whole-plan conservative fallback", got.Revisions)
+	}
+	if _, err := normalizeDemuxProposal(got); err != nil {
+		t.Fatalf("normalizeDemuxProposal(fallback) error = %v", err)
+	}
+}
+
+func TestDemuxValidationRepairUnknownErrorFallsBackToWholePlan(t *testing.T) {
+	if repair := demuxValidationRepair(errors.New("legacy validation failure")); repair != nil {
+		t.Fatalf("demuxValidationRepair() = %#v, want nil", repair)
+	}
+}
+
+func TestCoverageCheckedGenerateProposalDowngradesMismatchWithWarning(t *testing.T) {
+	sourceHunk := HunkRange{ID: "h1", File: "alpha.go", Patch: "diff --git a/alpha.go b/alpha.go\n@@\n+source\n"}
+	coverageInput := DemuxProposal{
+		Hunks: []HunkRange{sourceHunk},
+		Revisions: []RevisionProposal{{
+			ID:       "u1",
+			Intent:   "alpha",
+			UseHunks: true,
+			HunkIDs:  []string{"h1"},
+			Hunks:    []HunkRange{{ID: "h1", File: "alpha.go", Patch: "diff --git a/alpha.go b/alpha.go\n@@\n+altered\n"}},
+		}},
+	}
+	readyProposal := DemuxProposal{
+		Hunks: []HunkRange{sourceHunk},
+		Revisions: []RevisionProposal{{
+			ID:       "u1",
+			Intent:   "alpha",
+			UseHunks: true,
+			HunkIDs:  []string{"h1"},
+			Hunks:    []HunkRange{sourceHunk},
+		}},
+	}
+
+	got, downgraded := coverageCheckedGenerateProposal(coverageInput, readyProposal, "ship alpha")
+
+	if !downgraded {
+		t.Fatal("coverageCheckedGenerateProposal() downgraded = false, want true")
+	}
+	if !hasGenerateWarning(got.Warnings, "patch coverage mismatch:") {
+		t.Fatalf("warnings = %#v, want patch coverage mismatch warning", got.Warnings)
+	}
+	if err := validateDemuxPatchCoverage(got); err != nil {
+		t.Fatalf("validateDemuxPatchCoverage(fallback) error = %v", err)
+	}
+	if got.Revisions[0].Hunks[0].Patch != sourceHunk.Patch {
+		t.Fatalf("fallback hunk patch = %q, want source patch", got.Revisions[0].Hunks[0].Patch)
+	}
+}
+
+func TestCoverageCheckedGenerateProposalKeepsValidPrecisePlan(t *testing.T) {
+	proposal := DemuxProposal{
+		Hunks: []HunkRange{
+			{ID: "h1", File: "alpha.go", Patch: "patch one"},
+			{ID: "h2", File: "alpha.go", Patch: "patch two"},
+		},
+		Revisions: []RevisionProposal{
+			{ID: "u1", Intent: "alpha first", UseHunks: true, HunkIDs: []string{"h1"}, Hunks: []HunkRange{{ID: "h1", File: "alpha.go", Patch: "patch one"}}},
+			{ID: "u2", Intent: "alpha second", UseHunks: true, HunkIDs: []string{"h2"}, Hunks: []HunkRange{{ID: "h2", File: "alpha.go", Patch: "patch two"}}},
+		},
+	}
+
+	got, downgraded := coverageCheckedGenerateProposal(proposal, proposal, "ship alpha")
+
+	if downgraded {
+		t.Fatalf("coverageCheckedGenerateProposal() downgraded = true, proposal = %#v", got)
+	}
+	if len(got.Revisions) != 2 || !got.Revisions[0].UseHunks || !got.Revisions[1].UseHunks {
+		t.Fatalf("proposal revisions = %#v, want precise hunk-level plan", got.Revisions)
 	}
 }
 
@@ -185,7 +324,7 @@ func TestPolishGenerateProposalCoalescesDocsAndNamesRevisions(t *testing.T) {
 		t.Fatalf("revisions = %#v, want docs coalesced into two revisions", got.Revisions)
 	}
 	docs := got.Revisions[0]
-	if docs.Intent != "update GX documentation" {
+	if docs.Intent != "update documentation" {
 		t.Fatalf("docs intent = %q, want deterministic docs name", docs.Intent)
 	}
 	if len(docs.Files) != 2 || docs.Files[0] != "README.md" || docs.Files[1] != "docs/index.mdx" {
@@ -194,17 +333,17 @@ func TestPolishGenerateProposalCoalescesDocsAndNamesRevisions(t *testing.T) {
 	if docs.TargetStack != "docs/documentation" {
 		t.Fatalf("docs target = %q, want deterministic docs route", docs.TargetStack)
 	}
-	if docs.RouteConfidence != 0.96 {
-		t.Fatalf("route confidence = %.2f, want deterministic route confidence", docs.RouteConfidence)
+	if docs.RouteConfidence != 0.66 {
+		t.Fatalf("route confidence = %.2f, want lowest merged route confidence", docs.RouteConfidence)
 	}
 	if len(docs.SessionIDs) != 2 || docs.SessionIDs[0] != "s1" || docs.SessionIDs[1] != "s2" {
 		t.Fatalf("session ids = %#v, want de-duplicated sessions", docs.SessionIDs)
 	}
-	if got.Revisions[1].Intent != "add gx generate --legacy flag" {
-		t.Fatalf("cli intent = %q, want deterministic legacy flag name", got.Revisions[1].Intent)
+	if got.Revisions[1].Intent != "update internal/cli/root" {
+		t.Fatalf("cli intent = %q, want original intent preserved", got.Revisions[1].Intent)
 	}
-	if got.Revisions[1].TargetStack != "feature/cli" {
-		t.Fatalf("cli target = %q, want deterministic cli route", got.Revisions[1].TargetStack)
+	if got.Revisions[1].TargetStack != "" {
+		t.Fatalf("cli target = %q, want no deterministic route", got.Revisions[1].TargetStack)
 	}
 }
 
@@ -264,4 +403,27 @@ func TestGenerateApplyPreflightDefaultsOff(t *testing.T) {
 	if generateApplyPreflightEnabled() {
 		t.Fatal("GX_COMPOSE_SKIP_APPLY_PREFLIGHT=1 should override generate verify")
 	}
+}
+
+func hasConfidenceReason(reasons []ConfidenceReason, kind string) bool {
+	_, ok := confidenceReason(reasons, kind)
+	return ok
+}
+
+func confidenceReason(reasons []ConfidenceReason, kind string) (ConfidenceReason, bool) {
+	for _, reason := range reasons {
+		if reason.Kind == kind {
+			return reason, true
+		}
+	}
+	return ConfidenceReason{}, false
+}
+
+func hasGenerateWarning(warnings []string, prefix string) bool {
+	for _, warning := range warnings {
+		if strings.HasPrefix(warning, prefix) {
+			return true
+		}
+	}
+	return false
 }

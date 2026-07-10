@@ -17,6 +17,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/storage"
@@ -176,6 +177,58 @@ func TestFilterHunksByFiles(t *testing.T) {
 	}
 }
 
+func hunksForDemuxGroups(groups []demuxGroup) []HunkRange {
+	var out []HunkRange
+	for _, group := range groups {
+		out = append(out, group.Hunks...)
+	}
+	return out
+}
+
+func TestGroupDemuxHunksWithSessionAffinityFallsBackOnTransitiveSymbolMerge(t *testing.T) {
+	groups := []demuxGroup{
+		{Files: []string{"internal/a/one.go"}, Hunks: []HunkRange{{ID: "h1", File: "internal/a/one.go", Symbol: "Run", SymbolKind: "function"}}, UseHunks: true, Symbol: "Run", SymbolKind: "function", Confidence: 0.72},
+		{Files: []string{"internal/a/one.go"}, Hunks: []HunkRange{{ID: "h2", File: "internal/a/one.go", Symbol: "Save", SymbolKind: "function"}}, UseHunks: true, Symbol: "Save", SymbolKind: "function", Confidence: 0.72},
+		{Files: []string{"internal/a/two.go"}, Hunks: []HunkRange{{ID: "h3", File: "internal/a/two.go", Symbol: "Sync", SymbolKind: "function"}}, UseHunks: true, Symbol: "Sync", SymbolKind: "function", Confidence: 0.72},
+	}
+	links := []matcher.HunkLink{
+		{HunkID: "h1", SessionID: "s1", Tier: matcher.TierExact, Authorship: matcher.AuthorshipAgent},
+		{HunkID: "h2", SessionID: "s1", Tier: matcher.TierExact, Authorship: matcher.AuthorshipAgent},
+		{HunkID: "h3", SessionID: "s1", Tier: matcher.TierExact, Authorship: matcher.AuthorshipAgent},
+	}
+
+	got, applied, valid := groupDemuxHunksWithSessionAffinity(groups, hunksForDemuxGroups(groups), links, structural.Facts{})
+	if valid || applied {
+		t.Fatalf("groupDemuxHunksWithSessionAffinity() applied=%v valid=%v, want fallback", applied, valid)
+	}
+	if !reflect.DeepEqual(got, groups) {
+		t.Fatalf("groupDemuxHunksWithSessionAffinity() = %#v, want baseline %#v", got, groups)
+	}
+}
+
+func TestFinalizeSessionAwareGroupsFallsBackOnInvalidCoverage(t *testing.T) {
+	hunks := []HunkRange{
+		{ID: "h1", File: "internal/a/one.go"},
+		{ID: "h2", File: "internal/a/two.go"},
+	}
+	baseline := []demuxGroup{
+		{Files: []string{"internal/a/one.go"}, Hunks: []HunkRange{hunks[0]}},
+		{Files: []string{"internal/a/two.go"}, Hunks: []HunkRange{hunks[1]}},
+	}
+	candidate := []demuxGroup{{
+		Files: []string{"internal/a/one.go"},
+		Hunks: []HunkRange{hunks[0]},
+	}}
+
+	got, valid := finalizeSessionAwareGroups(baseline, candidate, hunks)
+	if valid {
+		t.Fatalf("finalizeSessionAwareGroups() valid = true, want false")
+	}
+	if !reflect.DeepEqual(got, baseline) {
+		t.Fatalf("finalizeSessionAwareGroups() = %#v, want baseline %#v", got, baseline)
+	}
+}
+
 func TestOrderGroupsByStructuralDependencies(t *testing.T) {
 	groups := [][]string{{"internal/app/app.go"}, {"internal/core/helper.go"}}
 	got := orderGroupsByStructuralDependencies(groups, structural.Facts{
@@ -263,6 +316,10 @@ func TestNormalizeDemuxProposalRejectsDuplicateHunkIDs(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("normalizeDemuxProposal() error = nil, want duplicate hunk error")
+	}
+	var typed DuplicateHunkAssignmentError
+	if !errors.As(err, &typed) || typed.HunkID != "h1" || typed.FirstOwnerID != "r1" || typed.SecondOwnerID != "r2" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed duplicate hunk fields", err)
 	}
 }
 
@@ -644,6 +701,57 @@ func TestReviewDemuxPlanKeepsStructuralDependencyAdvisoryNonBlocking(t *testing.
 	}
 	if len(result.RepairHints) != 0 {
 		t.Fatalf("ReviewDemuxPlan() repair hints = %#v, want none for advisory dependency warning", result.RepairHints)
+	}
+}
+
+func TestFeasibilityWarningsReportCrossStackDependency(t *testing.T) {
+	got := feasibilityWarnings(
+		[]RevisionProposal{
+			{ID: "r1", Files: []string{"internal/authoring/compose_capture.go"}, TargetStack: "feature/authoring"},
+			{ID: "r2", Files: []string{"internal/capture/parsers/parser.go"}, TargetStack: "feature/capture-parsers"},
+		},
+		nil,
+		structural.Facts{Edges: []structural.DependencyEdge{{
+			FromFile: "internal/authoring/compose_capture.go",
+			ToFile:   "internal/capture/parsers/parser.go",
+			Symbol:   "DiscoveredSession",
+		}}},
+	)
+	var warning FeasibilityWarning
+	for _, current := range got {
+		if current.Source == "cross_stack_dependency" {
+			warning = current
+			break
+		}
+	}
+	if warning.Source == "" {
+		t.Fatalf("feasibilityWarnings() = %#v, want cross_stack_dependency warning", got)
+	}
+	if warning.Severity != "warning" || warning.RevisionID != "r1" || warning.DependsOn != "r2" {
+		t.Fatalf("cross-stack warning = %#v, want blocking r1 -> r2", warning)
+	}
+	if !strings.Contains(warning.Message, "feature/authoring") || !strings.Contains(warning.Message, "feature/capture-parsers") {
+		t.Fatalf("cross-stack warning message = %q, want route names", warning.Message)
+	}
+}
+
+func TestFeasibilityWarningsSuppressCrossStackDependencyWhenBaseStackMatches(t *testing.T) {
+	got := feasibilityWarnings(
+		[]RevisionProposal{
+			{ID: "r1", Files: []string{"internal/authoring/compose_capture.go"}, TargetStack: "feature/authoring", BaseStack: "feature/capture-parsers"},
+			{ID: "r2", Files: []string{"internal/capture/parsers/parser.go"}, TargetStack: "feature/capture-parsers"},
+		},
+		nil,
+		structural.Facts{Edges: []structural.DependencyEdge{{
+			FromFile: "internal/authoring/compose_capture.go",
+			ToFile:   "internal/capture/parsers/parser.go",
+			Symbol:   "DiscoveredSession",
+		}}},
+	)
+	for _, warning := range got {
+		if warning.Source == "cross_stack_dependency" {
+			t.Fatalf("feasibilityWarnings() = %#v, want no cross-stack warning when base_stack satisfies dependency", got)
+		}
 	}
 }
 
@@ -1666,6 +1774,39 @@ func TestPlanDemuxRoutesUsesExistingStackHeuristic(t *testing.T) {
 	}
 }
 
+func TestPlanDemuxRoutesUsesExistingStackBeforeGenericNewStack(t *testing.T) {
+	repoRoot, repoID, store, cleanup := setupDemuxRouteStoreWithRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	head := "change-invoices"
+	if _, err := store.UpsertStack(ctx, storage.Stack{
+		RepoID:       repoID,
+		Name:         "billing",
+		BookmarkName: "feature/billing-existing",
+		BaseRef:      "main",
+		HeadChangeID: &head,
+		Status:       "draft",
+	}); err != nil {
+		t.Fatalf("UpsertStack() error = %v", err)
+	}
+	engine := NewEngine()
+	proposal, err := engine.planDemuxRoutes(ctx, DemuxProposal{
+		RepoRoot: repoRoot,
+		Revisions: []RevisionProposal{{
+			ID:     "r1",
+			Intent: "update billing invoice totals",
+			Files:  []string{"internal/billing/invoice.go"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("planDemuxRoutes() error = %v", err)
+	}
+	revision := proposal.Revisions[0]
+	if revision.TargetStack != "feature/billing-existing" || revision.RouteSource != routeSourceHeuristic {
+		t.Fatalf("planned route = %#v, want existing stack heuristic before generic path route", revision)
+	}
+}
+
 func TestPlanDemuxRoutesUsesStoredFileOverlapForExistingStack(t *testing.T) {
 	repoRoot, repoID, store, cleanup := setupDemuxRouteStoreWithRepo(t)
 	defer cleanup()
@@ -1861,6 +2002,20 @@ func TestCurrentDemuxApplyChangeUsesNonEmptyWorkRev(t *testing.T) {
 	}
 }
 
+func TestPrepareNextDemuxRevisionKeepsRemainderWorkingCopy(t *testing.T) {
+	repoRoot := t.TempDir()
+	t.Setenv("GX_HOME", t.TempDir())
+	runner := &prepareNextDemuxFakeRunner{repoRoot: repoRoot, currentFiles: []string{"remaining.go"}}
+	engine := NewEngineWithVCS(vcs.NewServiceWithRunner(runner))
+
+	if err := engine.prepareNextDemuxRevision(context.Background(), repoRoot, "recorded-change"); err != nil {
+		t.Fatalf("prepareNextDemuxRevision() error = %v", err)
+	}
+	if runner.called("jj edit parent-commit") || runner.called("jj edit parent-change") {
+		t.Fatalf("prepareNextDemuxRevision() edited away from non-empty remainder; calls=%#v", runner.calls)
+	}
+}
+
 func TestEditDemuxApplySourceIfNeededEditsSourceChange(t *testing.T) {
 	repoRoot := t.TempDir()
 	runner := &demuxApplySourceFakeRunner{repoRoot: repoRoot}
@@ -1870,15 +2025,28 @@ func TestEditDemuxApplySourceIfNeededEditsSourceChange(t *testing.T) {
 	if err := engine.editDemuxApplySourceIfNeeded(context.Background(), repoRoot, "@-", source); err != nil {
 		t.Fatalf("editDemuxApplySourceIfNeeded() error = %v", err)
 	}
-	if !runner.called("jj edit parent-change") {
-		t.Fatalf("editDemuxApplySourceIfNeeded() did not edit the source change; calls=%#v", runner.calls)
+	if !runner.called("jj edit parent-commit") {
+		t.Fatalf("editDemuxApplySourceIfNeeded() did not edit the source commit; calls=%#v", runner.calls)
 	}
 	runner.calls = nil
 	if err := engine.editDemuxApplySourceIfNeeded(context.Background(), repoRoot, "@", source); err != nil {
 		t.Fatalf("editDemuxApplySourceIfNeeded(@) error = %v", err)
 	}
-	if runner.called("jj edit parent-change") {
+	if runner.called("jj edit parent-commit") {
 		t.Fatalf("editDemuxApplySourceIfNeeded(@) edited unexpectedly; calls=%#v", runner.calls)
+	}
+}
+
+func TestDemuxSourceStackMatchesCheckoutRequiresBookmarkMatch(t *testing.T) {
+	stack := StackInfo{BookmarkName: "feature/authoring"}
+	if !demuxSourceStackMatchesCheckout(stack, "feature/authoring") {
+		t.Fatal("demuxSourceStackMatchesCheckout() rejected matching checkout")
+	}
+	if !demuxSourceStackMatchesCheckout(stack, "refs/heads/feature/authoring") {
+		t.Fatal("demuxSourceStackMatchesCheckout() rejected matching full ref")
+	}
+	if demuxSourceStackMatchesCheckout(stack, "feature/improve-demux-generate-preflight-routing") {
+		t.Fatal("demuxSourceStackMatchesCheckout() accepted unrelated latest-stack fallback")
 	}
 }
 
@@ -2091,6 +2259,10 @@ func TestNormalizeDemuxProposalRejectsUnassignedHunk(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "hunk h2 in alpha.txt is not assigned") {
 		t.Fatalf("normalizeDemuxProposal() error = %v, want unassigned hunk error", err)
 	}
+	var typed MissingHunkOwnerError
+	if !errors.As(err, &typed) || typed.HunkID != "h2" || typed.File != "alpha.txt" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed missing hunk fields", err)
+	}
 }
 
 func TestNormalizeDemuxProposalAllowsWholeFileCoverage(t *testing.T) {
@@ -2138,6 +2310,43 @@ func TestNormalizeDemuxProposalRejectsMixedHunkAndWholeFileCoverage(t *testing.T
 	if err == nil || !strings.Contains(err.Error(), "covered by hunk revision r1 and whole-file revision r2") {
 		t.Fatalf("normalizeDemuxProposal() error = %v, want mixed coverage error", err)
 	}
+	var typed MixedHunkWholeFileCoverageError
+	if !errors.As(err, &typed) || typed.HunkID != "h1" || typed.File != "alpha.txt" || typed.HunkRevisionID != "r1" || typed.WholeRevisionID != "r2" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed mixed coverage fields", err)
+	}
+}
+
+func TestNormalizeDemuxProposalRejectsDuplicateWholeFileOwner(t *testing.T) {
+	_, err := normalizeDemuxProposal(DemuxProposal{
+		Hunks: []HunkRange{{ID: "h1", File: "alpha.txt", Patch: "patch one"}},
+		Revisions: []RevisionProposal{
+			{ID: "r1", Intent: "alpha first", Files: []string{"alpha.txt"}},
+			{ID: "r2", Intent: "alpha second", Files: []string{"alpha.txt"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "file alpha.txt is assigned to both revision r1 and revision r2") {
+		t.Fatalf("normalizeDemuxProposal() error = %v, want duplicate whole-file owner error", err)
+	}
+	var typed DuplicateWholeFileOwnerError
+	if !errors.As(err, &typed) || typed.File != "alpha.txt" || typed.FirstOwnerID != "r1" || typed.SecondOwnerID != "r2" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed duplicate whole-file fields", err)
+	}
+}
+
+func TestNormalizeDemuxProposalRejectsUnknownHunkReference(t *testing.T) {
+	_, err := normalizeDemuxProposal(DemuxProposal{
+		Hunks: []HunkRange{{ID: "h1", File: "alpha.txt", Patch: "patch one"}},
+		Revisions: []RevisionProposal{
+			{ID: "r1", Intent: "alpha", UseHunks: true, HunkIDs: []string{"h9"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "revision r1 references unknown hunk h9") {
+		t.Fatalf("normalizeDemuxProposal() error = %v, want unknown hunk reference error", err)
+	}
+	var typed UnknownHunkReferenceError
+	if !errors.As(err, &typed) || typed.RevisionID != "r1" || typed.HunkID != "h9" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed unknown hunk fields", err)
+	}
 }
 
 func TestNormalizeDemuxProposalRejectsDuplicateRevisionIDs(t *testing.T) {
@@ -2163,6 +2372,40 @@ func TestNormalizeDemuxProposalRejectsLaterDependency(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "revision r1 depends on unknown or later revision r2") {
 		t.Fatalf("normalizeDemuxProposal() error = %v, want later dependency error", err)
+	}
+	var typed DanglingDependsOnError
+	if !errors.As(err, &typed) || typed.RevisionID != "r1" || typed.DependsOn != "r2" {
+		t.Fatalf("normalizeDemuxProposal() error = %#v, want typed dependency fields", err)
+	}
+}
+
+func TestRepairHintsForReviewErrorUsesTypedErrors(t *testing.T) {
+	proposal := DemuxProposal{
+		Revisions: []RevisionProposal{
+			{ID: "r1", Intent: "alpha"},
+			{ID: "r2", Intent: "beta"},
+		},
+	}
+
+	hints := repairHintsForReviewError(proposal, DuplicateHunkAssignmentError{HunkID: "h1", FirstOwnerID: "r1", SecondOwnerID: "r2"})
+
+	if len(hints) != 1 || hints[0].Kind != "duplicate_hunk_assignment" || hints[0].HunkID != "h1" || !reflect.DeepEqual(hints[0].Candidates, []string{"r1", "r2"}) {
+		t.Fatalf("repairHintsForReviewError() = %#v, want typed duplicate hunk hint", hints)
+	}
+}
+
+func TestRepairHintsForReviewErrorKeepsRegexFallback(t *testing.T) {
+	proposal := DemuxProposal{
+		Revisions: []RevisionProposal{
+			{ID: "r1", Intent: "alpha"},
+			{ID: "r2", Intent: "beta"},
+		},
+	}
+
+	hints := repairHintsForReviewError(proposal, errors.New("hunk h1 in alpha.txt is covered by hunk revision r1 and whole-file revision r2"))
+
+	if len(hints) != 1 || hints[0].Kind != "mixed_hunk_and_whole_file" || hints[0].HunkID != "h1" || hints[0].File != "alpha.txt" {
+		t.Fatalf("repairHintsForReviewError() = %#v, want regex fallback mixed coverage hint", hints)
 	}
 }
 
@@ -2427,6 +2670,7 @@ type demuxRoutingFakeRunner struct {
 	calls             []string
 	changeLogCalls    int
 	diffNameOnlyCalls int
+	failEditRev       string
 }
 
 func (r *demuxRoutingFakeRunner) Run(ctx context.Context, dir, name string, args ...string) (string, error) {
@@ -2473,7 +2717,12 @@ func (r *demuxRoutingFakeRunner) output(name string, args []string) (string, err
 	}
 	if len(args) > 0 {
 		switch args[0] {
-		case "edit", "new", "commit", "restore":
+		case "edit":
+			if len(args) > 1 && strings.TrimSpace(args[1]) == r.failEditRev {
+				return "", fmt.Errorf("Revision `%s` doesn't exist", args[1])
+			}
+			return "", nil
+		case "new", "commit", "restore":
 			return "", nil
 		case "op":
 			return "op-routed\n", nil
@@ -2568,8 +2817,9 @@ func (r *demuxRoutingFakeRunner) called(want string) bool {
 }
 
 type prepareNextDemuxFakeRunner struct {
-	repoRoot string
-	calls    []string
+	repoRoot     string
+	currentFiles []string
+	calls        []string
 }
 
 func (r *prepareNextDemuxFakeRunner) Run(ctx context.Context, dir, name string, args ...string) (string, error) {
@@ -2638,6 +2888,12 @@ func (r *prepareNextDemuxFakeRunner) output(name string, args []string) (string,
 			return "current-change|current-commit|current|parent-change\n", nil
 		}
 	case "diff":
+		if len(args) >= 4 && args[1] == "-r" && args[2] == "@" && args[3] == "--name-only" {
+			if len(r.currentFiles) == 0 {
+				return "", nil
+			}
+			return strings.Join(r.currentFiles, "\n") + "\n", nil
+		}
 		if len(args) >= 4 && args[1] == "-r" && args[2] == "@-" && args[3] == "--name-only" {
 			return "leftover.go\n", nil
 		}

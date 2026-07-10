@@ -1389,6 +1389,39 @@ func (s *Store) FindLatestDemuxProposal(ctx context.Context, repoID int64, statu
 	return scanDemuxProposal(row)
 }
 
+func (s *Store) ListActiveDemuxProposals(ctx context.Context, repoID int64, limit int) ([]DemuxProposal, error) {
+	query := `
+		SELECT id, repo_id, base_change_id, status, payload_json, created_at, updated_at, applied_at
+		FROM demux_proposals
+		WHERE repo_id = ? AND status IN ('pending', 'partially_applied')
+	`
+	args := []any{repoID}
+	query += ` ORDER BY created_at DESC, updated_at DESC`
+	if limit > 0 {
+		query += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list active demux proposals: %w", err)
+	}
+	defer rows.Close()
+	var proposals []DemuxProposal
+	for rows.Next() {
+		proposal, err := scanDemuxProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		if proposal != nil {
+			proposals = append(proposals, *proposal)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active demux proposals: %w", err)
+	}
+	return proposals, nil
+}
+
 func (s *Store) ListDemuxProposals(ctx context.Context, repoID int64, status string, limit int) ([]DemuxProposal, error) {
 	query := `
 		SELECT id, repo_id, base_change_id, status, payload_json, created_at, updated_at, applied_at
