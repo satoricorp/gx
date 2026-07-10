@@ -122,6 +122,61 @@ func TestProxyCapturesOpenAIResponsesUsage(t *testing.T) {
 	}
 }
 
+// The ChatGPT codex backend streams SSE without a text/event-stream
+// content-type; the proxy must still assemble the body and keep the usage.
+func TestProxyCapturesOpenAIResponsesSSEWithoutContentType(t *testing.T) {
+	stream := "event: response.created\n" +
+		"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\"," +
+		"\"usage\":{\"input_tokens\":16711,\"input_tokens_details\":{\"cached_tokens\":1920},\"output_tokens\":5}}}\n\n"
+	proxy, db := newCaptureTestProxy(t, stubTransport{
+		status:      http.StatusOK,
+		contentType: "",
+		body:        stream,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5.5"}`)))
+	req.Header.Set("Authorization", "Bearer chatgpt-token")
+	req.Header.Set("Chatgpt-Account-Id", "acct-1")
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d", recorder.Code)
+	}
+
+	var input, output, cacheRead sql.NullInt64
+	var finish sql.NullString
+	var isStreaming int
+	var body []byte
+	if err := db.QueryRowContext(context.Background(), `
+		SELECT resp.input_tokens, resp.output_tokens, resp.cache_read_tokens, resp.finish_reason, resp.is_streaming, resp.response_body
+		FROM responses resp
+		JOIN requests req ON req.id = resp.request_id
+		WHERE req.session_id = 'capture-session'
+	`).Scan(&input, &output, &cacheRead, &finish, &isStreaming, &body); err != nil {
+		t.Fatalf("select captured response: %v", err)
+	}
+	if isStreaming != 0 {
+		t.Fatalf("is_streaming = %d, want 0", isStreaming)
+	}
+	if !bytes.Contains(body, []byte(`"usage"`)) || bytes.HasPrefix(bytes.TrimSpace(body), []byte("event:")) {
+		t.Fatalf("expected assembled body, got prefix %q", body[:40])
+	}
+	if !input.Valid || input.Int64 != 16711 {
+		t.Fatalf("input_tokens = %+v, want 16711", input)
+	}
+	if !output.Valid || output.Int64 != 5 {
+		t.Fatalf("output_tokens = %+v, want 5", output)
+	}
+	if !cacheRead.Valid || cacheRead.Int64 != 1920 {
+		t.Fatalf("cache_read_tokens = %+v, want 1920", cacheRead)
+	}
+	if !finish.Valid || finish.String != "completed" {
+		t.Fatalf("finish_reason = %+v, want completed", finish)
+	}
+}
+
 func TestProxyCapturesOpenAIResponsesStreamingUsage(t *testing.T) {
 	stream := "event: response.created\n" +
 		"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n" +
