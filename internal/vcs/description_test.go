@@ -61,6 +61,32 @@ func TestStampRevisionTrailer(t *testing.T) {
 	}
 }
 
+func TestStampRevisionTrailerReplacesStaleTrailer(t *testing.T) {
+	t.Parallel()
+
+	oldID := "oldoldoldoldoldoldoldoldoldoldold"
+	newID := "newnewnewnewnewnewnewnewnewnewnew"
+
+	stamped := StampRevisionTrailer("add login flow", oldID)
+	restamped := StampRevisionTrailer(stamped, newID)
+
+	if strings.Contains(restamped, RevisionTrailerLine(oldID)) {
+		t.Fatalf("StampRevisionTrailer() kept stale trailer: %q", restamped)
+	}
+	if got := strings.Count(restamped, revisionTrailerPrefix()); got != 1 {
+		t.Fatalf("StampRevisionTrailer() = %q, want exactly 1 GX trailer, got %d", restamped, got)
+	}
+	if !strings.HasSuffix(restamped, RevisionTrailerLine(newID)) {
+		t.Fatalf("StampRevisionTrailer() = %q, want trailing %q", restamped, RevisionTrailerLine(newID))
+	}
+
+	multi := stamped + "\n" + RevisionTrailerLine("thirdthirdthirdthirdthirdthirdthi")
+	collapsed := StampRevisionTrailer(multi, newID)
+	if got := strings.Count(collapsed, revisionTrailerPrefix()); got != 1 {
+		t.Fatalf("StampRevisionTrailer() = %q, want stale trailers collapsed to 1, got %d", collapsed, got)
+	}
+}
+
 func TestFinalizeCommitMessageRejectsEmpty(t *testing.T) {
 	t.Parallel()
 
