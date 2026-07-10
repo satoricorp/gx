@@ -241,6 +241,11 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Pre-push hook", err.Error()))
 				}
 			}
+			if err := installClaudeCaptureHooks(cmd, result.Repo.RootPath, yes); err != nil {
+				if !yes {
+					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Claude hooks", err.Error()))
+				}
+			}
 			if err := gxconfig.EnsureCaptureRetention(); err != nil {
 				if !yes {
 					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Retention", err.Error()))

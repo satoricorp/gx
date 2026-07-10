@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/orchestrator"
-	"github.com/satoricorp/gx/internal/capture/parsers/claude"
-	"github.com/satoricorp/gx/internal/capture/parsers/codex"
-	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
@@ -39,7 +35,11 @@ func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, tel
 		if len(row.RawBlob) == 0 {
 			continue
 		}
-		events, badLines, err := parseRaw(row, repoRoot, inventory)
+		sourcePath := row.SourcePath
+		if sourcePath == "" {
+			sourcePath = filepath.Join("raw", row.SessionID+".jsonl")
+		}
+		events, badLines, err := orchestrator.ParseRawBytes(row.Tool, sourcePath, row.RawBlob, repoRoot, inventory)
 		if err != nil {
 			result.Errors++
 			continue
@@ -64,30 +64,6 @@ func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, tel
 	}
 	emitSchemaDrift(ctx, telemetryClient, inventory)
 	return result, nil
-}
-
-func parseRaw(row storage.StagedSession, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
-	sourcePath := row.SourcePath
-	if sourcePath == "" {
-		sourcePath = filepath.Join("raw", row.SessionID+".jsonl")
-	}
-	switch row.Tool {
-	case capture.ToolClaude:
-		parser := &claude.Parser{Inventory: inventory}
-		events, err := parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
-		if err != nil {
-			return nil, parser.LastBadLines, err
-		}
-		return events, parser.LastBadLines, nil
-	case capture.ToolCodex:
-		parser := &codex.Parser{Inventory: inventory}
-		return parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
-	case capture.ToolCursor:
-		parser := &cursorparser.Parser{Inventory: inventory}
-		return parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
-	default:
-		return nil, 0, fmt.Errorf("unsupported tool %q", row.Tool)
-	}
 }
 
 func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {

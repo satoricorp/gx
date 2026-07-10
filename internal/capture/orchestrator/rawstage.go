@@ -1,4 +1,4 @@
-package capturestage
+package orchestrator
 
 import (
 	"context"
@@ -10,12 +10,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/orchestrator"
 	"github.com/satoricorp/gx/internal/capture/parsers"
 	"github.com/satoricorp/gx/internal/capture/parsers/claude"
 	"github.com/satoricorp/gx/internal/capture/parsers/codex"
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
-	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -28,17 +26,17 @@ func IngestRawSession(
 	raw []byte,
 	repoRoot string,
 	revisionIDs []string,
-) (orchestrator.StagedSession, int, error) {
+) (StagedSession, int, error) {
 	sessionID := sessionIDFromPath(tool, sourcePath)
 	if err := stageRawBlob(ctx, stager, tool, sessionID, sourcePath, raw, revisionIDs); err != nil {
-		return orchestrator.StagedSession{}, 0, err
+		return StagedSession{}, 0, err
 	}
 
-	events, badLines, err := parseRaw(tool, sourcePath, raw, repoRoot, nil)
+	events, badLines, err := parseRawBytes(tool, sourcePath, raw, repoRoot, nil)
 	if err != nil {
-		return orchestrator.StagedSession{}, badLines, err
+		return StagedSession{}, badLines, err
 	}
-	session := orchestrator.StagedSession{
+	session := StagedSession{
 		SessionID: sessionID,
 		Tool:      tool,
 		Events:    redactEvents(events),
@@ -80,11 +78,11 @@ func stageRawBlob(
 	contentHash := storage.PayloadContentHash(raw)
 	for _, revisionID := range ids {
 		row := storage.StagedSession{
-			SessionID:  sessionID,
-			Tool:       tool,
-			RawBlob:    raw,
-			SourcePath: sourcePath,
-			RevisionID: revisionID,
+			SessionID:   sessionID,
+			Tool:        tool,
+			RawBlob:     raw,
+			SourcePath:  sourcePath,
+			RevisionID:  revisionID,
 			ContentHash: contentHash,
 		}
 		row.ID = storage.CaptureRowID(revisionID, contentHash)
@@ -101,7 +99,7 @@ func stageRawBlob(
 func stageParsedSession(
 	ctx context.Context,
 	stager storage.CaptureStager,
-	session orchestrator.StagedSession,
+	session StagedSession,
 	sourcePath string,
 	raw []byte,
 	badLines int,
@@ -141,7 +139,11 @@ func stageParsedSession(
 	return nil
 }
 
-func parseRaw(tool, sourcePath string, raw []byte, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
+func ParseRawBytes(tool, sourcePath string, raw []byte, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
+	return parseRawBytes(tool, sourcePath, raw, repoRoot, inventory)
+}
+
+func parseRawBytes(tool, sourcePath string, raw []byte, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
 	switch tool {
 	case capture.ToolClaude:
 		parser := &claude.Parser{Inventory: inventory}
@@ -169,15 +171,4 @@ func sessionIDFromPath(tool, sourcePath string) string {
 		}
 	}
 	return strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
-}
-
-func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {
-	out := make([]capture.SessionEvent, len(events))
-	for i, ev := range events {
-		ev.OldText = redact.Redact(ev.OldText)
-		ev.NewText = redact.Redact(ev.NewText)
-		ev.PromptContext = redact.Redact(ev.PromptContext)
-		out[i] = ev
-	}
-	return out
 }

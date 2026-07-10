@@ -30,9 +30,19 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 		SessionID:   "cursor-abc",
 		Tool:        "cursor",
 		PayloadJSON: []byte(`{"sessionID":"cursor-abc"}`),
+		RawBlob:     []byte(`{"type":"assistant"}` + "\n"),
+		SourcePath:  "/tmp/session.jsonl",
+		BadLines:    1,
 		RevisionID:  "rev-1",
 	}); err != nil {
 		t.Fatal(err)
+	}
+	rawSessions, err := stager.RawSessions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rawSessions) != 1 || string(rawSessions[0].RawBlob) == "" {
+		t.Fatalf("raw sessions = %+v", rawSessions)
 	}
 	extracts, err := stager.PendingExtracts(ctx)
 	if err != nil {

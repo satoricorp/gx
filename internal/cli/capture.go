@@ -12,8 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/capturestage"
+	"github.com/satoricorp/gx/internal/capture/claudehooks"
 	"github.com/satoricorp/gx/internal/capture/extract"
+	"github.com/satoricorp/gx/internal/capture/orchestrator"
 	"github.com/satoricorp/gx/internal/capture/reparse"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
@@ -167,4 +168,138 @@ func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSucc
 		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Pre-push hook", success("ok")+": capture on git push"))
 	}
 	return nil
+}
+
+func installClaudeCaptureHooks(cmd *cobra.Command, repoRoot string, quiet bool) error {
+	gxPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if err := claudehooks.MergeSettings(repoRoot, gxPath); err != nil {
+		return err
+	}
+	if !quiet {
+		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Claude hooks", success("ok")+": Stop/SessionEnd transcript capture"))
+	}
+	return nil
+}
+
+func newCaptureReparseCommand(ctx context.Context) *cobra.Command {
+	var repoRoot string
+	cmd := &cobra.Command{
+		Use:   "reparse",
+		Short: "Re-run normalization over stored raw session blobs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if repoRoot == "" {
+				var err error
+				repoRoot, err = os.Getwd()
+				if err != nil {
+					return err
+				}
+			}
+			stager, err := storage.OpenCaptureStager(ctx)
+			if err != nil {
+				return err
+			}
+			result, err := reparse.Run(ctx, stager, repoRoot, telemetry.NewFromEnv())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "capture reparse: sessions=%d updated=%d errors=%d\n",
+				result.Sessions, result.Updated, result.Errors)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repoRoot, "repo", "", "repository root (default: current directory)")
+	return cmd
+}
+
+func newCaptureTranscriptCommand(ctx context.Context) *cobra.Command {
+	var (
+		path     string
+		repoRoot string
+		tool     string
+	)
+	cmd := &cobra.Command{
+		Use:   "transcript",
+		Short: "Ingest a Claude/Codex/Cursor transcript path from hooks or --path",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if path == "" {
+				resolved, err := transcriptPathFromStdin(cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				path = resolved
+			}
+			if strings.TrimSpace(path) == "" {
+				return nil
+			}
+			if repoRoot == "" {
+				var err error
+				repoRoot, err = os.Getwd()
+				if err != nil {
+					return err
+				}
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if tool == "" {
+				tool = inferTranscriptTool(path)
+			}
+			stager, err := storage.OpenCaptureStager(ctx)
+			if err != nil {
+				return err
+			}
+			session, badLines, err := orchestrator.IngestRawSession(ctx, stager, tool, path, raw, repoRoot, nil)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "capture transcript: tool=%s session=%s bad_lines=%d events=%d\n",
+				tool, session.SessionID, badLines, len(session.Events))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&path, "path", "", "transcript JSONL path")
+	cmd.Flags().StringVar(&repoRoot, "repo", "", "repository root (default: current directory)")
+	cmd.Flags().StringVar(&tool, "tool", "", "agent tool (claude, codex, cursor)")
+	return cmd
+}
+
+func transcriptPathFromStdin(in io.Reader) (string, error) {
+	if in == nil {
+		return "", nil
+	}
+	data, err := io.ReadAll(in)
+	if err != nil {
+		return "", err
+	}
+	payload := strings.TrimSpace(string(data))
+	if payload == "" {
+		return "", nil
+	}
+	var hook map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &hook); err != nil {
+		return "", nil
+	}
+	var path string
+	if err := json.Unmarshal(hook["transcript_path"], &path); err != nil {
+		return "", nil
+	}
+	return strings.TrimSpace(path), nil
+}
+
+func inferTranscriptTool(path string) string {
+	lower := strings.ToLower(filepath.ToSlash(path))
+	switch {
+	case strings.Contains(lower, "/.claude/"):
+		return capture.ToolClaude
+	case strings.Contains(lower, "/.codex/"):
+		return capture.ToolCodex
+	case strings.Contains(lower, "/.cursor/"):
+		return capture.ToolCursor
+	default:
+		return capture.ToolClaude
+	}
 }

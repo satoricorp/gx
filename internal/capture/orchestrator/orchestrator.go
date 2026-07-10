@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/capturestage"
 	"github.com/satoricorp/gx/internal/capture/exclude"
 	capturegit "github.com/satoricorp/gx/internal/capture/git"
 	"github.com/satoricorp/gx/internal/capture/matcher"
@@ -168,7 +167,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 			return Result{}, fmt.Errorf("open capture stager: %w", err)
 		}
 	}
-	if err := capturestage.StageDiscoveredRaw(ctx, stager, discovered, revisionIDs); err != nil {
+	if err := StageDiscoveredRaw(ctx, stager, discovered, revisionIDs); err != nil {
 		return Result{}, fmt.Errorf("stage raw sessions: %w", err)
 	}
 
