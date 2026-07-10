@@ -497,12 +497,17 @@ func ensureSessionColumns(ctx context.Context, db *sql.DB) error {
 	}
 
 	columns := map[string]string{
-		"source":       "TEXT",
-		"process_name": "TEXT",
-		"parent_pid":   "INTEGER",
-		"last_seen_at": "INTEGER",
-		"end_reason":   "TEXT",
-		"repo_root":    "TEXT",
+		"source":             "TEXT",
+		"process_name":       "TEXT",
+		"parent_pid":         "INTEGER",
+		"last_seen_at":       "INTEGER",
+		"end_reason":         "TEXT",
+		"repo_root":          "TEXT",
+		"models_json":        "TEXT NOT NULL DEFAULT '[]'",
+		"input_tokens":       "INTEGER NOT NULL DEFAULT 0",
+		"output_tokens":      "INTEGER NOT NULL DEFAULT 0",
+		"cache_read_tokens":  "INTEGER NOT NULL DEFAULT 0",
+		"cache_write_tokens": "INTEGER NOT NULL DEFAULT 0",
 	}
 	for name, typ := range columns {
 		if _, ok := existing[name]; ok {

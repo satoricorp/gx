@@ -1,20 +1,25 @@
 package storage
 
 type Session struct {
-	ID          string
-	CreatedAt   int64
-	EndedAt     *int64
-	Command     string
-	Cwd         string
-	ClientPID   *int
-	ExitCode    *int
-	GXVersion   string
-	Source      *string
-	ProcessName *string
-	ParentPID   *int
-	LastSeenAt  *int64
-	EndReason   *string
-	RepoRoot    *string
+	ID               string
+	CreatedAt        int64
+	EndedAt          *int64
+	Command          string
+	Cwd              string
+	ClientPID        *int
+	ExitCode         *int
+	GXVersion        string
+	Source           *string
+	ProcessName      *string
+	ParentPID        *int
+	LastSeenAt       *int64
+	EndReason        *string
+	RepoRoot         *string
+	ModelsJSON       string
+	InputTokens      *int
+	OutputTokens     *int
+	CacheReadTokens  *int
+	CacheWriteTokens *int
 }
 
 type Request struct {

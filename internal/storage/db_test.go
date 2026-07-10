@@ -911,6 +911,160 @@ func TestAgentLedgerSummaryBackfillsTokensFromRawResponseBodies(t *testing.T) {
 	}
 }
 
+func TestSessionUsageAggregatesRequestModelsAndResponseTokens(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	store, err := NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer store.Close()
+
+	if err := store.WriteSession(ctx, Session{
+		ID:        "codex-session",
+		CreatedAt: 10,
+		Command:   "codex",
+		Cwd:       "/repo",
+		GXVersion: "test",
+	}); err != nil {
+		t.Fatalf("WriteSession() error = %v", err)
+	}
+	modelOne := "gpt-5.1-code"
+	if err := store.WriteRequest(ctx, Request{
+		ID:             "request-one",
+		SessionID:      "codex-session",
+		CreatedAt:      11,
+		Provider:       "openai",
+		Endpoint:       "/v1/responses",
+		Method:         "POST",
+		Model:          &modelOne,
+		RequestBody:    []byte(`{"model":"gpt-5.1-code"}`),
+		RequestHeaders: `{}`,
+	}); err != nil {
+		t.Fatalf("WriteRequest(request-one) error = %v", err)
+	}
+	modelTwo := "claude-sonnet-4-20250514"
+	if err := store.WriteRequest(ctx, Request{
+		ID:             "request-two",
+		SessionID:      "codex-session",
+		CreatedAt:      12,
+		Provider:       "anthropic",
+		Endpoint:       "/v1/messages",
+		Method:         "POST",
+		Model:          &modelTwo,
+		RequestBody:    []byte(`{"model":"claude-sonnet-4-20250514"}`),
+		RequestHeaders: `{}`,
+	}); err != nil {
+		t.Fatalf("WriteRequest(request-two) error = %v", err)
+	}
+	inputTokens := 10
+	outputTokens := 5
+	cacheReadTokens := 2
+	cacheWriteTokens := 3
+	if err := store.WriteResponse(ctx, Response{
+		ID:               "response-one",
+		RequestID:        "request-one",
+		CreatedAt:        13,
+		CompletedAt:      14,
+		StatusCode:       200,
+		ResponseBody:     []byte(`{}`),
+		ResponseHeaders:  `{}`,
+		InputTokens:      &inputTokens,
+		OutputTokens:     &outputTokens,
+		CacheReadTokens:  &cacheReadTokens,
+		CacheWriteTokens: &cacheWriteTokens,
+	}); err != nil {
+		t.Fatalf("WriteResponse(response-one) error = %v", err)
+	}
+	if err := store.WriteResponse(ctx, Response{
+		ID:              "response-two",
+		RequestID:       "request-two",
+		CreatedAt:       15,
+		CompletedAt:     16,
+		StatusCode:      200,
+		ResponseBody:    []byte("data: {\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":4,\"cache_read_input_tokens\":1,\"cache_creation_input_tokens\":6}}}\n\n"),
+		ResponseHeaders: `{}`,
+	}); err != nil {
+		t.Fatalf("WriteResponse(response-two) error = %v", err)
+	}
+
+	var modelsJSON string
+	var gotInput, gotOutput, gotCacheRead, gotCacheWrite int
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT models_json, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+		FROM sessions
+		WHERE id = 'codex-session'
+	`).Scan(&modelsJSON, &gotInput, &gotOutput, &gotCacheRead, &gotCacheWrite); err != nil {
+		t.Fatalf("select session usage: %v", err)
+	}
+	if modelsJSON != `["gpt-5.1-code","claude-sonnet-4-20250514"]` {
+		t.Fatalf("models_json = %s", modelsJSON)
+	}
+	if gotInput != 17 || gotOutput != 9 || gotCacheRead != 3 || gotCacheWrite != 9 {
+		t.Fatalf("tokens = %d/%d/%d/%d, want 17/9/3/9", gotInput, gotOutput, gotCacheRead, gotCacheWrite)
+	}
+}
+
+func TestSessionUsageAggregatesCursorMessages(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	ctx := context.Background()
+	db, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	store, err := NewStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer store.Close()
+
+	source := "cursor"
+	if _, err := store.UpsertCursorSession(ctx, Session{
+		ID:        "cursor-session",
+		CreatedAt: 10,
+		Command:   "cursor",
+		Cwd:       "/repo",
+		GXVersion: "test",
+		Source:    &source,
+	}); err != nil {
+		t.Fatalf("UpsertCursorSession() error = %v", err)
+	}
+	inputTokens := 42
+	outputTokens := 17
+	if _, err := store.UpsertCursorMessage(ctx, CursorMessage{
+		ID:           "bubble-one",
+		SessionID:    "cursor-session",
+		CreatedAt:    11,
+		Role:         "assistant",
+		Text:         "done",
+		RawJSON:      []byte(`{"model":"cursor-model","tokenCount":{"inputTokens":42,"outputTokens":17}}`),
+		InputTokens:  &inputTokens,
+		OutputTokens: &outputTokens,
+	}); err != nil {
+		t.Fatalf("UpsertCursorMessage() error = %v", err)
+	}
+
+	var modelsJSON string
+	var gotInput, gotOutput int
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT models_json, input_tokens, output_tokens
+		FROM sessions
+		WHERE id = 'cursor-session'
+	`).Scan(&modelsJSON, &gotInput, &gotOutput); err != nil {
+		t.Fatalf("select cursor session usage: %v", err)
+	}
+	if modelsJSON != `["cursor-model"]` {
+		t.Fatalf("models_json = %s", modelsJSON)
+	}
+	if gotInput != 42 || gotOutput != 17 {
+		t.Fatalf("tokens = %d/%d, want 42/17", gotInput, gotOutput)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
