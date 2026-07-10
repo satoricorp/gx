@@ -26,6 +26,54 @@ func TestAnalyzeFindsGoDefinitionsAndDependencies(t *testing.T) {
 	}
 }
 
+func TestAnalyzeFindsGoImportPackageDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.com/repo\n\ngo 1.22\n")
+	writeFile(t, root, "internal/core/helper.go", "package core\n\nfunc Existing() string { return \"x\" }\n")
+	writeFile(t, root, "internal/app/app.go", strings.Join([]string{
+		"package app",
+		"",
+		"import \"example.com/repo/internal/core\"",
+		"",
+		"func Run() string {",
+		"  return core.Existing()",
+		"}",
+	}, "\n"))
+
+	facts := Analyze(root, []string{"internal/app/app.go", "internal/core/helper.go"})
+	var found bool
+	for _, edge := range facts.Edges {
+		if edge.FromFile == "internal/app/app.go" &&
+			edge.ToFile == "internal/core/helper.go" &&
+			edge.Symbol == "import example.com/repo/internal/core" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("Analyze() edges = %#v, want package import dependency", facts.Edges)
+	}
+}
+
+func TestAnalyzeIgnoresExternalGoImports(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.com/repo\n\ngo 1.22\n")
+	writeFile(t, root, "internal/app/app.go", strings.Join([]string{
+		"package app",
+		"",
+		"import \"github.com/stretchr/testify/require\"",
+		"",
+		"func Run() {",
+		"  _ = require.New",
+		"}",
+	}, "\n"))
+
+	facts := Analyze(root, []string{"internal/app/app.go"})
+	if len(facts.Edges) != 0 {
+		t.Fatalf("Analyze() edges = %#v, want no external import dependency", facts.Edges)
+	}
+}
+
 func TestAnalyzeIgnoresLocalVariableFalseDependencies(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "internal/cli/root.go", strings.Join([]string{

@@ -13,6 +13,7 @@ type FileFact struct {
 	Language          string   `json:"language"`
 	DefinedSymbols    []string `json:"defined_symbols,omitempty"`
 	ReferencedSymbols []string `json:"referenced_symbols,omitempty"`
+	Imports           []string `json:"imports,omitempty"`
 	Symbols           []Symbol `json:"symbols,omitempty"`
 }
 
@@ -84,6 +85,7 @@ var ignoredIdentifiers = map[string]struct{}{
 
 func Analyze(root string, files []string) Facts {
 	cleaned := cleanFiles(files)
+	modulePath := goModulePath(root)
 	facts := make([]FileFact, 0, len(cleaned))
 	for _, file := range cleaned {
 		language := languageForFile(file)
@@ -101,13 +103,28 @@ func Analyze(root string, files []string) Facts {
 			Language:          language,
 			DefinedSymbols:    symbolNames(symbols),
 			ReferencedSymbols: referencedSymbols(text),
+			Imports:           importedPackages(language, text),
 			Symbols:           symbols,
 		})
 	}
 	return Facts{
 		Files: facts,
-		Edges: dependencyEdges(facts),
+		Edges: dependencyEdges(facts, modulePath),
 	}
+}
+
+func goModulePath(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
 }
 
 func languageForFile(file string) string {
@@ -257,7 +274,57 @@ func referencedSymbols(text string) []string {
 	return symbols
 }
 
-func dependencyEdges(facts []FileFact) []DependencyEdge {
+func importedPackages(language, text string) []string {
+	if language != "go" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var imports []string
+	add := func(path string) {
+		path = strings.Trim(path, "`\"")
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		imports = append(imports, path)
+	}
+	lines := strings.Split(text, "\n")
+	inBlock := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "import (") {
+			inBlock = true
+			continue
+		}
+		if inBlock {
+			if strings.HasPrefix(line, ")") {
+				inBlock = false
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			add(fields[len(fields)-1])
+			continue
+		}
+		if strings.HasPrefix(line, "import ") {
+			fields := strings.Fields(strings.TrimPrefix(line, "import "))
+			if len(fields) == 0 {
+				continue
+			}
+			add(fields[len(fields)-1])
+		}
+	}
+	sort.Strings(imports)
+	return imports
+}
+
+func dependencyEdges(facts []FileFact, modulePath string) []DependencyEdge {
 	type definitionOwner struct {
 		file     string
 		language string
@@ -286,6 +353,13 @@ func dependencyEdges(facts []FileFact) []DependencyEdge {
 			edges = append(edges, edge)
 		}
 	}
+	for _, edge := range importDependencyEdges(facts, modulePath) {
+		if _, ok := seen[edge]; ok {
+			continue
+		}
+		seen[edge] = struct{}{}
+		edges = append(edges, edge)
+	}
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].FromFile != edges[j].FromFile {
 			return edges[i].FromFile < edges[j].FromFile
@@ -295,6 +369,47 @@ func dependencyEdges(facts []FileFact) []DependencyEdge {
 		}
 		return edges[i].Symbol < edges[j].Symbol
 	})
+	return edges
+}
+
+func importDependencyEdges(facts []FileFact, modulePath string) []DependencyEdge {
+	modulePath = strings.TrimSpace(modulePath)
+	if modulePath == "" {
+		return nil
+	}
+	packageFileByImportPath := map[string]string{}
+	for _, fact := range facts {
+		if fact.Language != "go" {
+			continue
+		}
+		dir := filepath.ToSlash(filepath.Dir(fact.File))
+		if dir == "." || dir == "" {
+			continue
+		}
+		importPath := modulePath + "/" + dir
+		if _, ok := packageFileByImportPath[importPath]; !ok {
+			packageFileByImportPath[importPath] = fact.File
+		}
+	}
+	seen := map[DependencyEdge]struct{}{}
+	var edges []DependencyEdge
+	for _, fact := range facts {
+		if fact.Language != "go" {
+			continue
+		}
+		for _, importPath := range fact.Imports {
+			targetFile := packageFileByImportPath[importPath]
+			if targetFile == "" || targetFile == fact.File {
+				continue
+			}
+			edge := DependencyEdge{FromFile: fact.File, ToFile: targetFile, Symbol: "import " + importPath}
+			if _, ok := seen[edge]; ok {
+				continue
+			}
+			seen[edge] = struct{}{}
+			edges = append(edges, edge)
+		}
+	}
 	return edges
 }
 
