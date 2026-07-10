@@ -6,6 +6,7 @@ import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "..
 import gxPush, { metadata as pushMetadata, schema as pushSchema } from "../src/tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
+import { ensureGxInitialized } from "../src/session-workspace";
 
 describe("gx_commit metadata and schema", () => {
   test("describes the commit surface", () => {
@@ -215,5 +216,108 @@ exit 1
     );
     expect(parsed.stderr).toContain("run `gx auth login` in a terminal");
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
+  });
+});
+
+describe("ensureGxInitialized auto-init", () => {
+  let mockDir: string;
+  let repoRoot: string;
+  let callLog: string;
+  let previousEnv: Record<string, string | undefined>;
+
+  const envKeys = ["GX_BINARY", "JJ_BINARY", "GX_MOCK_LOG", "GX_MCP_INIT_NAME", "GX_MCP_INIT_EMAIL"];
+
+  beforeEach(async () => {
+    mockDir = await mkdtemp(join(tmpdir(), "gx-mcp-autoinit-"));
+    repoRoot = join(mockDir, "repo");
+    callLog = join(mockDir, "calls.log");
+    await mkdir(join(repoRoot, ".git"), { recursive: true });
+    previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+
+    const mockJj = join(mockDir, "mock-jj.sh");
+    await writeFile(
+      mockJj,
+      `#!/bin/sh
+printf 'jj|%s|%s\\n' "$PWD" "$*" >> "$GX_MOCK_LOG"
+if [ "$1" = root ]; then
+  if [ -f "$PWD/.gx-initialized" ]; then
+    echo "$PWD"
+    exit 0
+  fi
+  echo "There is no jj repo in the current directory" >&2
+  exit 1
+fi
+echo "unexpected jj args: $@" >&2
+exit 1
+`,
+      "utf8",
+    );
+    await Bun.spawn(["chmod", "+x", mockJj]).exited;
+
+    const mockGx = join(mockDir, "mock-gx.sh");
+    await writeFile(
+      mockGx,
+      `#!/bin/sh
+printf 'gx|%s|%s\\n' "$PWD" "$*" >> "$GX_MOCK_LOG"
+if [ "$1" = init ]; then
+  touch "$PWD/.gx-initialized"
+  echo "initialized"
+  exit 0
+fi
+if [ "$1" = commit ]; then
+  echo "commit ok"
+  exit 0
+fi
+echo "unexpected gx args: $@" >&2
+exit 1
+`,
+      "utf8",
+    );
+    await Bun.spawn(["chmod", "+x", mockGx]).exited;
+
+    process.env.GX_BINARY = mockGx;
+    process.env.JJ_BINARY = mockJj;
+    process.env.GX_MOCK_LOG = callLog;
+    process.env.GX_MCP_INIT_NAME = "Autoinit Test";
+    process.env.GX_MCP_INIT_EMAIL = "autoinit@test.local";
+  });
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      const value = previousEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  test("runs gx init when the repo is uninitialized, then is a no-op", async () => {
+    const first = await ensureGxInitialized(repoRoot);
+    expect(first.autoInitialized).toBe(true);
+
+    const afterFirst = await readFile(callLog, "utf8");
+    expect(afterFirst).toContain("init --name Autoinit Test --email autoinit@test.local");
+
+    const second = await ensureGxInitialized(repoRoot);
+    expect(second.autoInitialized).toBe(false);
+
+    const afterSecond = await readFile(callLog, "utf8");
+    const initCalls = afterSecond.split("\n").filter((line) => line.includes("|init --name"));
+    expect(initCalls).toHaveLength(1);
+  });
+
+  test("gx_commit auto-inits an uninitialized repo before committing", async () => {
+    const output = await gxCommit({ cwd: repoRoot, message: "record staged work" });
+    const parsed = JSON.parse(output);
+    expect(parsed.ok).toBe(true);
+
+    const log = await readFile(callLog, "utf8");
+    const lines = log.trim().split("\n");
+    const initIndex = lines.findIndex((line) => line.includes("|init --name"));
+    const commitIndex = lines.findIndex((line) => line.includes("|commit -m"));
+    expect(initIndex).toBeGreaterThanOrEqual(0);
+    expect(commitIndex).toBeGreaterThan(initIndex);
   });
 });
