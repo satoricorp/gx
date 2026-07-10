@@ -1,5 +1,9 @@
 # GX Manual Workflow Test Sheet
 
+> **Note (2026):** Replace `gx compose` / `gx stacks` / `gx add` in this sheet
+> with `git add` + `gx commit`, `gx status`, and `gx generate` where bulk split
+> is needed.
+
 Use this sheet against a disposable GitHub repository. The goal is to test the
 real flow, not mocked services.
 

@@ -133,6 +133,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	storedBody := responseBody
 	summary, sumErr := providers.SummarizeJSON(provider, responseBody)
+	if sumErr != nil {
+		summary = providers.Summary{}
+	}
 	if streaming || (sumErr != nil && looksLikeSSE(responseBody)) {
 		if handler := providers.HandlerFor(provider, endpoint); handler != nil {
 			if assembled, assembledSummary, err := handler.Assemble(bytes.NewReader(responseBody)); err == nil {
@@ -140,9 +143,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				summary = assembledSummary
 			}
 		}
-	}
-	if sumErr != nil && !streaming {
-		summary = providers.Summary{}
 	}
 
 	requestIDHeader := providerRequestID(resp.Header)

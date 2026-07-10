@@ -1464,9 +1464,10 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 	err = withRepoLock(repo.RootPath, func() error {
 		logicalBase := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 		authoringRef := gxAuthoringCheckoutRef(logicalBase)
+		currentRef := s.currentGitCheckoutRef(ctx, repo.RootPath)
 		currentChange, changeErr := s.CurrentChange(ctx, repo.RootPath, "@")
 		clean := changeErr == nil && len(currentChange.Files) == 0
-		if clean {
+		if clean && shouldReturnCleanCheckoutToBase(currentRef) {
 			if _, err := s.setBaseUnlocked(ctx, repo, logicalBase); err != nil {
 				return err
 			}
@@ -1478,7 +1479,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 			repo = reattached
 			result.Repo = reattached
 			result.Actions = append(result.Actions, fmt.Sprintf("returned clean checkout to %s", authoringRef))
-		} else if s.currentGitCheckoutRef(ctx, repo.RootPath) == "" {
+		} else if !clean && currentRef == "" {
 			if stack, found, stackErr := s.resolveCurrentStackForRead(ctx, repo); stackErr != nil {
 				return stackErr
 			} else if found && strings.TrimSpace(stack.BookmarkName) != "" {
@@ -1548,6 +1549,15 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 		return nil
 	})
 	return result, err
+}
+
+// shouldReturnCleanCheckoutToBase reports whether workflow repair may move a
+// clean checkout back to the authoring base. Deliberate checkouts of regular
+// named branches stay put; only detached HEADs and legacy gx-internal refs
+// are returned to base.
+func shouldReturnCleanCheckoutToBase(currentRef string) bool {
+	currentRef = strings.TrimSpace(currentRef)
+	return currentRef == "" || legacyGXInternalCheckoutRef(currentRef)
 }
 
 func isInternalGitPublishedRef(value string) bool {

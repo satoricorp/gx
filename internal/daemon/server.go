@@ -111,6 +111,7 @@ func Run(ctx context.Context, options ...Options) error {
 	defer os.Remove(srv.portFile())
 	defer os.Remove(srv.pidFile())
 
+	go backfillUsage(ctx, store)
 	go srv.watchIdle()
 	if opts.Ambient {
 		go srv.watchAmbientIdle()
@@ -120,6 +121,17 @@ func Run(ctx context.Context, options ...Options) error {
 		return err
 	}
 	return nil
+}
+
+func backfillUsage(ctx context.Context, store *storage.Store) {
+	result, err := store.BackfillUsage(ctx)
+	if err != nil {
+		log.Printf("usage backfill: %v", err)
+		return
+	}
+	if result.ResponsesUpdated > 0 || result.SessionsRefreshed > 0 {
+		log.Printf("usage backfill: updated %d responses, refreshed %d sessions", result.ResponsesUpdated, result.SessionsRefreshed)
+	}
 }
 
 func (s *Server) serveAmbientProxy() error {

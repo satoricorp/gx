@@ -110,7 +110,7 @@ type demuxEvidenceRow struct {
 	ProvenanceStatus   string
 }
 
-func TestGXAddMaintainsBookmarkStateAndAttachesExplicitSession(t *testing.T) {
+func TestGXCommitMaintainsBookmarkStateAndAttachesExplicitSession(t *testing.T) {
 	h := newHarness(t)
 	h.initGitRepo(false)
 
@@ -137,13 +137,14 @@ func TestGXAddMaintainsBookmarkStateAndAttachesExplicitSession(t *testing.T) {
 	assertNoGXBookmarks(t, h)
 	assertChangeSessions(t, h, nil)
 
-	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "add", "-m", "feat alpha")
+	h.run("git", "add", "alpha.txt")
+	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "commit", "-m", "feat alpha")
 
 	bookmarks := h.bookmarkTargets()
 	alphaBookmark := "feature/feat-alpha"
 	alphaTarget := bookmarks[alphaBookmark]
 	if alphaTarget == "" {
-		t.Fatalf("after gx add missing %s bookmark: %#v", alphaBookmark, bookmarks)
+		t.Fatalf("after gx commit missing %s bookmark: %#v", alphaBookmark, bookmarks)
 	}
 	assertCurrentBranch(t, h, alphaBookmark)
 	assertStack(t, h, alphaBookmark, "draft", alphaTarget, "")
@@ -322,11 +323,7 @@ func TestGXGenerateAutoInitializesGitRepo(t *testing.T) {
 	}
 	h.writeFile("README.md", "# e2e\n\nchanged\n")
 
-	gxg := filepath.Join(filepath.Dir(h.bin), "gxg")
-	if err := os.Link(h.bin, gxg); err != nil {
-		t.Fatalf("link gxg test binary: %v", err)
-	}
-	rawApply := runCommand(h.t, h.repo, h.env(), gxg, "--json", "--intent", "auto init")
+	rawApply := h.gx("generate", "--json", "--intent", "auto init")
 	if strings.Contains(rawApply, "There is no jj repo") {
 		t.Fatalf("gx generate leaked jj init error:\n%s", rawApply)
 	}
@@ -468,7 +465,8 @@ func TestGXGeneratePreservesSymbolLevelHunks(t *testing.T) {
 
 	h.writeTrackedFile("app.go", symbolFixture("one", "two"))
 	h.run("jj", "describe", "-m", "seed symbols")
-	h.gx("add", "-m", "seed symbols")
+	h.run("git", "add", "app.go")
+	h.gx("commit", "-m", "seed symbols")
 	h.gx("base", "--set", "feature/seed-symbols")
 
 	h.insertSession("session-alpha")
@@ -502,7 +500,8 @@ func TestGXPushAllPublishesEveryStack(t *testing.T) {
 	h.run("jj", "describe", "-m", "alpha")
 	h.insertSession("session-alpha")
 	h.insertSessionRequest("session-alpha", "implement alpha")
-	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "add", "-m", "feat alpha")
+	h.run("git", "add", "alpha.txt")
+	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "commit", "-m", "feat alpha")
 	alphaBookmark := "feature/feat-alpha"
 	alphaTarget := h.bookmarkTargets()[alphaBookmark]
 
@@ -511,7 +510,8 @@ func TestGXPushAllPublishesEveryStack(t *testing.T) {
 	h.run("jj", "describe", "-m", "beta")
 	h.insertSession("session-beta")
 	h.insertSessionRequest("session-beta", "implement beta")
-	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "add", "-m", "feat beta")
+	h.run("git", "add", "beta.txt")
+	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "commit", "-m", "feat beta")
 	betaBookmark := "feature/feat-beta"
 	betaTarget := h.bookmarkTargets()[betaBookmark]
 
@@ -551,7 +551,8 @@ func TestGXStatusHidesStackMergedIntoBase(t *testing.T) {
 
 	h.writeTrackedFile("alpha.txt", "alpha\n")
 	h.run("jj", "describe", "-m", "alpha")
-	h.gx("add", "-m", "feat alpha")
+	h.run("git", "add", "alpha.txt")
+	h.gx("commit", "-m", "feat alpha")
 	alphaBookmark := "feature/feat-alpha"
 	assertStackInStacksJSON(t, h, alphaBookmark, 1)
 
@@ -573,7 +574,8 @@ func TestGXBaseSetRefusesDirtyEditCheckout(t *testing.T) {
 
 	h.writeTrackedFile("alpha.txt", "alpha\n")
 	h.run("jj", "describe", "-m", "alpha")
-	h.gx("add", "-m", "feat alpha")
+	h.run("git", "add", "alpha.txt")
+	h.gx("commit", "-m", "feat alpha")
 	alphaBookmark := strings.TrimSpace(h.run("git", "branch", "--show-current"))
 	assertCurrentBranch(t, h, alphaBookmark)
 	status := h.gx("status")
@@ -600,20 +602,22 @@ func TestGXStatusShowsImplicitStackAliases(t *testing.T) {
 	h.writeTrackedFile("alpha.txt", "alpha\n")
 	h.run("jj", "describe", "-m", "alpha")
 	h.insertSession("session-alpha")
-	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "add", "-m", "feat alpha")
+	h.run("git", "add", "alpha.txt")
+	h.gxWithEnv([]string{"GX_SESSION_ID=session-alpha"}, "commit", "-m", "feat alpha")
 
 	h.run("git", "switch", "main")
 	h.writeTrackedFile("beta.txt", "beta\n")
 	h.run("jj", "describe", "-m", "beta")
 	h.insertSession("session-beta")
-	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "add", "-m", "feat beta")
+	h.run("git", "add", "beta.txt")
+	h.gxWithEnv([]string{"GX_SESSION_ID=session-beta"}, "commit", "-m", "feat beta")
 
-	status := h.gx("status")
-	if !strings.Contains(status, "feat beta  s1") {
-		t.Fatalf("status missing beta alias:\n%s", status)
+	list := h.gx("status", "list")
+	if !strings.Contains(list, "feat-beta  s1") && !strings.Contains(list, "feat beta  s1") {
+		t.Fatalf("status list missing beta alias:\n%s", list)
 	}
-	if !strings.Contains(status, "feat alpha  s2") {
-		t.Fatalf("status missing alpha alias:\n%s", status)
+	if !strings.Contains(list, "feat-alpha  s2") && !strings.Contains(list, "feat alpha  s2") {
+		t.Fatalf("status list missing alpha alias:\n%s", list)
 	}
 }
 
@@ -979,7 +983,7 @@ func assertStackInStacksJSON(t *testing.T, h *harness, bookmark string, revision
 		}
 		return
 	}
-	t.Fatalf("stack %q missing from gx stacks:\n%s", bookmark, rawStacks)
+	t.Fatalf("stack %q missing from gx status:\n%s", bookmark, rawStacks)
 }
 
 func assertStackNotInStacksJSON(t *testing.T, h *harness, bookmark string) {
@@ -995,7 +999,7 @@ func assertStackNotInStacksJSON(t *testing.T, h *harness, bookmark string) {
 	}
 	for _, stack := range summary.Stacks {
 		if stack.BookmarkName == bookmark {
-			t.Fatalf("stack %q should not be visible in gx stacks after merge:\n%s", bookmark, rawStacks)
+			t.Fatalf("stack %q should not be visible in gx status after merge:\n%s", bookmark, rawStacks)
 		}
 	}
 }

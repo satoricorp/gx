@@ -1,5 +1,8 @@
 # GX CLI Authoring Contract
 
+> **Note (2026):** `gx compose`, `gx stacks`, and `gx add` were removed. Normal
+> work uses `git add` + `gx commit`, `gx status`, and the hidden `gx generate`.
+
 This document captures the intended behavior for GX authoring, compose, stacks,
 and publish workflows.
 

@@ -36,7 +36,7 @@ capture session data before pushes.
 To uninstall the CLI and menu-bar app:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxg ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
 rm -rf /Applications/GX.app ~/Applications/GX.app
 ```
 
@@ -118,7 +118,7 @@ gxr        # gx review
 When you want GX to organize a large working copy into smaller revisions automatically:
 
 ```bash
-gxg        # gx generate (hidden from gx --help; still available)
+gx generate   # hidden from gx --help; bulk-organizes a large working copy
 ```
 
 Then inspect with `gx status` and push when ready.
