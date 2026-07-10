@@ -1,7 +1,7 @@
 # GX Menu-Bar App
 
 Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it plus
-the `gxg`, `gxr`, and `gxs` shortcuts to `~/.local/bin` on launch, shows
+the `gxr` and `gxs` shortcuts to `~/.local/bin` on launch, shows
 `gx doctor --json` status and stats, checks the latest GitHub release, updates
 the local CLI when a newer release is available, checks app-bundle updates with
 Sparkle, links to gx.run, and provides MCP setup snippets.
@@ -28,7 +28,7 @@ Open the DMG to get the standard drag-to-Applications install window.
 | **Stats** | Capture backlog, disk, and ledger summary from doctor JSON |
 | **Update CLI to vX.Y.Z** | Downloads the newest matching CLI release asset from GitHub Releases and installs it to `~/.local/bin` |
 | **Check for Updates** | Fetches the latest `satoricorp/gx` GitHub release and compares it with `gx version --json` |
-| **Install Bundled CLI** | Installs or updates `~/.local/bin/gx`, `gxg`, `gxr`, and `gxs` from the bundled CLI |
+| **Install Bundled CLI** | Installs or updates `~/.local/bin/gx`, `gxr`, and `gxs` from the bundled CLI |
 | **Check for App Updates** | Runs Sparkle against the configured appcast feed and updates `GX.app` in place |
 | **Open https://gx.run** | Opens `https://gx.run` |
 | **MCP** | Shows setup instructions at `https://docs.gx.run` |
@@ -43,8 +43,8 @@ Resolution order:
 3. Packaged app: `Contents/Resources/bin/gx`
 4. Fallback: `gx` on `PATH`
 
-The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxg`,
-`~/.local/bin/gxr`, and `~/.local/bin/gxs` from the bundled CLI on launch and
+The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxr`,
+and `~/.local/bin/gxs` from the bundled CLI on launch and
 through the **Install Bundled CLI** menu item.
 
 ## CLI updates
@@ -178,7 +178,7 @@ notarization, or App Store distribution in this package.
 
 ## What's missing (MVP gaps)
 
-- Login flow in tray (use `gx login` in terminal for now)
+- Login flow in tray (use `gx auth login` in terminal for now)
 - Launch at login helper
 - Developer ID signing and notarization
 - Windows/Linux tray
