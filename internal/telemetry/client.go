@@ -46,6 +46,7 @@ func (NopClient) EmitCaptureCoverage(context.Context, CaptureCoverageProps) {}
 func (NopClient) EmitMatchRate(context.Context, MatchRateProps)             {}
 func (NopClient) EmitSessionUploaded(context.Context, SessionUploadedProps) {}
 func (NopClient) EmitComposeRun(context.Context, ComposeRunProps)           {}
+func (NopClient) EmitSchemaDrift(context.Context, SchemaDriftProps)       {}
 
 func Configured() bool {
 	return postHogKey() != ""
@@ -98,6 +99,17 @@ func (c *ClientImpl) EmitComposeRun(ctx context.Context, props ComposeRunProps) 
 		"warnings":       props.Warnings,
 		"hunk_coverage":  props.HunkCoverage,
 		"tools":          props.Tools,
+	})
+}
+
+func (c *ClientImpl) EmitSchemaDrift(ctx context.Context, props SchemaDriftProps) {
+	if props.Count == 0 {
+		return
+	}
+	c.capture(ctx, EventSchemaDrift, map[string]any{
+		"tool":  props.Tool,
+		"paths": props.Paths,
+		"count": props.Count,
 	})
 }
 

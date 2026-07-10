@@ -33,6 +33,9 @@ type StagedSession struct {
 	SessionID     string
 	Tool          string
 	PayloadJSON   []byte
+	RawBlob       []byte
+	SourcePath    string
+	BadLines      int
 	CreatedAt     int64
 	RevisionID    string
 	ContentHash   string
@@ -60,6 +63,7 @@ type CaptureStager interface {
 	MarkSessionShareable(ctx context.Context, revisionIDs []string, att CaptureAttestation) (int, error)
 	MarkExtractUploaded(ctx context.Context, id string) error
 	MarkSessionUploaded(ctx context.Context, id string) error
+	RawSessions(ctx context.Context) ([]StagedSession, error)
 	SetExtractUploadError(ctx context.Context, id, message string) error
 	SetSessionUploadError(ctx context.Context, id, message string) error
 }
@@ -150,24 +154,43 @@ func (s *CaptureStage) StageSession(ctx context.Context, row StagedSession) erro
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO capture_sessions (
-			id, session_id, tool, payload_json, created_at,
+			id, session_id, tool, payload_json, raw_blob, source_path, bad_lines, created_at,
 			revision_id, content_hash, shareable_at, acceptor_name, acceptor_email, attested_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			session_id = excluded.session_id,
 			tool = excluded.tool,
 			payload_json = excluded.payload_json,
+			raw_blob = COALESCE(excluded.raw_blob, capture_sessions.raw_blob),
+			source_path = COALESCE(NULLIF(excluded.source_path, ''), capture_sessions.source_path),
+			bad_lines = CASE WHEN excluded.bad_lines > 0 THEN excluded.bad_lines ELSE capture_sessions.bad_lines END,
 			created_at = excluded.created_at,
 			revision_id = excluded.revision_id,
 			content_hash = excluded.content_hash
-	`, row.ID, row.SessionID, row.Tool, row.PayloadJSON, created,
+	`, row.ID, row.SessionID, row.Tool, row.PayloadJSON, nullBytes(row.RawBlob), nullString(row.SourcePath), nullInt(row.BadLines), created,
 		nullString(row.RevisionID), nullString(row.ContentHash),
 		nullInt64(row.ShareableAt), nullString(row.AcceptorName), nullString(row.AcceptorEmail), nullInt64(row.AttestedAt))
 	if err != nil {
 		return fmt.Errorf("insert capture_session: %w", err)
 	}
 	return nil
+}
+
+func (s *CaptureStage) RawSessions(ctx context.Context) ([]StagedSession, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, session_id, tool, payload_json, COALESCE(raw_blob, ''), COALESCE(source_path, ''), COALESCE(bad_lines, 0), created_at,
+			COALESCE(revision_id, ''), COALESCE(content_hash, ''), COALESCE(shareable_at, 0),
+			COALESCE(acceptor_name, ''), COALESCE(acceptor_email, ''), COALESCE(attested_at, 0)
+		FROM capture_sessions
+		WHERE raw_blob IS NOT NULL AND length(raw_blob) > 0
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
 }
 
 func (s *CaptureStage) PendingExtracts(ctx context.Context) ([]StagedExtract, error) {
@@ -188,7 +211,7 @@ func (s *CaptureStage) PendingExtracts(ctx context.Context) ([]StagedExtract, er
 
 func (s *CaptureStage) PendingSessions(ctx context.Context) ([]StagedSession, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, session_id, tool, payload_json, created_at,
+		SELECT id, session_id, tool, payload_json, COALESCE(raw_blob, ''), COALESCE(source_path, ''), COALESCE(bad_lines, 0), created_at,
 			COALESCE(revision_id, ''), COALESCE(content_hash, ''), COALESCE(shareable_at, 0),
 			COALESCE(acceptor_name, ''), COALESCE(acceptor_email, ''), COALESCE(attested_at, 0)
 		FROM capture_sessions
@@ -220,7 +243,7 @@ func (s *CaptureStage) ShareableExtracts(ctx context.Context) ([]StagedExtract, 
 
 func (s *CaptureStage) ShareableSessions(ctx context.Context) ([]StagedSession, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, session_id, tool, payload_json, created_at,
+		SELECT id, session_id, tool, payload_json, COALESCE(raw_blob, ''), COALESCE(source_path, ''), COALESCE(bad_lines, 0), created_at,
 			COALESCE(revision_id, ''), COALESCE(content_hash, ''), COALESCE(shareable_at, 0),
 			COALESCE(acceptor_name, ''), COALESCE(acceptor_email, ''), COALESCE(attested_at, 0)
 		FROM capture_sessions
@@ -353,7 +376,7 @@ func scanSessionRows(rows *sql.Rows) ([]StagedSession, error) {
 	for rows.Next() {
 		var row StagedSession
 		if err := rows.Scan(
-			&row.ID, &row.SessionID, &row.Tool, &row.PayloadJSON, &row.CreatedAt,
+			&row.ID, &row.SessionID, &row.Tool, &row.PayloadJSON, &row.RawBlob, &row.SourcePath, &row.BadLines, &row.CreatedAt,
 			&row.RevisionID, &row.ContentHash, &row.ShareableAt,
 			&row.AcceptorName, &row.AcceptorEmail, &row.AttestedAt,
 		); err != nil {
@@ -388,6 +411,9 @@ func ensureCaptureStagingTables(ctx context.Context, db *sql.DB) error {
 			session_id TEXT NOT NULL,
 			tool TEXT NOT NULL,
 			payload_json BLOB NOT NULL,
+			raw_blob BLOB,
+			source_path TEXT,
+			bad_lines INTEGER,
 			created_at INTEGER NOT NULL,
 			revision_id TEXT,
 			content_hash TEXT,
@@ -416,6 +442,9 @@ func ensureCaptureStagingTables(ctx context.Context, db *sql.DB) error {
 		{"capture_extracts", "attested_at", "INTEGER"},
 		{"capture_sessions", "revision_id", "TEXT"},
 		{"capture_sessions", "content_hash", "TEXT"},
+		{"capture_sessions", "raw_blob", "BLOB"},
+		{"capture_sessions", "source_path", "TEXT"},
+		{"capture_sessions", "bad_lines", "INTEGER"},
 		{"capture_sessions", "shareable_at", "INTEGER"},
 		{"capture_sessions", "acceptor_name", "TEXT"},
 		{"capture_sessions", "acceptor_email", "TEXT"},
@@ -448,6 +477,20 @@ func uniqueNonEmpty(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func nullInt(value int) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
+func nullBytes(value []byte) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return value
 }
 
 func nullString(value string) any {

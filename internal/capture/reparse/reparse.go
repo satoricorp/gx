@@ -1,0 +1,121 @@
+package reparse
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/capture/parsers/claude"
+	"github.com/satoricorp/gx/internal/capture/parsers/codex"
+	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
+	"github.com/satoricorp/gx/internal/capture/redact"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/telemetry"
+)
+
+// Result summarizes one reparse run.
+type Result struct {
+	Sessions int
+	Updated  int
+	Errors   int
+}
+
+// Run re-normalizes stored raw session blobs in capture_sessions.
+func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, telemetryClient telemetry.Client) (Result, error) {
+	if stager == nil {
+		return Result{}, fmt.Errorf("capture stager required")
+	}
+	rows, err := stager.RawSessions(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{Sessions: len(rows)}
+	inventory := capture.NewInventoryCollector()
+	for _, row := range rows {
+		if len(row.RawBlob) == 0 {
+			continue
+		}
+		events, badLines, err := parseRaw(row, repoRoot, inventory)
+		if err != nil {
+			result.Errors++
+			continue
+		}
+		session := orchestrator.StagedSession{
+			SessionID: row.SessionID,
+			Tool:      row.Tool,
+			Events:    redactEvents(events),
+		}
+		payload, err := json.Marshal(session)
+		if err != nil {
+			result.Errors++
+			continue
+		}
+		row.PayloadJSON = payload
+		row.BadLines = badLines
+		if err := stager.StageSession(ctx, row); err != nil {
+			result.Errors++
+			continue
+		}
+		result.Updated++
+	}
+	emitSchemaDrift(ctx, telemetryClient, inventory)
+	return result, nil
+}
+
+func parseRaw(row storage.StagedSession, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
+	sourcePath := row.SourcePath
+	if sourcePath == "" {
+		sourcePath = filepath.Join("raw", row.SessionID+".jsonl")
+	}
+	switch row.Tool {
+	case capture.ToolClaude:
+		parser := &claude.Parser{Inventory: inventory}
+		events, err := parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
+		if err != nil {
+			return nil, parser.LastBadLines, err
+		}
+		return events, parser.LastBadLines, nil
+	case capture.ToolCodex:
+		parser := &codex.Parser{Inventory: inventory}
+		return parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
+	case capture.ToolCursor:
+		parser := &cursorparser.Parser{Inventory: inventory}
+		return parser.ParseBytes(row.RawBlob, sourcePath, repoRoot)
+	default:
+		return nil, 0, fmt.Errorf("unsupported tool %q", row.Tool)
+	}
+}
+
+func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {
+	out := make([]capture.SessionEvent, len(events))
+	for i, ev := range events {
+		ev.OldText = redact.Redact(ev.OldText)
+		ev.NewText = redact.Redact(ev.NewText)
+		ev.PromptContext = redact.Redact(ev.PromptContext)
+		out[i] = ev
+	}
+	return out
+}
+
+func emitSchemaDrift(ctx context.Context, client telemetry.Client, inventory *capture.InventoryCollector) {
+	if inventory == nil {
+		return
+	}
+	if client == nil {
+		client = telemetry.NewFromEnv()
+	}
+	for tool, paths := range inventory.UnknownPaths() {
+		if len(paths) == 0 {
+			continue
+		}
+		client.EmitSchemaDrift(ctx, telemetry.SchemaDriftProps{
+			Tool:  tool,
+			Paths: paths,
+			Count: len(paths),
+		})
+	}
+}

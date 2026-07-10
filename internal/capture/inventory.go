@@ -3,6 +3,7 @@ package capture
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -74,6 +75,25 @@ func (c *InventoryCollector) RecordPath(tool, jsonPath, inferredType, mapsTo, no
 		tc.fields[jsonPath] = rec
 	}
 	rec.Occurrences++
+}
+
+// UnknownPaths returns JSON paths observed without a session_events mapping.
+func (c *InventoryCollector) UnknownPaths() map[string][]string {
+	out := map[string][]string{}
+	for tool, tc := range c.tools {
+		var paths []string
+		for path, rec := range tc.fields {
+			if strings.TrimSpace(rec.MapsToSessionEvents) != "" {
+				continue
+			}
+			paths = append(paths, path)
+		}
+		if len(paths) > 0 {
+			sort.Strings(paths)
+			out[tool] = paths
+		}
+	}
+	return out
 }
 
 // Build returns the finalized field inventory document.

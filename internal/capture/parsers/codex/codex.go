@@ -21,20 +21,25 @@ func (p *Parser) Tool() string { return capture.ToolCodex }
 
 // ParseFile reads one Codex rollout JSONL and returns normalized events.
 func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	events, _, err := p.ParseBytes(data, path, repoRoot)
+	return events, err
+}
 
-	if p.Inventory != nil {
-		p.Inventory.RecordSampleFile(capture.ToolCodex, path)
+// ParseBytes normalizes Codex rollout JSONL bytes.
+func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture.SessionEvent, int, error) {
+	if p.Inventory != nil && strings.TrimSpace(sourcePath) != "" {
+		p.Inventory.RecordSampleFile(capture.ToolCodex, sourcePath)
 	}
 
-	sessionID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	sessionID := strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
 	model := ""
+	badLines := 0
 	var events []capture.SessionEvent
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -43,6 +48,7 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 		}
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			badLines++
 			continue
 		}
 		recordShallowPaths(p.Inventory, capture.ToolCodex, raw, "")
@@ -56,9 +62,9 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 		events = append(events, parsed...)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, badLines, err
 	}
-	return events, nil
+	return events, badLines, nil
 }
 
 func metaFromLine(raw map[string]json.RawMessage) (sessionID, model string) {

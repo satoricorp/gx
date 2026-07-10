@@ -2,13 +2,19 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/capturestage"
 	"github.com/satoricorp/gx/internal/capture/extract"
+	"github.com/satoricorp/gx/internal/capture/reparse"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
@@ -23,6 +29,8 @@ func newCaptureCommand(ctx context.Context) *cobra.Command {
 	}
 	cmd.AddCommand(newCapturePushCommand(ctx))
 	cmd.AddCommand(newCaptureSyncCommand(ctx))
+	cmd.AddCommand(newCaptureReparseCommand(ctx))
+	cmd.AddCommand(newCaptureTranscriptCommand(ctx))
 	return cmd
 }
 

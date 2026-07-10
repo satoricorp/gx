@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/capturestage"
 	"github.com/satoricorp/gx/internal/capture/exclude"
 	capturegit "github.com/satoricorp/gx/internal/capture/git"
 	"github.com/satoricorp/gx/internal/capture/matcher"
@@ -158,6 +159,19 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		return Result{}, fmt.Errorf("discover sessions: %w", err)
 	}
 
+	revisionIDs, _ := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
+
+	stager := opts.DB
+	if stager == nil {
+		stager, err = storage.OpenCaptureStager(ctx)
+		if err != nil {
+			return Result{}, fmt.Errorf("open capture stager: %w", err)
+		}
+	}
+	if err := capturestage.StageDiscoveredRaw(ctx, stager, discovered, revisionIDs); err != nil {
+		return Result{}, fmt.Errorf("stage raw sessions: %w", err)
+	}
+
 	inventory := capture.NewInventoryCollector()
 	claudeParser := &claude.Parser{Inventory: inventory}
 	codexParser := &codex.Parser{Inventory: inventory}
@@ -230,16 +244,8 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		EligibleEvents: len(eligibleEvents),
 		Tools:          tools,
 	})
+	emitSchemaDrift(ctx, client, inventory)
 
-	revisionIDs, _ := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
-
-	stager := opts.DB
-	if stager == nil {
-		stager, err = storage.OpenCaptureStager(ctx)
-		if err != nil {
-			return result, fmt.Errorf("open capture stager: %w", err)
-		}
-	}
 	extractID, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract, revisionIDs)
 	if err != nil {
 		return result, fmt.Errorf("stage extract: %w", err)
@@ -316,6 +322,22 @@ func stageSession(ctx context.Context, stager storage.CaptureStager, session Sta
 		}
 	}
 	return nil
+}
+
+func emitSchemaDrift(ctx context.Context, client telemetry.Client, inventory *capture.InventoryCollector) {
+	if inventory == nil {
+		return
+	}
+	for tool, paths := range inventory.UnknownPaths() {
+		if len(paths) == 0 {
+			continue
+		}
+		client.EmitSchemaDrift(ctx, telemetry.SchemaDriftProps{
+			Tool:  tool,
+			Paths: paths,
+			Count: len(paths),
+		})
+	}
 }
 
 func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {

@@ -3,7 +3,6 @@ package claude
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,26 +13,31 @@ import (
 
 // Parser normalizes Claude Code session JSONL into SessionEvents.
 type Parser struct {
-	Inventory *capture.InventoryCollector
+	Inventory    *capture.InventoryCollector
+	LastBadLines int
 }
 
 func (p *Parser) Tool() string { return capture.ToolClaude }
 
 // ParseFile reads one Claude session JSONL and returns normalized events.
 func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	return p.ParseBytes(data, path, repoRoot)
+}
 
-	if p.Inventory != nil {
-		p.Inventory.RecordSampleFile(capture.ToolClaude, path)
+// ParseBytes normalizes Claude session JSONL bytes and skips bad lines instead of aborting.
+func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture.SessionEvent, error) {
+	p.LastBadLines = 0
+	if p.Inventory != nil && strings.TrimSpace(sourcePath) != "" {
+		p.Inventory.RecordSampleFile(capture.ToolClaude, sourcePath)
 	}
 
-	sessionID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	sessionID := strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
 	var events []capture.SessionEvent
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -42,12 +46,14 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 		}
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			p.LastBadLines++
 			continue
 		}
 		recordShallowPaths(p.Inventory, capture.ToolClaude, raw, "")
 		parsed, err := parseClaudeLine(raw, sessionID, repoRoot)
 		if err != nil {
-			return nil, fmt.Errorf("parse line: %w", err)
+			p.LastBadLines++
+			continue
 		}
 		events = append(events, parsed...)
 	}

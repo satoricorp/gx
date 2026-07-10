@@ -105,20 +105,25 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 }
 
 func (p *Parser) parseTranscriptFile(path string, repoRoot string) ([]capture.SessionEvent, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	events, _, err := p.ParseBytes(data, path, repoRoot)
+	return events, err
+}
 
-	if p.Inventory != nil {
-		p.Inventory.RecordSampleFile(capture.ToolCursor, path)
+// ParseBytes normalizes Cursor transcript JSONL bytes.
+func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture.SessionEvent, int, error) {
+	if p.Inventory != nil && strings.TrimSpace(sourcePath) != "" {
+		p.Inventory.RecordSampleFile(capture.ToolCursor, sourcePath)
 	}
 
-	sessionID := transcriptSessionID(path)
+	sessionID := transcriptSessionID(sourcePath)
 	model := ""
+	badLines := 0
 	var events []capture.SessionEvent
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -127,6 +132,7 @@ func (p *Parser) parseTranscriptFile(path string, repoRoot string) ([]capture.Se
 		}
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			badLines++
 			continue
 		}
 		recordShallow(p.Inventory, raw, "")
@@ -139,9 +145,9 @@ func (p *Parser) parseTranscriptFile(path string, repoRoot string) ([]capture.Se
 		events = append(events, parseTranscriptLine(raw, sessionID, model, repoRoot)...)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, badLines, err
 	}
-	return events, nil
+	return events, badLines, nil
 }
 
 func transcriptSessionID(path string) string {

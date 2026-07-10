@@ -19,6 +19,7 @@ const (
 	EventCLIReviewRun      = "cli.review.run"
 	EventCLIAuthLogin      = "cli.auth.login"
 	EventCLIAuthLogout     = "cli.auth.logout"
+	EventSchemaDrift       = "capture.schema_drift"
 )
 
 // CaptureCoverageProps are properties for capture.coverage.
@@ -60,6 +61,13 @@ type ComposeRunProps struct {
 	Tools         []string
 }
 
+// SchemaDriftProps are properties for capture.schema_drift.
+type SchemaDriftProps struct {
+	Tool  string
+	Paths []string
+	Count int
+}
+
 // Client emits capture telemetry events.
 type Client interface {
 	EmitEvent(ctx context.Context, event string, properties map[string]any)
@@ -67,4 +75,5 @@ type Client interface {
 	EmitMatchRate(ctx context.Context, props MatchRateProps)
 	EmitSessionUploaded(ctx context.Context, props SessionUploadedProps)
 	EmitComposeRun(ctx context.Context, props ComposeRunProps)
+	EmitSchemaDrift(ctx context.Context, props SchemaDriftProps)
 }
