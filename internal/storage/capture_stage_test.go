@@ -21,6 +21,7 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 		RepoRoot:    filepath.Join(t.TempDir(), "repo"),
 		RefRange:    "main..HEAD",
 		PayloadJSON: payload,
+		RevisionID:  "rev-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -29,6 +30,7 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 		SessionID:   "cursor-abc",
 		Tool:        "cursor",
 		PayloadJSON: []byte(`{"sessionID":"cursor-abc"}`),
+		RevisionID:  "rev-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +41,16 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 	if len(extracts) != 1 || string(extracts[0].PayloadJSON) != string(payload) {
 		t.Fatalf("pending extracts = %+v", extracts)
 	}
+	if _, err := stager.MarkExtractShareable(ctx, []string{"rev-1"}, storage.CaptureAttestation{Name: "Test", Email: "test@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	shareable, err := stager.ShareableExtracts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shareable) != 1 {
+		t.Fatalf("shareable extracts = %+v", shareable)
+	}
 	sessions, err := stager.PendingSessions(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +58,10 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].SessionID != "cursor-abc" {
 		t.Fatalf("pending sessions = %+v", sessions)
 	}
-	if err := stager.MarkExtractUploaded(ctx, "ext-1"); err != nil {
+	if _, err := stager.MarkSessionShareable(ctx, []string{"rev-1"}, storage.CaptureAttestation{Name: "Test", Email: "test@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stager.MarkExtractUploaded(ctx, extracts[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	extracts, err = stager.PendingExtracts(ctx)

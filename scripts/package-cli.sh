@@ -44,7 +44,8 @@ esac
 build_root="$(mktemp -d)"
 trap 'rm -rf "$build_root"' EXIT
 stage_dir="$build_root/gx"
-mkdir -p "$stage_dir/bin" "$stage_dir/completions" "$dist_dir"
+mkdir -p "$stage_dir/bin" "$stage_dir/completions" "$stage_dir/hooks" "$dist_dir"
+with_menubar="${GX_PACKAGE_MENUBAR:-0}"
 
 echo "Building gx ${version} for ${goos}/${goarch}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED="${CGO_ENABLED:-0}" \
@@ -68,19 +69,33 @@ chmod 755 "$stage_dir/bin/gx-mcp"
 
 env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/gx-gen-completions "$stage_dir/completions/gx.bash" "$stage_dir/completions/_gx"
 
+cat > "$stage_dir/hooks/README.txt" <<'EOF'
+Repo git hooks are installed by `gx init` in each repository.
+GX init also registers MCP with supported agent CLIs and offers AGENTS.md instructions.
+EOF
+
 cat > "$stage_dir/README.txt" <<EOF
 GX CLI package
 
-Install:
+Default install (CLI + gx-mcp + completions):
+  curl -fsSL https://download.gx.run/install.sh | sh
+
+Optional macOS menu-bar app:
+  curl -fsSL https://download.gx.run/install.sh | sh -s -- --with-menubar
+
+Manual install:
   install -m 755 bin/gx ~/.local/bin/gx
   ln -sf gx ~/.local/bin/gxg
   ln -sf gx ~/.local/bin/gxr
   ln -sf gx ~/.local/bin/gxs
   install -m 755 bin/gx-mcp ~/.local/bin/gx-mcp
-
-The preferred installer is:
-  curl -fsSL https://download.gx.run/install.sh | sh
 EOF
+
+if [[ "$with_menubar" == "1" ]]; then
+  echo "Packaging macOS menu-bar app (GX_PACKAGE_MENUBAR=1)"
+  apps/menubar/scripts/package.sh
+  cp -R apps/menubar/dist/GX.app "$stage_dir/GX.app"
+fi
 
 archive_name="gx_${version}_${goos}_${goarch}.tar.gz"
 archive_path="$dist_dir/$archive_name"

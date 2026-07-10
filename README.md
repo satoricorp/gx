@@ -72,30 +72,31 @@ This is required to use GX code review.
 ## Add Instructions To Your AGENTS.md
 
 ```md
-Version control: use GX, not `git commit` or `git push`.
+Version control: use GX, not `git commit`.
 
-Use GX MCP first: `gx_sync`, `gx_status`, then `gx_push`.
+Use GX MCP first: `gx_sync`, `gx_status`, then `git push`.
 If MCP is unavailable, use the CLI fallback: `gx sync`, `git add`, `gx commit`,
-`gx status`, then `gx push`.
+`gx status`, then `git push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
 GX save workflow with `git add` + `gx commit` for focused changes, or `gx generate`
-for bulk organization, then push ready stacks unless asked to keep them local.
+for bulk organization, then `git push` ready stacks unless asked to keep them local.
 
-GX PR summaries are posted for PRs published or adopted by `gx push`. A PR
-created only with raw Git or the GitHub UI will not get a GX summary until that
-branch is pushed through GX.
+GX PR summaries are posted for PRs published or adopted on `git push`. A PR
+created only with the GitHub UI will not get a GX summary until that branch is
+pushed with GX trailers present.
 
 Only use raw Git for read-only inspection unless explicitly asked for raw Git.
-If supported, deny or require approval for `git commit`, `git push`,
+If supported, deny or require approval for `git commit`,
 `git reset`, and branch deletion.
 ```
 
 Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.
 When a repo is initialized with `gx init` or by MCP auto-initialization, GX
 installs a `pre-push` hook that runs `gx capture push` for the pushed ref range,
-captures Claude/Codex/Cursor session context into `~/.gx/gx.db`, and uploads
-only when GX upload credentials are configured.
+captures Claude/Codex/Cursor session context into `~/.gx/gx.db`, marks pushed
+GX revisions shareable, and drains uploads in the background when credentials
+are configured.
 
 ## Basic Workflow
 
@@ -103,7 +104,7 @@ only when GX upload credentials are configured.
 git add <files>
 gx commit -m "describe this revision"
 gxs        # gx status
-gx push    # push stacks, metadata, and context
+git push   # push code; GX hook publishes sessions and PR summaries
 ```
 
 Useful review command:

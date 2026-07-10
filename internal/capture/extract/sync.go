@@ -45,7 +45,7 @@ func SyncPending(
 	client := NewClient(creds.APIURL, creds.Token)
 	var result SyncResult
 
-	extracts, err := stager.PendingExtracts(ctx)
+	extracts, err := stager.ShareableExtracts(ctx)
 	if err != nil {
 		return result, fmt.Errorf("list pending extracts: %w", err)
 	}
@@ -61,7 +61,7 @@ func SyncPending(
 		result.ExtractsUploaded++
 	}
 
-	sessions, err := stager.PendingSessions(ctx)
+	sessions, err := stager.ShareableSessions(ctx)
 	if err != nil {
 		return result, fmt.Errorf("list pending sessions: %w", err)
 	}

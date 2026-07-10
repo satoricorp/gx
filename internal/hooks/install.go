@@ -74,7 +74,6 @@ func prePushScript(gxPath string) string {
 	}
 	return fmt.Sprintf(`#!/bin/sh
 %s
-set -e
 remote="$1"
 url="$2"
 while read local_ref local_sha remote_ref remote_sha
@@ -87,7 +86,7 @@ do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  %q capture push --remote "$remote" --ref-range "$range" --repo "$(git rev-parse --show-toplevel)" || exit 1
+  %q capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
 done
 exit 0
 `, hookMarker, gxPath)

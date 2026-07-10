@@ -31,7 +31,7 @@ pre-push:
           else
             range="${remote_sha}..${local_sha}"
           fi
-          %q capture push --remote "$remote" --ref-range "$range"
+          %q capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" || true
         done
 `, gxPath)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -55,7 +55,7 @@ while read local_ref local_sha remote_ref remote_sha; do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  %q capture push --remote "$remote" --ref-range "$range"
+  %q capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" || true
 done
 `, gxPath)
 }

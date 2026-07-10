@@ -88,7 +88,7 @@ func TestEnqueueArtifactQueuesAndDrainUploads(t *testing.T) {
 		GXVersion:     "test",
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
-	}))
+	}), QueueAttestation{})
 	if err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
@@ -132,7 +132,7 @@ func TestQueuedUploadStatusTreatsDeadUploaderAsPending(t *testing.T) {
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "deadbeef"},
 	})
-	item, err := newQueueItem(artifact)
+	item, err := newQueueItem(artifact, QueueAttestation{})
 	if err != nil {
 		t.Fatalf("newQueueItem() error = %v", err)
 	}

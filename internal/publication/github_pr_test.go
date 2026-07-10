@@ -55,7 +55,7 @@ func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T)
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
 
-	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
+	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
 	if patchedBody != "" {
@@ -101,7 +101,7 @@ func TestDrainQueuedUploadsContinuesUploadWhenPRSummaryFails(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
 
-	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
+	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
 	uploader := &fakeUploader{}
@@ -181,7 +181,7 @@ func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testi
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
 
-	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL))); err != nil {
+	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
 	if patchedBody != "" {

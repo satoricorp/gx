@@ -251,6 +251,13 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Session retention", fmt.Sprintf("%d days", cfg.Capture.CleanupPeriodDays)))
 				}
 			}
+			if err := initSetupFromCommand(cmd, result.Repo.RootPath, yes); err != nil {
+				return err
+			}
+			if !yes {
+				fmt.Fprintln(cmd.OutOrStdout())
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Next", "git add <files> && gx commit -m \"...\""))
+			}
 			return nil
 		},
 	}

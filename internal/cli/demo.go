@@ -164,13 +164,13 @@ func (d *demoSession) publishPrompt() error {
 	d.println("")
 	d.println(demoMint("Our changes are still local (and now viewable in ") + demoWhite("`gx status`") + demoMint("). They aren't on the server yet, so let's push our changes. Type:"))
 	d.println("")
-	d.println(demoMint("gx push"))
+	d.println(demoMint("git push"))
 	d.println("")
-	if _, err := d.promptCommand("gx push", []string{"gx push"}); err != nil {
+	if _, err := d.promptCommand("git push", []string{"git push"}); err != nil {
 		return err
 	}
 	d.println("")
-	d.println(demoWhite("This is just like `git push`, but it sends code, sessions, and GX metadata for review."))
+	d.println(demoWhite("This is just like a normal `git push`, but the GX hook also sends sessions and metadata for review."))
 	d.println(demoWhite("When GitHub is configured, gx also creates or updates the matching PR."))
 	d.println("")
 	return d.wait()
@@ -178,7 +178,7 @@ func (d *demoSession) publishPrompt() error {
 
 func (d *demoSession) reviewURLScreen() error {
 	d.beginScreen()
-	d.println(demoCommandOutput("$ gx push"))
+	d.println(demoCommandOutput("$ git push"))
 	d.println(demoCommandOutput("Pushing 1 stack with 3 revisions"))
 	d.println(demoCommandOutput("Synced       gx session context"))
 	d.println(demoCommandOutput("Review       " + d.reviewURL))

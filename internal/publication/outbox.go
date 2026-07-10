@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -25,10 +26,18 @@ const (
 	outboxStatusFailed  = "failed"
 )
 
+type QueueAttestation struct {
+	ContentHash   string `json:"content_hash"`
+	AcceptorName  string `json:"acceptor_name,omitempty"`
+	AcceptorEmail string `json:"acceptor_email,omitempty"`
+	CreatedAt     int64  `json:"created_at"`
+}
+
 type QueueItem struct {
 	ID            string                `json:"id"`
 	Status        string                `json:"status"`
 	Artifact      reviewbundle.Artifact `json:"artifact"`
+	Attestation   QueueAttestation      `json:"attestation,omitempty"`
 	CreatedAt     int64                 `json:"created_at"`
 	Attempts      int                   `json:"attempts"`
 	LastAttemptAt int64                 `json:"last_attempt_at,omitempty"`
@@ -64,14 +73,32 @@ func EnqueuePush(ctx context.Context, push vcs.PushResult) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return EnqueueArtifact(ctx, reviewbundle.NewArtifact(bundle))
-}
-
-func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact) (Result, error) {
-	artifact.IndexStatus = firstNonEmpty(artifact.IndexStatus, "queued")
-	item, err := newQueueItem(artifact)
+	attestation, err := queueAttestationForPush(ctx, push.Repo.RootPath, reviewbundle.NewArtifact(bundle))
 	if err != nil {
 		return Result{}, err
+	}
+	return EnqueueArtifact(ctx, reviewbundle.NewArtifact(bundle), attestation)
+}
+
+func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact, attestation QueueAttestation) (Result, error) {
+	artifact.IndexStatus = firstNonEmpty(artifact.IndexStatus, "queued")
+	item, err := newQueueItem(artifact, attestation)
+	if err != nil {
+		return Result{}, err
+	}
+	if _, err := os.Stat(queueItemPath(item.ID)); err == nil {
+		artifactPath, artErr := WriteLocalArtifact(artifact)
+		if artErr != nil {
+			return Result{}, artErr
+		}
+		return Result{
+			Queued:       true,
+			QueueID:      item.ID,
+			QueuePath:    queueItemPath(item.ID),
+			IndexStatus:  "queued",
+			ArtifactPath: artifactPath,
+			Artifact:     artifact,
+		}, nil
 	}
 	path, err := writeQueueItem(item)
 	if err != nil {
@@ -191,21 +218,26 @@ func QueuedUploadStatus() (QueueStatus, error) {
 	return status, nil
 }
 
-func newQueueItem(artifact reviewbundle.Artifact) (QueueItem, error) {
+func newQueueItem(artifact reviewbundle.Artifact, attestation QueueAttestation) (QueueItem, error) {
 	payload, err := json.Marshal(artifact)
 	if err != nil {
 		return QueueItem{}, err
 	}
 	sum := sha256.Sum256(payload)
-	idParts := []string{"gx-context", hex.EncodeToString(sum[:])[:24]}
-	if artifact.Push.HeadCommitID != "" {
-		idParts = append(idParts, shortClean(artifact.Push.HeadCommitID))
+	contentHash := hex.EncodeToString(sum[:])
+	if attestation.ContentHash == "" {
+		attestation.ContentHash = contentHash
 	}
+	if attestation.CreatedAt == 0 {
+		attestation.CreatedAt = time.Now().UnixMilli()
+	}
+	id := queueItemID(artifact, attestation)
 	return QueueItem{
-		ID:        strings.Join(idParts, "-"),
-		Status:    outboxStatusPending,
-		Artifact:  artifact,
-		CreatedAt: time.Now().UnixMilli(),
+		ID:          id,
+		Status:      outboxStatusPending,
+		Artifact:    artifact,
+		Attestation: attestation,
+		CreatedAt:   attestation.CreatedAt,
 	}, nil
 }
 
@@ -230,6 +262,69 @@ func writeQueueItem(item QueueItem) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func shortHashPrefix(hash string) string {
+	hash = strings.TrimSpace(hash)
+	if len(hash) > 24 {
+		return hash[:24]
+	}
+	return hash
+}
+
+func queueItemID(artifact reviewbundle.Artifact, attestation QueueAttestation) string {
+	if head := strings.TrimSpace(artifact.Push.HeadCommitID); head != "" {
+		return "gx-context-" + shortClean(head)
+	}
+	return "gx-context-" + shortHashPrefix(attestation.ContentHash)
+}
+
+func loadQueueItem(id string) (QueueItem, error) {
+	data, err := os.ReadFile(queueItemPath(id))
+	if err != nil {
+		return QueueItem{}, err
+	}
+	var item QueueItem
+	if err := json.Unmarshal(data, &item); err != nil {
+		return QueueItem{}, err
+	}
+	if item.ID == "" {
+		item.ID = id
+	}
+	return item, nil
+}
+
+func queueAttestationForPush(ctx context.Context, repoRoot string, artifact reviewbundle.Artifact) (QueueAttestation, error) {
+	payload, err := json.Marshal(artifact)
+	if err != nil {
+		return QueueAttestation{}, err
+	}
+	sum := sha256.Sum256(payload)
+	att := QueueAttestation{
+		ContentHash: hex.EncodeToString(sum[:]),
+		CreatedAt:   time.Now().UnixMilli(),
+	}
+	if repoRoot == "" {
+		return att, nil
+	}
+	name, err := gitConfigValue(ctx, repoRoot, "user.name")
+	if err == nil {
+		att.AcceptorName = name
+	}
+	email, err := gitConfigValue(ctx, repoRoot, "user.email")
+	if err == nil {
+		att.AcceptorEmail = email
+	}
+	return att, nil
+}
+
+func gitConfigValue(ctx context.Context, repoRoot, key string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "config", key)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git config %s: %w", key, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func loadQueueItems() ([]QueueItem, error) {

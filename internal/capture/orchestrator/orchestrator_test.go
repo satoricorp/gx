@@ -2,12 +2,9 @@ package orchestrator_test
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -91,12 +88,7 @@ func TestOrchestrator_StagesWhenUploadIsUnauthorized(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GX_CLOUD_URL", "")
 	t.Setenv("GX_UPLOAD_TOKEN", "bad-token")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-	}))
-	defer server.Close()
-	t.Setenv("GX_API_URL", server.URL)
+	t.Setenv("GX_API_URL", "http://127.0.0.1:1")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -111,8 +103,8 @@ func TestOrchestrator_StagesWhenUploadIsUnauthorized(t *testing.T) {
 	if result.StagedExtractID == "" {
 		t.Fatal("expected staged extract id")
 	}
-	if !strings.Contains(result.UploadError, "status 401") {
-		t.Fatalf("UploadError = %q, want status 401", result.UploadError)
+	if result.UploadError != "" {
+		t.Fatalf("UploadError = %q, want empty because upload is deferred to capture sync", result.UploadError)
 	}
 }
 

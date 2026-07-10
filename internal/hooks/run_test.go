@@ -52,15 +52,15 @@ func TestRunPushRespectsPauseFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RunPush(context.Background(), PushOptions{
+	outcome, err := RunPush(context.Background(), PushOptions{
 		RepoRoot: repo,
 		HomeDir:  home,
 	})
 	if err != nil {
 		t.Fatalf("RunPush() error = %v", err)
 	}
-	if result.RefRange != "" || result.EligibleHunks != 0 {
-		t.Fatalf("RunPush() = %+v, want empty result when paused", result)
+	if outcome.Result.RefRange != "" || outcome.Result.EligibleHunks != 0 {
+		t.Fatalf("RunPush() = %+v, want empty result when paused", outcome)
 	}
 }
 

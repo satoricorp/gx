@@ -62,7 +62,7 @@ func TestSyncPending(t *testing.T) {
 		"hunkLinks": []matcher.HunkLink{{HunkID: "x", Tier: 1, Confidence: 1, Authorship: "agent"}},
 	})
 	if err := stager.StageExtract(ctx, storage.StagedExtract{
-		ID: "e1", RepoRoot: "/repo", RefRange: "main..HEAD", PayloadJSON: extractPayload,
+		ID: "e1", RepoRoot: "/repo", RefRange: "main..HEAD", PayloadJSON: extractPayload, RevisionID: "rev-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +71,14 @@ func TestSyncPending(t *testing.T) {
 		"tool":      "cursor",
 	})
 	if err := stager.StageSession(ctx, storage.StagedSession{
-		ID: "s1-row", SessionID: "s1", Tool: "cursor", PayloadJSON: sessionPayload,
+		ID: "s1-row", SessionID: "s1", Tool: "cursor", PayloadJSON: sessionPayload, RevisionID: "rev-1",
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stager.MarkExtractShareable(ctx, []string{"rev-1"}, storage.CaptureAttestation{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stager.MarkSessionShareable(ctx, []string{"rev-1"}, storage.CaptureAttestation{}); err != nil {
 		t.Fatal(err)
 	}
 

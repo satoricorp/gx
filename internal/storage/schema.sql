@@ -313,6 +313,12 @@ CREATE TABLE IF NOT EXISTS capture_extracts (
     ref_range TEXT NOT NULL,
     payload_json BLOB NOT NULL,
     created_at INTEGER NOT NULL,
+    revision_id TEXT,
+    content_hash TEXT,
+    shareable_at INTEGER,
+    acceptor_name TEXT,
+    acceptor_email TEXT,
+    attested_at INTEGER,
     uploaded_at INTEGER,
     upload_error TEXT
 );
@@ -325,6 +331,12 @@ CREATE TABLE IF NOT EXISTS capture_sessions (
     tool TEXT NOT NULL,
     payload_json BLOB NOT NULL,
     created_at INTEGER NOT NULL,
+    revision_id TEXT,
+    content_hash TEXT,
+    shareable_at INTEGER,
+    acceptor_name TEXT,
+    acceptor_email TEXT,
+    attested_at INTEGER,
     uploaded_at INTEGER,
     upload_error TEXT
 );

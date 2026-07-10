@@ -13,7 +13,6 @@ import (
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/exclude"
-	captureextract "github.com/satoricorp/gx/internal/capture/extract"
 	capturegit "github.com/satoricorp/gx/internal/capture/git"
 	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/capture/parsers"
@@ -24,8 +23,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture/report"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
-	"github.com/satoricorp/gx/internal/uploadauth"
-	"github.com/satoricorp/gx/internal/version"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 const defaultTimeSlack = 24 * time.Hour
@@ -233,6 +231,8 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		Tools:          tools,
 	})
 
+	revisionIDs, _ := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
+
 	stager := opts.DB
 	if stager == nil {
 		stager, err = storage.OpenCaptureStager(ctx)
@@ -240,80 +240,82 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 			return result, fmt.Errorf("open capture stager: %w", err)
 		}
 	}
-	extractID, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract)
+	extractID, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract, revisionIDs)
 	if err != nil {
 		return result, fmt.Errorf("stage extract: %w", err)
 	}
 	result.StagedExtractID = extractID
 	for _, session := range sessions {
-		if err := stageSession(ctx, stager, session); err != nil {
+		if err := stageSession(ctx, stager, session, revisionIDs); err != nil {
 			return result, fmt.Errorf("stage session %s: %w", session.SessionID, err)
 		}
 		result.StagedSessions++
-	}
-
-	if !opts.StageOnly {
-		if creds, ok := uploadauth.Load(); ok {
-			headSHA, err := capturegit.RevParseCommit(repoRoot, head)
-			if err != nil {
-				return result, fmt.Errorf("resolve head commit: %w", err)
-			}
-			uploader := captureextract.NewClient(creds.APIURL, creds.Token)
-			sessionPayloads := make([]captureextract.SessionPayload, 0, len(sessions))
-			for _, s := range sessions {
-				sessionPayloads = append(sessionPayloads, captureextract.SessionPayload{
-					SessionID: s.SessionID,
-					Tool:      s.Tool,
-					Events:    s.Events,
-				})
-			}
-			if err := uploader.UploadRun(
-				ctx,
-				repoRoot,
-				refRange,
-				headSHA,
-				version.Current(),
-				stagedExtract.HunkLinks,
-				stagedExtract.FileStats,
-				sessionPayloads,
-				client,
-			); err != nil {
-				result.UploadError = fmt.Sprintf("upload capture: %v", err)
-			}
-		}
 	}
 
 	_ = report.VerdictForCoverage(coverage)
 	return result, nil
 }
 
-func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, refRange string, extract StagedExtract) (string, error) {
+func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, refRange string, extract StagedExtract, revisionIDs []string) (string, error) {
 	payload, err := json.Marshal(extract)
 	if err != nil {
 		return "", err
 	}
-	id := uuid.NewString()
-	err = stager.StageExtract(ctx, storage.StagedExtract{
-		ID:          id,
-		RepoRoot:    repoRoot,
-		RefRange:    refRange,
-		PayloadJSON: payload,
-	})
-	return id, err
+	ids := revisionIDs
+	if len(ids) == 0 {
+		ids = []string{""}
+	}
+	var firstID string
+	for _, revisionID := range ids {
+		contentHash := storage.PayloadContentHash(payload)
+		row := storage.StagedExtract{
+			RepoRoot:    repoRoot,
+			RefRange:    refRange,
+			PayloadJSON: payload,
+			RevisionID:  revisionID,
+			ContentHash: contentHash,
+		}
+		row.ID = storage.CaptureRowID(revisionID, contentHash)
+		if row.ID == "" {
+			row.ID = uuid.NewString()
+		}
+		if err := stager.StageExtract(ctx, row); err != nil {
+			return "", err
+		}
+		if firstID == "" {
+			firstID = row.ID
+		}
+	}
+	return firstID, nil
 }
 
-func stageSession(ctx context.Context, stager storage.CaptureStager, session StagedSession) error {
+func stageSession(ctx context.Context, stager storage.CaptureStager, session StagedSession, revisionIDs []string) error {
 	payload, err := json.Marshal(session)
 	if err != nil {
 		return err
 	}
-	id := uuid.NewString()
-	return stager.StageSession(ctx, storage.StagedSession{
-		ID:          id,
-		SessionID:   session.SessionID,
-		Tool:        session.Tool,
-		PayloadJSON: payload,
-	})
+	ids := revisionIDs
+	if len(ids) == 0 {
+		ids = []string{""}
+	}
+	for _, revisionID := range ids {
+		contentHash := storage.PayloadContentHash(payload)
+		row := storage.StagedSession{
+			SessionID:   session.SessionID,
+			Tool:        session.Tool,
+			PayloadJSON: payload,
+			RevisionID:  revisionID,
+			ContentHash: contentHash,
+		}
+		row.ID = storage.CaptureRowID(revisionID, contentHash)
+		if row.ID == "" {
+			row.ID = uuid.NewString()
+		}
+		if err := stager.StageSession(ctx, row); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {

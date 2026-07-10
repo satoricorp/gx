@@ -3,17 +3,57 @@ set -eu
 
 base_url="${GX_INSTALL_BASE_URL:-https://download.gx.run}"
 install_dir="${GX_INSTALL_DIR:-$HOME/.local/bin}"
+with_menubar=false
 tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t gx-install)"
-
-cleanup() {
-  rm -rf "$tmp_dir"
-}
-trap cleanup EXIT INT TERM
 
 fail() {
   echo "gx install: $*" >&2
   exit 1
 }
+
+usage() {
+  cat <<EOF
+GX installer
+
+Default install: gx CLI, gx-mcp, shell completions.
+Repo git hooks are installed later by gx init.
+
+Usage:
+  curl -fsSL https://download.gx.run/install.sh | sh
+  curl -fsSL https://download.gx.run/install.sh | sh -s -- --with-menubar
+
+Options:
+  --with-menubar   Also install the macOS menu-bar app (macOS only)
+  -h, --help       Show this help
+
+Environment:
+  GX_INSTALL_BASE_URL   Download base URL (default: https://download.gx.run)
+  GX_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
+  GX_INSTALL_MENUBAR=1    Same as --with-menubar
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --with-menubar) with_menubar=true ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown option: $arg (try --help)"
+      ;;
+  esac
+done
+
+if [ "${GX_INSTALL_MENUBAR:-}" = "1" ]; then
+  with_menubar=true
+fi
+
+cleanup() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT INT TERM
 
 need() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
@@ -28,6 +68,34 @@ download() {
     wget -qO "$output" "$url"
   else
     fail "missing curl or wget"
+  fi
+}
+
+install_menubar_app() {
+  if [ "$os" != "darwin" ]; then
+    fail "--with-menubar requires macOS"
+  fi
+  need unzip
+  zip_url="$base_url/GX-macOS.zip"
+  zip_path="$tmp_dir/GX-macOS.zip"
+  echo "Downloading $zip_url"
+  download "$zip_url" "$zip_path"
+  extract_dir="$tmp_dir/menubar"
+  mkdir -p "$extract_dir"
+  unzip -q "$zip_path" -d "$extract_dir"
+  extracted="$extract_dir/GX.app"
+  test -d "$extracted" || fail "GX-macOS.zip is missing GX.app"
+  if [ -w "/Applications" ]; then
+    app_dest="/Applications/GX.app"
+    rm -rf "$app_dest"
+    cp -R "$extracted" "$app_dest"
+    echo "Installed GX menu-bar app to $app_dest"
+  else
+    app_dest="$HOME/Applications/GX.app"
+    mkdir -p "$HOME/Applications"
+    rm -rf "$app_dest"
+    cp -R "$extracted" "$app_dest"
+    echo "Installed GX menu-bar app to $app_dest"
   fi
 }
 
@@ -98,5 +166,11 @@ echo "Installed gxs to $install_dir/gxs"
 echo "Installed gx-mcp to $install_dir/gx-mcp"
 if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."
+fi
+echo "Run gx init in each repo to install git hooks, register MCP, and offer AGENTS.md instructions."
+if [ "$with_menubar" = "true" ]; then
+  install_menubar_app
+else
+  echo "Optional macOS menu-bar app: curl -fsSL $base_url/install.sh | sh -s -- --with-menubar"
 fi
 "$install_dir/gx" version

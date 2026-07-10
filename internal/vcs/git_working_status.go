@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const HintPush = "gx push"
+const HintPush = "git push"
 
 // GitWorkingStatus is pure-git working tree state from git status --porcelain.
 type GitWorkingStatus struct {
