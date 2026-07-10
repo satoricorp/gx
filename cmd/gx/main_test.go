@@ -96,11 +96,10 @@ func TestStacksRemovesSwitchSubcommand(t *testing.T) {
 	}
 }
 
-func TestRootKeepsAddAndBaseUtilityCommandsHidden(t *testing.T) {
+func TestRootRemovesAddAndKeepsBaseUtilityHidden(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	add, _, addErr := root.Find([]string{"add"})
-	if addErr != nil || add == nil || !add.Hidden {
-		t.Fatalf("Find(add) = cmd=%v hidden=%v err=%v, want hidden add utility command", add, add != nil && add.Hidden, addErr)
+	if add, _, err := root.Find([]string{"add"}); err == nil && add != nil && add.Name() == "add" {
+		t.Fatalf("Find(add) resolved removed command")
 	}
 	base, _, baseErr := root.Find([]string{"base"})
 	if baseErr != nil || base == nil || !base.Hidden {
@@ -134,6 +133,8 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"Setup:",
 		"  init",
 		"  auth",
+		"  demo",
+		"  set",
 		"Work:",
 		"  commit",
 		"  review (gxr)",
@@ -171,7 +172,7 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	if strings.Contains(text, "Available Commands:") {
 		t.Fatalf("root help should group commands by type:\n%s", text)
 	}
-	for _, hidden := range []string{"  add ", "  edit ", "  demo ", "  ops ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux "} {
+	for _, hidden := range []string{"  add ", "  edit ", "  ops ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux ", "  generate "} {
 		if strings.Contains(text, hidden) {
 			t.Fatalf("root help should hide %q in:\n%s", hidden, text)
 		}
