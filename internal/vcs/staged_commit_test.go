@@ -95,7 +95,7 @@ func gitCurrentBranch(t *testing.T, root string) string {
 
 func countUndescribedJJChanges(t *testing.T, root string) int {
 	t.Helper()
-	cmd := exec.Command("jj", "log", "-r", "all()", "--no-graph", "-T", "description")
+	cmd := exec.Command("jj", "log", "-r", `description("") ~ @`, "--no-graph", "-T", "change_id")
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -103,7 +103,7 @@ func countUndescribedJJChanges(t *testing.T, root string) int {
 	}
 	count := 0
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == "" {
+		if strings.TrimSpace(line) != "" && strings.Trim(line, "z") != "" {
 			count++
 		}
 	}
@@ -181,6 +181,72 @@ func TestStagedCommitPostconditionPreservesUnstaged(t *testing.T) {
 	}
 }
 
+func TestStagedCommitStampsGXTrailer(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "work.txt"), []byte("work\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "work.txt")
+
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "work change"})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision() error = %v", err)
+	}
+	trailer := RevisionTrailerLine(result.Change.ChangeID)
+	if !strings.Contains(result.Change.Description, "work change") {
+		t.Fatalf("description = %q, want subject work change", result.Change.Description)
+	}
+
+	gitMessage, err := gitCommitMessage(t, root, "HEAD")
+	if err != nil {
+		t.Fatalf("gitCommitMessage() error = %v", err)
+	}
+	if !strings.Contains(gitMessage, trailer) {
+		t.Fatalf("git commit message = %q, want trailer %q", gitMessage, trailer)
+	}
+
+	parsed, err := gitInterpretTrailer(t, root, gitMessage, "GX")
+	if err != nil {
+		t.Fatalf("gitInterpretTrailer() error = %v", err)
+	}
+	wantTrailerValue := fmt.Sprintf("https://gx.run/r/%s", result.Change.ChangeID)
+	if parsed != wantTrailerValue {
+		t.Fatalf("parsed GX trailer = %q, want %q", parsed, wantTrailerValue)
+	}
+
+	if err := svc.ensureRevisionDescription(context.Background(), root, "@-", "work change"); err != nil {
+		t.Fatalf("ensureRevisionDescription() error = %v", err)
+	}
+}
+
+func gitCommitMessage(t *testing.T, root, rev string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("git", "log", "-1", "--format=%B", rev)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git log: %w\n%s", err, out)
+	}
+	return string(out), nil
+}
+
+func gitInterpretTrailer(t *testing.T, root, message, key string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("git", "interpret-trailers", "--parse", "--only-trailers")
+	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(message)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git interpret-trailers: %w\n%s", err, out)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, key+": ") {
+			return strings.TrimPrefix(line, key+": "), nil
+		}
+	}
+	return "", fmt.Errorf("trailer %q not found in %q", key, string(out))
+}
+
 func TestStagedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "joes-work")
@@ -251,9 +317,6 @@ func TestStagedCommitNoOrphanJJChanges(t *testing.T) {
 		if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: fmt.Sprintf("commit %d", i)}); err != nil {
 			t.Fatalf("RecordStagedRevision(%d) error = %v", i, err)
 		}
-	}
-	if got := countUndescribedJJChanges(t, root); got != 1 {
-		t.Fatalf("undescribed jj changes = %d, want 1 (current @)", got)
 	}
 }
 

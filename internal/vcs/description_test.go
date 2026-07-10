@@ -3,6 +3,7 @@ package vcs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/storage"
@@ -37,6 +38,34 @@ func TestValidateCommitMessage(t *testing.T) {
 
 	if err := ValidateCommitMessage(PlaceholderDescription); err == nil {
 		t.Fatal("ValidateCommitMessage() error = nil, want placeholder rejection")
+	}
+}
+
+func TestStampRevisionTrailer(t *testing.T) {
+	t.Parallel()
+
+	changeID := "rzlmkskwokkzwnqpxttqstlwrpvlmttl"
+	wantTrailer := RevisionTrailerLine(changeID)
+
+	got := StampRevisionTrailer("add login flow", changeID)
+	if !strings.Contains(got, wantTrailer) {
+		t.Fatalf("StampRevisionTrailer() = %q, want trailer %q", got, wantTrailer)
+	}
+	if !strings.HasPrefix(got, "add login flow\n\n") {
+		t.Fatalf("StampRevisionTrailer() = %q, want blank-line separation", got)
+	}
+
+	again := StampRevisionTrailer(got, changeID)
+	if again != got {
+		t.Fatalf("StampRevisionTrailer() duplicated trailer:\nfirst=%q\nsecond=%q", got, again)
+	}
+}
+
+func TestFinalizeCommitMessageRejectsEmpty(t *testing.T) {
+	t.Parallel()
+
+	if _, err := FinalizeCommitMessage("   ", "chg1"); !errors.Is(err, ErrEmptyCommitMessage) {
+		t.Fatalf("FinalizeCommitMessage() error = %v, want %v", err, ErrEmptyCommitMessage)
 	}
 }
 

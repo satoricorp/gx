@@ -2449,6 +2449,10 @@ func (r *demuxRoutingFakeRunner) RunStream(ctx context.Context, dir, name string
 	return err
 }
 
+func (r *demuxRoutingFakeRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
+}
+
 func (r *demuxRoutingFakeRunner) output(name string, args []string) (string, error) {
 	if name == "git" {
 		return r.gitOutput(args)
@@ -2588,6 +2592,10 @@ func (r *prepareNextDemuxFakeRunner) RunStream(ctx context.Context, dir, name st
 	return err
 }
 
+func (r *prepareNextDemuxFakeRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
+}
+
 func (r *prepareNextDemuxFakeRunner) output(name string, args []string) (string, error) {
 	if name == "git" {
 		if len(args) == 2 && args[0] == "branch" && args[1] == "--show-current" {
@@ -2667,6 +2675,10 @@ func (r *demuxApplySourceFakeRunner) RunStdout(ctx context.Context, dir, name st
 func (r *demuxApplySourceFakeRunner) RunStream(ctx context.Context, dir, name string, args ...string) error {
 	_, err := r.Run(ctx, dir, name, args...)
 	return err
+}
+
+func (r *demuxApplySourceFakeRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
 }
 
 func (r *demuxApplySourceFakeRunner) output(name string, args []string) (string, error) {

@@ -74,13 +74,13 @@ This is required to use GX code review.
 ```md
 Version control: use GX, not `git commit` or `git push`.
 
-Use GX MCP first: `gx_sync`, `gx_generate`, `gx_status`, then `gx_push`.
-If MCP is unavailable, use the CLI fallback: `gx sync`, `gx generate`,
+Use GX MCP first: `gx_sync`, `gx_status`, then `gx_push`.
+If MCP is unavailable, use the CLI fallback: `gx sync`, `git add`, `gx commit`,
 `gx status`, then `gx push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow with GX generate and push ready stacks unless asked to keep
-them local.
+GX save workflow with `git add` + `gx commit` for focused changes, or `gx generate`
+for bulk organization, then push ready stacks unless asked to keep them local.
 
 GX PR summaries are posted for PRs published or adopted by `gx push`. A PR
 created only with raw Git or the GitHub UI will not get a GX summary until that
@@ -100,7 +100,8 @@ only when GX upload credentials are configured.
 ## Basic Workflow
 
 ```bash
-gxg        # gx generate
+git add <files>
+gx commit -m "describe this revision"
 gxs        # gx status
 gx push    # push stacks, metadata, and context
 ```
@@ -110,6 +111,16 @@ Useful review command:
 ```bash
 gxr        # gx review
 ```
+
+### Automatic mode
+
+When you want GX to organize a large working copy into smaller revisions automatically:
+
+```bash
+gxg        # gx generate (hidden from gx --help; still available)
+```
+
+Then inspect with `gx status` and push when ready.
 
 ## MCP
 
@@ -144,5 +155,7 @@ save with gx
 Expected MCP flow:
 
 ```text
-gx_sync -> gx_generate -> gx_status -> gx_push
+gx_sync -> gx_status -> gx_push
 ```
+
+For bulk organization, agents can still call `gx_generate`.

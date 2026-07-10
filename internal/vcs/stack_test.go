@@ -57,6 +57,10 @@ func TestCommitRecoversDetachedWithJJBookmark(t *testing.T) {
 				"workchange\n",
 				"workchange\n",
 			},
+			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
+				"workchange|||parent1\n",
+			},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {"a.txt\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"workchange|abc123|feat one|parent1\n",
 				"workchange|abc123|feat one|parent1\n",
@@ -68,7 +72,7 @@ func TestCommitRecoversDetachedWithJJBookmark(t *testing.T) {
 			},
 			runnerKey(cwd, "jj", "config", "set", "--user", "user.name", "Joe Example"):                  {"", ""},
 			runnerKey(cwd, "jj", "config", "set", "--user", "user.email", "joe@example.com"):             {"", ""},
-			runnerKey(cwd, "jj", "commit", "-m", "feat one"):                                             {"Committed\n"},
+			stampedCommitRunnerKey(cwd, "feat one", "workchange"):                                          {"Committed\n"},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-"):                      {""},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards"): {""},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc123\n"},
@@ -145,6 +149,10 @@ func (r *flakyLockRunner) RunStdout(ctx context.Context, dir, name string, args 
 func (r *flakyLockRunner) RunStream(ctx context.Context, dir, name string, args ...string) error {
 	_, err := r.Run(ctx, dir, name, args...)
 	return err
+}
+
+func (r *flakyLockRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
 }
 
 func TestRunJJGitBackedRetriesGitIndexLock(t *testing.T) {

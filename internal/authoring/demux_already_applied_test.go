@@ -98,6 +98,10 @@ func (r *demuxAlreadyAppliedFakeRunner) RunStream(ctx context.Context, dir, name
 	return err
 }
 
+func (r *demuxAlreadyAppliedFakeRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	return r.Run(ctx, dir, name, args...)
+}
+
 func TestExcludeDemuxAlreadyAppliedContentSkipsFullyAppliedRevision(t *testing.T) {
 	repoRoot := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {

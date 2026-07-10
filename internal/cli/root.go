@@ -117,7 +117,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "set", "login", "demo":
 			cmd.GroupID = groupSetup
-		case "add", "base", "commit", "edit", "generate", "review", "status":
+		case "add", "base", "commit", "edit", "review", "status":
 			cmd.GroupID = groupWork
 		case "push", "sync":
 			cmd.GroupID = groupShip
@@ -739,6 +739,7 @@ func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Co
 		Use:     "generate [filesets...]",
 		Aliases: []string{"gxg"},
 		Short:   "Save your work in branches & commits",
+		Hidden:  true,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -1978,6 +1979,9 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 			return engine.PreservingGitIndex(ctx, func() error {
 				if jsonOut {
 					stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+					if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
+						return enrichErr
+					}
 					stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
 					if writeErr := writeJSON(cmd, stack); writeErr != nil {
 						return writeErr
@@ -1993,7 +1997,8 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&agentOut, "agent", false, "print stable agent-readable text")
-	cmd.Flags().BoolVar(&showAll, "show-all", false, "accepted for compatibility; merged stacks are not shown")
+	cmd.Flags().BoolVar(&showAll, "all", false, "list all changed files in git working tree sections")
+	cmd.Flags().BoolVar(&showAll, "show-all", false, "deprecated alias for --all")
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "open the interactive status browser")
 	if flag := cmd.Flags().Lookup("show-all"); flag != nil {
 		flag.Hidden = true
@@ -2017,6 +2022,9 @@ func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return engine.PreservingGitIndex(ctx, func() error {
 				stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+				if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
+					return enrichErr
+				}
 				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowEmpty: true})
 				if jsonOut {
 					if writeErr := writeJSON(cmd, stack); writeErr != nil {
@@ -2531,7 +2539,7 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	}
 	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
-	next := []string{"gx generate", "gx status"}
+	next := []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"}
 	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
 		next = []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"}
 	}
@@ -2719,6 +2727,9 @@ func newStacksCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOut {
 				stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+				if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
+					return enrichErr
+				}
 				stack = stackSummaryForStacksDisplay(stack, stackDisplayOptions{ShowAll: showAll})
 				if writeErr := writeJSON(cmd, stack); writeErr != nil {
 					return writeErr
@@ -2812,6 +2823,9 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 	if err != nil {
 		return err
 	}
+	if err := enrichStatusStack(ctx, engine, &stack); err != nil {
+		return err
+	}
 	display := stackDisplaySummaryForStacksDisplay(stack, opts)
 	stack = display.Stack
 	if agentOut {
@@ -2841,8 +2855,120 @@ func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 		return runStacksAction(ctx, engine, out, action)
 	}
 	printDeletedEmptyStacksNotice(out, prunedEmpty)
-	printStacksSummary(out, stack, unrecorded, display.HiddenEmpty)
+	printDefaultStatusView(out, stack, unrecorded, display.HiddenEmpty, opts.ShowAll)
 	return nil
+}
+
+func enrichStatusStack(ctx context.Context, engine *authoring.Engine, stack *authoring.StackSummary) error {
+	root := strings.TrimSpace(stack.Repo.RootPath)
+	if root == "" {
+		return nil
+	}
+	gitWorking, err := engine.GitWorkingStatus(ctx, root)
+	if err != nil {
+		return err
+	}
+	stack.GitWorking = gitWorking
+	stack.Next = statusNextHints(gitWorking, *stack)
+	return nil
+}
+
+func statusNextHints(gitWorking vcs.GitWorkingStatus, stack authoring.StackSummary) []string {
+	switch {
+	case gitWorking.StagedCount() > 0:
+		return []string{`gx commit -m "describe this revision"`}
+	case gitWorking.UnstagedCount()+gitWorking.UntrackedCount() > 0:
+		return []string{"git add"}
+	case unpublishedCount(stack) > 0:
+		return []string{vcs.HintPush}
+	default:
+		if pr := currentStackPRURL(stack); pr != "" {
+			return []string{pr}
+		}
+		return nil
+	}
+}
+
+func currentStackPRURL(stack authoring.StackSummary) string {
+	if stack.Stack == nil || stack.Stack.GitHubPRURL == nil {
+		return ""
+	}
+	return strings.TrimSpace(*stack.Stack.GitHubPRURL)
+}
+
+func printDefaultStatusView(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) {
+	fmt.Fprint(out, renderDefaultStatusSummary(stack, unrecorded, hiddenEmpty, showAll))
+}
+
+func renderDefaultStatusSummary(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) string {
+	stack = stackSummaryWithDisplayFallback(stack)
+	var out strings.Builder
+	fmt.Fprintln(&out, commandLine("gx status", true))
+	fmt.Fprintln(&out)
+	if hiddenEmpty > 0 {
+		fmt.Fprintln(&out, muted(emptyStacksNotice(hiddenEmpty)))
+		fmt.Fprintln(&out)
+	}
+	gitLines := gitWorkingSectionLines(stack.GitWorking, showAll)
+	for _, line := range gitLines {
+		fmt.Fprintln(&out, line)
+	}
+	if len(gitLines) > 0 {
+		fmt.Fprintln(&out)
+	}
+	stacks := orderedStacks(stack)
+	currentIdx := currentStackIndex(stack)
+	if len(stacks) == 0 {
+		printCurrentRevisions(&out, stack, unrecorded, 0)
+	} else if currentIdx >= 0 && currentIdx < len(stacks) {
+		entry := stacks[currentIdx]
+		fmt.Fprintln(&out, stacksHeaderLine(stack, 1, false))
+		fmt.Fprintln(&out)
+		fmt.Fprintln(&out, statusBookmarkLine("●", entry, stackStatusMeta(stack, entry), true))
+		fmt.Fprint(&out, renderStackRevisionLines(stack, entry, unrecorded, latestRevisionDisplayIndex(stack.Revisions, unrecorded)))
+		other := len(stacks) - 1
+		if other > 0 {
+			fmt.Fprintln(&out)
+			fmt.Fprintf(&out, "%s\n", muted(fmt.Sprintf("%d other stacks — run gx status list", other)))
+		}
+	} else {
+		fmt.Fprint(&out, renderStacksSummaryWithHidden(stack, unrecorded, 0, false, latestRevisionDisplayIndex(stack.Revisions, unrecorded), hiddenEmpty))
+		return strings.TrimRight(out.String(), "\n") + "\n"
+	}
+	if len(stack.Next) > 0 {
+		fmt.Fprintln(&out)
+		fmt.Fprintln(&out, section("Next"))
+		for _, hint := range stack.Next {
+			fmt.Fprintf(&out, "  %s\n", command(hint))
+		}
+	}
+	return strings.TrimRight(out.String(), "\n") + "\n"
+}
+
+func gitWorkingSectionLines(status vcs.GitWorkingStatus, showAll bool) []string {
+	var lines []string
+	lines = append(lines, gitWorkingFileLines("Staged", status.Staged, showAll)...)
+	lines = append(lines, gitWorkingFileLines("Unstaged", status.Unstaged, showAll)...)
+	lines = append(lines, gitWorkingFileLines("Untracked", status.Untracked, showAll)...)
+	return lines
+}
+
+func gitWorkingFileLines(title string, files []string, showAll bool) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	lines := []string{section(title)}
+	display := files
+	if !showAll && len(files) > 3 {
+		display = files[:3]
+	}
+	for _, file := range display {
+		lines = append(lines, "  "+danger(file))
+	}
+	if !showAll && len(files) > 3 {
+		lines = append(lines, muted(fmt.Sprintf("  ... %d more (gx status --all)", len(files)-3)))
+	}
+	return lines
 }
 
 func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine) (authoring.StackSummary, int, error) {
@@ -3373,6 +3499,12 @@ func latestRevisionDisplayIndex(revisions []authoring.RevisionSummary, unrecorde
 
 func printStatusAgent(out io.Writer, stack authoring.StackSummary, selector string) {
 	stack = stackSummaryWithDisplayFallback(stack)
+	if len(stack.GitWorking.Staged) > 0 {
+		fmt.Fprintf(out, "staged: %s\n", quoteAgent(strings.Join(stack.GitWorking.Staged, " ")))
+	}
+	if len(stack.Next) > 0 {
+		fmt.Fprintf(out, "next: %s\n", quoteAgent(strings.Join(stack.Next, " ")))
+	}
 	if strings.TrimSpace(selector) != "" {
 		target, ok := findStack(stack, selector)
 		if !ok {
@@ -3441,7 +3573,7 @@ func printModifySummary(out io.Writer, result authoring.ModifyResult) {
 		fmt.Fprintln(out, labelToken("git branch", strings.TrimSpace(*result.Repo.BranchName)))
 	}
 	fmt.Fprintln(out, muted(strings.Repeat("-", 48)))
-	fmt.Fprintln(out, labelToken("next", "gx generate"))
+	fmt.Fprintln(out, labelToken("next", `git add <files> && gx commit -m "describe this revision"`))
 }
 
 func stackAgentLine(summary authoring.StackSummary, entry authoring.StackInfo, includeName bool) string {

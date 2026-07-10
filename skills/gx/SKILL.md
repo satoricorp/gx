@@ -34,9 +34,13 @@ Start here unless there is a specific reason not to:
 
 ```bash
 gx init
-gx compose
+git add <files>
+gx commit -m "describe this revision"
+gx status
 gx publish
 ```
+
+For bulk organization of a large working copy, agents can still use the hidden `gx generate` command (`gxg`).
 
 ## Minimize approval churn
 
@@ -44,7 +48,9 @@ The normal goal is one command per intent.
 
 - Do not run extra `gx status`, `git branch`, or raw `jj bookmark` commands unless they are needed to answer a real question.
 - Do not run a read command before and after every write command by default.
-- Treat `gx compose` as the normal "propose or update work" command. Repeated runs layer new working-copy changes into the single pending compose proposal.
+- Use `gx commit` (after `git add`) as the normal staged revision recording path.
+- Use `gx generate` only when the user wants bulk organization of many files into multiple revisions.
+- Use `gx compose` when the user explicitly asks for compose/proposal workflow.
 - If `gx compose --json` returns a ready proposal, accept it into stacks. Run review/repair commands only when the proposal has warning-severity issues, repair hints, invalid grouping, or other problems.
 - Accept ready revisions from the compose flow before publishing. Accepted revisions move out of the pending proposal and into `gx stacks`.
 - Use `gx status` when the user asks what files or message state are waiting in the working copy.
@@ -58,15 +64,24 @@ The normal goal is one command per intent.
 Preferred flow:
 
 ```bash
-gx compose
+git add <files>
+gx commit -m "message"
+gx status
+gx publish
+```
+
+Bulk-organize flow (agents only when appropriate):
+
+```bash
+gx generate
+gx status
 gx publish
 ```
 
 Not preferred by default:
 
 ```bash
-git add <files>
-gx commit -m "message"
+gx compose
 gx publish
 ```
 
@@ -155,7 +170,8 @@ git rev-parse --abbrev-ref HEAD
 - `gx edit` is the explicit utility command for re-entering a revision. In codegen/MCP and repair flows it reattaches the visible Git checkout to the real stack branch when one exists after JJ edit operations to avoid detached-HEAD confusion.
 - `gx commit` records staged Git changes (`git add` first) as a JJ-backed GX revision. From the base branch it mints a stack from the message; from an active branch it appends to that stack.
 - `gx add` remains as a deprecated alias for direct revision recording; prefer `git add` + `gx commit`.
-- `gx status` shows the current revision, message state, changed files, and next commands. It should point normal work toward `gx compose`.
+- `gx status` shows the current revision, message state, changed files, and next commands. It should point normal work toward `git add` + `gx commit`.
+- `gx generate` (hidden from `gx --help`, alias `gxg`) bulk-organizes working-copy changes into smaller revisions and stacks.
 - `gx stacks` shows accepted GX stacks/revisions and what `gx publish` will publish. It is interactive for humans and exposes `--agent`, `--json`, and subcommands for programmatic workflows.
 - `gx publish` records pushes locally, exports stacked refs to GitHub, and registers publish/CI status in gx cloud (release builds include production endpoints; use `GX_CLOUD_URL` to override locally).
 - `gx auth login` authenticates with GitHub device flow, stores the GitHub OAuth token locally, and syncs it to the console auth endpoint.

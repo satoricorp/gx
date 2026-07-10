@@ -28,6 +28,10 @@ func (cloudSyncNoopRunner) RunStream(context.Context, string, string, ...string)
 	return fmt.Errorf("unexpected runner stream call")
 }
 
+func (cloudSyncNoopRunner) RunWithStdin(context.Context, string, string, string, ...string) (string, error) {
+	return "", fmt.Errorf("unexpected runner stdin call")
+}
+
 func TestSyncCloudMetadataDeletesMergedBookmarksAndPrunesPublishedStack(t *testing.T) {
 	ctx := context.Background()
 	repoRoot := t.TempDir()

@@ -29,6 +29,7 @@ type Runner interface {
 	Run(ctx context.Context, dir, name string, args ...string) (string, error)
 	RunStdout(ctx context.Context, dir, name string, args ...string) (string, error)
 	RunStream(ctx context.Context, dir, name string, args ...string) error
+	RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error)
 }
 
 type ExecRunner struct{}
@@ -78,6 +79,21 @@ func (ExecRunner) RunStream(ctx context.Context, dir, name string, args ...strin
 		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
 	return nil
+}
+
+func (ExecRunner) RunWithStdin(ctx context.Context, dir, name string, stdin string, args ...string) (string, error) {
+	exe, err := resolveExecutable(name)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }
 
 func resolveExecutable(name string) (string, error) {
@@ -332,6 +348,9 @@ type StackSummary struct {
 	MissingBaseRefs        []MissingStackBaseRef `json:"missing_base_refs,omitempty"`
 	NeedsRebaseOntoDefault bool                  `json:"needs_rebase_onto_default,omitempty"`
 	RepairCommand          string                `json:"repair_command,omitempty"`
+
+	GitWorking GitWorkingStatus `json:"git_working,omitempty"`
+	Next       []string         `json:"next,omitempty"`
 }
 
 type InitOptions struct {
@@ -548,7 +567,8 @@ func (s *Service) recordCurrentRevisionInNewStack(ctx context.Context, stackName
 }
 
 func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo RepoInfo, stackBookmark, message string, reconcile bool) (CommitResult, error) {
-	if err := ValidateCommitMessage(message); err != nil {
+	message, err := s.finalizedMessageForWorkingCopy(ctx, repo.RootPath, message)
+	if err != nil {
 		return CommitResult{}, err
 	}
 	checkoutBranch := recordedEditCheckoutBranch(repo)
@@ -600,7 +620,8 @@ func (s *Service) commitCurrentRevisionInStackUnlocked(ctx context.Context, repo
 }
 
 func (s *Service) commitCurrentRevisionInNewStackUnlocked(ctx context.Context, repo RepoInfo, stackName, bookmarkName, baseRef, message string, reconcile bool) (CommitResult, error) {
-	if err := ValidateCommitMessage(message); err != nil {
+	message, err := s.finalizedMessageForWorkingCopy(ctx, repo.RootPath, message)
+	if err != nil {
 		return CommitResult{}, err
 	}
 	checkoutBranch := recordedEditCheckoutBranch(repo)
@@ -750,7 +771,8 @@ func (s *Service) resolveAppendExistingStack(ctx context.Context, store *storage
 }
 
 func (s *Service) commitUnlocked(ctx context.Context, repo RepoInfo, message string) (CommitResult, error) {
-	if err := ValidateCommitMessage(message); err != nil {
+	message, err := s.finalizedMessageForWorkingCopy(ctx, repo.RootPath, message)
+	if err != nil {
 		return CommitResult{}, err
 	}
 	body, err := s.resolveCurrentStackWithDescription(ctx, repo, true, message)
@@ -789,6 +811,67 @@ func (s *Service) commitUnlocked(ctx context.Context, repo RepoInfo, message str
 	}, nil
 }
 
+func (s *Service) finalizedMessageForWorkingCopy(ctx context.Context, repoRoot, message string) (string, error) {
+	current, err := s.CurrentChange(ctx, repoRoot, "@")
+	if err != nil {
+		return "", err
+	}
+	return FinalizeCommitMessage(message, current.ChangeID)
+}
+
+func (s *Service) ensureRevisionDescription(ctx context.Context, repoRoot, changeID, message string) error {
+	change, err := s.CurrentChange(ctx, repoRoot, changeID)
+	if err != nil {
+		return err
+	}
+	if revisionTrailerPresent(change.Description, change.ChangeID) {
+		return nil
+	}
+	stamped, err := FinalizeCommitMessage(message, change.ChangeID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(change.Description) == strings.TrimSpace(stamped) {
+		return nil
+	}
+	if err := s.describeRevisionFromStdin(ctx, repoRoot, changeID, stamped); err != nil {
+		return err
+	}
+	_, err = s.runner.Run(ctx, repoRoot, "jj", "git", "export")
+	return err
+}
+
+func (s *Service) describeRevisionFromStdin(ctx context.Context, repoRoot, rev, message string) error {
+	_, err := s.runner.RunWithStdin(ctx, repoRoot, "jj", message, "describe", "-r", rev, "--stdin")
+	if err != nil {
+		return fmt.Errorf("jj describe: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) rewriteGitCommitMessage(ctx context.Context, repoRoot, commitID, message string) (string, error) {
+	name, email, err := s.commitTreeIdentity(ctx, repoRoot)
+	if err != nil {
+		return "", err
+	}
+	parent, err := s.runTrimmed(ctx, repoRoot, "git", "rev-parse", commitID+"^")
+	if err != nil {
+		return "", fmt.Errorf("read commit parent: %w", err)
+	}
+	tree, err := s.runTrimmed(ctx, repoRoot, "git", "rev-parse", commitID+"^{tree}")
+	if err != nil {
+		return "", fmt.Errorf("read commit tree: %w", err)
+	}
+	newID, err := s.runTrimmed(ctx, repoRoot, "git",
+		"-c", "user.name="+name,
+		"-c", "user.email="+email,
+		"commit-tree", tree, "-p", parent, "-m", message)
+	if err != nil {
+		return "", fmt.Errorf("rewrite commit message: %w", err)
+	}
+	return strings.TrimSpace(newID), nil
+}
+
 func (s *Service) SplitCommit(ctx context.Context, opts SplitCommitOptions) (CommitResult, error) {
 	if opts.Hunk {
 		return s.splitCommitByHunkPatchLocked(ctx, opts)
@@ -807,9 +890,11 @@ func (s *Service) SplitCommit(ctx context.Context, opts SplitCommitOptions) (Com
 }
 
 func (s *Service) splitCommitUnlocked(ctx context.Context, repo RepoInfo, opts SplitCommitOptions) (CommitResult, error) {
-	if err := ValidateCommitMessage(opts.Message); err != nil {
+	message, err := s.finalizedMessageForWorkingCopy(ctx, repo.RootPath, opts.Message)
+	if err != nil {
 		return CommitResult{}, err
 	}
+	opts.Message = message
 	body, err := s.resolveCurrentStackWithDescription(ctx, repo, true, opts.Message)
 	if err != nil {
 		return CommitResult{}, err
@@ -959,7 +1044,15 @@ func (s *Service) SplitCommitByHunkPatch(ctx context.Context, opts SplitCommitOp
 	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"); err != nil {
 		return CommitResult{}, err
 	}
-	if _, err := s.runner.Run(ctx, repo.RootPath, "jj", "describe", "-m", opts.Message, "-r", "@-"); err != nil {
+	recorded, err := s.CurrentChange(ctx, repo.RootPath, "@-")
+	if err != nil {
+		return CommitResult{}, err
+	}
+	finalMessage, err := FinalizeCommitMessage(opts.Message, recorded.ChangeID)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := s.describeRevisionFromStdin(ctx, repo.RootPath, "@-", finalMessage); err != nil {
 		return CommitResult{}, err
 	}
 	change, err := s.CurrentChange(ctx, repo.RootPath, "@-")

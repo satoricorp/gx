@@ -261,6 +261,41 @@ func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInf
 	if err != nil {
 		return CommitResult{}, err
 	}
+	stamped, err := FinalizeCommitMessage(opts.Message, change.ChangeID)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := s.describeRevisionFromStdin(ctx, repoRoot, change.ChangeID, stamped); err != nil {
+		return CommitResult{}, err
+	}
+	if _, err := s.runner.Run(ctx, repoRoot, "jj", "git", "export"); err != nil {
+		return CommitResult{}, fmt.Errorf("export jj after stamped revision: %w", err)
+	}
+	if tipCommit, err := s.runTrimmed(ctx, repoRoot, "git", "rev-parse", "HEAD"); err != nil {
+		return CommitResult{}, fmt.Errorf("read HEAD after jj export: %w", err)
+	} else if err := s.attachGitBranch(ctx, repoRoot, stack.BookmarkName, tipCommit, false); err != nil {
+		return CommitResult{}, err
+	}
+	change, err = s.CurrentChange(ctx, repoRoot, "@-")
+	if err != nil {
+		return CommitResult{}, err
+	}
+	stamped, err = FinalizeCommitMessage(opts.Message, change.ChangeID)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if !revisionTrailerPresent(change.Description, change.ChangeID) {
+		if err := s.describeRevisionFromStdin(ctx, repoRoot, change.ChangeID, stamped); err != nil {
+			return CommitResult{}, err
+		}
+		change, err = s.CurrentChange(ctx, repoRoot, "@-")
+		if err != nil {
+			return CommitResult{}, err
+		}
+	}
+	if err := s.abandonUndescribedJJChangesExceptWorkingCopy(ctx, repoRoot); err != nil {
+		return CommitResult{}, err
+	}
 	if err := validateRecordedChangeDescription(change.Description); err != nil {
 		return CommitResult{}, err
 	}
@@ -490,6 +525,23 @@ func (s *Service) changeIDForRevIgnoreWorkingCopy(ctx context.Context, repoRoot,
 
 func (s *Service) currentOperationIgnoreWorkingCopy(ctx context.Context, repoRoot string) (string, error) {
 	return s.runStdoutTrimmed(ctx, repoRoot, "jj", "op", "log", "--ignore-working-copy", "-n", "1", "--no-graph", "-T", "id")
+}
+
+func (s *Service) abandonUndescribedJJChangesExceptWorkingCopy(ctx context.Context, repoRoot string) error {
+	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", `description("") ~ @`, "--ignore-working-copy", "--no-graph", "-T", "change_id")
+	if err != nil {
+		return err
+	}
+	for _, changeID := range splitLines(out) {
+		changeID = strings.TrimSpace(changeID)
+		if changeID == "" || strings.Trim(changeID, "z") == "" {
+			continue
+		}
+		if err := s.abandonOrphanWorkingCopyChange(ctx, repoRoot, changeID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) abandonOrphanWorkingCopyChange(ctx context.Context, repoRoot, changeID string) error {

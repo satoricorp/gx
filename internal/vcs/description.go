@@ -10,6 +10,8 @@ import (
 const (
 	PlaceholderDescription      = "(no description set)"
 	PendingRemainderDescription = "gx: pending remainder"
+	// RevisionTrailerFormat is the GX identity trailer line template.
+	RevisionTrailerFormat = "GX: https://gx.run/r/%s"
 )
 
 var (
@@ -34,6 +36,41 @@ func ValidateCommitMessage(message string) error {
 		return fmt.Errorf("commit message cannot be %q", PlaceholderDescription)
 	}
 	return nil
+}
+
+func RevisionTrailerLine(revisionID string) string {
+	revisionID = strings.TrimSpace(revisionID)
+	if revisionID == "" {
+		return ""
+	}
+	return fmt.Sprintf(RevisionTrailerFormat, revisionID)
+}
+
+func StampRevisionTrailer(message, revisionID string) string {
+	revisionID = strings.TrimSpace(revisionID)
+	if revisionID == "" {
+		return message
+	}
+	trailer := RevisionTrailerLine(revisionID)
+	if trailer == "" || revisionTrailerPresent(message, revisionID) {
+		return message
+	}
+	body := strings.TrimRight(message, "\n")
+	if body == "" {
+		return trailer
+	}
+	return body + "\n\n" + trailer
+}
+
+func revisionTrailerPresent(message, revisionID string) bool {
+	return strings.Contains(message, RevisionTrailerLine(revisionID))
+}
+
+func FinalizeCommitMessage(message, revisionID string) (string, error) {
+	if err := ValidateCommitMessage(message); err != nil {
+		return "", err
+	}
+	return StampRevisionTrailer(message, revisionID), nil
 }
 
 func validateRecordedChangeDescription(description string) error {

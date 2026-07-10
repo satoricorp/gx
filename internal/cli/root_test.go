@@ -172,6 +172,77 @@ func TestPrintStacksSummaryShowsUnstagedFilesWithoutStacks(t *testing.T) {
 	}
 }
 
+func TestStatusNextHints(t *testing.T) {
+	clean := vcs.GitWorkingStatus{}
+	dirty := vcs.GitWorkingStatus{Unstaged: []string{"a.go"}}
+	staged := vcs.GitWorkingStatus{Staged: []string{"a.go"}}
+	unpushed := authoring.StackSummary{
+		Revisions: []authoring.RevisionSummary{{Published: false}},
+	}
+	prURL := "https://github.com/acme/gx/pull/7"
+	pushed := authoring.StackSummary{
+		Stack:     &authoring.StackInfo{GitHubPRURL: &prURL},
+		Revisions: []authoring.RevisionSummary{{Published: true}},
+	}
+
+	if got := statusNextHints(staged, authoring.StackSummary{}); len(got) != 1 || !strings.Contains(got[0], "gx commit") {
+		t.Fatalf("staged hints = %v, want gx commit", got)
+	}
+	if got := statusNextHints(dirty, authoring.StackSummary{}); len(got) != 1 || got[0] != "git add" {
+		t.Fatalf("dirty hints = %v, want git add", got)
+	}
+	if got := statusNextHints(clean, unpushed); len(got) != 1 || got[0] != vcs.HintPush {
+		t.Fatalf("unpushed hints = %v, want %q", got, vcs.HintPush)
+	}
+	if got := statusNextHints(clean, pushed); len(got) != 1 || got[0] != prURL {
+		t.Fatalf("pushed hints = %v, want PR URL", got)
+	}
+	if got := statusNextHints(clean, authoring.StackSummary{}); got != nil {
+		t.Fatalf("clean hints = %v, want nil", got)
+	}
+}
+
+func TestRenderDefaultStatusSummaryShowsGitSectionsAndNext(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	current := authoring.StackInfo{Name: "waitlist", Alias: "waitlist", BookmarkName: "feature/waitlist", BaseRef: "main", Status: "draft"}
+	stack := authoring.StackSummary{
+		Repo:  authoring.RepoInfo{RootPath: "/tmp/console"},
+		Stack: &current,
+		Stacks: []authoring.StackInfo{
+			current,
+			{Name: "other", Alias: "other", BookmarkName: "feature/other", BaseRef: "main", Status: "draft", RevisionCount: 1},
+		},
+		Revisions: []authoring.RevisionSummary{{ChangeID: "abc", Description: "payload sync"}},
+		GitWorking: vcs.GitWorkingStatus{
+			Staged:    []string{"internal/cli/root.go"},
+			Untracked: []string{"scratch.txt"},
+		},
+		Next: []string{`gx commit -m "describe this revision"`},
+	}
+
+	text := renderDefaultStatusSummary(stack, nil, 0, false)
+	for _, want := range []string{
+		"$ gx status",
+		"Staged",
+		"internal/cli/root.go",
+		"Untracked",
+		"scratch.txt",
+		"waitlist",
+		"1 other stacks — run gx status list",
+		"Next",
+		`gx commit -m "describe this revision"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("renderDefaultStatusSummary() missing %q in:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{"Unstaged", "other · feature/other"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("renderDefaultStatusSummary() should not include %q:\n%s", unwanted, text)
+		}
+	}
+}
+
 func TestRenderStacksSummaryUsesDisplayFallbackWhenOnlyRevisionsAreKnown(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	branch := "feature/change-kxwqpvuo"
@@ -444,7 +515,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		},
 		NeedsMessage:  true,
 		Files:         []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
-		Next:          []string{"gx generate -a", "gx status"},
+		Next:          []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
 		GitStatusNote: "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -457,7 +528,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		"internal/cli/stacks_tui.go",
 		"gx stores new changes in revisions, so `git status` may be clean.",
 		"Next",
-		"gx generate -a",
+		"gx commit -m \"describe this revision\"",
 		"gx status",
 	} {
 		if !strings.Contains(text, want) {
@@ -523,7 +594,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 	status := currentStatus{
 		PublishUploads: publication.QueueStatus{LastError: `POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`},
 		Files:          []string{"internal/github/client_test.go"},
-		Next:           []string{"gx generate -a", "gx status"},
+		Next:           []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
 		GitStatusNote:  "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -534,7 +605,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 		`ERROR: POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`,
 		"Run `gx report` to report this issue.",
 		"internal/github/client_test.go",
-		"gx generate -a",
+		"gx commit -m \"describe this revision\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
@@ -819,7 +890,7 @@ func TestPrintModifySummaryKeepsTargetAndNextCommand(t *testing.T) {
 		"commit abcdef12",
 		"message Review demux hunk coverage",
 		"stack waitlist + gx-pr",
-		"next gx generate",
+		"next git add <files> && gx commit -m \"describe this revision\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printModifySummary() missing %q in:\n%s", want, text)
@@ -1582,10 +1653,13 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	if !strings.Contains(text, "Not signed in  gx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	for _, want := range []string{"review (gxr)", "generate (gxg)", "status (gxs)"} {
+	for _, want := range []string{"review (gxr)", "status (gxs)", "commit"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("root help missing alias %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "generate (gxg)") {
+		t.Fatalf("root help should hide generate:\n%s", text)
 	}
 	if strings.Contains(text, "Shortcuts:") {
 		t.Fatalf("root help should render aliases inline instead of a shortcut section:\n%s", text)

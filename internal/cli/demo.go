@@ -74,10 +74,7 @@ func (d *demoSession) run() error {
 	if err := d.stacksOutput(); err != nil {
 		return err
 	}
-	if err := d.composePrompt(); err != nil {
-		return err
-	}
-	if err := d.composeOutputAndAcceptPrompt(); err != nil {
+	if err := d.automaticModeNote(); err != nil {
 		return err
 	}
 	if err := d.publishPrompt(); err != nil {
@@ -148,41 +145,12 @@ func (d *demoSession) stacksOutput() error {
 	return d.wait()
 }
 
-func (d *demoSession) composePrompt() error {
+func (d *demoSession) automaticModeNote() error {
 	d.beginScreen()
-	d.println(demoWhite("The ") + demoWhite("`gx commit`") + demoMint(" is very similar to other commands you're already used to, like ") + demoWhite("`git commit`") + demoMint("."))
-	d.println(demoWhite("`gx commit`") + demoMint(" should be used sparingly, since we want to use gx to save ourselves time."))
+	d.println(demoWhite("`gx commit`") + demoMint(" records one focused revision at a time."))
+	d.println(demoWhite("For bulk organization, ") + demoWhite("`gx generate`") + demoMint(" can automatically split your working copy into smaller revisions."))
 	d.println("")
-	d.println(demoWhite("Let's automate this process."))
-	d.println(demoWhite("We have new changes in our /tmp directory, but instead of running ") + demoWhite("`gx commit`") + demoWhite(", let's try a new command. Type:"))
-	d.println("")
-	d.println(demoMint("gx generate"))
-	d.println("")
-	_, err := d.promptCommand("gx generate", []string{"gx generate"})
-	return err
-}
-
-func (d *demoSession) composeOutputAndAcceptPrompt() error {
-	d.beginScreen()
-	d.println(demoCommandOutput("$ gx generate"))
-	d.println(demoCommandOutput("Generated demo-stack"))
-	d.println(demoCommandOutput("● demo-stack"))
-	d.println(demoCommandOutput("    r2  add friendly greeting"))
-	d.println(demoCommandOutput("        hello.txt"))
-	d.println(demoCommandOutput("    r3  document demo workspace"))
-	d.println(demoCommandOutput("        README.md"))
-	d.println(demoCommandOutput(""))
-	d.println(demoCommandOutput("Next: gx status, then gx push"))
-	d.println("")
-	d.println(demoWhite("`gx generate`") + demoMint(" reviews all of your code changes and creates local stacks and revisions for you."))
-	d.println(demoWhite("No more manual commits for this demo."))
-	d.println("")
-	d.println(demoWhite("You may notice that the revisions are small. This is to help you during the code review process."))
-	d.println(demoWhite("Smaller code changes make it easier to understand what you're merging and easier to suggest changes."))
-	d.println("")
-	d.println(demoWhite("You can inspect generated work with ") + demoWhite("`gx status`") + demoMint(" before pushing."))
-	d.println("")
-	d.println(demoMint("Type:"))
+	d.println(demoWhite("Inspect what is ready to push. Type:"))
 	d.println("")
 	d.println(demoMint("gx status"))
 	d.println("")

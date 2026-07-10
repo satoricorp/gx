@@ -38,6 +38,7 @@ type SyncResult = vcs.SyncResult
 type RevisionSummary = vcs.RevisionSummary
 type StackSummary = vcs.StackSummary
 type StatusSnapshot = vcs.StatusSnapshot
+type GitWorkingStatus = vcs.GitWorkingStatus
 
 const (
 	PublishModeReviewOnly   = vcs.PublishModeReviewOnly
@@ -196,6 +197,10 @@ func (e *Engine) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
 // the user staged with git add.
 func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {
 	return e.vcs.PreservingGitIndexForCwd(ctx, fn)
+}
+
+func (e *Engine) GitWorkingStatus(ctx context.Context, repoRoot string) (GitWorkingStatus, error) {
+	return e.vcs.GitWorkingStatus(ctx, repoRoot)
 }
 
 func (e *Engine) CurrentChange(ctx context.Context, repoRoot, rev string) (ChangeInfo, error) {
