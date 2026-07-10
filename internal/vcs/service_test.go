@@ -51,6 +51,25 @@ func TestStackMatchesDirectNameRequiresStackNameOrBookmarkRef(t *testing.T) {
 	}
 }
 
+func TestShouldReturnCleanCheckoutToBase(t *testing.T) {
+	cases := []struct {
+		ref  string
+		want bool
+	}{
+		{"", true},               // detached HEAD
+		{"gx/base", true},        // legacy internal checkout
+		{"gx/edit/foo", true},    // legacy internal checkout
+		{"main", false},          // deliberate checkout stays put
+		{"feature/thing", false}, // deliberate checkout stays put
+		{"bug/fix-something", false},
+	}
+	for _, tc := range cases {
+		if got := shouldReturnCleanCheckoutToBase(tc.ref); got != tc.want {
+			t.Fatalf("shouldReturnCleanCheckoutToBase(%q) = %v, want %v", tc.ref, got, tc.want)
+		}
+	}
+}
+
 func TestRepoAuthoringBaseRefNormalizesLegacyGXStackBookmark(t *testing.T) {
 	base := "gx/source-stack"
 	repo := RepoInfo{AuthoringBase: &base}
@@ -762,11 +781,11 @@ func TestRecordPushStoresGitHubPRURL(t *testing.T) {
 			RemoteURL:     ptr("git@github.com:satoricorp/gx.git"),
 			BranchName:    ptr("feature/demo"),
 		},
-		RemoteName:     ptr("origin"),
-		GXStackRef:     "feature/demo",
+		RemoteName:      ptr("origin"),
+		GXStackRef:      "feature/demo",
 		GitPublishedRef: remoteRef,
-		GitExported:    true,
-		HeadCommitID:   "head123",
+		GitExported:     true,
+		HeadCommitID:    "head123",
 		Stack: &StackInfo{
 			Name:         "Demo stack",
 			BookmarkName: "feature/demo",
@@ -2764,7 +2783,7 @@ func TestCommitUpdatesStackBookmarkAndAttachesGitBranch(t *testing.T) {
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|||parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                      {"a.txt\n"},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {"a.txt\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|abc123|feat one|parent1\n",
 				"chg123|abc123|feat one|parent1\n",
@@ -2840,14 +2859,14 @@ func TestSplitCommitUsesJJSplitAndRecordsSelectedChange(t *testing.T) {
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"wc-chg|||parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                           {"src/app.ts\n"},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {"src/app.ts\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|abc123|feat selected|parent1\n",
 				"chg123|abc123|feat selected|parent1\n",
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                           {"src/app.ts\n", "src/app.ts\n"},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-selected", "-r", "@-"):                      {""},
-			stampedSplitRunnerKey(cwd, "feat selected", "wc-chg", "src/app.ts"):                                {"Split\n"},
+			stampedSplitRunnerKey(cwd, "feat selected", "wc-chg", "src/app.ts"):                               {"Split\n"},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-selected", "-r", "@-", "--allow-backwards"): {""},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                          {"abc123\n"},
 			runnerKey(cwd, "jj", "log", "-r", "feature/feat-selected", "--no-graph", "-T", "commit_id"):       {"abc123\n"},
@@ -2947,7 +2966,7 @@ func TestRecordRevisionCommitsAndPersistsMetadata(t *testing.T) {
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|||parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                      {"a.txt\n"},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {"a.txt\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|abc123|feat one|parent1\n",
 				"chg123|abc123|feat one|parent1\n",
@@ -3080,7 +3099,7 @@ func TestRecordRevisionFromStackCheckoutReattachesGitHeadToStackBranch(t *testin
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):             {"internal/cli/root.go\n"},
 			runnerKey(cwd, "jj", "bookmark", "list", "-T", jjBookmarkListTmpl): {"feature/edits|edit-chg\n"},
-			stampedCommitRunnerKey(cwd, "all loose", "edit-chg"):                  {"Committed\n"},
+			stampedCommitRunnerKey(cwd, "all loose", "edit-chg"):               {"Committed\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"recorded-chg|a6fcefbe|all loose|edit-chg\n",
 				"recorded-chg|a6fcefbe|all loose|edit-chg\n",
@@ -3739,7 +3758,7 @@ func TestCommitCreatesStackBookmarkWithoutActiveBranch(t *testing.T) {
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg|||parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                                      {""},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {""},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg|abc|desc|\n",
 				"chg|abc|desc|\n",
@@ -3747,7 +3766,7 @@ func TestCommitCreatesStackBookmarkWithoutActiveBranch(t *testing.T) {
 			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                                      {"", ""},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-"):                      {""},
 			runnerKey(cwd, "jj", "bookmark", "set", "feature/feat-one", "-r", "@-", "--allow-backwards"): {""},
-			stampedCommitRunnerKey(cwd, "feat one", "chg"):                                             {""},
+			stampedCommitRunnerKey(cwd, "feat one", "chg"):                                               {""},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):                     {"abc\n"},
 			runnerKey(cwd, "jj", "log", "-r", "feature/feat-one", "--no-graph", "-T", "commit_id"):       {"abc\n"},
 			runnerKey(cwd, "git", "update-ref", "refs/heads/feature/feat-one", "abc"):                    {""},
@@ -3871,14 +3890,14 @@ func TestCommitUsesGXMentionSessionForStackBookmark(t *testing.T) {
 			runnerKey(cwd, "jj", "log", "-r", "@", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|||parent1\n",
 			},
-			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"):                            {"a.txt\n"},
+			runnerKey(cwd, "jj", "diff", "-r", "@", "--name-only"): {"a.txt\n"},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "|" ++ description.first_line() ++ "|" ++ parents.map(|c| c.change_id()).join(",") ++ "\n"`): {
 				"chg123|abc123|old desc|parent1\n",
 				"chg123|abc123|feat one|parent1\n",
 			},
 			runnerKey(cwd, "jj", "diff", "-r", "@-", "--name-only"):                            {"a.txt\n", "a.txt\n"},
 			runnerKey(cwd, "jj", "bookmark", "set", bookmark, "-r", "@-"):                      {""},
-			stampedCommitRunnerKey(cwd, "feat one", "chg123"):                                   {"Committed\n"},
+			stampedCommitRunnerKey(cwd, "feat one", "chg123"):                                  {"Committed\n"},
 			runnerKey(cwd, "jj", "bookmark", "set", bookmark, "-r", "@-", "--allow-backwards"): {""},
 			runnerKey(cwd, "jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"):           {"abc123\n"},
 			runnerKey(cwd, "jj", "log", "-r", bookmark, "--no-graph", "-T", "commit_id"):       {"abc123\n"},
@@ -4255,14 +4274,14 @@ func TestSplitCommitByHunkPatchDescribesRecordedRevisionWithIntent(t *testing.T)
 				"app.go\napp_test.go\n",
 				"app.go\napp_test.go\n",
 			},
-			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                {""},
-			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                             {""},
-			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                      {""},
-			runnerKey(repoRoot, "jj", "split", "-m", intent, "app.go", "app_test.go"):                  {""},
+			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                   {""},
+			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                                {""},
+			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                         {""},
+			runnerKey(repoRoot, "jj", "split", "-m", intent, "app.go", "app_test.go"):                     {""},
 			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "work-change"): {""},
-			runnerKey(repoRoot, "jj", "edit", "@-"):                                                    {""},
-			runnerKey(repoRoot, "jj", "edit", "work-change"):                                           {""},
-			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"):          {""},
+			runnerKey(repoRoot, "jj", "edit", "@-"):                                                       {""},
+			runnerKey(repoRoot, "jj", "edit", "work-change"):                                              {""},
+			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "@"):           {""},
 			runnerKey(repoRoot, "jj", "log", "-r", "@-", "--no-graph", "-T", changeTemplate): {
 				recordedChangeID + "|recorded-commit|" + intent + "|work-change\n",
 			},
@@ -4353,13 +4372,13 @@ func TestSplitCommitByHunkPatchDescribesEmptyRemainderBeforeEditingAway(t *testi
 				"app.go\napp_test.go\n",
 				"app.go\napp_test.go\n",
 			},
-			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                {""},
-			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                             {""},
-			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                      {""},
-			runnerKey(repoRoot, "jj", "split", "-m", "split selected hunk", "app.go", "app_test.go"):   {""},
+			runnerKey(repoRoot, "git", "apply", "-R", "--whitespace=nowarn", patchFile):                    {""},
+			runnerKey(repoRoot, "git", "diff", "--binary", "--full-index"):                                 {""},
+			runnerKey(repoRoot, "git", "apply", "--whitespace=nowarn", patchFile):                          {""},
+			runnerKey(repoRoot, "jj", "split", "-m", "split selected hunk", "app.go", "app_test.go"):       {""},
 			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "child-change"): {""},
 			runnerKey(repoRoot, "jj", "describe", "-m", PendingRemainderDescription, "-r", "work-change"):  {""},
-			runnerKey(repoRoot, "jj", "edit", "@-"):                                                    {""},
+			runnerKey(repoRoot, "jj", "edit", "@-"):                                                        {""},
 		},
 		errors: map[string][]error{
 			runnerKey(repoRoot, "jj", "edit", "child-change"): {fmt.Errorf("child unexpectedly abandoned")},
