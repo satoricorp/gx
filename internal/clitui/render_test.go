@@ -70,7 +70,7 @@ func TestRenderModifyResultIncludesNextStep(t *testing.T) {
 		"bookmark",
 		"waitlist + gx-pr",
 		"next",
-		`gx add -m "Validate demux hunk coverage"`,
+		`gx commit -m "Validate demux hunk coverage"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("RenderModifyResult() missing %q in:\n%s", want, got)

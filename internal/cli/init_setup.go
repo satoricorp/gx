@@ -29,7 +29,7 @@ Default flow:
 Use GX MCP first: ` + "`gx_sync`" + `, ` + "`gx_status`" + `, then ` + "`gx_commit`" + ` / ` + "`gx_push`" + `.
 If MCP is unavailable, use the CLI fallback: ` + "`git add`" + `, ` + "`gx commit`" + `, ` + "`gx status`" + `, then ` + "`git push`" + `.
 
-Use hidden utility commands such as ` + "`gx add`" + `, ` + "`gx switch`" + `, ` + "`gx base`" + `, ` + "`gx edit`" + `, or ` + "`gx modify`" + ` only for explicit surgery or user-directed repair.
+Use hidden utility commands such as ` + "`gx switch`" + `, ` + "`gx base`" + `, ` + "`gx edit`" + `, or ` + "`gx modify`" + ` only for explicit surgery or user-directed repair.
 
 Use ` + "`gx generate`" + ` only for bulk organization of large working copies.
 `

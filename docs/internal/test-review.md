@@ -119,8 +119,6 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   color is disabled.
 - `TestPromptModifySelection`: verifies the CLI prompt path for selecting a
   revision to modify.
-- `TestPrintAddSummaryIncludesHashesSplitAndEditCommands`: checks `gx commit` / `gx add`
-  summary includes description, hashes, split status, and follow-up commands.
 - `TestPrintDemuxProposalIncludesFeasibilityWarnings`: checks human demux output
   includes feasibility warning details.
 - `TestPRHelpDoesNotPublish`: ensures `gx pr --help` is side-effect free.
