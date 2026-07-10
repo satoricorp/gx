@@ -2,9 +2,20 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "../src/tools/gx-commit";
 import gxPush, { metadata as pushMetadata, schema as pushSchema } from "../src/tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
+
+describe("gx_commit metadata and schema", () => {
+  test("describes the commit surface", () => {
+    expect(commitMetadata.name).toBe("gx_commit");
+    expect(commitMetadata.description).toMatch(/gx commit/i);
+    expect(commitMetadata.annotations?.readOnlyHint).toBe(false);
+    expect(commitSchema.message.parse("record staged work")).toBe("record staged work");
+    expect(commitSchema.commands_run.parse(["go test ./..."])).toEqual(["go test ./..."]);
+  });
+});
 
 describe("gx_review metadata and schema", () => {
   test("describes the review surface", () => {
@@ -55,6 +66,14 @@ describe("gx_review and gx_push CLI invocation", () => {
       mockGx,
       `#!/bin/sh
 printf 'gx|%s|%s|%s\\n' "$PWD" "$GX_REVIEW_AI" "$*" >> "$GX_MOCK_LOG"
+if [ "$1" = commit ]; then
+  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
+    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
+    exit 1
+  fi
+  echo "commit ok"
+  exit 0
+fi
 if [ "$1" = review ]; then
   echo "review ok"
   exit 0
@@ -109,6 +128,29 @@ exit 1
         process.env[key] = value;
       }
     }
+  });
+
+  test("gx_commit passes message and context file", async () => {
+    const output = await gxCommit({
+      cwd: repoRoot,
+      message: "record staged work",
+      task_summary: "add commit surface",
+      commands_run: ["go test ./internal/commitcontext"],
+      tests_run: ["mcp/test/gx-tools.test.ts"],
+      session_id: "session-commit",
+    });
+    const parsed = JSON.parse(output);
+    expect(parsed.action).toBe("commit");
+    expect(parsed.display).toBe("commit ok");
+    expect(parsed.command[0]).toBe(process.env.GX_BINARY);
+    expect(parsed.command).toContain("commit");
+    expect(parsed.command).toContain("-m");
+    expect(parsed.command).toContain("record staged work");
+    expect(parsed.command).toContain("--context-file");
+
+    const calls = await readFile(callLog, "utf8");
+    expect(calls).toContain("commit -m");
+    expect(calls).toContain("--context-file");
   });
 
   test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {

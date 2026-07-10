@@ -4,17 +4,16 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 
 ## Primary workflow
 
-1. `gx_sync` before changes, so remote GitHub merges are reflected locally.
-2. `gx_generate` to generate local features and revisions. Safe generated revisions apply automatically and may append to semantically similar stacks.
-3. `gx_status` to inspect generated local features, revisions, and remote state.
-4. `gx_push` to push generated features to the remote.
-5. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
-
-If `gx_push` reports remote divergence, run `gx_sync`, resolve the divergence, then retry `gx_push` for that stack.
+1. `gx_commit` after `git add` to record staged work as a GX revision (default verb).
+2. `gx_status` to inspect staged files, local features, revisions, and remote state.
+3. `gx_push` when the stack is ready to publish.
+4. `gx_sync` before generating or pushing when remote GitHub merges may have landed.
+5. `gx_generate` for bulk organization of large working copies (supporting cast).
+6. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 
 When a user says "save work", "save using gx", or "save with gx", treat that as
-a request to run the GX save workflow: `gx_generate`, then `gx_status`, then
-`gx_push` for ready stacks unless the user explicitly asks to keep the work
+a request to run the GX save workflow: `git add`, then `gx_commit`, then
+`gx_status`, then `gx_push` for ready stacks unless the user explicitly asks to keep the work
 local.
 
 GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
@@ -34,20 +33,21 @@ where agents should use GX:
 Version control: use GX, not `git commit` or `git push`.
 
 Use GX MCP first:
-- `gx_sync` before generating or pushing when remote changes may have landed.
-- `gx_generate` to save work into GX revisions and stacks.
+- `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
 - `gx_push` to publish ready GX stacks.
+- `gx_sync` before generating or pushing when remote changes may have landed.
+- `gx_generate` only for bulk organization of large working copies.
 
 If MCP is unavailable, use the CLI fallback:
-- `gx sync`
-- `gx generate`
+- `git add`
+- `gx commit -m "..."`
 - `gx status`
 - `gx push`
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow: generate the work with GX, inspect status, and push ready
-stacks unless the user asks to keep them local.
+GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
+`gx_status`, and push ready stacks with `gx_push` unless the user asks to keep them local.
 
 GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
 created only with raw Git or the GitHub UI will not get a GX summary until that
@@ -62,10 +62,11 @@ for `git commit`, `git push`, `git reset`, and branch deletion.
 
 | Tool | CLI | Purpose |
 |------|-----|---------|
-| `gx_sync` | `gx sync` | Sync remote Git and GX remote state before generating or pushing |
-| `gx_generate` | `gx generate --json` | Generate local features and revisions from a session-isolated JJ workspace; may append to similar stacks |
+| `gx_commit` | `gx commit -m "..."` | Record staged Git changes as a GX revision (default verb) |
 | `gx_status` | `gx status --json` | Inspect unstaged files, local features, revisions, and remote state |
 | `gx_push` | `gx push [stack]` | Push generated features, sessions, metadata, and guarded rewrites |
+| `gx_sync` | `gx sync` | Sync remote Git and GX remote state before generating or pushing |
+| `gx_generate` | `gx generate --json` | Bulk-organize large working copies into local features and revisions |
 | `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
 | `gx_set_base` | `gx base --set <default> --json` | Return the GX authoring base to the repo default branch only |
 

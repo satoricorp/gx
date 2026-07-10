@@ -22,6 +22,7 @@ import (
 	"github.com/satoricorp/gx/internal/clitui"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
+	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/daemon"
 	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
@@ -335,6 +336,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	var all bool
 	var amend bool
 	var fileMessage string
+	var contextFile string
 	cmd := &cobra.Command{
 		Use:   "commit",
 		Short: "Record staged Git changes as a GX revision",
@@ -371,7 +373,19 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if strings.TrimSpace(message) == "" {
 				return fmt.Errorf("commit message is required; pass -m \"describe this revision\"")
 			}
-			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{Message: message})
+			var selfReport commitcontext.SelfReport
+			if strings.TrimSpace(contextFile) != "" {
+				report, err := commitcontext.LoadFile(contextFile)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
+				} else {
+					selfReport = report
+				}
+			}
+			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{
+				Message:    message,
+				SelfReport: selfReport,
+			})
 			if err != nil {
 				return err
 			}
@@ -393,6 +407,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "unsupported; stage changes with git add first")
 	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use gx edit <rev>")
 	cmd.Flags().StringVarP(&fileMessage, "file", "F", "", "unsupported; pass a message with -m")
+	cmd.Flags().StringVar(&contextFile, "context-file", "", "optional JSON file with agent-declared provenance (task_summary, commands_run, tests_run)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	return cmd
 }

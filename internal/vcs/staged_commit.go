@@ -20,6 +20,7 @@ import (
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -53,6 +54,7 @@ type StagedRevisionOptions struct {
 	Message             string
 	PreferredSessionIDs []string
 	SessionContexts     []storage.SessionContext
+	SelfReport          commitcontext.SelfReport
 }
 
 // stagedCapture is the git-only snapshot of the user's staged selection.
@@ -317,6 +319,7 @@ func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInf
 		ProvenanceStatus:         stagedProvenanceStatus(sessionIDs),
 		SkipRepoLocalSessions:    true,
 		SessionEventAttributions: eventAttributions,
+		SelfReport:               opts.SelfReport,
 	}
 	if err := recordCommit(ctx, result); err != nil {
 		return result, fmt.Errorf("record revision metadata: %w", err)

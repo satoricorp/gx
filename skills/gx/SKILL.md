@@ -159,6 +159,17 @@ git rev-parse --abbrev-ref HEAD
 - Use Git to inspect branch state, refs, remotes, and pushed history.
 - Do not use Git for the main gx authoring flow unless the user explicitly asks for raw Git behavior.
 
+## MCP tools (when available)
+
+Prefer MCP over raw CLI for GX workflows:
+
+- `gx_commit` after `git add` — default save verb
+- `gx_status` — inspect staged files, stacks, and remote state
+- `gx_push` — publish ready stacks
+- `gx_sync` — sync before push when remote merges may have landed
+- `gx_generate` — bulk-organize large working copies only
+- `gx_review` — gather review context
+
 ## Important gx-specific behavior
 
 - `gx init` should be run first in a repo.

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
@@ -60,6 +61,7 @@ type CommitStagedOptions struct {
 	Message             string
 	PreferredSessionIDs []string
 	SessionContexts     []storage.SessionContext
+	SelfReport          commitcontext.SelfReport
 }
 
 // Engine is GX's authoring seam. CLI and MCP adapters should call this module
@@ -121,6 +123,7 @@ func (e *Engine) CommitStaged(ctx context.Context, opts CommitStagedOptions) (Ch
 		Message:             opts.Message,
 		PreferredSessionIDs: opts.PreferredSessionIDs,
 		SessionContexts:     opts.SessionContexts,
+		SelfReport:          opts.SelfReport,
 	})
 }
 
