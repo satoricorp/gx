@@ -4,8 +4,25 @@
     {
       "name": "hypervisor-ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "/Users/joe/git/hypervisor"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/joe/git/hypervisor"
+      ],
       "port": 1420
+    },
+    {
+      "name": "console-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/joe/git/console"
+      ],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
