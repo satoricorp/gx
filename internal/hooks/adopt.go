@@ -52,6 +52,12 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 		remotePtr = &remote
 	}
 	branch := branchNameFromRef(opts.LocalRef)
+	if branch == "" {
+		// Hooks installed by older gx versions do not pass --local-ref;
+		// without a branch the artifact routes to an "unknown" bookmark on
+		// the server and PR linkage is lost.
+		branch, _ = gitCurrentBranch(ctx, repoRoot)
+	}
 	var branchPtr *string
 	if branch != "" {
 		branchPtr = &branch
@@ -142,6 +148,15 @@ func branchNameFromRef(localRef string) string {
 	default:
 		return localRef
 	}
+}
+
+func gitCurrentBranch(ctx context.Context, repoRoot string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--show-current")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git branch --show-current: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func gitRevParse(ctx context.Context, repoRoot, ref string) (string, error) {

@@ -26,6 +26,7 @@ import (
 	"github.com/satoricorp/gx/internal/daemon"
 	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/launcher"
 	"github.com/satoricorp/gx/internal/postlist"
@@ -3036,6 +3037,12 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}()
 			out := cmd.OutOrStdout()
 			invocation := "gx push"
+			// The pre-push hook fires inside the git push gx runs and would
+			// enqueue a publication before the PR exists, racing the
+			// PR-enriched artifact gx push enqueues afterwards. The hook
+			// checks this variable and leaves publication to gx push.
+			_ = os.Setenv(hooks.SuppressAdoptedPublicationEnv, "1")
+			defer os.Unsetenv(hooks.SuppressAdoptedPublicationEnv)
 			// Like git push: the current stack by default. Sweeping every
 			// accepted stack publishes branches and PRs the user never asked
 			// to share; that needs the explicit --all.
