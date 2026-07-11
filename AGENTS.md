@@ -8,6 +8,6 @@ Default flow:
 - Run `gx status` to inspect staged files, local features/revisions, and Remote state.
 - Run `gx push` to push code changes, sessions, and GX metadata to GitHub/origin and GX Cloud. Plain `git push` also works when the GX pre-push hook is installed.
 
-Use hidden utility commands such as `gx switch`, `gx base`, `gx edit`, or `gx modify` only for explicit surgery or user-directed repair. Before using one, say which stack/base branch it will touch. GX should keep visible Git attached to the real base branch or the real stack branch; it must not create or rely on `gx/...` checkout branches. Return to the base branch before normal `gx commit` work.
+Use hidden utility commands such as `gx base` or `gx edit` only for explicit surgery or user-directed repair. Before using one, say which stack/base branch it will touch. GX should keep visible Git attached to the real base branch or the real stack branch; it must not create or rely on `gx/...` checkout branches. Return to the base branch before normal `gx commit` work.
 
 Use `gx generate` only for bulk organization of large working copies.
