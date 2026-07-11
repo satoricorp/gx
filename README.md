@@ -30,13 +30,14 @@ From your repo:
 gx init
 ```
 
-This creates a `.gx/` in your repo root and installs a Git pre-push hook to
-capture session data before pushes.
+This configures your GX identity, installs a Git pre-push hook to capture
+session data before pushes, registers the GX MCP server, and offers to add
+GX workflow instructions to `AGENTS.md`.
 
 To uninstall the CLI and menu-bar app:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxg ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
 rm -rf /Applications/GX.app ~/Applications/GX.app
 ```
 
