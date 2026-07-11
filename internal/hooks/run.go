@@ -16,6 +16,10 @@ import (
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
+// SuppressAdoptedPublicationEnv tells the pre-push hook that gx push owns
+// this push and will enqueue the publication itself.
+const SuppressAdoptedPublicationEnv = "GX_SUPPRESS_ADOPTED_PUBLICATION"
+
 // PushOptions configures a hook-triggered capture run.
 type PushOptions struct {
 	RepoRoot string
@@ -107,6 +111,16 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	}
 	if n, err := stager.MarkSessionShareable(ctx, revisionIDs, att); err == nil {
 		outcome.ShareableSession = n
+	}
+
+	if os.Getenv(SuppressAdoptedPublicationEnv) != "" {
+		// gx push drives this git push and enqueues its own artifact with
+		// the PR URL attached; a hook publication here would race it with
+		// a PR-less artifact for the same head.
+		if backgroundWorkersEnabled() {
+			_ = background.StartDetachedGX("capture", "sync", "--quiet")
+		}
+		return outcome, nil
 	}
 
 	headSHA := strings.TrimSpace(opts.HeadSHA)

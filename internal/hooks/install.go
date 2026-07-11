@@ -44,9 +44,12 @@ func Install(opts InstallOptions) error {
 	}
 	script := prePushScript(gxPath)
 	if data, err := os.ReadFile(hookPath); err == nil {
-		if containsHookMarker(string(data)) {
+		if string(data) == script {
 			return nil
 		}
+		// A gx-owned hook with different content is an older template
+		// (missing --local-ref/--head-sha, or blocking on failure) or
+		// points at a stale binary; regenerate it.
 	}
 	return os.WriteFile(hookPath, []byte(script), 0o755)
 }
