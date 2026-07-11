@@ -79,9 +79,6 @@ GX CLI package
 Default install (CLI + gx-mcp + completions):
   curl -fsSL https://download.gx.run/install.sh | sh
 
-Optional macOS menu-bar app:
-  curl -fsSL https://download.gx.run/install.sh | sh -s -- --with-menubar
-
 Manual install:
   install -m 755 bin/gx ~/.local/bin/gx
   ln -sf gx ~/.local/bin/gxr
