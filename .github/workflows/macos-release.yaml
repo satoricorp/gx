@@ -1,7 +1,11 @@
 name: Build macOS App
 
 on:
-  # Disabled while GX release publication is CLI-focused.
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +18,6 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ false }}
     name: Build GX for macOS
     runs-on: macos-latest
     env:
@@ -145,16 +148,14 @@ jobs:
           if-no-files-found: error
 
       - name: Configure AWS credentials with OIDC
-        # Temporarily disabled while GX release publication is CLI-focused.
-        if: ${{ false && env.AWS_ROLE_TO_ASSUME != '' }}
+        if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials with access keys
-        # Temporarily disabled while GX release publication is CLI-focused.
-        if: ${{ false && env.AWS_ROLE_TO_ASSUME == '' }}
+        if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ env.DEPLOY_AWS_ACCESS_KEY_ID }}
@@ -162,8 +163,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Publish downloads to S3
-        # Temporarily disabled while GX release publication is CLI-focused.
-        if: ${{ false }}
         shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -246,8 +245,7 @@ jobs:
             --paths /GX-macOS.zip /GX-macOS.dmg /menubar/appcast.xml /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
 
       - name: Publish GitHub release assets
-        # Temporarily disabled while GX release publication is CLI-focused.
-        if: ${{ false && github.ref_type == 'tag' }}
+        if: ${{ github.ref_type == 'tag' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
