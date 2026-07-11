@@ -165,10 +165,13 @@ echo "Installed gx-mcp to $install_dir/gx-mcp"
 if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."
 fi
-echo "Run gx init in each repo to install git hooks, register MCP, and offer AGENTS.md instructions."
+# Mint (#3DDC97) matches GX CLI termstyle.
+gx_init="gx init"
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  gx_init="$(printf '\033[38;2;61;220;151mgx init\033[0m')"
+fi
+echo "Run ${gx_init} in each repo to install git hooks, register MCP, and offer AGENTS.md instructions."
 if [ "$with_menubar" = "true" ]; then
   install_menubar_app
-else
-  echo "Optional macOS menu-bar app: curl -fsSL $base_url/install.sh | sh -s -- --with-menubar"
 fi
 "$install_dir/gx" version

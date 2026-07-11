@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "async": true,
+            "command": "/Users/joe/git/gx/gx capture transcript",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "async": true,
+            "command": "/Users/joe/git/gx/gx capture transcript",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
