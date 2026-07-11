@@ -7,8 +7,6 @@ import (
 	"github.com/satoricorp/gx/internal/buildconfig"
 )
 
-const localDefaultCloudURL = "http://localhost:3201"
-
 func GitHubClientID() string {
 	return buildconfig.GitHubClientIDOrEnv()
 }
@@ -20,10 +18,10 @@ func ConvexSiteURL() string {
 func CloudURL() string {
 	raw, ok := os.LookupEnv("GX_CLOUD_URL")
 	if !ok {
-		if embedded := buildconfig.CloudURLFromEnvOrEmbedded(); embedded != "" {
-			return normalizeCloudURL(embedded)
-		}
-		return localDefaultCloudURL
+		// No env override and no baked endpoint means cloud is disabled.
+		// A binary built without ldflags must not fall back to poking a
+		// developer localhost port; set GX_CLOUD_URL for local server work.
+		return normalizeCloudURL(buildconfig.CloudURLFromEnvOrEmbedded())
 	}
 	return normalizeCloudURL(raw)
 }

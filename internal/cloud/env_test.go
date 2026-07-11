@@ -7,8 +7,8 @@ import (
 
 func TestCloudURLUsesDefaultWhenUnset(t *testing.T) {
 	os.Unsetenv("GX_CLOUD_URL")
-	if got := CloudURL(); got != localDefaultCloudURL {
-		t.Fatalf("CloudURL() = %q, want %q", got, localDefaultCloudURL)
+	if got := CloudURL(); got != "" {
+		t.Fatalf("CloudURL() = %q, want empty (cloud disabled without env or baked endpoint)", got)
 	}
 }
 

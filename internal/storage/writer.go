@@ -259,6 +259,11 @@ func (s *Store) WriteResponse(ctx context.Context, resp Response) error {
 	if resp.IsStreaming {
 		streaming = 1
 	}
+	if resp.ResponseBody == nil {
+		// Empty upstream bodies arrive as nil slices, which the driver binds
+		// as NULL and the NOT NULL column rejects, dropping the capture row.
+		resp.ResponseBody = []byte{}
+	}
 	_, err := s.respStmt.ExecContext(
 		ctx,
 		resp.ID,
