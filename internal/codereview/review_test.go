@@ -576,7 +576,7 @@ func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
 	t.Setenv("GX_OPENAI_API_KEY", "gx-key")
 	t.Setenv("GX_OPENAI_BASE_URL", "http://127.0.0.1:43124")
 
-	reviewer := openAIReviewerFromEnv()
+	reviewer := openAIReviewerFromEnvWithModel("")
 	got, ok := reviewer.(*responsesAIReviewer)
 	if !ok {
 		t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
