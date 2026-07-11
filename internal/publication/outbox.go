@@ -24,6 +24,12 @@ const (
 	outboxStatusPending = "pending"
 	outboxStatusRunning = "uploading"
 	outboxStatusFailed  = "failed"
+
+	// After this many failed uploads an item is quarantined: it stays on
+	// disk for diagnostics but drains stop retrying it. Without a cap a
+	// single oversized or rejected artifact is re-read, re-marshalled, and
+	// re-uploaded on every drain forever.
+	maxUploadAttempts = 5
 )
 
 type QueueAttestation struct {
@@ -86,19 +92,26 @@ func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact, attest
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := os.Stat(queueItemPath(item.ID)); err == nil {
-		artifactPath, artErr := WriteLocalArtifact(artifact)
-		if artErr != nil {
-			return Result{}, artErr
+	if existing, err := loadQueueItem(item.ID); err == nil {
+		// Re-enqueues for the same head carry newer data (the pre-push hook
+		// runs before gx push resolves the PR URL); the latest artifact must
+		// win or PR linkage is lost. Leave in-flight uploads alone.
+		if existing.Status == outboxStatusRunning && uploadLockActive() && !staleUpload(existing.LastAttemptAt) {
+			artifactPath, artErr := WriteLocalArtifact(artifact)
+			if artErr != nil {
+				return Result{}, artErr
+			}
+			return Result{
+				Queued:       true,
+				QueueID:      item.ID,
+				QueuePath:    queueItemPath(item.ID),
+				IndexStatus:  "queued",
+				ArtifactPath: artifactPath,
+				Artifact:     artifact,
+			}, nil
 		}
-		return Result{
-			Queued:       true,
-			QueueID:      item.ID,
-			QueuePath:    queueItemPath(item.ID),
-			IndexStatus:  "queued",
-			ArtifactPath: artifactPath,
-			Artifact:     artifact,
-		}, nil
+		item.CreatedAt = existing.CreatedAt
+		item.Attempts = existing.Attempts
 	}
 	path, err := writeQueueItem(item)
 	if err != nil {
@@ -140,6 +153,9 @@ func DrainQueuedUploads(ctx context.Context, uploader Uploader, limit int) (Drai
 
 	result := DrainResult{}
 	for _, item := range items {
+		if item.Attempts >= maxUploadAttempts {
+			continue
+		}
 		if result.Uploaded+result.Failed >= limit {
 			result.Pending++
 			continue

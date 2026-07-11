@@ -295,7 +295,42 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 	if bundle.Sessions == nil {
 		bundle.Sessions = []SessionPayload{}
 	}
+	bundle.Sessions = capSessionPayloads(bundle.Sessions)
 	return bundle, nil
+}
+
+const (
+	// Bodies above this size are omitted from the bundle (token counts and
+	// request metadata stay). Oversized bodies have produced multi-GB
+	// artifacts that can never finish uploading.
+	maxCapturedBodyBytes = 256 << 10
+	// Total budget for all request/response bodies in one bundle. Once
+	// spent, remaining bodies are omitted.
+	maxSessionsPayloadBytes = 32 << 20
+)
+
+func capSessionPayloads(sessions []SessionPayload) []SessionPayload {
+	budget := maxSessionsPayloadBytes
+	for si := range sessions {
+		for ri := range sessions[si].Requests {
+			request := &sessions[si].Requests[ri]
+			request.RequestBody, budget = capCapturedBody(request.RequestBody, budget)
+			for pi := range request.Responses {
+				response := &request.Responses[pi]
+				response.ResponseBody, budget = capCapturedBody(response.ResponseBody, budget)
+			}
+		}
+	}
+	return sessions
+}
+
+func capCapturedBody(body []byte, budget int) ([]byte, int) {
+	// Dropping a whole body keeps every retained body valid JSON; truncating
+	// would leave unparseable fragments downstream.
+	if len(body) > maxCapturedBodyBytes || len(body) > budget {
+		return nil, budget
+	}
+	return body, budget - len(body)
 }
 
 func listPushedStack(ctx context.Context, db *sql.DB, push vcs.PushResult) ([]StackPayload, error) {

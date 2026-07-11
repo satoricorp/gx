@@ -210,6 +210,10 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				In:          initInput(cmd, yes),
 				Out:         initOutput(cmd, yes),
 			})
+			telemetry.EmitProductEvent(ctx, telemetry.EventCLIInitRun, map[string]any{
+				"status":      initRunStatus(err),
+				"interactive": !yes,
+			})
 			if err != nil {
 				return err
 			}
@@ -268,6 +272,13 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX and JJ config")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
 	return cmd
+}
+
+func initRunStatus(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "success"
 }
 
 func initInput(cmd *cobra.Command, quiet bool) io.Reader {
@@ -340,11 +351,13 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 					selfReport = report
 				}
 			}
+			startedAt := time.Now()
 			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{
 				Message:    message,
 				Branch:     branch,
 				SelfReport: selfReport,
 			})
+			emitCommitRunTelemetry(ctx, result, err, branch, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -376,6 +389,22 @@ type commitResultJSON struct {
 	Result           authoring.CheckpointResult `json:"result"`
 	CreatedBranch    bool                       `json:"created_branch"`
 	ProvenanceStatus string                     `json:"provenance_status"`
+}
+
+func emitCommitRunTelemetry(ctx context.Context, result authoring.CheckpointResult, runErr error, branch string, duration time.Duration) {
+	status := "success"
+	if runErr != nil {
+		status = "error"
+	}
+	props := map[string]any{
+		"status":            status,
+		"duration_ms":       duration.Milliseconds(),
+		"requested_branch":  strings.TrimSpace(branch) != "",
+		"created_branch":    result.CreatedBranch,
+		"provenance_status": strings.TrimSpace(result.ProvenanceStatus),
+		"file_count":        len(result.Change.Files),
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLICommitRun, props)
 }
 
 func printCommitSummary(out io.Writer, result authoring.CheckpointResult) {
@@ -2993,6 +3022,7 @@ func firstNonEmptyString(values ...string) string {
 func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var allowBackwards bool
 	var pushToGitHub bool
+	var publishAll bool
 	cmd := &cobra.Command{
 		Use:   "push [stack]",
 		Short: "Push stacks and metadata to remote",
@@ -3006,7 +3036,10 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}()
 			out := cmd.OutOrStdout()
 			invocation := "gx push"
-			publishAllRequested := len(args) == 0
+			// Like git push: the current stack by default. Sweeping every
+			// accepted stack publishes branches and PRs the user never asked
+			// to share; that needs the explicit --all.
+			publishAllRequested := publishAll && len(args) == 0
 			if len(args) > 0 {
 				invocation += " " + args[0]
 			}
@@ -3126,6 +3159,7 @@ func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 		},
 	}
 	cmd.Flags().BoolVar(&allowBackwards, "allow-backwards", false, "accepted for compatibility; gx handles required JJ bookmark moves automatically")
+	cmd.Flags().BoolVar(&publishAll, "all", false, "push every accepted stack instead of only the current one")
 	pushToGitHub = true
 	cmd.Flags().BoolVar(&pushToGitHub, "github", true, "accepted for compatibility; gx push always pushes stack refs")
 	if flag := cmd.Flags().Lookup("allow-backwards"); flag != nil {

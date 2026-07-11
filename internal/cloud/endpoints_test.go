@@ -93,15 +93,15 @@ func TestCloudURLNormalizesLegacyPublishSuffix(t *testing.T) {
 	}
 }
 
-func TestCloudURLUsesLocalDefaultWhenUnset(t *testing.T) {
+func TestCloudURLDisabledWhenUnset(t *testing.T) {
 	os.Unsetenv("GX_CLOUD_URL")
 	buildconfig.CloudURL = ""
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
-	if got := CloudURL(); got != localDefaultCloudURL {
-		t.Fatalf("CloudURL() = %q, want %q", got, localDefaultCloudURL)
+	if got := CloudURL(); got != "" {
+		t.Fatalf("CloudURL() = %q, want empty (cloud disabled without env or baked endpoint)", got)
 	}
-	if !CloudConfigured() {
-		t.Fatal("CloudConfigured() = false, want true")
+	if CloudConfigured() {
+		t.Fatal("CloudConfigured() = true, want false")
 	}
 }
