@@ -173,10 +173,6 @@ type aiRecommendation struct {
 	Sources        []string        `json:"sources"`
 }
 
-func reviewerFromEnv() AIReviewer {
-	return reviewerFromEnvWithPolicy(nil)
-}
-
 func ReviewerFromEnv() AIReviewer {
 	reviewer, _ := ReviewerFromEnvWithInfo()
 	return reviewer
@@ -253,10 +249,6 @@ func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 	return multiAIReviewer{reviewers: reviewers}
 }
 
-func openAIReviewerFromEnv() AIReviewer {
-	return openAIReviewerFromEnvWithModel("")
-}
-
 func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
 	model := strings.TrimSpace(firstNonEmpty(
 		modelOverride,
@@ -321,10 +313,6 @@ func directOpenAIReviewerFromEnv(model string) (AIReviewer, error) {
 		model:  model,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}, nil
-}
-
-func bedrockAnthropicReviewerFromEnv() AIReviewer {
-	return bedrockAnthropicReviewerFromEnvWithModel("")
 }
 
 func bedrockAnthropicReviewerFromEnvWithModel(modelOverride string) AIReviewer {
