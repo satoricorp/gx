@@ -83,6 +83,17 @@ func gitStatusPorcelain(t *testing.T, root string) string {
 	return string(out)
 }
 
+func gitHeadCommit(t *testing.T, root string) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func gitCurrentBranch(t *testing.T, root string) string {
 	t.Helper()
 	cmd := exec.Command("git", "branch", "--show-current")
@@ -268,8 +279,9 @@ func TestStagedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
 	}
 }
 
-func TestStagedCommitOnBaseMintsStackAndSwitches(t *testing.T) {
+func TestStagedCommitOnBaseStaysOnBase(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
+	beforeHead := gitHeadCommit(t, root)
 	if err := os.WriteFile(filepath.Join(root, "feature.txt"), []byte("f\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -279,30 +291,40 @@ func TestStagedCommitOnBaseMintsStackAndSwitches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordStagedRevision() error = %v", err)
 	}
-	if result.Stack == nil || !strings.HasPrefix(result.Stack.BookmarkName, "feature/") {
-		t.Fatalf("stack bookmark = %v, want minted feature/*", result.Stack)
+	if result.Stack == nil || result.Stack.BookmarkName != "main" {
+		t.Fatalf("stack bookmark = %v, want main (the checked-out branch)", result.Stack)
 	}
-	if !result.CreatedBranch {
-		t.Fatal("CreatedBranch = false, want true")
+	if result.CreatedBranch {
+		t.Fatal("CreatedBranch = true, want false: gx commit must not mint branches")
 	}
-	if branch := gitCurrentBranch(t, root); branch != result.Stack.BookmarkName {
-		t.Fatalf("current branch = %q, want %q", branch, result.Stack.BookmarkName)
+	if branch := gitCurrentBranch(t, root); branch != "main" {
+		t.Fatalf("current branch = %q, want main: gx commit must not move HEAD", branch)
+	}
+	if head := gitHeadCommit(t, root); head == beforeHead {
+		t.Fatal("HEAD did not advance; expected the staged commit on main")
 	}
 }
 
-func TestStagedCommitOnProtectedMasterErrors(t *testing.T) {
+func TestStagedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "master")
+	beforeHead := gitHeadCommit(t, root)
 	if err := os.WriteFile(filepath.Join(root, "x.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "x.txt")
 
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "bad"})
-	if err == nil {
-		t.Fatal("RecordStagedRevision() error = nil, want protected branch error")
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "work on master"})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision() error = %v; committing on the checked-out default branch is git-commit semantics", err)
 	}
-	if !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("error = %v, want protected branch message", err)
+	if branch := gitCurrentBranch(t, root); branch != "master" {
+		t.Fatalf("current branch = %q, want master", branch)
+	}
+	if head := gitHeadCommit(t, root); head == beforeHead {
+		t.Fatal("master did not advance")
+	}
+	if result.Stack == nil || result.Stack.BookmarkName != "master" {
+		t.Fatalf("stack bookmark = %v, want master", result.Stack)
 	}
 }
 
@@ -710,15 +732,40 @@ func TestRejectProtectedStackBookmarkSecondChokePoint(t *testing.T) {
 	}
 }
 
-func TestEnsureBranchMutationAllowedBlocksProtectedRefMove(t *testing.T) {
+func TestEnsureBranchMutationAllowedProtectedRefRules(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
-	head, err := svc.runTrimmed(context.Background(), root, "git", "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatalf("rev-parse HEAD: %v", err)
-	}
-	err = svc.attachGitBranch(context.Background(), root, "main", head+"0", false)
+	ctx := context.Background()
+	forkPoint := gitHeadCommit(t, root)
+
+	// A branch that forks before main's tip: not a descendant once main advances.
+	runGit(t, root, "checkout", "-b", "sibling", forkPoint)
+	runGit(t, root, "commit", "--allow-empty", "-m", "sibling work")
+	siblingHead := gitHeadCommit(t, root)
+	// Advance main past the fork point so sibling is a true sideways target.
+	runGit(t, root, "checkout", "main")
+	runGit(t, root, "commit", "--allow-empty", "-m", "main advance")
+	mainHead := gitHeadCommit(t, root)
+	// A true descendant of main's new tip, on its own branch.
+	runGit(t, root, "checkout", "-b", "descendant", mainHead)
+	runGit(t, root, "commit", "--allow-empty", "-m", "descendant work")
+	descendantHead := gitHeadCommit(t, root)
+
+	// Not checked out (descendant is): even a fast-forward of main is blocked.
+	err := svc.attachGitBranch(ctx, root, "main", descendantHead, false)
 	if err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("attachGitBranch() error = %v, want protected ref mutation blocked", err)
+		t.Fatalf("attachGitBranch(main, descendant) while not checked out error = %v, want protected", err)
+	}
+
+	// Checked out but not a descendant: blocked.
+	runGit(t, root, "checkout", "main")
+	err = svc.attachGitBranch(ctx, root, "main", siblingHead, false)
+	if err == nil || !strings.Contains(err.Error(), "protected") {
+		t.Fatalf("attachGitBranch(main, sibling) error = %v, want protected: sideways moves stay blocked", err)
+	}
+
+	// Checked out and fast-forward: allowed (git-commit semantics).
+	if err := svc.attachGitBranch(ctx, root, "main", descendantHead, false); err != nil {
+		t.Fatalf("attachGitBranch(main, descendant) while checked out error = %v, want allowed", err)
 	}
 }
 
@@ -901,9 +948,9 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func TestStagedCommitResolveStackRejectsProtectedAtFirstChoke(t *testing.T) {
+func TestStagedCommitResolveStackRejectsBadRequestedBranch(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "branch", "master")
+	runGit(t, root, "branch", "existing-branch")
 	repo, err := svc.ResolveJJRepoAtPath(context.Background(), root)
 	if err != nil {
 		t.Fatalf("ResolveJJRepoAtPath() error = %v", err)
@@ -912,9 +959,36 @@ func TestStagedCommitResolveStackRejectsProtectedAtFirstChoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
-	_, _, err = svc.resolveStagedCommitStack(context.Background(), repo, "master", "blocked", head)
-	if err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("resolveStagedCommitStack() error = %v, want protected branch at first choke", err)
+	if _, _, err = svc.resolveStagedCommitStack(context.Background(), repo, "main", "master", head); err == nil || !strings.Contains(err.Error(), "protected") {
+		t.Fatalf("resolveStagedCommitStack(--branch master) error = %v, want protected", err)
+	}
+	if _, _, err = svc.resolveStagedCommitStack(context.Background(), repo, "main", "existing-branch", head); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("resolveStagedCommitStack(--branch existing-branch) error = %v, want already exists", err)
+	}
+}
+
+func TestStagedCommitExplicitBranchCreatesAndSwitches(t *testing.T) {
+	svc, root := setupStagedCommitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "opt-in.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, root, "add", "opt-in.txt")
+
+	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{
+		Message: "opt-in branch work",
+		Branch:  "feature/opt-in",
+	})
+	if err != nil {
+		t.Fatalf("RecordStagedRevision(--branch) error = %v", err)
+	}
+	if !result.CreatedBranch {
+		t.Fatal("CreatedBranch = false, want true for explicit --branch")
+	}
+	if result.Stack == nil || result.Stack.BookmarkName != "feature/opt-in" {
+		t.Fatalf("stack bookmark = %v, want feature/opt-in", result.Stack)
+	}
+	if branch := gitCurrentBranch(t, root); branch != "feature/opt-in" {
+		t.Fatalf("current branch = %q, want feature/opt-in", branch)
 	}
 }
 

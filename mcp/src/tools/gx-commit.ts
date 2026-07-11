@@ -9,6 +9,7 @@ import { ensureGxInitialized } from "../session-workspace";
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
   message: z.string().describe("Commit message for the staged revision."),
+  branch: z.string().optional().describe("Optional new branch to create at HEAD and record onto. Default: the revision lands on the current branch and HEAD does not move, like git commit."),
   task_summary: z.string().optional().describe("Optional agent-declared summary of the work being committed."),
   commands_run: z.array(z.string()).optional().describe("Optional shell commands the agent ran while doing this work."),
   tests_run: z.array(z.string()).optional().describe("Optional test commands the agent ran while doing this work."),
@@ -37,6 +38,10 @@ export default async function gxCommit(params: InferSchema<typeof schema>) {
   }
 
   const args = ["commit", "-m", message];
+  const branch = params.branch?.trim();
+  if (branch) {
+    args.push("--branch", branch);
+  }
   const context = {
     task_summary: params.task_summary?.trim() || undefined,
     commands_run: params.commands_run?.map((value) => value.trim()).filter(Boolean),

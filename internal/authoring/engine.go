@@ -59,6 +59,7 @@ type CheckpointOptions struct {
 
 type CommitStagedOptions struct {
 	Message             string
+	Branch              string
 	PreferredSessionIDs []string
 	SessionContexts     []storage.SessionContext
 	SelfReport          commitcontext.SelfReport
@@ -121,6 +122,7 @@ func (e *Engine) Checkpoint(ctx context.Context, opts CheckpointOptions) (Checkp
 func (e *Engine) CommitStaged(ctx context.Context, opts CommitStagedOptions) (CheckpointResult, error) {
 	return e.vcs.RecordStagedRevision(ctx, vcs.StagedRevisionOptions{
 		Message:             opts.Message,
+		Branch:              opts.Branch,
 		PreferredSessionIDs: opts.PreferredSessionIDs,
 		SessionContexts:     opts.SessionContexts,
 		SelfReport:          opts.SelfReport,

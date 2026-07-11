@@ -16,7 +16,33 @@ func (s *Service) ensureBranchMutationAllowed(ctx context.Context, repoRoot, nam
 	if err == nil && strings.TrimSpace(current) == targetCommit {
 		return nil
 	}
+	// Advancing the checked-out branch to one of its own descendants is
+	// git-commit semantics, not a base move; gx commit on the default branch
+	// depends on it. Rewinds and moves of branches that are not checked out
+	// stay protected.
+	if err == nil && s.isCheckedOutBranch(ctx, repoRoot, name) &&
+		s.isAncestorCommit(ctx, repoRoot, strings.TrimSpace(current), targetCommit) {
+		return nil
+	}
 	return fmt.Errorf("ref %s is protected; gx will not move the authoring base or default branch", name)
+}
+
+func (s *Service) isCheckedOutBranch(ctx context.Context, repoRoot, name string) bool {
+	current, err := s.runTrimmed(ctx, repoRoot, "git", "branch", "--show-current")
+	if err != nil {
+		return false
+	}
+	return cleanRefName(strings.TrimSpace(current)) == name
+}
+
+func (s *Service) isAncestorCommit(ctx context.Context, repoRoot, ancestor, descendant string) bool {
+	ancestor = strings.TrimSpace(ancestor)
+	descendant = strings.TrimSpace(descendant)
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	_, err := s.runner.Run(ctx, repoRoot, "git", "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
 }
 
 func (s *Service) ensureBookmarkMutationAllowed(ctx context.Context, repoRoot, name, targetRev string) error {
