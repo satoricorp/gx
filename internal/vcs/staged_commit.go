@@ -52,6 +52,7 @@ var stagedCommitAfterImportHook func() error
 
 type StagedRevisionOptions struct {
 	Message             string
+	Branch              string // optional: create this branch at HEAD and record onto it
 	PreferredSessionIDs []string
 	SessionContexts     []storage.SessionContext
 	SelfReport          commitcontext.SelfReport
@@ -219,14 +220,11 @@ func (s *Service) recordStagedRevisionUnlocked(ctx context.Context, repo RepoInf
 		return CommitResult{}, fmt.Errorf("create staged commit: git returned an empty commit id")
 	}
 
-	stack, createdBranch, err := s.resolveStagedCommitStack(ctx, repo, originalBranch, opts.Message, headCommit)
+	stack, createdBranch, err := s.resolveStagedCommitStack(ctx, repo, originalBranch, opts.Branch, headCommit)
 	if err != nil {
 		return CommitResult{}, err
 	}
 	stackBookmark = stack.BookmarkName
-	if err := s.rejectProtectedStackBookmark(ctx, repoRoot, stack.BookmarkName); err != nil {
-		return CommitResult{}, err
-	}
 
 	tempRef = "refs/heads/gx/import/" + shortID(commitID, 12) + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	if _, err := s.runner.Run(ctx, repoRoot, "git", "update-ref", tempRef, commitID); err != nil {
@@ -438,21 +436,24 @@ func (s *Service) commitTreeIdentity(ctx context.Context, repoRoot string) (stri
 	return name, email, nil
 }
 
-func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, branch, message, headCommit string) (StackInfo, bool, error) {
+// resolveStagedCommitStack maps the commit onto a stack. The stack is the
+// checked-out branch — gx commit never moves HEAD on its own, matching git
+// commit. A new branch is minted only when the caller explicitly requested
+// one (gx commit --branch).
+func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, branch, requestedBranch, headCommit string) (StackInfo, bool, error) {
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 	onBase := branch == baseCheckoutRef(baseRef) || branch == baseRef
 	bookmark := branch
 	created := false
-	if onBase {
-		var err error
-		bookmark, err = s.uniqueStackBookmark(ctx, repo.RootPath, stackBookmarkName(message, ""))
-		if err != nil {
-			return StackInfo{}, false, err
+	if requested := cleanRefName(requestedBranch); requested != "" {
+		if s.isProtectedRef(ctx, repo.RootPath, requested) {
+			return StackInfo{}, false, fmt.Errorf("branch %s is protected; choose a non-base branch name", requested)
 		}
+		if s.refExists(ctx, repo.RootPath, requested) {
+			return StackInfo{}, false, fmt.Errorf("branch %s already exists; git switch %s and run gx commit without --branch", requested, requested)
+		}
+		bookmark = requested
 		created = true
-	}
-	if s.isProtectedRef(ctx, repo.RootPath, bookmark) {
-		return StackInfo{}, false, fmt.Errorf("branch %s is protected; check out a feature branch or commit from the base branch to mint a GX stack", bookmark)
 	}
 	store, err := openStore(ctx)
 	if err != nil {
@@ -469,7 +470,7 @@ func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, b
 		return stackInfoFromStorage(*existing), created, nil
 	}
 	baseCommit := s.stackBaseCommitID(ctx, repo.RootPath, baseRef)
-	if onBase && strings.TrimSpace(headCommit) != "" {
+	if (onBase || created) && strings.TrimSpace(headCommit) != "" {
 		baseCommit = strings.TrimSpace(headCommit)
 	}
 	return StackInfo{
@@ -479,21 +480,6 @@ func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, b
 		BaseCommitID: baseCommit,
 		Status:       "draft",
 	}, created, nil
-}
-
-func (s *Service) uniqueStackBookmark(ctx context.Context, repoRoot, base string) (string, error) {
-	base = cleanRefName(base)
-	if base == "" {
-		base = "feature/commit"
-	}
-	candidate := base
-	for i := 2; i < 100; i++ {
-		if !s.refExists(ctx, repoRoot, candidate) {
-			return candidate, nil
-		}
-		candidate = fmt.Sprintf("%s-%d", base, i)
-	}
-	return "", fmt.Errorf("could not create a unique stack branch for %s", base)
 }
 
 func (s *Service) refExists(ctx context.Context, repoRoot, ref string) bool {

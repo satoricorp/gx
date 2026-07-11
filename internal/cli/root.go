@@ -286,6 +286,7 @@ func initOutput(cmd *cobra.Command, quiet bool) io.Writer {
 
 func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var message string
+	var branch string
 	var jsonOut bool
 	var all bool
 	var amend bool
@@ -296,6 +297,9 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		Short: "Record staged Git changes as a GX revision",
 		Long: strings.Join([]string{
 			"Record staged Git changes as a GX revision.",
+			"",
+			"Like git commit, the revision lands on the current branch and HEAD",
+			"does not move. Pass -b to create and switch to a new branch first.",
 			"",
 			"Use git add or git add -p to choose scope, then run gx commit -m.",
 			"The resulting revision is JJ-backed and editable with GX/MCP tools.",
@@ -338,6 +342,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			}
 			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{
 				Message:    message,
+				Branch:     branch,
 				SelfReport: selfReport,
 			})
 			if err != nil {
@@ -358,6 +363,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		},
 	}
 	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message (required)")
+	cmd.Flags().StringVarP(&branch, "branch", "b", "", "create this branch at HEAD and record the revision onto it (default: current branch)")
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "unsupported; stage changes with git add first")
 	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use gx edit <rev>")
 	cmd.Flags().StringVarP(&fileMessage, "file", "F", "", "unsupported; pass a message with -m")
