@@ -159,18 +159,20 @@ if [ -f "$tmp_dir/gx/completions/_gx" ]; then
 fi
 
 echo "Installed gx to $install_dir/gx"
-echo "Installed gxr to $install_dir/gxr"
-echo "Installed gxs to $install_dir/gxs"
-echo "Installed gx-mcp to $install_dir/gx-mcp"
+echo "Installed MCP and aliases"
 if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."
 fi
 # Mint (#3DDC97) matches GX CLI termstyle.
+gx_auth_login="gx auth login"
 gx_init="gx init"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  gx_auth_login="$(printf '\033[38;2;61;220;151mgx auth login\033[0m')"
   gx_init="$(printf '\033[38;2;61;220;151mgx init\033[0m')"
 fi
-echo "Run ${gx_init} in each repo to install git hooks, register MCP, and offer AGENTS.md instructions."
+echo ""
+printf '\tRun %s to login.\n' "$gx_auth_login"
+printf '\tRun %s in each repo to initialize gx.\n' "$gx_init"
 if [ "$with_menubar" = "true" ]; then
   install_menubar_app
 fi
