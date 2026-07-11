@@ -2620,12 +2620,24 @@ func (s *Service) pushStackUnlockedWithContext(ctx context.Context, repo RepoInf
 	if err != nil {
 		return PushResult{}, err
 	}
-	var reattached RepoInfo
-	reattached, err = s.reattachGitHeadToBaseRef(ctx, repo, gxBaseRef)
-	if err != nil {
-		return PushResult{}, err
+	// Reattach to the base only from container/detached checkouts. When the
+	// user is on a real branch (the pushed stack or any other), pushing must
+	// not move their checkout — and the reattach would force the base branch
+	// to the jj container commit, silently advancing a protected ref.
+	checkout := s.currentGitCheckoutRef(ctx, repo.RootPath)
+	if checkout == "" || strings.HasPrefix(checkout, "gx/") || checkout == baseCheckoutRef(gxBaseRef) {
+		var reattached RepoInfo
+		reattached, err = s.reattachGitHeadToBaseRef(ctx, repo, gxBaseRef)
+		if err != nil {
+			return PushResult{}, err
+		}
+		repo = reattached
+	} else {
+		repo, err = s.ResolveJJRepoAtPath(ctx, repo.RootPath)
+		if err != nil {
+			return PushResult{}, err
+		}
 	}
-	repo = reattached
 	var change *ChangeInfo
 	if len(pushed) > 0 {
 		current := pushed[len(pushed)-1].Change

@@ -5,7 +5,8 @@ import { ensureGxInitialized } from "../session-workspace";
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
-  stack: z.string().optional().describe("Optional stack/feature name to push. Omit to push all eligible generated work."),
+  stack: z.string().optional().describe("Optional stack/feature name to push. Omit to push the current stack, like git push. Pass all: true to push every accepted stack."),
+  all: z.boolean().optional().describe("Push every accepted stack instead of only the current one."),
 };
 
 export const metadata: ToolMetadata = {
@@ -24,6 +25,8 @@ export default async function gxPush(params: InferSchema<typeof schema>) {
   const args = ["push"];
   if (params.stack) {
     args.push(params.stack);
+  } else if (params.all) {
+    args.push("--all");
   }
   try {
     await ensureGxInitialized(params.cwd);

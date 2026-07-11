@@ -11,6 +11,8 @@ const (
 	EventSessionUploaded   = "session.uploaded"
 	EventComposeRun        = "compose.run"
 	EventCLIInstall        = "cli.install"
+	EventCLIInitRun        = "cli.init.run"
+	EventCLICommitRun      = "cli.commit.run"
 	EventCLIGenerateRun    = "cli.generate.run"
 	EventCLIGeneratePrompt = "cli.generate.prompt"
 	EventCLIPushRun        = "cli.push.run"
