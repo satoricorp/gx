@@ -48,7 +48,14 @@ func RevisionIDsInGitRange(ctx context.Context, repoRoot, refRange string) ([]st
 	if refRange == "" {
 		return nil, nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "--format=%B", refRange)
+	args := []string{"-C", repoRoot, "log", "--format=%B", refRange}
+	if !strings.Contains(refRange, "..") {
+		// A bare rev means a new-branch push with no remote base; without a
+		// bound the walk collects every GX revision in repo history. Only
+		// commits that are not already on a remote are being pushed.
+		args = append(args, "--not", "--remotes")
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git log %s: %w\n%s", refRange, err, strings.TrimSpace(string(out)))

@@ -1334,8 +1334,8 @@ func TestPublishHelpDoesNotPublish(t *testing.T) {
 	if !strings.Contains(text, "gx push [stack]") {
 		t.Fatalf("help output missing stack usage:\n%s", text)
 	}
-	if strings.Contains(text, "--all") {
-		t.Fatalf("help output should not include removed --all flag:\n%s", text)
+	if !strings.Contains(text, "--all") {
+		t.Fatalf("help output should offer --all for pushing every accepted stack:\n%s", text)
 	}
 	if strings.Contains(text, "--github") {
 		t.Fatalf("help output should hide compatibility --github flag:\n%s", text)
