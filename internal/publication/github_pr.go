@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	githubapi "github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
@@ -26,6 +27,10 @@ func UpdateGitHubPullRequestBody(ctx context.Context, artifact reviewbundle.Arti
 	}
 	summary, err := GitHubPullRequestBodyFromArtifact(ctx, artifact)
 	if err != nil {
+		if cloud.IsPaymentRequired(err) {
+			// Expired trial / unpaid plan: do not post heuristics-only bodies.
+			return false, nil
+		}
 		return false, fmt.Errorf("build GitHub PR summary for %s: %w", ref.URL, err)
 	}
 	client, err := githubapi.NewClient(ref.Host)

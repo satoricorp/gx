@@ -313,9 +313,9 @@ func demuxReviewerFromEnv(opts DemuxAIReviewOptions) (demuxAIReviewer, string, e
 		return cloudReviewer, cloudModel, nil
 	}
 	if cloudErr != nil {
-		return nil, "", fmt.Errorf("OPENAI_API_KEY or GX_OPENAI_API_KEY is required for gx demux fix, and gx cloud OpenAI proxy is not available: %w", cloudErr)
+		return nil, "", fmt.Errorf("gx generate needs a model to repair this plan: sign in with `gx auth login` to use GX Cloud, or set your own key with `gx set key` (cloud unavailable: %w)", cloudErr)
 	}
-	return nil, "", fmt.Errorf("OPENAI_API_KEY or GX_OPENAI_API_KEY is required for gx demux fix")
+	return nil, "", fmt.Errorf("gx generate needs a model to repair this plan: sign in with `gx auth login` to use GX Cloud, or set your own key with `gx set key`")
 }
 
 func openAIDemuxReviewerFromEnv(opts DemuxAIReviewOptions) (demuxAIReviewer, string, error) {
@@ -420,6 +420,9 @@ func (r *cloudDemuxReviewer) ReviewDemuxProposal(ctx context.Context, req demuxA
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return demuxAIReviewResponse{}, cloud.NewPaymentRequiredError(responseBody)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {
