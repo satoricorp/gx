@@ -65,21 +65,19 @@ Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/
 Version control: use GX, not `git commit` or `git push`.
 
 Use the GX MCP tools first:
-- `gx_sync` before generating or pushing when remote changes may have landed.
-- `gx_generate` to save work into GX revisions and stacks.
+- `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
 - `gx_push` to publish ready GX stacks.
+- `gx_edit` only to re-enter an existing revision for further edits.
 
 If MCP is unavailable, use the CLI fallback:
 - `git add <files>` then `gx commit -m "..."` for manual saves
-- `gx sync`
-- `gx generate`
 - `gx status`
 - `gx push`
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow: generate the work with GX, inspect status, and push ready
-stacks unless the user asks to keep them local.
+GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
+`gx_status`, and push ready stacks with `gx_push` unless the user asks to keep them local.
 
 GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
 created only with raw Git or the GitHub UI will not get a GX summary until that

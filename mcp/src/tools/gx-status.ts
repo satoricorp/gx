@@ -5,12 +5,13 @@ import { ensureGxInitialized } from "../session-workspace";
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
-  show_all: z.boolean().optional().describe("Include hidden compatibility state where the CLI supports it."),
+  show_all: z.boolean().optional().describe("Include all changed files in git working tree sections."),
 };
 
 export const metadata: ToolMetadata = {
   name: "gx_status",
-  description: "Inspect GX unstaged files, local features, revisions, and remote state with gx status --json.",
+  description:
+    "Inspect GX unstaged files, local features, revisions, and remote state with gx status --json. Use after gx_commit or gx_edit, and before gx_push.",
   annotations: {
     title: "GX Status",
     readOnlyHint: true,
@@ -22,13 +23,15 @@ export const metadata: ToolMetadata = {
 export default async function gxStatus(params: InferSchema<typeof schema>) {
   const args = ["status", "--json"];
   if (params.show_all) {
-    args.push("--show-all");
+    args.push("--all");
   }
   try {
     await ensureGxInitialized(params.cwd);
     return formatJsonResult(await runGxJson(args, { cwd: params.cwd, timeoutMs: 120_000 }), {
       action: "status",
-      nextActions: ["Run gx_generate for local changes or gx_push for ready features."],
+      nextActions: [
+        "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or gx_push when a stack is ready.",
+      ],
     });
   } catch (error) {
     return formatError(error, { action: "status" });

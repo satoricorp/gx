@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "../src/tools/gx-commit";
+import gxEdit, { metadata as editMetadata, schema as editSchema } from "../src/tools/gx-edit";
 import gxPush, { metadata as pushMetadata, schema as pushSchema } from "../src/tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
@@ -18,6 +19,15 @@ describe("gx_commit metadata and schema", () => {
   });
 });
 
+describe("gx_edit metadata and schema", () => {
+  test("describes the edit surface", () => {
+    expect(editMetadata.name).toBe("gx_edit");
+    expect(editMetadata.description).toMatch(/gx edit/i);
+    expect(editMetadata.annotations?.readOnlyHint).toBe(false);
+    expect(editSchema.revision.parse("abc123")).toBe("abc123");
+  });
+});
+
 describe("gx_review metadata and schema", () => {
   test("describes the review surface", () => {
     expect(reviewMetadata.name).toBe("gx_review");
@@ -30,9 +40,9 @@ describe("gx_review metadata and schema", () => {
 });
 
 describe("gx_push metadata and schema", () => {
-  test("describes pushing generated features", () => {
+  test("describes pushing GX stacks", () => {
     expect(pushMetadata.name).toBe("gx_push");
-    expect(pushMetadata.description).toMatch(/generated GX features/i);
+    expect(pushMetadata.description).toMatch(/gx push/i);
     expect(pushMetadata.annotations?.readOnlyHint).toBe(false);
     expect(pushSchema.stack.parse("feature/review")).toBe("feature/review");
   });
@@ -47,7 +57,7 @@ describe("gx_status metadata and schema", () => {
   });
 });
 
-describe("gx_review and gx_push CLI invocation", () => {
+describe("gx MCP CLI invocation", () => {
   let mockDir: string;
   let repoRoot: string;
   let callLog: string;
@@ -73,6 +83,10 @@ if [ "$1" = commit ]; then
     exit 1
   fi
   echo "commit ok"
+  exit 0
+fi
+if [ "$1" = edit ]; then
+  echo "edit ok"
   exit 0
 fi
 if [ "$1" = review ]; then
@@ -154,6 +168,14 @@ exit 1
     expect(calls).toContain("--context-file");
   });
 
+  test("gx_edit passes the revision id", async () => {
+    const output = await gxEdit({ cwd: repoRoot, revision: "abc123def" });
+    const parsed = JSON.parse(output);
+    expect(parsed.action).toBe("edit");
+    expect(parsed.display).toBe("edit ok");
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "edit", "abc123def"]);
+  });
+
   test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {
     const output = await gxReview({
       cwd: repoRoot,
@@ -190,7 +212,7 @@ exit 1
     expect(parsed.action).toBe("push");
     expect(parsed.display).toBe("push ok");
     expect(parsed.command).toEqual([process.env.GX_BINARY, "push", "feature/review"]);
-    expect(parsed.next_actions).toEqual(["Run gx_status to verify remote state. Run gx_sync after remote merges land."]);
+    expect(parsed.next_actions).toEqual(["Run gx_status to verify remote state."]);
   });
 
   test("gx_status runs status json", async () => {
@@ -199,7 +221,15 @@ exit 1
     expect(parsed.action).toBe("status");
     expect(parsed.result).toEqual({ stacks: [], files: [] });
     expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json"]);
-    expect(parsed.next_actions).toEqual(["Run gx_generate for local changes or gx_push for ready features."]);
+    expect(parsed.next_actions).toEqual([
+      "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or gx_push when a stack is ready.",
+    ]);
+  });
+
+  test("gx_status passes --all when show_all is set", async () => {
+    const output = await gxStatus({ cwd: repoRoot, show_all: true });
+    const parsed = JSON.parse(output);
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json", "--all"]);
   });
 
   test("gx_push surfaces MCP auth login guidance", async () => {

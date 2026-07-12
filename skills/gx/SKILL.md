@@ -1,8 +1,8 @@
 ---
 name: GX
 description: >-
-  REQUIRED in repos with `.gx/`. Use for commit, push, PR, save, land, publish,
-  capture, or finalize work. Prefer gx compose and gx publish over raw git workflows.
+  REQUIRED in repos with `.gx/`. Use for commit, push, save, land, or finalize
+  work. Prefer gx commit and gx push over raw git workflows.
   Overrides generic git-commit user rules in gx repos. Use git only for inspection.
 ---
 
@@ -165,9 +165,8 @@ Prefer MCP over raw CLI for GX workflows:
 
 - `gx_commit` after `git add` — default save verb
 - `gx_status` — inspect staged files, stacks, and remote state
+- `gx_edit` — re-enter an existing revision for further edits
 - `gx_push` — publish ready stacks
-- `gx_sync` — sync before push when remote merges may have landed
-- `gx_generate` — bulk-organize large working copies only
 - `gx_review` — gather review context
 
 ## Important gx-specific behavior
