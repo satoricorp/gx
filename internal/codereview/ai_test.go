@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
 func TestParseAIReviewOutputIncludesFileLineOverviewAndSources(t *testing.T) {
@@ -202,6 +204,30 @@ func TestResponsesAIReviewerParsesCannedResponse(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].File != "main.go" || findings[0].Line != 3 {
 		t.Fatalf("findings = %#v", findings)
+	}
+}
+
+func TestResponsesAIReviewerPaymentRequiredIsFriendly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":"payment_required","message":"GX free trial has ended for this org. Upgrade to keep using GX Cloud AI, or set your own model key with ` + "`gx set key`" + `.","upgrade_url":"https://gx.run/upgrade?org=x"}`))
+	}))
+	defer server.Close()
+
+	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
+	_, err := reviewer.Review(context.Background(), ReviewBrief{})
+	if err == nil {
+		t.Fatal("Review() expected payment-required error")
+	}
+	if !cloud.IsPaymentRequired(err) {
+		t.Fatalf("error type = %T (%v), want PaymentRequiredError", err, err)
+	}
+	message := err.Error()
+	if !strings.Contains(message, "gx set key") || !strings.Contains(message, "https://gx.run/upgrade?org=x") {
+		t.Fatalf("error = %q, want upgrade guidance", message)
+	}
+	if strings.Contains(message, "status 402") {
+		t.Fatalf("error = %q, want raw status hidden", message)
 	}
 }
 

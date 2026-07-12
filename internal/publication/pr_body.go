@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 	"github.com/satoricorp/gx/internal/semantic"
@@ -136,7 +137,10 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	if err != nil {
 		return "", err
 	}
-	summary, aiSucceeded, reviewerInfo := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach, policy)
+	summary, aiSucceeded, reviewerInfo, err := reviewPRSummaryFindings(ctx, artifact, catalog, summaryContext, reach, policy)
+	if err != nil {
+		return "", err
+	}
 	return renderGitHubPullRequestBody(artifact, catalog, summaryContext, summary, aiSucceeded, reach, policy, reviewerInfo), nil
 }
 
@@ -729,10 +733,10 @@ func highRiskCatalog(catalog prBodyCatalog) bool {
 	return catalog.Stats.MaxRiskLevel == "high" || containsAny(strings.Join(catalog.Stats.RiskSignals, " "), []string{"structural", "warning:", "many_files", "many_hunks"})
 }
 
-func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) (codereview.PRSummaryReview, bool, codereview.ReviewerInfo) {
+func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) (codereview.PRSummaryReview, bool, codereview.ReviewerInfo, error) {
 	reviewer, info := prSummaryReviewerFromEnvWithInfo()
 	if reviewer == nil {
-		return codereview.PRSummaryReview{}, false, info
+		return codereview.PRSummaryReview{}, false, info, nil
 	}
 	brief := prReviewBrief(artifact, catalog, summaryContext, reach, policy)
 	attemptReview := func() (codereview.PRSummaryReview, error) {
@@ -748,15 +752,21 @@ func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact
 	}
 	summary, err := attemptReview()
 	if err != nil {
+		if cloud.IsPaymentRequired(err) {
+			return codereview.PRSummaryReview{}, false, info, err
+		}
 		if waitErr := prSummaryReviewRetryWait(ctx, prSummaryReviewRetryDelay); waitErr != nil {
-			return codereview.PRSummaryReview{}, false, info
+			return codereview.PRSummaryReview{}, false, info, nil
 		}
 		summary, err = attemptReview()
 	}
 	if err != nil {
-		return codereview.PRSummaryReview{}, false, info
+		if cloud.IsPaymentRequired(err) {
+			return codereview.PRSummaryReview{}, false, info, err
+		}
+		return codereview.PRSummaryReview{}, false, info, nil
 	}
-	return summary, true, info
+	return summary, true, info, nil
 }
 
 func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) codereview.ReviewBrief {
