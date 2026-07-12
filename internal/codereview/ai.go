@@ -556,6 +556,9 @@ func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions str
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return "", cloud.NewPaymentRequiredError(responseBody)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(responseBody))
 		if detail != "" {

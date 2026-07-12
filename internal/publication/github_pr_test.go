@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
@@ -263,6 +265,45 @@ func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) 
 		if !strings.Contains(patchedBody, want) {
 			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
 		}
+	}
+}
+
+func TestUpdateGitHubPullRequestBodySkipsWhenTrialExpired(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GH_TOKEN", "token-one")
+	prURL := "https://github.com/satoricorp/gx/pull/11"
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	oldWait := prSummaryReviewRetryWait
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+		prSummaryReviewRetryWait = oldWait
+	}()
+	prSummaryReviewRetryWait = func(context.Context, time.Duration) error { return nil }
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{
+			failCount: 2,
+			err:       cloud.NewPaymentRequiredError([]byte(`{"message":"GX free trial has ended for this org."}`)),
+		}, codereview.ReviewerInfo{}
+	}
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{}, nil
+	}
+	patched := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		patched = r.Method == http.MethodPatch
+		t.Fatalf("GitHub API should not be called when trial is expired; got %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_API_URL", server.URL)
+
+	updated, err := UpdateGitHubPullRequestBody(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)))
+	if err != nil {
+		t.Fatalf("UpdateGitHubPullRequestBody() error = %v", err)
+	}
+	if updated || patched {
+		t.Fatalf("UpdateGitHubPullRequestBody() updated=%t patched=%t, want skip", updated, patched)
 	}
 }
 
