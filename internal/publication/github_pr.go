@@ -2,13 +2,10 @@ package publication
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	githubapi "github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
@@ -20,48 +17,13 @@ type githubPullRequestRef struct {
 	URL    string
 }
 
+// UpdateGitHubPullRequestBody used to rewrite the GitHub PR body with a rich
+// GX summary. Summaries are now owned by GX Cloud (single PR comment), so the
+// CLI no longer mutates PR bodies on publish.
 func UpdateGitHubPullRequestBody(ctx context.Context, artifact reviewbundle.Artifact) (bool, error) {
-	ref, ok := githubPullRequestRefFromArtifact(artifact)
-	if !ok {
-		return false, nil
-	}
-	summary, err := GitHubPullRequestBodyFromArtifact(ctx, artifact)
-	if err != nil {
-		if cloud.IsPaymentRequired(err) {
-			// Expired trial / unpaid plan: do not post heuristics-only bodies.
-			return false, nil
-		}
-		return false, fmt.Errorf("build GitHub PR summary for %s: %w", ref.URL, err)
-	}
-	client, err := githubapi.NewClient(ref.Host)
-	if err != nil {
-		return false, fmt.Errorf("prepare GitHub PR summary update for %s: %w", ref.URL, err)
-	}
-	existing, err := client.GetPullRequest(ctx, ref.Owner, ref.Repo, ref.Number)
-	if err != nil {
-		return false, fmt.Errorf("load GitHub PR before summary update for %s: %w", ref.URL, err)
-	}
-	if existing == nil {
-		return false, nil
-	}
-	authorNotes, gxOwned := splitGeneratedPRBody(existing.Body)
-	desired := appendAuthorNotes(summary, authorNotes)
-	if strings.TrimSpace(existing.Body) == strings.TrimSpace(desired) {
-		return false, nil
-	}
-	if !gxOwned && strings.TrimSpace(authorNotes) == "" {
-		authorNotes = strings.TrimSpace(existing.Body)
-		desired = appendAuthorNotes(summary, authorNotes)
-	}
-	if _, err := client.UpdatePullRequest(ctx, githubapi.UpdatePullRequestOptions{
-		Owner:  ref.Owner,
-		Repo:   ref.Repo,
-		Number: ref.Number,
-		Body:   desired,
-	}); err != nil {
-		return false, fmt.Errorf("update GitHub PR summary for %s: %w", ref.URL, err)
-	}
-	return true, nil
+	_ = ctx
+	_ = artifact
+	return false, nil
 }
 
 func githubPullRequestRefFromArtifact(artifact reviewbundle.Artifact) (githubPullRequestRef, bool) {

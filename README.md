@@ -75,21 +75,20 @@ This is required to use GX code review.
 ```md
 Version control: use GX, not `git commit`.
 
-Use GX MCP first: `gx_status`, then `gx_commit` / `gx_push`. Use `gx_edit` only to re-enter an existing revision.
+Use GX MCP first: `gx_status`, then `gx_commit`; push with plain `git push`. Use `gx_edit` only to re-enter an existing revision.
 If MCP is unavailable, use the CLI fallback: `git add`, `gx commit`,
 `gx status`, then `git push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow with `git add` + `gx commit`, then `gx push` ready stacks
-unless asked to keep them local.
+GX save workflow with `git add` + `gx commit`, then publish ready stacks with
+plain `git push` unless asked to keep them local.
 
-GX PR summaries are posted for PRs published or adopted on `git push`. A PR
-created only with the GitHub UI will not get a GX summary until that branch is
-pushed with GX trailers present.
+GX PR summaries are posted for PRs whose branch was pushed through GX with
+`git push` while the pre-push hook is installed. Open the PR with `gh pr create`.
 
-Only use raw Git for read-only inspection unless explicitly asked for raw Git.
-If supported, deny or require approval for `git commit`,
-`git reset`, and branch deletion.
+Only use raw Git for read-only inspection and the `git push` publish step unless
+explicitly asked for other raw Git. If supported, deny or require approval for
+`git commit`, `git reset`, and branch deletion.
 ```
 
 Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.

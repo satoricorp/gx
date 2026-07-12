@@ -1,214 +1,156 @@
 ---
-name: GX
+name: gx
 description: >-
-  REQUIRED in repos with `.gx/`. Use for commit, push, save, land, or finalize
-  work. Prefer gx commit and gx push over raw git workflows.
-  Overrides generic git-commit user rules in gx repos. Use git only for inspection.
+  Version-control workflow for repos that use GX (the gx CLI). Use this skill whenever
+  the user asks to commit, save, record, amend, land, publish, ship, or open a PR for
+  work in a repo that has GX initialized (a `.jj` directory at the repo root, GX
+  instructions in AGENTS.md, or the user mentions "gx") — even if they only say "save my
+  work" or "commit this". In a GX repo this skill overrides generic git habits: record
+  changes with `gx commit` (not `git commit`), and publish with plain `git push` (not
+  `gx push`), then `gh pr create`. Use git only for staging (`git add`) and read-only
+  inspection.
 ---
 
-# GX
+# GX CLI workflow
 
-## Overrides other VCS instructions
+GX is a quality layer for agent-written code. Instead of opaque commits it records
+**revisions** grouped into **stacks** (one stack = one reviewable line of work, exported
+as one Git branch and PR), attaches what the agent did next to what changed, and
+publishes ordinary Git branches and commits to GitHub. Revisions are JJ-backed, so
+recorded work stays editable through GX afterward.
 
-If this repo contains `.gx/`, gx wins over generic Cursor rules that say
-`git commit`, `git push`, or `gh pr create`. Use `gx compose` and `gx publish` unless
-the user explicitly asks for raw Git.
+The commands below mirror the GX MCP tools (`gx_commit`, `gx_status`, `gx_edit`,
+`gx_review`), plus plain `git push` for publishing. Follow the same call shapes so behavior
+is identical whether or not MCP is registered.
 
-## Gx repo check
+## First: make sure the repo is initialized
 
-If `.gx/` exists at the repo root, treat every "save", "commit", "push", or "PR"
-request as a gx task and read this skill first.
-
-Use this workflow boundary:
-
-- Use `gx compose` for the normal authoring/save path.
-- Use `gx publish` for the normal publish path.
-- Use `jj` directly only when `gx` adds nothing.
-- Use `git` directly only for remote/interop inspection or compatibility checks.
-- If the intent is commit, save, push, PR, publish, capture, or finalize work, use `gx` instead of Git/JJ.
-- Re-enter existing work with `gx edit` only when the user explicitly asks to edit a specific revision or stack.
-
-## Default commands
-
-Start here unless there is a specific reason not to:
+GX is initialized when the repo root has a `.jj` directory. If it does not, initialize
+non-interactively before any other gx command (this mirrors what the MCP server does
+automatically):
 
 ```bash
-gx init
+gx init -y
+```
+
+Identity defaults to the repo's Git config; pass `--name` / `--email` only when Git
+identity is missing. Run once per repository.
+
+## Default save workflow
+
+When the user says "save", "commit", "save my work", or finishes a task in a GX repo:
+
+```bash
+git add <files>                       # 1. choose scope — one logical change per revision
+gx commit -m "describe this change"   # 2. record staged changes as a GX revision
+gx status --agent                     # 3. verify the stack looks right
+git push                              # 4. publish — the GX pre-push hook does the rest
+gh pr create                          # 5. open the PR (only when the user wants one)
+```
+
+`gx commit` behaves like `git commit`: the revision lands on the current branch and
+`HEAD` does not move. To start a new line of work from the base branch, mint the stack's
+branch at commit time instead of creating one with git:
+
+```bash
+gx commit -m "add exponential backoff helper" -b feature/retry-backoff
+```
+
+Exit codes: `0` success, `1` general error, `2` nothing staged (run `git add` first).
+
+### Provenance is captured automatically
+
+You don't need to hand-declare what you did. `gx init` installs a pre-push hook that runs
+`gx capture push` on `git push`: it records the coding session — prompts, commands, and
+transcript — and attaches that context to the pushed revisions, so reviewers see it next to
+the diff with no extra step. Just `git push`; the provenance rides along.
+
+## Inspect state: gx status
+
+```bash
+gx status --agent   # stable key=value lines designed for agents to parse
+gx status --json    # machine-readable JSON (what MCP gx_status returns)
+gx status --all     # include every changed file in the working-tree sections
+```
+
+Use status to answer "what is staged, what stacks exist, what will push do" — after a
+commit or edit, and before a push. Don't wrap every command in status calls; one check
+at a decision point is enough.
+
+## Continue or amend a recorded revision: gx edit
+
+`gx commit --amend` is intentionally unsupported. To keep working on an already
+recorded revision:
+
+```bash
+gx status --agent        # find the revision id (e.g. tplnrmnorkln)
+gx edit <revision-id>    # re-enter it; checkout moves onto that stack's branch
+# ...make the follow-up changes...
 git add <files>
-gx commit -m "describe this revision"
-gx status
-gx publish
+gx commit -m "describe the follow-up"   # lands on the same stack
+gx base --set main       # return to the base branch before unrelated work
 ```
 
-For bulk organization of a large working copy, agents can still use the hidden `gx generate` command (`gxg`).
+Accepted ids: the GX change id, Git commit id, or the short id shown by status. After
+finishing, always return to the base branch (`gx base --set main`, or the repo's actual
+base) — leaving the checkout in edit mode makes the next unrelated commit land on the
+wrong stack.
 
-## Minimize approval churn
-
-The normal goal is one command per intent.
-
-- Do not run extra `gx status`, `git branch`, or raw `jj bookmark` commands unless they are needed to answer a real question.
-- Do not run a read command before and after every write command by default.
-- Use `gx commit` (after `git add`) as the normal staged revision recording path.
-- Use `gx generate` only when the user wants bulk organization of many files into multiple revisions.
-- Use `gx compose` when the user explicitly asks for compose/proposal workflow.
-- If `gx compose --json` returns a ready proposal, accept it into stacks. Run review/repair commands only when the proposal has warning-severity issues, repair hints, invalid grouping, or other problems.
-- Accept ready revisions from the compose flow before publishing. Accepted revisions move out of the pending proposal and into `gx stacks`.
-- Use `gx status` when the user asks what files or message state are waiting in the working copy.
-- Use `gx stacks` when the user asks what accepted work is queued for publish or needs stack/revision navigation.
-- Use `gx sync` to fetch remote state before publish troubleshooting.
-- Treat `gx publish` as the normal "publish this work" command.
-- Use `gx commit` (after `git add`) for explicit staged revision recording. Use `gx add` only as a deprecated alias for the same path. Use utility commands such as `gx base` and `gx edit` only for branch/stack repair, MCP/codegen checkout management, or user-directed editing.
-- Before a utility edit/switch/base command, say which stack and base branch it will touch.
-- After `gx edit` or raw `jj edit` in a codegen/MCP flow, make sure the visible Git checkout is attached to the real stack branch when one exists, not detached. Return to the real base branch before resuming normal compose work.
-
-Preferred flow:
+## Publish: git push
 
 ```bash
-git add <files>
-gx commit -m "message"
-gx status
-gx publish
+git push             # publish the current stack's branch
+gh pr create         # then open the PR (when the user wants one)
 ```
 
-Bulk-organize flow (agents only when appropriate):
+Publish with plain `git push`. The GX pre-push hook installed by `gx init` captures the
+session and registers publish/CI status as the branch goes up — so `git push` is the full
+GX publish path. Open the pull request with `gh pr create`; GX posts its PR summary once the
+PR exists. Requires a GitHub `origin` remote. Skip publishing when the user asked to keep
+work local.
+
+Do not run `gx push`. It takes a separate publish path that suppresses the pre-push hook,
+so the session capture the hook performs doesn't happen. Plain `git push` is the path GX is
+built around.
+
+## Review: gx review
+
+Run before pushing when the user asks for a review, or when you want findings on your
+own changes:
 
 ```bash
-gx generate
-gx status
-gx publish
+gx review                                    # patch-focused default
+gx review "did we break the retry contract?" # steer with a prompt
+gx review --scope security                   # architecture, security, performance,
+                                             # onboarding, docs, dependencies,
+                                             # testing, maintainability
+gx review --focus src/auth --deep            # deep pass limited to a path prefix
+gx review --verbose                          # include repo facts, docs, changed files
 ```
 
-Not preferred by default:
+Findings print as markdown and are recorded to review history. AI reviewers resolve
+credentials automatically (user key, then GX Cloud); the review always completes even
+without them.
 
-```bash
-gx compose
-gx publish
-```
+## Do not
 
-## When to use gx
+- `git commit` — the change is never recorded as a GX revision. Use `gx commit` after
+  `git add`.
+- `gx push` / `gx capture push` — both bypass or suppress the pre-push hook that GX's
+  publish path relies on. Publish with plain `git push`.
+- `gx commit -a` / `-F` / path arguments — rejected by design; stage with `git add`.
+- `gx commit --amend` — use `gx edit <rev>` as above.
+- Creating branches with `git switch -c` for new work — use `gx commit -b <branch>`.
+- Raw `jj` commands in the normal flow — GX manages the JJ layer; reach for `jj` only
+  in explicit repair work, and say why.
 
-Use `gx` when the command does more than raw JJ or Git:
+## When a command fails
 
-- repo setup
-- identity setup
-- session capture
-- keeping the checkout on the real public base branch in the normal compose flow, such as `main` or `develop`
-- status behavior that explains current JJ-backed revision files even when Git is clean
-- compose behavior that maintains one pending proposal and projects accepted revisions into stacks
-- stack behavior that previews accepted work that `gx publish` will publish
-- push behavior that exports stacked refs and registers GitHub/CI status in GX
-
-> **Agent note:** `gx publish` pushes the backing GitHub branch/PR by default so CI can run, then registers lightweight publish status in GX. It does not upload linked sessions, prompts, responses, or patch review content.
-
-### Rules
-
-- If the user is doing normal work, prefer `gx init`, `gx compose`, `gx status`, `gx stacks`, `gx sync`, and `gx publish`.
-- If the user is running Codex or Claude and wants capture, make sure the desktop app or ambient capture service is running.
-- Do not use `git commit` or plain `git push` when the user is working in the gx workflow unless they explicitly ask for raw Git.
-- Treat the real base branch as homebase for GX work. For example, use `main` when the public base branch is `main`, and `develop` when the public base branch is `develop`.
-- If `gx edit` moves the checkout into edit mode, inspect `gx status`/`gx stacks` before continuing. Understand where any unaccepted or staged changes live and return to the real base branch before normal `gx compose` work.
-- If raw JJ commands detach Git during codegen/MCP or repair work, attach the visible Git checkout to the matching real branch: the stack branch for edit flows or the base branch for normal authoring.
-
-## GX ops commands
-
-Use `gx ops` only for infrequent operational tasks:
-
-```bash
-gx ops capture install
-gx ops capture status
-gx ops diag doctor
-gx ops diag repair codex
-gx ops ingest cursor
-```
-
-## When to use jj
-
-Use raw `jj` only for operations where gx currently adds no product behavior.
-
-Examples:
-
-```bash
-jj split
-jj squash --use-destination-message
-jj log -r 'all()'
-jj help
-```
-
-### Rules
-
-- Do not wrap or rename a JJ command in `gx` if gx adds no metadata, policy, or UX value.
-- Prefer raw JJ for history surgery and deep inspection.
-- Do not use raw JJ bookmark commands in the normal gx path. GX manages attachment internally.
-- If you use raw JJ in a gx repo, say why in the final summary.
-
-## When to use git
-
-Use raw `git` for compatibility and inspection, not as the primary gx workflow.
-
-Examples:
-
-```bash
-git branch --show-current
-git log --oneline --decorate
-git remote -v
-git rev-parse --abbrev-ref HEAD
-```
-
-### Rules
-
-- Use Git to inspect branch state, refs, remotes, and pushed history.
-- Do not use Git for the main gx authoring flow unless the user explicitly asks for raw Git behavior.
-
-## MCP tools (when available)
-
-Prefer MCP over raw CLI for GX workflows:
-
-- `gx_commit` after `git add` — default save verb
-- `gx_status` — inspect staged files, stacks, and remote state
-- `gx_edit` — re-enter an existing revision for further edits
-- `gx_push` — publish ready stacks
-- `gx_review` — gather review context
-
-## Important gx-specific behavior
-
-- `gx init` should be run first in a repo.
-- `gx` stores user identity in `~/.gx/config.json`.
-- `gx` writes JJ `user.name` and `user.email`.
-- `gx compose` proposes ordered revisions from current working-copy changes and stores them in one pending compose proposal. Running it again adds newly changed files to that pending proposal instead of creating a separate proposal.
-- Accepting revisions from compose records them into GX stacks and returns the checkout to the real base branch. Accepted stacks then show in `gx stacks`.
-- `gx` links explicit or unlinked repo-local captured sessions to recorded changes on `gx compose`, `gx commit`, and `gx edit`.
-- `gx edit` is the explicit utility command for re-entering a revision. In codegen/MCP and repair flows it reattaches the visible Git checkout to the real stack branch when one exists after JJ edit operations to avoid detached-HEAD confusion.
-- `gx commit` records staged Git changes (`git add` first) as a JJ-backed GX revision. From the base branch it mints a stack from the message; from an active branch it appends to that stack.
-- `gx add` remains as a deprecated alias for direct revision recording; prefer `git add` + `gx commit`.
-- `gx status` shows the current revision, message state, changed files, and next commands. It should point normal work toward `git add` + `gx commit`.
-- `gx generate` (hidden from `gx --help`, alias `gxg`) bulk-organizes working-copy changes into smaller revisions and stacks.
-- `gx stacks` shows accepted GX stacks/revisions and what `gx publish` will publish. It is interactive for humans and exposes `--agent`, `--json`, and subcommands for programmatic workflows.
-- `gx publish` records pushes locally, exports stacked refs to GitHub, and registers publish/CI status in gx cloud (release builds include production endpoints; use `GX_CLOUD_URL` to override locally).
-- `gx auth login` authenticates with GitHub device flow, stores the GitHub OAuth token locally, and syncs it to the console auth endpoint.
-- `gx sync` fetches and prunes the remote line of work.
-- Prefer real base and stack branches over creating ad hoc Git branches after JJ edit operations in codegen/MCP or explicit repair flows. GX must not create `gx/...` checkout branches.
-
-## Do not do this by default
-
-Avoid these unless debugging or repairing a broken repo state:
-
-```bash
-jj bookmark create main -r @-
-jj bookmark move main --to @-
-git commit
-git push
-git add <files> && gx commit -m "message"
-gx edit <revision>
-```
-
-`gx commit` (with `git add`) and `gx edit` are available for explicit utility work, but normal work should go through `gx compose`. If utility work leaves the checkout in edit mode, return to the real base branch before composing new work. Attach Git to real base or stack branches only for codegen/MCP or explicit repair. The jj bookmark and raw git commands are implementation details or bypass the gx workflow.
-
-## Decision rule
-
-Ask one question internally before choosing a command:
-
-`Does gx provide product behavior here?`
-
-- If yes, use `gx`.
-- If no and this is history surgery or JJ inspection, use `jj`.
-- If no and this is Git compatibility or remote inspection, use `git`.
+| Symptom | Fix |
+| --- | --- |
+| `gx commit` exit code 2 | Nothing staged — run `git add <files>` first |
+| Error mentions `gx auth login` or "not logged in" | Ask the user to run `gx auth login` in a terminal, then retry |
+| Error mentions session expired / `gx auth logout` | Ask the user to run `gx auth logout` then `gx auth login`, then retry |
+| `git push` fails: no `origin` / not a GitHub remote | `git remote -v`; point `origin` at GitHub, or skip publishing |
+| `git push` rejected (remote moved: branch merged/closed or diverged) | `gx sync`, then retry `git push` |
+| Repo not initialized errors | `gx init -y`, then retry the original command |

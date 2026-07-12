@@ -96,15 +96,16 @@ git add .
 gx commit -m "add database schema"
 git add .
 gx commit -m "add secure email ingestion"
-gx push
+git push
+gh pr create
 ```
 
 GX should then:
 
 - attach session context to each revision
 - preserve the ordering of the revisions
-- publish them as stacked PRs
-- generate review summaries for each PR
+- publish them as stacked PRs (via `git push` + `gh pr create`)
+- generate review summaries for each PR (GX Cloud comment)
 
 ## Strategic Implication
 

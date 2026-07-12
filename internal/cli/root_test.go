@@ -1316,62 +1316,39 @@ func TestOpsDiagnoseAliasStillWorks(t *testing.T) {
 	}
 }
 
-func TestPublishHelpDoesNotPublish(t *testing.T) {
+func TestPushCommandIsDisabled(t *testing.T) {
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"push", "--help"})
+	root.SetArgs([]string{"push"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("push.Execute() error = nil, want disabled error")
+	}
+	if !strings.Contains(err.Error(), "gx push is disabled") {
+		t.Fatalf("push error = %v, want disabled message", err)
+	}
+	if !strings.Contains(err.Error(), "git push") {
+		t.Fatalf("push error = %v, want git push guidance", err)
+	}
+}
+
+func TestPushIsHiddenFromRootHelp(t *testing.T) {
+	root := NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--help"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("root.Execute() error = %v", err)
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "Push stacks and metadata to remote") {
-		t.Fatalf("help output missing publish summary:\n%s", text)
-	}
-	if !strings.Contains(text, "gx push [stack]") {
-		t.Fatalf("help output missing stack usage:\n%s", text)
-	}
-	if !strings.Contains(text, "--all") {
-		t.Fatalf("help output should offer --all for pushing every accepted stack:\n%s", text)
-	}
-	if strings.Contains(text, "--github") {
-		t.Fatalf("help output should hide compatibility --github flag:\n%s", text)
-	}
-	if strings.Contains(text, "--no-github") {
-		t.Fatalf("help output should not include removed --no-github flag:\n%s", text)
-	}
-	if strings.Contains(text, "Pushing ") || strings.Contains(text, "Creating draft PR") {
-		t.Fatalf("push help entered publish path:\n%s", text)
-	}
-}
-
-func TestPublishGitHubCompatibilityFlagRejectsFalseAndNoGitHubIsRemoved(t *testing.T) {
-	root := NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"push"})
-	if err != nil {
-		t.Fatalf("Find(push) error = %v", err)
-	}
-	githubFlag := cmd.Flags().Lookup("github")
-	if githubFlag == nil {
-		t.Fatal("push command missing --github flag")
-	}
-	if githubFlag.DefValue != "true" {
-		t.Fatalf("--github default = %q, want true", githubFlag.DefValue)
-	}
-	noGitHubFlag := cmd.Flags().Lookup("no-github")
-	if noGitHubFlag != nil {
-		t.Fatal("push command still registers removed --no-github flag")
-	}
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"push", "--github=false"})
-	err = root.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--github=false is no longer supported") {
-		t.Fatalf("push --github=false error = %v, want unsupported flag value", err)
+	if strings.Contains(text, "gx push") {
+		t.Fatalf("root help should hide disabled gx push:\n%s", text)
 	}
 }
 

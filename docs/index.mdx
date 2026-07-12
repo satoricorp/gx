@@ -24,12 +24,17 @@ in `~/.gx`.
 ## Core Workflow
 
 ```bash
-gx generate
+git add <files>
+gx commit -m "describe this revision"
 gx status
-gx push
+git push
+gh pr create
 ```
 
-`gx generate` turns working-copy changes into local revisions and stacks. `gx status` shows Unstaged work, local stacks, and Remote state. `gx push` pushes code, sessions, and GX metadata to the remote review surface.
+`gx commit` records staged work as a GX revision. Plain `git push` publishes the
+branch; the GX pre-push hook captures the session and uploads review context.
+Open the PR with `gh pr create` — GX Cloud posts the rich PR summary comment.
+Do not run `gx push`.
 
 For a manual Git-like save path, stage exactly what you want and replace
 `git commit` with `gx commit`:
@@ -37,7 +42,7 @@ For a manual Git-like save path, stage exactly what you want and replace
 ```bash
 git add <files>
 gx commit -m "describe this revision"
-gx push
+git push
 ```
 
 `gx commit` records the staged tree as a JJ-backed GX revision, so it remains
@@ -62,30 +67,31 @@ Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/
 </Note>
 
 ```md
-Version control: use GX, not `git commit` or `git push`.
+Version control: use GX, not `git commit`.
 
-Use the GX MCP tools first:
+Use GX MCP first:
 - `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
-- `gx_push` to publish ready GX stacks.
 - `gx_edit` only to re-enter an existing revision for further edits.
+
+Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
+then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push`.
 
 If MCP is unavailable, use the CLI fallback:
 - `git add <files>` then `gx commit -m "..."` for manual saves
 - `gx status`
-- `gx push`
+- `git push`
 
 When the user says "save work", "save using gx", or "save with gx", run the
 GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
-`gx_status`, and push ready stacks with `gx_push` unless the user asks to keep them local.
+`gx_status`, and publish ready stacks with plain `git push` unless the user asks to keep them local.
 
-GX PR summaries are posted for PRs published or adopted by `gx_push`. A PR
-created only with raw Git or the GitHub UI will not get a GX summary until that
-branch is pushed through GX.
+GX PR summaries are posted by GX Cloud for PRs whose branch was pushed through GX
+with `git push` while the pre-push hook is installed.
 
-Only use raw Git for read-only inspection unless the user explicitly asks for
-raw Git. If your agent client supports tool policies, deny or require approval
-for `git commit`, `git push`, `git reset`, and branch deletion.
+Use raw Git for read-only inspection and the `git push` publish step; do not use other raw
+Git for the save flow unless the user explicitly asks. If your agent client supports tool
+policies, deny or require approval for `git commit`, `git reset`, and branch deletion.
 ```
 
 <Info>

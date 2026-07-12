@@ -9,9 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
@@ -69,11 +67,11 @@ func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T)
 	if err != nil {
 		t.Fatalf("DrainQueuedUploads() error = %v", err)
 	}
-	if drain.PRSummariesUpdated != 1 || drain.PRSummariesFailed != 0 {
-		t.Fatalf("drain = %#v, want one PR summary updated", drain)
+	if drain.PRSummariesUpdated != 0 || drain.PRSummariesFailed != 0 {
+		t.Fatalf("drain = %#v, want no CLI PR body updates (server owns summaries)", drain)
 	}
-	if !strings.Contains(patchedBody, githubPRBodyMarker) {
-		t.Fatalf("patched body missing GX summary marker:\n%s", patchedBody)
+	if patchedBody != "" {
+		t.Fatalf("DrainQueuedUploads() should not rewrite GitHub PR bodies:\n%s", patchedBody)
 	}
 	if !uploader.called {
 		t.Fatal("uploader was not called during drain")
@@ -111,74 +109,23 @@ func TestDrainQueuedUploadsContinuesUploadWhenPRSummaryFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrainQueuedUploads() error = %v", err)
 	}
-	if drain.Uploaded != 1 || drain.Failed != 0 || drain.PRSummariesFailed != 1 {
-		t.Fatalf("drain = %#v uploader.called=%t, want upload despite summary failure", drain, uploader.called)
+	if drain.Uploaded != 1 || drain.Failed != 0 || drain.PRSummariesFailed != 0 {
+		t.Fatalf("drain = %#v uploader.called=%t, want upload with no CLI PR body rewrite", drain, uploader.called)
 	}
 }
 
-func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testing.T) {
+func TestDrainQueuedUploadsDoesNotRewriteGitHubPullRequestBody(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnvWithInfo
-	oldContext := collectPRSummaryContext
-	defer func() {
-		prSummaryReviewerFromEnvWithInfo = oldReviewer
-		collectPRSummaryContext = oldContext
-	}()
-	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return &fakePRSummaryReviewer{findings: []codereview.Finding{{
-			Title:          "Verify GitHub PR summary update ordering",
-			Summary:        "internal/publication/publication.go updates the GitHub PR body around publish side effects, so failures could leave reviewers without the important review targets.",
-			Recommendation: "Review the publication hunk before merging and confirm GitHub update failures are visible.",
-			Evidence:       []codereview.Evidence{{Label: "Changed hunk", Value: "internal/publication/publication.go"}},
-			Strength:       "Strong",
-			File:           "internal/publication/publication.go",
-			Line:           180,
-			SourceIDs:      []string{"google-eng-practices"},
-		}}}, codereview.ReviewerInfo{}
-	}
-	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
-		return prSummaryContext{
-			Sources: []string{"codebase", "session", "review resources"},
-			Snippets: []codereview.ContextSnippet{{
-				Kind:        "review_resource",
-				Ref:         "google-eng-practices",
-				Source:      "turbopuffer:gx-review-knowledge",
-				SourceLabel: "Google Engineering Practices",
-				Text:        "Review remote side effects before returning success.",
-			}},
-		}, nil
-	}
 	var patchedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			if r.URL.Path != "/repos/satoricorp/gx/pulls/11" {
-				t.Fatalf("get path = %q, want pull endpoint", r.URL.Path)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"html_url": prURL,
-				"number":   11,
-				"body":     "",
-			})
-		case http.MethodPatch:
-			if r.URL.Path != "/repos/satoricorp/gx/pulls/11" {
-				t.Fatalf("patch path = %q, want pull endpoint", r.URL.Path)
-			}
+		if r.Method == http.MethodPatch {
 			var payload map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("decode patch payload: %v", err)
-			}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
 			patchedBody = payload["body"]
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"html_url": prURL,
-				"number":   11,
-				"body":     patchedBody,
-			})
-		default:
-			t.Fatalf("method = %s", r.Method)
 		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"html_url": prURL, "number": 11, "body": ""})
 	}))
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
@@ -186,65 +133,31 @@ func TestDrainQueuedUploadsUpdatesGitHubPullRequestBodyFromReviewBundle(t *testi
 	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
 	}
-	if patchedBody != "" {
-		t.Fatalf("EnqueueArtifact() updated GitHub PR body before drain:\n%s", patchedBody)
-	}
 	uploader := &fakeUploader{}
 	if _, err := DrainQueuedUploads(context.Background(), uploader, 10); err != nil {
 		t.Fatalf("DrainQueuedUploads() error = %v", err)
 	}
-	for _, want := range []string{
-		githubPRBodyMarker,
-		"This PR changes",
-		"> 🔴 **Requires Deep Review** — high-risk change signals.",
-		"## Notable Changes",
-		"Verify GitHub PR summary update ordering",
-		"Attribution:",
-		"google-eng-practices",
-		githubHunkLineLink(prURL, "internal/publication/publication.go", 180),
-		"*Generated by GX — context: codebase, review resources, session.*",
-	} {
-		if !strings.Contains(patchedBody, want) {
-			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
-		}
+	if patchedBody != "" {
+		t.Fatalf("DrainQueuedUploads() rewrote PR body; server owns summaries:\n%s", patchedBody)
 	}
-	if strings.Contains(patchedBody, "Published by GX") {
-		t.Fatalf("patched body contains legacy placeholder:\n%s", patchedBody)
+	if !uploader.called {
+		t.Fatal("uploader was not called during drain")
 	}
 }
 
-func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) {
+func TestUpdateGitHubPullRequestBodyIsNoOp(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token-one")
 	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnvWithInfo
-	oldContext := collectPRSummaryContext
-	defer func() {
-		prSummaryReviewerFromEnvWithInfo = oldReviewer
-		collectPRSummaryContext = oldContext
-	}()
-	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) { return nil, codereview.ReviewerInfo{} }
-	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
-		return prSummaryContext{}, nil
-	}
-	var patchedBody string
+	var patched bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"html_url": prURL,
-				"number":   11,
-				"body":     "Please preserve these author notes.",
-			})
-		case http.MethodPatch:
-			var payload map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("decode patch payload: %v", err)
-			}
-			patchedBody = payload["body"]
-			_ = json.NewEncoder(w).Encode(map[string]any{"html_url": prURL, "number": 11, "body": patchedBody})
-		default:
-			t.Fatalf("method = %s", r.Method)
+		if r.Method == http.MethodPatch {
+			patched = true
 		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"html_url": prURL,
+			"number":   11,
+			"body":     "Please preserve these author notes.",
+		})
 	}))
 	defer server.Close()
 	t.Setenv("GX_GITHUB_API_URL", server.URL)
@@ -253,68 +166,22 @@ func TestUpdateGitHubPullRequestBodyAppendsHumanBodyAsAuthorNotes(t *testing.T) 
 	if err != nil {
 		t.Fatalf("UpdateGitHubPullRequestBody() error = %v", err)
 	}
-	if !updated {
-		t.Fatal("UpdateGitHubPullRequestBody() updated = false, want true")
+	if updated {
+		t.Fatal("UpdateGitHubPullRequestBody() updated = true, want no-op false")
 	}
-	for _, want := range []string{
-		githubPRBodyMarker,
-		githubPRAuthorNotesMarker,
-		"## Author Notes",
-		"Please preserve these author notes.",
-	} {
-		if !strings.Contains(patchedBody, want) {
-			t.Fatalf("patched body missing %q:\n%s", want, patchedBody)
-		}
-	}
-}
-
-func TestUpdateGitHubPullRequestBodySkipsWhenTrialExpired(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GH_TOKEN", "token-one")
-	prURL := "https://github.com/satoricorp/gx/pull/11"
-	oldReviewer := prSummaryReviewerFromEnvWithInfo
-	oldContext := collectPRSummaryContext
-	oldWait := prSummaryReviewRetryWait
-	defer func() {
-		prSummaryReviewerFromEnvWithInfo = oldReviewer
-		collectPRSummaryContext = oldContext
-		prSummaryReviewRetryWait = oldWait
-	}()
-	prSummaryReviewRetryWait = func(context.Context, time.Duration) error { return nil }
-	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
-		return &fakePRSummaryReviewer{
-			failCount: 2,
-			err:       cloud.NewPaymentRequiredError([]byte(`{"message":"GX free trial has ended for this org."}`)),
-		}, codereview.ReviewerInfo{}
-	}
-	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
-		return prSummaryContext{}, nil
-	}
-	patched := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		patched = r.Method == http.MethodPatch
-		t.Fatalf("GitHub API should not be called when trial is expired; got %s %s", r.Method, r.URL.Path)
-	}))
-	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
-
-	updated, err := UpdateGitHubPullRequestBody(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)))
-	if err != nil {
-		t.Fatalf("UpdateGitHubPullRequestBody() error = %v", err)
-	}
-	if updated || patched {
-		t.Fatalf("UpdateGitHubPullRequestBody() updated=%t patched=%t, want skip", updated, patched)
+	if patched {
+		t.Fatal("UpdateGitHubPullRequestBody() should not PATCH GitHub PR bodies")
 	}
 }
 
 type fakePRSummaryReviewer struct {
-	findings          []codereview.Finding
-	overview          string
-	downstreamImpact  string
-	notableChanges    []codereview.NotableChange
-	err               error
-	failCount         int
-	attempts          int
+	findings         []codereview.Finding
+	overview         string
+	downstreamImpact string
+	notableChanges   []codereview.NotableChange
+	err              error
+	failCount        int
+	attempts         int
 }
 
 func (f *fakePRSummaryReviewer) Review(context.Context, codereview.ReviewBrief) ([]codereview.Finding, error) {
