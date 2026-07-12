@@ -75,13 +75,13 @@ This is required to use GX code review.
 ```md
 Version control: use GX, not `git commit`.
 
-Use GX MCP first: `gx_sync`, `gx_status`, then `git push`.
-If MCP is unavailable, use the CLI fallback: `gx sync`, `git add`, `gx commit`,
+Use GX MCP first: `gx_status`, then `gx_commit` / `gx_push`. Use `gx_edit` only to re-enter an existing revision.
+If MCP is unavailable, use the CLI fallback: `git add`, `gx commit`,
 `gx status`, then `git push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow with `git add` + `gx commit` for focused changes, or `gx generate`
-for bulk organization, then `git push` ready stacks unless asked to keep them local.
+GX save workflow with `git add` + `gx commit`, then `gx push` ready stacks
+unless asked to keep them local.
 
 GX PR summaries are posted for PRs published or adopted on `git push`. A PR
 created only with the GitHub UI will not get a GX summary until that branch is
@@ -157,7 +157,7 @@ save with gx
 Expected MCP flow:
 
 ```text
-gx_sync -> gx_status -> gx_push
+gx_commit -> gx_status -> gx_push
 ```
 
-For bulk organization, agents can still call `gx_generate`.
+Use `gx_edit` when continuing work on an existing revision.

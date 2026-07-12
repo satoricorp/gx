@@ -7,9 +7,8 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 1. `gx_commit` after `git add` to record staged work as a GX revision (default verb).
 2. `gx_status` to inspect staged files, local features, revisions, and remote state.
 3. `gx_push` when the stack is ready to publish.
-4. `gx_sync` before generating or pushing when remote GitHub merges may have landed.
-5. `gx_generate` for bulk organization of large working copies (supporting cast).
-6. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
+4. `gx_edit` to re-enter an existing revision when amending or continuing work.
+5. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 
 When a user says "save work", "save using gx", or "save with gx", treat that as
 a request to run the GX save workflow: `git add`, then `gx_commit`, then
@@ -36,8 +35,7 @@ Use GX MCP first:
 - `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
 - `gx_push` to publish ready GX stacks.
-- `gx_sync` before generating or pushing when remote changes may have landed.
-- `gx_generate` only for bulk organization of large working copies.
+- `gx_edit` only to re-enter an existing revision for further edits.
 
 If MCP is unavailable, use the CLI fallback:
 - `git add`
@@ -64,25 +62,9 @@ for `git commit`, `git push`, `git reset`, and branch deletion.
 |------|-----|---------|
 | `gx_commit` | `gx commit -m "..."` | Record staged Git changes as a GX revision (default verb) |
 | `gx_status` | `gx status --json` | Inspect unstaged files, local features, revisions, and remote state |
-| `gx_push` | `gx push [stack]` | Push generated features, sessions, metadata, and guarded rewrites |
-| `gx_sync` | `gx sync` | Sync remote Git and GX remote state before generating or pushing |
-| `gx_generate` | `gx generate --json` | Bulk-organize large working copies into local features and revisions |
+| `gx_edit` | `gx edit <rev>` | Re-enter an existing revision to keep working on it |
+| `gx_push` | `gx push [stack]` | Push stacks, sessions, metadata, and guarded rewrites |
 | `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
-| `gx_set_base` | `gx base --set <default> --json` | Return the GX authoring base to the repo default branch only |
-
-### Session workspaces
-
-`gx_generate` requires a session id. Pass `session_id` / `session_ids`, or set `GX_SESSION_ID` / `GX_SESSION_IDS`.
-
-Before shelling out to `gx`, the MCP server resolves the requested repo, creates or reuses a JJ workspace at:
-
-```bash
-$GX_HOME/workspaces/<repo-hash>/<session-hash>
-```
-
-Then it runs `gx generate` from that workspace cwd. This keeps concurrent MCP sessions from generating each other's dirty checkout changes.
-
-Set `GX_MCP_WORKSPACE_ROOT` to override the workspace directory.
 
 ## Install
 
@@ -144,9 +126,7 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | `GX_BINARY` | Optional path to `gx` executable |
 | `JJ_BINARY` | Path to `jj` executable (default: `jj` on PATH) |
 | `GIT_BINARY` | Path to `git` executable (default: `git` on PATH) |
-| `GX_SESSION_ID` / `GX_SESSION_IDS` | Session ids used to isolate generate workspaces |
-| `GX_MCP_WORKSPACE_ROOT` | Override the root directory for MCP session workspaces |
-| `GX_CLOUD_URL` | GX cloud API base URL for review and generate AI fallback |
+| `GX_CLOUD_URL` | GX cloud API base URL for review AI fallback |
 | `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |
 | `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 

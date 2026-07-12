@@ -19,7 +19,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_commit",
   description:
-    "Record staged Git changes as a GX revision with gx commit. Stage files with git add first. This is the default GX save verb; use gx_status afterward and gx_push when the stack is ready to publish.",
+    "Record staged Git changes as a GX revision with gx commit. Stage files with git add first. This is the default GX save verb; use gx_status afterward and gx_push when the stack is ready. To amend an existing revision, use gx_edit instead.",
   annotations: {
     title: "GX Commit",
     readOnlyHint: false,
@@ -70,7 +70,7 @@ export default async function gxCommit(params: InferSchema<typeof schema>) {
       }),
       {
         action: "commit",
-        nextActions: ["Run gx_status to inspect local stack state. Run gx_push when the feature is ready to publish."],
+        nextActions: ["Run gx_status to inspect local stack state. Run gx_push when the feature is ready."],
       },
     );
   } catch (error) {
