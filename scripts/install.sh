@@ -163,12 +163,12 @@ echo "Installed MCP and aliases"
 if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."
 fi
-# Mint (#3DDC97) matches GX CLI termstyle.
+# Cyan ANSI 6 + bold matches gx version / logo (internal/cli/logo.go).
 gx_auth_login="gx auth login"
 gx_init="gx init"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  gx_auth_login="$(printf '\033[38;2;61;220;151mgx auth login\033[0m')"
-  gx_init="$(printf '\033[38;2;61;220;151mgx init\033[0m')"
+  gx_auth_login="$(printf '\033[1;36mgx auth login\033[0m')"
+  gx_init="$(printf '\033[1;36mgx init\033[0m')"
 fi
 echo ""
 printf '\tRun %s to login.\n' "$gx_auth_login"
