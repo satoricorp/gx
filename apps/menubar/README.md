@@ -93,13 +93,13 @@ After installing the app, add GX instructions to the start or end of your
 ```md
 Version control: use GX, not `git commit` or `git push`.
 
-Use GX MCP first: `gx_sync`, `gx_generate`, `gx_status`, then `gx_push`.
-If MCP is unavailable, use the CLI fallback: `gx sync`, `gx generate`,
+Use GX MCP first: `gx_status`, then `gx_commit` / `gx_push`. Use `gx_edit` only to re-enter an existing revision.
+If MCP is unavailable, use the CLI fallback: `git add`, `gx commit`,
 `gx status`, then `gx push`.
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow with GX generate and push ready stacks unless asked to keep
-them local.
+GX save workflow with `git add` + `gx commit`, then push ready stacks unless
+asked to keep them local.
 
 GX PR summaries are posted for PRs published or adopted by `gx_push` / `gx push`.
 A PR created only with raw Git or the GitHub UI will not get a GX summary until
