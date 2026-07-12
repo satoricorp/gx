@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "../src/tools/gx-commit";
 import gxEdit, { metadata as editMetadata, schema as editSchema } from "../src/tools/gx-edit";
-import gxPush, { metadata as pushMetadata, schema as pushSchema } from "../src/tools/gx-push";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
 import { ensureGxInitialized } from "../src/session-workspace";
@@ -36,15 +35,6 @@ describe("gx_review metadata and schema", () => {
     expect(reviewSchema.scope.parse("architecture")).toBe("architecture");
     expect(reviewSchema.prompt.parse("review auth rollback risk")).toBe("review auth rollback risk");
     expect(reviewSchema.deep.parse(true)).toBe(true);
-  });
-});
-
-describe("gx_push metadata and schema", () => {
-  test("describes pushing GX stacks", () => {
-    expect(pushMetadata.name).toBe("gx_push");
-    expect(pushMetadata.description).toMatch(/gx push/i);
-    expect(pushMetadata.annotations?.readOnlyHint).toBe(false);
-    expect(pushSchema.stack.parse("feature/review")).toBe("feature/review");
   });
 });
 
@@ -206,15 +196,6 @@ exit 1
     expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
   });
 
-  test("gx_push passes an optional stack name", async () => {
-    const output = await gxPush({ cwd: repoRoot, stack: "feature/review" });
-    const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("push");
-    expect(parsed.display).toBe("push ok");
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "push", "feature/review"]);
-    expect(parsed.next_actions).toEqual(["Run gx_status to verify remote state."]);
-  });
-
   test("gx_status runs status json", async () => {
     const output = await gxStatus({ cwd: repoRoot });
     const parsed = JSON.parse(output);
@@ -222,7 +203,7 @@ exit 1
     expect(parsed.result).toEqual({ stacks: [], files: [] });
     expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json"]);
     expect(parsed.next_actions).toEqual([
-      "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or gx_push when a stack is ready.",
+      "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or git push to publish when a stack is ready.",
     ]);
   });
 
@@ -232,14 +213,14 @@ exit 1
     expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json", "--all"]);
   });
 
-  test("gx_push surfaces MCP auth login guidance", async () => {
+  test("gx_commit surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const output = await gxPush({ cwd: repoRoot });
+    const output = await gxCommit({ cwd: repoRoot, message: "record staged work" });
     const parsed = JSON.parse(output);
 
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("push");
+    expect(parsed.action).toBe("commit");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.display).toBe(
       "GX cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",

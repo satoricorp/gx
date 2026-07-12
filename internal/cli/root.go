@@ -26,7 +26,6 @@ import (
 	"github.com/satoricorp/gx/internal/daemon"
 	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
-	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/launcher"
 	"github.com/satoricorp/gx/internal/postlist"
@@ -681,7 +680,7 @@ func printDemuxApplySummary(out io.Writer, result authoring.ApplyDemuxResult) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, section("Next"))
 	fmt.Fprintf(out, "  %s\n", command("gx status"))
-	fmt.Fprintf(out, "  %s\n", command("gx push"))
+	fmt.Fprintf(out, "  %s\n", command("git push"))
 	if result.RemainingChanges {
 		printDemuxPartialFollowup(out)
 	}
@@ -3021,159 +3020,17 @@ func firstNonEmptyString(values ...string) string {
 }
 
 func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var allowBackwards bool
-	var pushToGitHub bool
-	var publishAll bool
 	cmd := &cobra.Command{
-		Use:   "push [stack]",
-		Short: "Push stacks and metadata to remote",
-		Args:  cobra.MaximumNArgs(1),
+		Use:    "push [stack]",
+		Short:  "Disabled — use git push instead",
+		Hidden: true,
+		Args:   cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var runErr error
-			defer func() {
-				if runErr != nil {
-					autoReportFailure(ctx, engine, runErr, "gx push")
-				}
-			}()
-			out := cmd.OutOrStdout()
-			invocation := "gx push"
-			// The pre-push hook fires inside the git push gx runs and would
-			// enqueue a publication before the PR exists, racing the
-			// PR-enriched artifact gx push enqueues afterwards. The hook
-			// checks this variable and leaves publication to gx push.
-			_ = os.Setenv(hooks.SuppressAdoptedPublicationEnv, "1")
-			defer os.Unsetenv(hooks.SuppressAdoptedPublicationEnv)
-			// Like git push: the current stack by default. Sweeping every
-			// accepted stack publishes branches and PRs the user never asked
-			// to share; that needs the explicit --all.
-			publishAllRequested := publishAll && len(args) == 0
-			if len(args) > 0 {
-				invocation += " " + args[0]
-			}
-			fmt.Fprintln(out, commandLine(invocation, false))
-			fmt.Fprintln(out)
-			engine.SetProgressWriter(out)
-
-			if !pushToGitHub {
-				runErr = fmt.Errorf("--github=false is no longer supported; gx push always pushes stack refs")
-				return runErr
-			}
-			mode := authoring.PublishModeReviewAndGit
-			pushOpts := authoring.PushOptions{Mode: mode}
-
-			client := cloud.NewClient()
-			if client == nil {
-				publishHook := func(result authoring.PushResult) error {
-					printPushResult(out, result)
-					branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
-					fmt.Fprintln(out, labelWarningValue("Warning", fmt.Sprintf("Could not upload GX review context for branch %s: GX Cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints. Local remote metadata was still recorded.", branch)))
-					return nil
-				}
-
-				if publishAllRequested {
-					results, err := engine.PublishAll(ctx, nil, pushOpts, publishHook)
-					if err != nil {
-						runErr = err
-						return runErr
-					}
-					fmt.Fprintln(out, labelValue("Pushed", fmt.Sprintf("%d stacks", len(results))))
-					emitPushRunTelemetry(ctx, results, false, false, publishAllRequested, len(args) > 0)
-					return nil
-				}
-
-				var (
-					push authoring.PushResult
-					err  error
-				)
-				if len(args) > 0 {
-					push, err = engine.PublishNamed(ctx, args[0], nil, pushOpts, publishHook)
-				} else {
-					push, err = engine.Publish(ctx, nil, pushOpts, publishHook)
-				}
-				if err != nil {
-					runErr = err
-					return runErr
-				}
-				emitPushRunTelemetry(ctx, []authoring.PushResult{push}, false, false, publishAllRequested, len(args) > 0)
-				return nil
-			}
-
-			if publishAllRequested {
-				prepared, err := engine.PrepareAllPublishes(ctx, nil, pushOpts)
-				if err != nil {
-					runErr = err
-					return runErr
-				}
-				published := 0
-				var firstErr error
-				for _, push := range prepared {
-					review, err := publication.EnqueuePush(ctx, push)
-					if err != nil {
-						if firstErr == nil {
-							firstErr = err
-						}
-						fmt.Fprintln(out, labelWarningValue("GX Cloud", err.Error()))
-						continue
-					}
-					if err := engine.RecordPublish(ctx, push); err != nil {
-						if firstErr == nil {
-							firstErr = err
-						}
-						fmt.Fprintln(out, labelWarningValue("Remote metadata", err.Error()))
-						continue
-					}
-					printPushResult(out, push)
-					printPushReview(out, review)
-					published++
-				}
-				if published > 0 {
-					startPublishUploadWorker(out)
-				}
-				fmt.Fprintln(out, labelValue("Pushed", fmt.Sprintf("%d stacks", published)))
-				emitPushRunTelemetry(ctx, prepared, true, published > 0, publishAllRequested, len(args) > 0)
-				if firstErr != nil && published == 0 {
-					runErr = firstErr
-					return runErr
-				}
-				return nil
-			}
-
-			var push authoring.PushResult
-			var err error
-			if len(args) > 0 {
-				push, err = engine.PrepareNamedPublish(ctx, args[0], nil, pushOpts)
-			} else {
-				push, err = engine.PreparePublish(ctx, nil, pushOpts)
-			}
-			if err != nil {
-				runErr = err
-				return runErr
-			}
-			review, err := publication.EnqueuePush(ctx, push)
-			if err != nil {
-				runErr = err
-				return runErr
-			}
-			if err := engine.RecordPublish(ctx, push); err != nil {
-				runErr = err
-				return runErr
-			}
-			printPushResult(out, push)
-			printPushReview(out, review)
-			startPublishUploadWorker(out)
-			emitPushRunTelemetry(ctx, []authoring.PushResult{push}, true, true, publishAllRequested, len(args) > 0)
-			return nil
+			_ = ctx
+			_ = engine
+			_ = args
+			return fmt.Errorf("gx push is disabled; publish with plain `git push` (the GX pre-push hook captures and publishes), then open a PR with `gh pr create`")
 		},
-	}
-	cmd.Flags().BoolVar(&allowBackwards, "allow-backwards", false, "accepted for compatibility; gx handles required JJ bookmark moves automatically")
-	cmd.Flags().BoolVar(&publishAll, "all", false, "push every accepted stack instead of only the current one")
-	pushToGitHub = true
-	cmd.Flags().BoolVar(&pushToGitHub, "github", true, "accepted for compatibility; gx push always pushes stack refs")
-	if flag := cmd.Flags().Lookup("allow-backwards"); flag != nil {
-		flag.Hidden = true
-	}
-	if flag := cmd.Flags().Lookup("github"); flag != nil {
-		flag.Hidden = true
 	}
 	return cmd
 }
