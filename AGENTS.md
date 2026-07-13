@@ -7,7 +7,7 @@ Default flow:
 - Run `gx commit` (or MCP `gx_commit`) to record staged work as a GX revision.
 - Run `gx status` to inspect staged files, local features/revisions, and remote state.
 - Run plain `git push` to ship. The GX pre-push hook publishes code changes, sessions, and GX metadata to GX Cloud automatically — do not run `gx push` or `gx capture push` yourself.
-- Open PRs with `gh pr create` (or the GitHub UI); the GX summary arrives via the GitHub App once the PR exists.
+- Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; GX Cloud appends the rich summary below once the PR exists.
 
 Use GX MCP first: `gx_status`, then `gx_commit`; push with plain `git push`. Use `gx_edit` only to re-enter an existing revision.
 

@@ -105,9 +105,10 @@ gh pr create         # then open the PR (when the user wants one)
 
 Publish with plain `git push`. The GX pre-push hook installed by `gx init` captures the
 session and registers publish/CI status as the branch goes up — so `git push` is the full
-GX publish path. Open the pull request with `gh pr create`; GX posts its PR summary once the
-PR exists. Requires a GitHub `origin` remote. Skip publishing when the user asked to keep
-work local.
+GX publish path. Open the pull request with `gh pr create`; do **not** seed a `## Summary`
+section in the PR body (leave human notes only). The CLI does not rewrite PR descriptions —
+GX Cloud appends the rich summary below the existing body once the PR exists. Requires a
+GitHub `origin` remote. Skip publishing when the user asked to keep work local.
 
 Do not run `gx push`. It takes a separate publish path that suppresses the pre-push hook,
 so the session capture the hook performs doesn't happen. Plain `git push` is the path GX is
