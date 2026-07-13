@@ -145,6 +145,11 @@ func branchNameFromRef(localRef string) string {
 	switch {
 	case strings.HasPrefix(localRef, "refs/heads/"):
 		return strings.TrimPrefix(localRef, "refs/heads/")
+	case localRef == "HEAD":
+		// `git push origin HEAD` reports the local ref as literal HEAD; a
+		// HEAD-named artifact never unifies with the PR's bookmark on the
+		// server, so fall back to resolving the current branch.
+		return ""
 	default:
 		return localRef
 	}

@@ -161,6 +161,29 @@ func TestEnqueueAdoptedPublicationIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnqueueAdoptedPublicationResolvesHeadLocalRef(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	repo := initPushHookRepo(t)
+	head := gitRev(t, repo, "HEAD")
+
+	result, err := hooks.EnqueueAdoptedPublication(context.Background(), hooks.AdoptPushOptions{
+		RepoRoot: repo,
+		Remote:   "origin",
+		LocalRef: "HEAD",
+		HeadSHA:  head,
+	})
+	if err != nil {
+		t.Fatalf("EnqueueAdoptedPublication() error = %v", err)
+	}
+	if !result.Queued {
+		t.Fatal("queued = false, want true")
+	}
+	branch := result.Artifact.Push.BranchName
+	if branch == nil || *branch != "main" {
+		t.Fatalf("push branch = %v, want main (HEAD local ref must resolve to the real branch)", branch)
+	}
+}
+
 func initPushHookRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
