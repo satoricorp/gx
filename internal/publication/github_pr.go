@@ -18,8 +18,9 @@ type githubPullRequestRef struct {
 }
 
 // UpdateGitHubPullRequestBody used to rewrite the GitHub PR body with a rich
-// GX summary. Summaries are now owned by GX Cloud (single PR comment), so the
-// CLI no longer mutates PR bodies on publish.
+// GX summary (and previously could seed a thin overview/"Summary" section).
+// Summaries are now owned by GX Cloud, which appends one rich block below any
+// human PR description. The CLI never mutates PR bodies on publish.
 func UpdateGitHubPullRequestBody(ctx context.Context, artifact reviewbundle.Artifact) (bool, error) {
 	_ = ctx
 	_ = artifact
