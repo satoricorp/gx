@@ -47,6 +47,15 @@ describe("gx_status metadata and schema", () => {
   });
 });
 
+describe("registered MCP tool names", () => {
+  test("exposes exactly gx_commit, gx_status, gx_edit, gx_review", () => {
+    const registered = [commitMetadata.name, statusMetadata.name, editMetadata.name, reviewMetadata.name].sort();
+    expect(registered).toEqual(["gx_commit", "gx_edit", "gx_review", "gx_status"]);
+    expect(registered).not.toContain("gx_push");
+    expect(registered).not.toContain("gx_publish");
+  });
+});
+
 describe("gx MCP CLI invocation", () => {
   let mockDir: string;
   let repoRoot: string;
@@ -81,14 +90,6 @@ if [ "$1" = edit ]; then
 fi
 if [ "$1" = review ]; then
   echo "review ok"
-  exit 0
-fi
-if [ "$1" = push ]; then
-  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
-    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
-    exit 1
-  fi
-  echo "push ok"
   exit 0
 fi
 if [ "$1" = status ]; then

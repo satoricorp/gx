@@ -9,7 +9,7 @@ description: "Weekly changelog for GX covering new features, product updates, CL
 
 **`gx report` for stack summaries** — A new `gx report` command surfaces a quick overview of your stack state, and stack terminal UIs now scroll cleanly through longer revision lists. See the [GitHub PR summaries reference](/reference/github-pr-summaries) for related context on how stacks are published.
 
-**Generated GitHub PR summaries** — `gx push` now writes a generated review summary into the pull request body, highlighting revisions, blast radius, and up to 10 high-impact review targets. Anything you write in the PR description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries) for the full behavior.
+**Generated GitHub PR summaries** — After you publish with plain `git push` (GX pre-push hook) and open a PR, GX Cloud posts a generated review summary highlighting revisions, blast radius, and up to 10 high-impact review targets. Anything you write in the PR description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries) for the full behavior. (`gx push` is disabled; do not use it.)
 
 **Code review history memory** — `gx review` now pulls in indexed context from your past reviews and GitHub comment history, and attaches review policy context so findings stay consistent with how your team reviews code. Attribution on findings has also been improved so you can tell whether a note came from a GX finding, indexed history, or a diff heuristic.
 
@@ -21,7 +21,7 @@ description: "Weekly changelog for GX covering new features, product updates, CL
 
 ## Updates
 
-**Simpler `gx generate` and `gx push`** — The generate and push flow has been reworked for a smoother end-to-end path, including better preflight routing when demuxing changes into revisions.
+**Simpler `gx generate` and publish via `git push`** — The generate and publish flow has been reworked for a smoother end-to-end path, including better preflight routing when demuxing changes into revisions. Publish with plain `git push`; do not run `gx push`.
 
 **Cleaner stack views** — Merged published stacks and empty stored revisions are now hidden by default, and closed or merged PR stacks are pruned automatically so your stack list stays focused on active work. Stack read performance is also noticeably faster on large repositories.
 

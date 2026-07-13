@@ -1,8 +1,8 @@
 # GX Manual Workflow Test Sheet
 
-> **Note (2026):** Replace `gx compose` / `gx stacks` / `gx add` in this sheet
-> with `git add` + `gx commit`, `gx status`, and `gx generate` where bulk split
-> is needed.
+> **Note (2026):** Replace `gx compose` / `gx stacks` / `gx add` / `gx publish`
+> in this sheet with `git add` + `gx commit`, `gx status`, `gx generate` where
+> bulk split is needed, and plain `git push` + `gh pr create` to publish.
 
 Use this sheet against a disposable GitHub repository. The goal is to test the
 real flow, not mocked services.
@@ -46,9 +46,11 @@ Purpose: prove code change to compose to publish to desktop merge to GitHub
 printf "counter %s\n" "$(date +%s)" >> counter.txt
 printf "message %s\n" "$(date +%s)" >> src/message.txt
 gx status
-gx compose
-gx stacks
-gx publish
+git add counter.txt src/message.txt
+gx commit -m "dummy counter and message update"
+gx status
+git push
+gh pr create
 ```
 
 Then:
@@ -64,17 +66,17 @@ Then:
 git fetch origin
 git log --oneline origin/main -5
 gx sync
-gx stacks
+gx status
 ```
 
 ### Pass Criteria
 
-- `gx publish` prints a branch and GitHub PR URL.
+- `git push` succeeds and the pre-push hook runs; `gh pr create` prints a GitHub PR URL.
 - GitHub PR contains the dummy changes.
 - GX Desktop shows the published stack.
 - Merge from GX Desktop succeeds.
 - `origin/main` contains the dummy changes.
-- `gx stacks` agrees with the merged/published state.
+- `gx status` agrees with the merged/published state.
 
 Result: PASS / FAIL
 
@@ -89,11 +91,13 @@ Purpose: prove editing a published GX revision updates the same GitHub PR.
 Start from an open published PR.
 
 ```bash
-gx stacks
+gx status
 gx edit <revision-or-change-id>
 printf "republish %s\n" "$(date +%s)" >> counter.txt
+git add counter.txt
+gx commit -m "republish counter update"
 gx status
-gx publish
+git push
 ```
 
 Then verify in GitHub and GX Desktop.
@@ -121,8 +125,10 @@ Publish a PR that changes `shared.txt`:
 
 ```bash
 printf "gx change %s\n" "$(date +%s)" > shared.txt
-gx compose
-gx publish
+git add shared.txt
+gx commit -m "change shared text"
+git push
+gh pr create
 ```
 
 In a separate clone, advance `main` with a conflicting edit:
@@ -142,7 +148,7 @@ Back in the GX repo:
 ```bash
 git fetch origin
 gx sync
-gx stacks
+gx status
 ```
 
 Then:
@@ -150,7 +156,7 @@ Then:
 - Confirm GitHub or GX Desktop reports the PR as conflicted/not mergeable.
 - Use GX/AI conflict repair.
 - Prefer editing the existing revision.
-- Run `gx publish` again.
+- Run `git push` again.
 - Merge from GX Desktop.
 
 ### Pass Criteria
@@ -175,17 +181,19 @@ Purpose: prove compose/publish/desktop handle multiple revisions in one stack.
 printf "alpha %s\n" "$(date +%s)" >> counter.txt
 printf "beta %s\n" "$(date +%s)" >> src/message.txt
 printf "gamma %s\n" "$(date +%s)" >> shared.txt
-gx compose
-gx stacks
-gx publish
+git add counter.txt src/message.txt shared.txt
+gx generate
+gx status
+git push
+gh pr create
 ```
 
 Then verify GitHub and GX Desktop.
 
 ### Pass Criteria
 
-- `gx compose` creates the expected revision structure.
-- `gx stacks` shows all revisions in the intended order.
+- `gx generate` / `gx commit` creates the expected revision structure.
+- `gx status` shows all revisions in the intended order.
 - GitHub PR contains all changes.
 - GX Desktop displays the stack/revisions coherently.
 - Merge from GX Desktop updates `main`.
@@ -196,23 +204,24 @@ Notes:
 
 ## Test 5: Publish Returns To Main
 
-Purpose: prove publish pushes accepted stacks without requiring a current stack
-checkout and returns to `main`.
+Purpose: prove `git push` publishes accepted stacks through the pre-push hook
+and leaves a normal branch checkout.
 
 ### Steps
 
 ```bash
 printf "review only %s\n" "$(date +%s)" >> counter.txt
-gx compose
-gx publish
+git add counter.txt
+gx commit -m "review only counter update"
+git push
 git branch --show-current
 ```
 
 ### Pass Criteria
 
-- Every accepted unpublished stack is pushed.
-- GX review/publish metadata is recorded.
-- The final Git branch is `main`.
+- Every accepted unpublished stack is pushed via plain `git push`.
+- GX review/publish metadata is recorded by the pre-push hook.
+- The final Git branch is a normal attached checkout (typically `main` or the stack branch per product rules).
 
 Result: PASS / FAIL
 

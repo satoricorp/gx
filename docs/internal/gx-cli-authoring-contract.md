@@ -38,26 +38,26 @@ outside world can receive branches and PRs.
 The normal workflow should be:
 
 ```bash
-gx compose
-gx stacks
-gx publish
+git add <files>
+gx commit -m "describe this revision"
+gx status
+git push
+gh pr create
 ```
 
-`gx compose` looks at all unrecorded work, proposes stacks and revisions,
-verifies that applying the proposal will actually work, and lets the caller
-accept all or selected stacks.
+`git add` + `gx commit` records staged work as a GX revision. The hidden
+`gx generate` command can organize a large working copy into smaller revisions
+when needed.
 
-`gx stacks` shows every accepted local stack and its revisions, regardless of
-the current Git branch. Once a stack has been merged into its target branch, it
-is no longer part of the `gx stacks` surface.
+`gx status` shows local features, revisions, and remote state.
 
-`gx publish` publishes every accepted stack that has unpublished revisions. It
-should not depend on a "current stack," because normal operation is from `main`.
-If there are no accepted stacks, or all accepted stacks are already published,
-publish is a successful no-op.
+Publish with plain `git push` (the GX pre-push hook captures the session and
+publishes). Open the PR with `gh pr create`. Do not run `gx push` or
+`gx publish` — those paths are disabled or removed; plain `git push` is the
+user-facing publish path.
 
-The user should stay attached to `main` after compose and publish. Detached HEAD
-is not an acceptable steady state.
+The user should stay on a normal branch checkout after commit and push.
+Detached HEAD is not an acceptable steady state.
 
 ## Compose
 
@@ -172,30 +172,25 @@ should create a stack whose visible name/ref in `gx stacks` is
 
 ## Publish
 
-`gx publish` should publish all accepted stacks with unpublished revisions.
-
-The command should scan GX's stack metadata, find draft stacks with unpublished
-revisions, push their branch refs, record publish metadata, and update remote
-refs. It should not care which stack the user is "on."
+Publish with plain `git push`. The GX pre-push hook captures the session and
+registers publish metadata as the branch goes up. Open the PR separately with
+`gh pr create`.
 
 Expected behavior:
 
 ```bash
-gx publish
+git push
+gh pr create
 ```
 
 means:
 
-- publish every unpublished accepted stack
-- push each stack branch
-- record remote ref
-- mark revisions published
+- push the stack branch via Git
+- the pre-push hook records capture/publish metadata
 - upload review context when cloud/GitHub integration is enabled
-- return to `main`
+- open or update the PR with `gh pr create` (do not seed `## Summary`)
 
-The CLI does not expose a `--no-github` publish path. If GX needs a review-only
-dry run, that should be a separate command or explicitly named flag because
-`publish` strongly implies branch refs are pushed.
+Do not run `gx push` or `gx publish`. Those are not the agent/user publish path.
 
 ## MCP And Agent Flow
 
@@ -203,39 +198,33 @@ MCP should call the same authoring engine behavior as the CLI.
 
 The ideal agent loop is:
 
-1. `gx_compose_changes`
-2. inspect proposal and review state
-3. repair with the model if GX reports issues
-4. `gx_review_compose_plan`
-5. repeat until ready
-6. `gx_accept_compose_plan`
-7. `gx_publish`
+1. `git add` staged files
+2. `gx_commit`
+3. `gx_status`
+4. plain `git push` when ready
+5. `gh pr create`
+6. `gx_edit` only to re-enter an existing revision
+7. `gx_review` when review context is needed
 
-For MCP, `gx compose --json --plan` can avoid spending GX's configured OpenAI
-tokens. The caller's model can do the repair. If `use_gx_llm` is enabled, GX can
-run its own OpenAI repair loop.
+There is no `gx_publish` / `gx_push` MCP tool. Agents must publish with plain
+`git push` only (never `gx push` or `gx capture push`).
 
-The important invariant is shared: agent acceptance must create the same stacks
-and revisions that the human TUI would create.
+The important invariant is shared: agent commits must create the same revisions
+that the human CLI path would create.
 
 ## Merge Standard
 
 Merge only changes that support this contract:
 
-- compose applies all proposed stacks, not only a valid subset
-- selected-stack apply filters hunks correctly
-- compose preflight runs in a disposable attempt and feeds failures into repair
-- accepted compose stacks show in `gx stacks` under the proposed branch names
+- `git add` + `gx commit` (and hidden `gx generate` when needed) record reviewable revisions
 - stack/revision metadata stores JJ change IDs and current commit IDs
-- publish scans all unpublished accepted stacks
-- publish pushes branch refs and records remote refs
-- compose and publish return to `main`
-- e2e tests cover multi-stack compose, selected-stack accept, `gx stacks`
-  visibility, and publish-all
+- agents publish with plain `git push` only (never `gx push` / `gx publish` / MCP push tools)
+- the pre-push hook captures session data and records publish metadata
+- PRs are opened with `gh pr create` without seeding `## Summary`
 
 Do not merge unrelated draft stacks just because they exist locally. Create a
 clean integration stack from `main`, run focused tmp e2e tests plus
-`go test ./...`, and only then publish or land.
+`go test ./...`, and only then publish with `git push` or land.
 
 ## Acceptance Gate
 
@@ -249,11 +238,13 @@ go test -tags e2e ./test/e2e -run 'TestGXCompose|TestGXPublishAllPublishesEveryS
 Then run a manual dogfood:
 
 ```bash
-gx compose
-gx stacks
-gx publish
+git add <files>
+gx commit -m "describe this revision"
+gx status
+git push
+gh pr create
 git branch --show-current
 ```
 
-The result should be boring: proposed stacks become visible stacks, publish
-pushes all unpublished stacks, and the final branch is `main`.
+The result should be boring: staged work becomes a GX revision, `git push`
+publishes the branch through the pre-push hook, and the PR opens cleanly.

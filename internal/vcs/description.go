@@ -102,7 +102,7 @@ func validateRecordedChangeDescription(description string) error {
 func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack StackInfo) error {
 	if stack.ID == 0 {
 		return fmt.Errorf(
-			"%w: stage changes with `git add`, then run `gx commit -m \"describe this revision\"` before `gx publish`",
+			"%w: stage changes with `git add`, then run `gx commit -m \"describe this revision\"` before `git push`",
 			ErrNoRecordedAdds,
 		)
 	}
@@ -118,7 +118,7 @@ func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack Stack
 	}
 	if len(changes) == 0 {
 		return fmt.Errorf(
-			"%w: stage changes with `git add`, then run `gx commit -m \"...\"` to record at least one change before `gx publish`",
+			"%w: stage changes with `git add`, then run `gx commit -m \"...\"` to record at least one change before `git push`",
 			ErrNoRecordedAdds,
 		)
 	}

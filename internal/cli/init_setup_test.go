@@ -15,6 +15,15 @@ func TestAgentsMDContainsSnippet(t *testing.T) {
 	if agentsMDContainsSnippet("# Agents\n\nUse git commit\n") {
 		t.Fatal("unexpected match")
 	}
+	if !strings.Contains(agentsMDSnippet, "git push") {
+		t.Fatal("expected agentsMDSnippet to require plain git push")
+	}
+	if !strings.Contains(agentsMDSnippet, "do not run `gx push`") {
+		t.Fatal("expected agentsMDSnippet to forbid gx push")
+	}
+	if !strings.Contains(agentsMDSnippet, "gx capture push") {
+		t.Fatal("expected agentsMDSnippet to forbid gx capture push")
+	}
 }
 
 func TestAppendAgentsMDSnippetCreatesFile(t *testing.T) {
