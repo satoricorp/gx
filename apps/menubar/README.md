@@ -93,19 +93,30 @@ After installing the app, add GX instructions to the start or end of your
 ```md
 Version control: use GX, not `git commit`.
 
-Use GX MCP first: `gx_status`, then `gx_commit`; push with plain `git push`. Use `gx_edit` only to re-enter an existing revision.
-If MCP is unavailable, use the CLI fallback: `git add`, `gx commit`,
-`gx status`, then `git push`.
+Use GX MCP first:
+- `gx_commit` after `git add` to record staged work (default verb).
+- `gx_status` to inspect local and remote stack state.
+- `gx_edit` only to re-enter an existing revision for further edits.
+
+Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
+then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
+bypass or suppress the hook.
+
+If MCP is unavailable, use the CLI fallback:
+- `git add`
+- `gx commit -m "..."`
+- `gx status`
+- `git push`
 
 When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow with `git add` + `gx commit`, then publish ready stacks with
-plain `git push` unless asked to keep them local.
+GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
+`gx_status`, and publish ready stacks with plain `git push` unless the user asks to keep them local.
 
 GX PR summaries are posted by GX Cloud for PRs whose branch was pushed through GX
 with `git push` while the pre-push hook is installed.
 
-Use raw Git for read-only inspection and the `git push` publish step unless
-explicitly asked for other raw Git. If supported, deny or require approval for
+Use raw Git for read-only inspection and the `git push` publish step; do not use other raw
+Git for the save flow unless the user explicitly asks. If supported, deny or require approval for
 `git commit`, `git reset`, and branch deletion.
 ```
 
