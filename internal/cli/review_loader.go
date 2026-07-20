@@ -33,7 +33,7 @@ type reviewLoaderResultMsg struct {
 }
 
 func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
-	if !useDemuxLoader(in, out) {
+	if !useStatusInteractive(in, out) {
 		return run(nil)
 	}
 	phases := make(chan string, 6)

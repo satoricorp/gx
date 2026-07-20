@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
-	"github.com/satoricorp/gx/internal/clitui"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/commitcontext"
@@ -43,7 +42,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "gx",
-		Short:         "GX CLI for capturing coding context and shipping stacked pull requests",
+		Short:         "GX CLI for Git-native capture, commits, and review",
 		Long:          gxTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -74,6 +73,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 
 	root.AddCommand(
 		newInternalDaemonCommand(ctx),
+		newInternalHooksCommand(ctx),
 		newVersionCommand(),
 		newDoctorCommand(ctx),
 		newAuthCommand(ctx),
@@ -81,15 +81,11 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newInitCommand(ctx, engine),
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
-		newBaseCommand(ctx, engine),
 		newDemoCommand(),
-		newGenerateCommand(ctx, engine),
 		newCommitCommand(ctx, engine),
-		newEditCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
 		newReportCommand(ctx, engine),
 		newReviewCommand(ctx, engine),
-		newPushCommand(ctx, engine),
 		newSyncCommand(ctx, engine),
 		newOpsCommand(ctx),
 	)
@@ -116,9 +112,9 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "set", "demo":
 			cmd.GroupID = groupSetup
-		case "base", "commit", "edit", "review", "status":
+		case "commit", "review", "status":
 			cmd.GroupID = groupWork
-		case "push", "sync":
+		case "sync":
 			cmd.GroupID = groupShip
 		case "doctor", "report", "version":
 			cmd.GroupID = groupHelp
@@ -268,8 +264,8 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "user name to store in GX and JJ config")
-	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX and JJ config")
+	cmd.Flags().StringVar(&name, "name", "", "user name to store in GX config")
+	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX config")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
 	return cmd
 }
@@ -309,11 +305,12 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 		Long: strings.Join([]string{
 			"Record staged Git changes as a GX revision.",
 			"",
-			"Like git commit, the revision lands on the current branch and HEAD",
-			"does not move. Pass -b to create and switch to a new branch first.",
+			"Like git commit, the revision advances the current branch and HEAD to the new commit.",
+			"Pass -b to create and switch to a new branch before committing.",
 			"",
 			"Use git add or git add -p to choose scope, then run gx commit -m.",
-			"The resulting revision is JJ-backed and editable with GX/MCP tools.",
+			"The resulting revision is recorded in GX metadata. Amend it with git commit --amend",
+			"and preserve the GX revision trailer.",
 			"",
 			"Exit codes: 0 success, 1 general error, 2 no staged changes.",
 		}, "\n"),
@@ -334,7 +331,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 				return fmt.Errorf("gx commit -a is not supported; stage changes with git add first")
 			}
 			if amend {
-				return fmt.Errorf("gx commit --amend is not supported; use gx edit <rev> to modify a recorded revision")
+				return fmt.Errorf("gx commit --amend is not supported; amend with git commit --amend and keep the GX revision trailer")
 			}
 			if strings.TrimSpace(fileMessage) != "" {
 				return fmt.Errorf("gx commit -F is not supported yet; pass a message with -m")
@@ -361,6 +358,11 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if err != nil {
 				return err
 			}
+			if result.Repo.RootPath != "" {
+				if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: lifecycle hooks were not installed: %v\n", hookErr)
+				}
+			}
 			if jsonOut {
 				return writeJSON(cmd, commitResultJSON{
 					Result:           result,
@@ -378,7 +380,7 @@ func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message (required)")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "create this branch at HEAD and record the revision onto it (default: current branch)")
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "unsupported; stage changes with git add first")
-	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use gx edit <rev>")
+	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use git commit --amend and preserve the GX revision trailer")
 	cmd.Flags().StringVarP(&fileMessage, "file", "F", "", "unsupported; pass a message with -m")
 	cmd.Flags().StringVar(&contextFile, "context-file", "", "optional JSON file with agent-declared provenance (task_summary, commands_run, tests_run)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
@@ -432,659 +434,57 @@ func printCommitSummary(out io.Writer, result authoring.CheckpointResult) {
 	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
 }
 
-func newBaseCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var setRef string
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:    "base",
-		Short:  "Utility: show or set the GX authoring base",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var (
-				result authoring.BaseResult
-				err    error
-			)
-			if strings.TrimSpace(setRef) != "" {
-				result, err = engine.SetBase(ctx, setRef)
-			} else {
-				result, err = engine.Base(ctx)
-			}
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(cmd, result)
-			}
-			printBaseSummary(cmd.OutOrStdout(), result, strings.TrimSpace(setRef) != "")
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&setRef, "set", "", "set the GX authoring base ref")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	return cmd
-}
-
-func printBaseSummary(out io.Writer, result authoring.BaseResult, updated bool) {
-	if updated {
-		fmt.Fprintln(out, success("Base updated"))
-	} else {
-		fmt.Fprintln(out, section("GX base"))
-	}
-	fmt.Fprintln(out, labelValue("Base", result.BaseRef))
-	if result.DefaultBranch != "" && result.DefaultBranch != result.BaseRef {
-		fmt.Fprintln(out, labelValue("Default branch", result.DefaultBranch))
-	}
-	current := result.CurrentRef
-	if current == "" {
-		current = "(detached)"
-	}
-	fmt.Fprintln(out, labelValue("Current", current))
-	fmt.Fprintln(out, labelValue("On base", yesNo(result.OnBase)))
-	if !result.OnBase {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, labelValue("Return", fmt.Sprintf("gx base --set %s", result.BaseRef)))
-	}
-}
-
-func newGenerateCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var jsonOut bool
-	var intent string
-	var raw bool
-	var model string
-	var maxWarnings int
-	var excludeFilesets []string
-	var legacy bool
-	cmd := &cobra.Command{
-		Use:     "generate [filesets...]",
-		Short:   "Save your work in branches & commits",
-		Hidden:  true,
-		Args:    cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 {
-				switch strings.TrimSpace(args[0]) {
-				case "apply", "accept", "review", "fix":
-					return fmt.Errorf("unknown command %q for %q", args[0], "gx generate")
-				}
-			}
-			startedAt := time.Now()
-			for round := 1; ; round++ {
-				packet, result, err := runGenerateApply(ctx, engine, cmd, generateRunOptions{
-					JSON:              jsonOut,
-					Raw:               raw,
-					Intent:            intent,
-					Model:             model,
-					MaxWarnings:       maxWarnings,
-					Filesets:          args,
-					ExcludeFilesets:   excludeFilesets,
-					PreflightAttempts: generatePreflightAttempts(),
-					Legacy:            legacy,
-				})
-				emitGenerateRunTelemetry(ctx, packet, result, err, generateRunTelemetryOptions{
-					JSON:         jsonOut,
-					Raw:          raw,
-					Filesets:     args,
-					ExcludeCount: len(excludeFilesets),
-					HasIntent:    strings.TrimSpace(intent) != "",
-					ModelSet:     strings.TrimSpace(model) != "",
-					Duration:     time.Since(startedAt),
-				})
-				if err == nil {
-					return nil
-				}
-				if jsonOut || generateIsMCP() || !useStatusInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
-					return err
-				}
-				if strings.TrimSpace(packet.Proposal.ID) == "" {
-					return err
-				}
-				printDemuxChangesPacket(cmd.OutOrStdout(), packet, demuxPrintOptions{Raw: raw})
-				printGenerateRoundFailure(cmd.OutOrStdout(), err)
-				continued := promptContinueGenerate(cmd.InOrStdin(), cmd.OutOrStdout())
-				telemetry.EmitProductEvent(ctx, telemetry.EventCLIGeneratePrompt, map[string]any{
-					"round":     round,
-					"continued": continued,
-				})
-				if !continued {
-					return err
-				}
-			}
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().StringVar(&intent, "intent", "", "optional intent prefix for generated revisions")
-	cmd.Flags().BoolVar(&raw, "raw", false, "show full generate diagnostics in human output")
-	cmd.Flags().StringVar(&model, "model", "", "OpenAI model for generate repair; defaults to GX_DEMUX_REVIEW_MODEL or gpt-4.1-mini")
-	cmd.Flags().IntVar(&maxWarnings, "max-warnings", 0, "maximum warning-severity diagnostics to send to the model; defaults to 50")
-	cmd.Flags().StringArrayVar(&excludeFilesets, "exclude", nil, "exclude changed file or directory from generate; may be repeated")
-	cmd.Flags().BoolVar(&legacy, "legacy", false, "run the legacy generate repair and preflight pipeline")
-	return cmd
-}
-
-type generateRunOptions struct {
-	JSON              bool
-	Raw               bool
-	Intent            string
-	Model             string
-	MaxWarnings       int
-	Filesets          []string
-	ExcludeFilesets   []string
-	PreflightAttempts int
-	Legacy            bool
-}
-
-func runGenerateApply(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) (authoring.DemuxPlanPacket, authoring.ApplyDemuxResult, error) {
-	run := func(progress io.Writer) (authoring.DemuxPlanPacket, error) {
-		if err := ensureGenerateInitialized(ctx, engine, cmd, opts); err != nil {
-			return authoring.DemuxPlanPacket{}, err
-		}
-		if err := engine.RequireAuthoringBase(ctx, "gx generate"); err != nil {
-			return authoring.DemuxPlanPacket{}, err
-		}
-		return engine.GenerateChanges(ctx, authoring.ProposeDemuxOptions{
-			Intent:                 opts.Intent,
-			Filesets:               opts.Filesets,
-			ExcludeFilesets:        opts.ExcludeFilesets,
-			Legacy:                 opts.Legacy,
-			Model:                  opts.Model,
-			MaxWarnings:            opts.MaxWarnings,
-			ApplyPreflightAttempts: opts.PreflightAttempts,
-			ProgressWriter:         progress,
-		})
-	}
-	var (
-		packet authoring.DemuxPlanPacket
-		result authoring.ApplyDemuxResult
-		err    error
-	)
-	if !opts.JSON && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
-		packet, err = runDemuxWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), run)
-	} else {
-		var progress io.Writer
-		if !opts.JSON {
-			progress = cmd.ErrOrStderr()
-		}
-		packet, err = run(progress)
-	}
+func statusWithPruning(ctx context.Context, engine *authoring.Engine) (authoring.StackSummary, int, error) {
+	stack, err := engine.Status(ctx)
 	if err != nil {
-		if opts.JSON && strings.TrimSpace(packet.Proposal.ID) != "" {
-			_ = writeJSON(cmd, map[string]any{
-				"error":  err.Error(),
-				"packet": packet,
-			})
-		}
-		return packet, authoring.ApplyDemuxResult{}, err
+		return authoring.StackSummary{}, 0, err
 	}
-	if reason := demuxAutoAcceptBlockedReason(packet); reason != "" {
-		if opts.JSON {
-			_ = writeJSON(cmd, map[string]any{
-				"error":  reason,
-				"packet": packet,
-			})
-		}
-		return packet, authoring.ApplyDemuxResult{}, fmt.Errorf("%s", reason)
-	}
-	apply := func() (authoring.ApplyDemuxResult, error) {
-		return engine.ApplyDemuxPlanWithOptions(ctx, packet.Proposal, authoring.ApplyDemuxOptions{
-			ReturnToDefaultBranch: true,
-		})
-	}
-	if !opts.JSON && useDemuxLoader(cmd.InOrStdin(), cmd.ErrOrStderr()) {
-		result, err = runDemuxApplyWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), "Creating revision stacks...", apply)
-	} else {
-		result, err = apply()
-	}
+	pruned, err := engine.PruneEmptyStacks(ctx)
 	if err != nil {
-		return packet, result, err
+		return stack, 0, err
 	}
-	if opts.JSON {
-		return packet, result, writeJSON(cmd, result)
+	if len(pruned.Deleted) > 0 {
+		stack, err = engine.Status(ctx)
 	}
-	printDemuxApplySummary(cmd.OutOrStdout(), result)
-	return packet, result, nil
+	return stack, len(pruned.Deleted), err
 }
 
-func ensureGenerateInitialized(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command, opts generateRunOptions) error {
-	_, err := engine.EnsureReadyRepo(ctx)
-	return err
-}
-
-// printGenerateRoundFailure surfaces the error that stopped a generate round
-// before the interactive continue prompt. Without it the prompt appears with
-// no explanation, which reads like a hang.
-func printGenerateRoundFailure(out io.Writer, err error) {
-	fmt.Fprintln(out)
+func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions, interactive bool, jsonOut bool) error {
+	stack, prunedEmpty, err := statusWithPruning(ctx, engine)
 	if err != nil {
-		fmt.Fprintln(out, labelWarningValue("Error", err.Error()))
+		return err
 	}
-}
-
-func generatePreflightAttempts() int {
-	if generateIsMCP() {
-		return 6
+	if err := enrichStatusStack(ctx, engine, &stack); err != nil {
+		return err
 	}
-	return 3
-}
-
-func generateIsMCP() bool {
-	return strings.TrimSpace(os.Getenv("GX_MCP")) != ""
-}
-
-func printDemuxApplySummary(out io.Writer, result authoring.ApplyDemuxResult) {
-	fmt.Fprintln(out, success("Generated revisions applied"))
-	fmt.Fprintln(out, labelValue("Plan", result.Proposal.ID))
-	fmt.Fprintln(out, labelValue("Created", fmt.Sprintf("%d revisions", len(result.Revisions))))
-	for index, revision := range result.Revisions {
-		fmt.Fprintf(out, "  %s %s  %s\n", command(fmt.Sprintf("r%d", index+1)), value(revision.Change.Description), muted(shortID(revision.Change.ChangeID, 12)))
+	display := stackDisplaySummaryForStacksDisplay(stack, opts)
+	stack = display.Stack
+	if agentOut {
+		printStatusAgent(out, stack, selector)
+		return nil
 	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Next"))
-	fmt.Fprintf(out, "  %s\n", command("gx status"))
-	fmt.Fprintf(out, "  %s\n", command("git push"))
-	if result.RemainingChanges {
-		printDemuxPartialFollowup(out)
-	}
-}
-
-func printDemuxPartialFollowup(out io.Writer) {
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, section("Remaining changes"))
-	fmt.Fprintln(out, muted("Selected generated changes were applied. Run "+command("gx generate")+" again for the remaining changes."))
-}
-
-const demuxPartialComposeWarning = "Partial generate plan: these revisions do not cover all current changes. Run gx generate again for the remaining changes."
-
-type demuxPrintOptions struct {
-	Raw bool
-}
-
-func printDemuxChangesPacket(out io.Writer, packet authoring.DemuxPlanPacket, opts demuxPrintOptions) {
-	fmt.Fprintln(out, commandLine("gx generate", true))
-	fmt.Fprintln(out)
-	printDemuxPartialWarning(out, packet.Proposal)
-	printDemuxProposal(out, packet.Proposal, opts)
-}
-
-func printDemuxPartialWarning(out io.Writer, proposal authoring.DemuxProposal) {
-	if !demuxProposalIsPartial(proposal) {
-		return
-	}
-	fmt.Fprintln(out, section("Partial proposal"))
-	fmt.Fprintln(out, muted(demuxPartialComposeWarning))
-	fmt.Fprintln(out)
-}
-
-func demuxProposalIsPartial(proposal authoring.DemuxProposal) bool {
-	for _, warning := range proposal.Warnings {
-		if warning == demuxPartialComposeWarning {
-			return true
-		}
-	}
-	return false
-}
-
-func yesNo(value bool) string {
-	if value {
-		return "yes"
-	}
-	return "no"
-}
-
-func splitFeasibilityWarnings(warnings []authoring.FeasibilityWarning) ([]authoring.FeasibilityWarning, []authoring.FeasibilityWarning) {
-	var blocking []authoring.FeasibilityWarning
-	var diagnostics []authoring.FeasibilityWarning
-	for _, warning := range warnings {
-		if strings.EqualFold(strings.TrimSpace(warning.Severity), "warning") {
-			blocking = append(blocking, warning)
-			continue
-		}
-		diagnostics = append(diagnostics, warning)
-	}
-	return blocking, diagnostics
-}
-
-func printDemuxProposal(out io.Writer, proposal authoring.DemuxProposal, opts demuxPrintOptions) {
-	if len(proposal.Revisions) == 0 {
-		fmt.Fprintln(out, section("Nothing to demux"))
-		fmt.Fprintln(out, muted("The working revision has no changes."))
-		return
-	}
-	printDemuxProposalSummary(out, proposal, "")
-	fmt.Fprintln(out)
-	printDemuxProposalStacks(out, proposal)
-	if opts.Raw && len(proposal.FeasibilityWarnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Warnings"))
-		for _, warning := range proposal.FeasibilityWarnings {
-			details := warning.Source
-			if warning.RevisionID != "" {
-				details += " / " + warning.RevisionID
-			}
-			fmt.Fprintf(out, "  %s %s  %s\n", muted(firstNonEmptyString(warning.RevisionID, warningMarker(warning.Severity))), muted(warning.Message), muted("["+details+"]"))
-		}
-	}
-	if opts.Raw && len(proposal.Warnings) > 0 {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, section("Warnings"))
-		for _, warning := range proposal.Warnings {
-			fmt.Fprintf(out, "  %s %s\n", danger("!"), warning)
-		}
-	}
-	if !opts.Raw {
-		diagnostics := len(proposal.FeasibilityWarnings) + len(proposal.Warnings)
-		if diagnostics > 0 {
-			fmt.Fprintln(out)
-			fmt.Fprintln(out, labelValue("Diagnostics", fmt.Sprintf("%d hidden; use --raw or --json", diagnostics)))
-		}
-	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, labelValue("JSON", "gx generate --json"))
-}
-
-type demuxStackDisplayGroup struct {
-	Target    string
-	Label     string
-	Revisions []authoring.RevisionProposal
-}
-
-func printDemuxProposalStacks(out io.Writer, proposal authoring.DemuxProposal) {
-	groups := demuxStackDisplayGroups(proposal.Revisions)
-	if len(groups) == 1 && groups[0].Target == "" {
-		fmt.Fprintln(out, section("Revisions"))
-		for _, revision := range groups[0].Revisions {
-			printDemuxRevisionLine(out, revision, "  ")
-		}
-		return
-	}
-	fmt.Fprintln(out, section("Stacks"))
-	for groupIndex, group := range groups {
-		if groupIndex > 0 {
-			fmt.Fprintln(out)
-		}
-		meta := fmt.Sprintf("%d %s", len(group.Revisions), pluralize("revision", len(group.Revisions)))
-		fmt.Fprintf(out, "  %s %s  %s\n", muted("●"), valueText(group.Label), muted(meta))
-		for _, revision := range group.Revisions {
-			printDemuxRevisionLine(out, revision, "    ")
-		}
-	}
-}
-
-func demuxStackDisplayGroups(revisions []authoring.RevisionProposal) []demuxStackDisplayGroup {
-	byTarget := map[string]int{}
-	groups := []demuxStackDisplayGroup{}
-	for _, revision := range revisions {
-		target := strings.TrimSpace(revision.TargetStack)
-		index, ok := byTarget[target]
-		if !ok {
-			label := target
-			if label == "" {
-				label = "Current stack"
-			}
-			index = len(groups)
-			byTarget[target] = index
-			groups = append(groups, demuxStackDisplayGroup{Target: target, Label: label})
-		}
-		groups[index].Revisions = append(groups[index].Revisions, revision)
-	}
-	return groups
-}
-
-func printDemuxRevisionLine(out io.Writer, revision authoring.RevisionProposal, padding string) {
-	fmt.Fprintf(out, "%s%s %s\n", padding, command(revision.ID), value(revision.Intent))
-	for _, file := range revision.Files {
-		fmt.Fprintf(out, "%s    %s\n", padding, muted(file))
-	}
-	for _, hunk := range revision.Hunks {
-		if hunk.File != "" && !stringInSlice(hunk.File, revision.Files) {
-			fmt.Fprintf(out, "%s    %s\n", padding, muted(hunk.File))
-		}
-	}
-}
-
-func printDemuxProposalSummary(out io.Writer, proposal authoring.DemuxProposal, state authoring.DemuxWorkflowState) {
-	fmt.Fprintln(out, section("Generate plan"))
-	fmt.Fprintln(out, labelValue("Found", demuxFoundSummary(proposal)))
-	fmt.Fprintln(out, labelValue("Proposes", fmt.Sprintf("%d revisions", len(proposal.Revisions))))
-	status := demuxProposalDisplayStatus(proposal, state)
-	if status != "" {
-		fmt.Fprintln(out, labelValue("Status", status))
-	}
-}
-
-func demuxFoundSummary(proposal authoring.DemuxProposal) string {
-	hunks := len(proposal.Hunks)
-	files := demuxProposalFileCount(proposal)
-	if hunks > 0 {
-		return fmt.Sprintf("%d %s across %d %s", hunks, pluralize("hunk", hunks), files, pluralize("file", files))
-	}
-	return fmt.Sprintf("%d %s", files, pluralize("file", files))
-}
-
-func demuxProposalFileCount(proposal authoring.DemuxProposal) int {
-	seen := map[string]bool{}
-	for _, hunk := range proposal.Hunks {
-		if hunk.File != "" {
-			seen[hunk.File] = true
-		}
-	}
-	for _, revision := range proposal.Revisions {
-		for _, file := range revision.Files {
-			if file != "" {
-				seen[file] = true
-			}
-		}
-		for _, hunk := range revision.Hunks {
-			if hunk.File != "" {
-				seen[hunk.File] = true
-			}
-		}
-	}
-	return len(seen)
-}
-
-type generateRunTelemetryOptions struct {
-	JSON         bool
-	Raw          bool
-	Filesets     []string
-	ExcludeCount int
-	HasIntent    bool
-	ModelSet     bool
-	Duration     time.Duration
-}
-
-func emitGenerateRunTelemetry(ctx context.Context, packet authoring.DemuxPlanPacket, result authoring.ApplyDemuxResult, runErr error, opts generateRunTelemetryOptions) {
-	blockingWarnings, diagnosticWarnings := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	}
-	props := map[string]any{
-		"status":                   status,
-		"state":                    string(packet.State),
-		"revision_count":           len(packet.Proposal.Revisions),
-		"generated_revision_count": len(result.Revisions),
-		"stack_count":              len(demuxStackDisplayGroups(packet.Proposal.Revisions)),
-		"hunk_count":               len(packet.Proposal.Hunks),
-		"file_count":               demuxProposalFileCount(packet.Proposal),
-		"warning_count":            len(packet.Proposal.Warnings) + len(packet.Proposal.FeasibilityWarnings),
-		"blocking_warning_count":   len(blockingWarnings),
-		"diagnostic_warning_count": len(diagnosticWarnings),
-		"repair_hint_count":        len(packet.Review.RepairHints),
-		"review_error_count":       len(packet.Review.Errors),
-		"json":                     opts.JSON,
-		"raw":                      opts.Raw,
-		"fileset_count":            len(opts.Filesets),
-		"exclude_count":            opts.ExcludeCount,
-		"has_intent":               opts.HasIntent,
-		"model_set":                opts.ModelSet,
-		"duration_ms":              opts.Duration.Milliseconds(),
-	}
-	if packet.Proposal.HunkCoverage > 0 {
-		props["hunk_coverage"] = packet.Proposal.HunkCoverage
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIGenerateRun, props)
-}
-
-func demuxProposalDisplayStatus(proposal authoring.DemuxProposal, state authoring.DemuxWorkflowState) string {
-	if state == authoring.DemuxWorkflowRepairRequired || state == authoring.DemuxWorkflowRepairRecommended {
-		return "needs review"
-	}
-	blockingWarnings, _ := splitFeasibilityWarnings(proposal.FeasibilityWarnings)
-	if len(blockingWarnings) > 0 {
-		return "needs review"
-	}
-	if proposal.Status != "" && proposal.Status != authoring.ProposalPending {
-		return string(proposal.Status)
-	}
-	return ""
-}
-
-func demuxAutoAcceptBlockedReason(packet authoring.DemuxPlanPacket) string {
-	if packet.State != authoring.DemuxWorkflowReadyToApply {
-		return fmt.Sprintf("generated revisions are not ready: %s", packet.State)
-	}
-	if strings.TrimSpace(packet.Proposal.ID) == "" {
-		return "generated revisions are not ready: missing proposal id"
-	}
-	if len(packet.Review.Errors) > 0 {
-		return "generated revisions are not ready: review errors found"
-	}
-	if len(packet.Review.RepairHints) > 0 {
-		return "generated revisions are not ready: repair hints found"
-	}
-	blockingWarnings, _ := splitFeasibilityWarnings(packet.Proposal.FeasibilityWarnings)
-	if len(blockingWarnings) > 0 {
-		return "generated revisions are not ready: blocking warnings found"
-	}
-	if len(demuxBlockingPlainWarnings(packet.Proposal.Warnings)) > 0 {
-		return "generated revisions are not ready: blocking warnings found"
-	}
-	return ""
-}
-
-func demuxBlockingPlainWarnings(warnings []string) []string {
-	var blocking []string
-	for _, warning := range warnings {
-		warning = strings.TrimSpace(warning)
-		switch {
-		case warning == "":
-			continue
-		case warning == demuxPartialComposeWarning:
-			blocking = append(blocking, warning)
-		case strings.HasPrefix(warning, "Compose repair failed:"):
-			blocking = append(blocking, warning)
-		case strings.HasPrefix(warning, "Compose apply preflight failed:"):
-			blocking = append(blocking, warning)
-		}
-	}
-	return blocking
-}
-
-func pluralize(word string, count int) string {
-	if count == 1 {
-		return word
-	}
-	return word + "s"
-}
-
-func stringInSlice(value string, values []string) bool {
-	for _, item := range values {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
-
-func warningMarker(severity string) string {
-	switch strings.ToLower(strings.TrimSpace(severity)) {
-	case "warning", "warn":
-		return danger("!")
-	case "info":
-		return muted("i")
-	default:
-		return danger("!")
-	}
-}
-
-func newEditCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	return &cobra.Command{
-		Use:    "edit [rev]",
-		Short:  "Return to an existing GX change and keep working on it",
-		Hidden: true,
-		Args:   cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			rev := ""
-			if len(args) == 1 {
-				rev = args[0]
-			} else {
-				snapshot, err := engine.StatusSnapshot(ctx)
-				if err != nil {
-					return err
+	var unrecorded *authoring.ChangeInfo
+	if stack.Repo.RootPath != "" {
+		if current, currentErr := engine.CurrentChange(ctx, stack.Repo.RootPath, "@"); currentErr == nil {
+			found := false
+			for _, unit := range stack.Revisions {
+				if unit.ChangeID == current.ChangeID {
+					found = true
+					break
 				}
-				candidates, err := engine.ModifyCandidates(ctx, 20)
-				if err != nil {
-					return err
-				}
-				selection, err := clitui.SelectModifyRevision(
-					cmd.InOrStdin(),
-					cmd.OutOrStdout(),
-					snapshot,
-					revisionsFromModifyCandidates(snapshot, candidates),
-				)
-				if err != nil {
-					return err
-				}
-				rev = selection
 			}
-			result, err := engine.Modify(ctx, rev)
-			if err != nil {
-				return err
-			}
-			printModifySummary(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-}
-
-func revisionsFromModifyCandidates(snapshot authoring.StatusSnapshot, candidates []authoring.ChangeInfo) []vcs.RevisionSnapshot {
-	activeChangeID := ""
-	for _, bookmark := range snapshot.Bookmarks {
-		if !bookmark.Current {
-			continue
-		}
-		for _, revision := range bookmark.Revisions {
-			if revision.Active {
-				activeChangeID = revision.ChangeID
-				break
+			if !found && len(current.Files) > 0 {
+				unrecorded = &current
 			}
 		}
-		break
 	}
-	revisions := make([]vcs.RevisionSnapshot, 0, len(candidates))
-	for index, candidate := range candidates {
-		description := strings.TrimSpace(candidate.Description)
-		if description == "" || description == "(no description set)" {
-			description = "(no message)"
-		}
-		changeID := shortID(candidate.ChangeID, 12)
-		commitID := shortID(candidate.CommitID, 8)
-		short := changeID
-		if commitID != "" {
-			short = commitID
-		}
-		revisions = append(revisions, vcs.RevisionSnapshot{
-			Index:       index + 1,
-			ChangeID:    candidate.ChangeID,
-			CommitID:    candidate.CommitID,
-			Description: description,
-			ShortID:     short,
-			Active:      activeChangeID != "" && candidate.ChangeID == activeChangeID,
-			Working:     activeChangeID != "" && candidate.ChangeID == activeChangeID,
-			SyncNote:    "local",
-		})
+	if interactive && useStatusInteractive(in, out) {
+		_, err := runStacksInteractive(in, out, stack, unrecorded, display.HiddenEmpty)
+		return err
 	}
-	return revisions
+	printDeletedEmptyStacksNotice(out, prunedEmpty)
+	printDefaultStatusView(out, stack, unrecorded, display.HiddenEmpty, opts.ShowAll)
+	return nil
 }
 
 func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string, helpName string, hidden bool) *cobra.Command {
@@ -1099,11 +499,10 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 		Hidden:  hidden,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Status is read-only: protect the user's staged git index from
-			// jj's index rewriting while we inspect the repo.
+			// Status is read-only: preserve the user's staged git index while inspecting repo state.
 			return engine.PreservingGitIndex(ctx, func() error {
 				if jsonOut {
-					stack, _, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+					stack, _, err := statusWithPruning(ctx, engine)
 					if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
 						return enrichErr
 					}
@@ -1130,8 +529,6 @@ func newStatusCommand(ctx context.Context, engine *authoring.Engine, use string,
 	}
 	cmd.AddCommand(
 		newStatusListCommand(ctx, engine),
-		newStacksEditCommand(ctx, engine),
-		newStacksDiffCommand(),
 	)
 	setHelpName(cmd, helpName)
 	return cmd
@@ -1146,7 +543,7 @@ func newStatusListCommand(ctx context.Context, engine *authoring.Engine) *cobra.
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return engine.PreservingGitIndex(ctx, func() error {
-				stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, cmd.OutOrStdout(), jsonOut)
+				stack, prunedEmpty, err := statusWithPruning(ctx, engine)
 				if enrichErr := enrichStatusStack(ctx, engine, &stack); enrichErr != nil && err == nil {
 					return enrichErr
 				}
@@ -1794,286 +1191,6 @@ func printCurrentStatusAgent(out io.Writer, status currentStatus) {
 	}
 }
 
-func newStacksEditCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	return &cobra.Command{
-		Use:   "edit <revision>",
-		Short: "Edit a revision",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := engine.Modify(ctx, args[0])
-			if err != nil {
-				return err
-			}
-			printModifySummary(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-}
-
-func newStacksDiffCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "diff <revision-or-stack>",
-		Short: "Show a JJ diff for a revision or stack",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJjDiff(cmd.OutOrStdout(), args[0])
-		},
-	}
-}
-
-func printStacks(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string, opts stackDisplayOptions, interactive bool, jsonOut bool) error {
-	stack, prunedEmpty, err := statusWithMissingBaseCheck(ctx, engine, out, jsonOut)
-	if err != nil {
-		return err
-	}
-	if err := enrichStatusStack(ctx, engine, &stack); err != nil {
-		return err
-	}
-	display := stackDisplaySummaryForStacksDisplay(stack, opts)
-	stack = display.Stack
-	if agentOut {
-		printStatusAgent(out, stack, selector)
-		return nil
-	}
-	var unrecorded *authoring.ChangeInfo
-	if stack.Repo.RootPath != "" {
-		if current, currentErr := engine.CurrentChange(ctx, stack.Repo.RootPath, "@"); currentErr == nil {
-			found := false
-			for _, unit := range stack.Revisions {
-				if unit.ChangeID == current.ChangeID {
-					found = true
-					break
-				}
-			}
-			if !found && len(current.Files) > 0 {
-				unrecorded = &current
-			}
-		}
-	}
-	if interactive && useStatusInteractive(in, out) {
-		action, err := runStacksInteractive(in, out, stack, unrecorded, display.HiddenEmpty)
-		if err != nil {
-			return err
-		}
-		return runStacksAction(ctx, engine, out, action)
-	}
-	printDeletedEmptyStacksNotice(out, prunedEmpty)
-	printDefaultStatusView(out, stack, unrecorded, display.HiddenEmpty, opts.ShowAll)
-	return nil
-}
-
-func enrichStatusStack(ctx context.Context, engine *authoring.Engine, stack *authoring.StackSummary) error {
-	root := strings.TrimSpace(stack.Repo.RootPath)
-	if root == "" {
-		return nil
-	}
-	gitWorking, err := engine.GitWorkingStatus(ctx, root)
-	if err != nil {
-		return err
-	}
-	stack.GitWorking = gitWorking
-	stack.Next = statusNextHints(gitWorking, *stack)
-	return nil
-}
-
-func statusNextHints(gitWorking vcs.GitWorkingStatus, stack authoring.StackSummary) []string {
-	switch {
-	case gitWorking.StagedCount() > 0:
-		return []string{`gx commit -m "describe this revision"`}
-	case gitWorking.UnstagedCount()+gitWorking.UntrackedCount() > 0:
-		return []string{"git add"}
-	case unpublishedCount(stack) > 0:
-		return []string{vcs.HintPush}
-	default:
-		if pr := currentStackPRURL(stack); pr != "" {
-			return []string{pr}
-		}
-		return nil
-	}
-}
-
-func currentStackPRURL(stack authoring.StackSummary) string {
-	if stack.Stack == nil || stack.Stack.GitHubPRURL == nil {
-		return ""
-	}
-	return strings.TrimSpace(*stack.Stack.GitHubPRURL)
-}
-
-func printDefaultStatusView(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) {
-	fmt.Fprint(out, renderDefaultStatusSummary(stack, unrecorded, hiddenEmpty, showAll))
-}
-
-func renderDefaultStatusSummary(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) string {
-	stack = stackSummaryWithDisplayFallback(stack)
-	var out strings.Builder
-	fmt.Fprintln(&out, commandLine("gx status", true))
-	fmt.Fprintln(&out)
-	if hiddenEmpty > 0 {
-		fmt.Fprintln(&out, muted(emptyStacksNotice(hiddenEmpty)))
-		fmt.Fprintln(&out)
-	}
-	gitLines := gitWorkingSectionLines(stack.GitWorking, showAll)
-	for _, line := range gitLines {
-		fmt.Fprintln(&out, line)
-	}
-	if len(gitLines) > 0 {
-		fmt.Fprintln(&out)
-	}
-	stacks := orderedStacks(stack)
-	currentIdx := currentStackIndex(stack)
-	if len(stacks) == 0 {
-		printCurrentRevisions(&out, stack, unrecorded, 0)
-	} else if currentIdx >= 0 && currentIdx < len(stacks) {
-		entry := stacks[currentIdx]
-		fmt.Fprintln(&out, stacksHeaderLine(stack, 1, false))
-		fmt.Fprintln(&out)
-		fmt.Fprintln(&out, statusBookmarkLine("●", entry, stackStatusMeta(stack, entry), true))
-		fmt.Fprint(&out, renderStackRevisionLines(stack, entry, unrecorded, latestRevisionDisplayIndex(stack.Revisions, unrecorded)))
-		other := len(stacks) - 1
-		if other > 0 {
-			fmt.Fprintln(&out)
-			fmt.Fprintf(&out, "%s\n", muted(fmt.Sprintf("%d other stacks — run gx status list", other)))
-		}
-	} else {
-		fmt.Fprint(&out, renderStacksSummaryWithHidden(stack, unrecorded, 0, false, latestRevisionDisplayIndex(stack.Revisions, unrecorded), hiddenEmpty))
-		return strings.TrimRight(out.String(), "\n") + "\n"
-	}
-	if len(stack.Next) > 0 {
-		fmt.Fprintln(&out)
-		fmt.Fprintln(&out, section("Next"))
-		for _, hint := range stack.Next {
-			fmt.Fprintf(&out, "  %s\n", command(hint))
-		}
-	}
-	return strings.TrimRight(out.String(), "\n") + "\n"
-}
-
-func gitWorkingSectionLines(status vcs.GitWorkingStatus, showAll bool) []string {
-	var lines []string
-	lines = append(lines, gitWorkingFileLines("Staged", status.Staged, showAll)...)
-	lines = append(lines, gitWorkingFileLines("Unstaged", status.Unstaged, showAll)...)
-	lines = append(lines, gitWorkingFileLines("Untracked", status.Untracked, showAll)...)
-	return lines
-}
-
-func gitWorkingFileLines(title string, files []string, showAll bool) []string {
-	if len(files) == 0 {
-		return nil
-	}
-	lines := []string{section(title)}
-	display := files
-	if !showAll && len(files) > 3 {
-		display = files[:3]
-	}
-	for _, file := range display {
-		lines = append(lines, "  "+danger(file))
-	}
-	if !showAll && len(files) > 3 {
-		lines = append(lines, muted(fmt.Sprintf("  ... %d more (gx status --all)", len(files)-3)))
-	}
-	return lines
-}
-
-func statusAfterPruningEmptyStacks(ctx context.Context, engine *authoring.Engine) (authoring.StackSummary, int, error) {
-	pruned, err := engine.PruneEmptyStacks(ctx)
-	if err != nil {
-		return authoring.StackSummary{}, 0, err
-	}
-	if repo, repoErr := engine.ResolveJJRepo(ctx); repoErr == nil {
-		_, _ = engine.PruneTerminalGitHubPullRequestStacks(ctx, repo)
-	}
-	stack, err := engine.Status(ctx)
-	if err != nil {
-		return authoring.StackSummary{}, len(pruned.Deleted), err
-	}
-	if strings.TrimSpace(stack.Repo.RootPath) == "" {
-		if repo, repoErr := engine.ResolveJJRepo(ctx); repoErr == nil {
-			stack.Repo = repo
-		}
-	}
-	return stack, len(pruned.Deleted), nil
-}
-
-func statusWithMissingBaseCheck(ctx context.Context, engine *authoring.Engine, out io.Writer, jsonOut bool) (authoring.StackSummary, int, error) {
-	stack, prunedEmpty, err := statusAfterPruningEmptyStacks(ctx, engine)
-	if err != nil {
-		return stack, prunedEmpty, err
-	}
-	missing, err := engine.DetectMissingStackBaseRefs(ctx)
-	if err != nil {
-		return stack, prunedEmpty, err
-	}
-	if len(missing.Issues) == 0 {
-		return stack, prunedEmpty, nil
-	}
-	attachMissingStackBaseSummary(&stack, missing)
-	blockErr := &vcs.ErrMissingStackBaseRefs{Status: missing}
-	if jsonOut {
-		return stack, prunedEmpty, blockErr
-	}
-	printMissingStackBaseRefNotice(out, missing)
-	return stack, prunedEmpty, blockErr
-}
-
-func attachMissingStackBaseSummary(stack *authoring.StackSummary, status vcs.MissingStackBaseRefStatus) {
-	if stack == nil || len(status.Issues) == 0 {
-		return
-	}
-	stack.MissingBaseRefs = status.Issues
-	stack.NeedsRebaseOntoDefault = status.NeedsRebaseOntoDefault
-	stack.RepairCommand = status.RepairCommand
-}
-
-func printMissingStackBaseRefNotice(out io.Writer, status vcs.MissingStackBaseRefStatus) {
-	blockErr := &vcs.ErrMissingStackBaseRefs{Status: status}
-	fmt.Fprintln(out, labelWarningValue("Missing parent base", blockErr.Error()))
-	for _, issue := range status.Issues {
-		fmt.Fprintf(out, "  %s base=%s default=%s\n",
-			valueText(firstNonEmptyString(issue.BookmarkName, issue.Name)),
-			muted(issue.MissingBaseRef),
-			muted(issue.DefaultBaseRef),
-		)
-	}
-	fmt.Fprintln(out)
-}
-
-func printDeletedEmptyStacksNotice(out io.Writer, count int) {
-	if count == 0 {
-		return
-	}
-	fmt.Fprintln(out, muted(deletedEmptyStacksNotice(count)))
-	fmt.Fprintln(out)
-}
-
-func runStacksAction(ctx context.Context, engine *authoring.Engine, out io.Writer, action stacksAction) error {
-	switch action.Kind {
-	case "", "quit":
-		return nil
-	case "edit":
-		result, err := engine.Modify(ctx, action.Target)
-		if err != nil {
-			return err
-		}
-		printModifySummary(out, result)
-		return nil
-	case "diff":
-		return runJjDiff(out, action.Target)
-	default:
-		return fmt.Errorf("unknown stacks action %q", action.Kind)
-	}
-}
-
-func runJjDiff(out io.Writer, rev string) error {
-	rev = strings.TrimSpace(rev)
-	if rev == "" {
-		return fmt.Errorf("revision is required")
-	}
-	cmd := exec.Command("jj", "diff", "-r", rev)
-	cmd.Stdout = out
-	cmd.Stderr = out
-	return cmd.Run()
-}
-
 func printStatus(ctx context.Context, engine *authoring.Engine, in io.Reader, out io.Writer, agentOut bool, selector string) error {
 	stack, err := engine.Status(ctx)
 	if err != nil {
@@ -2097,13 +1214,6 @@ func printStatus(ctx context.Context, engine *authoring.Engine, in io.Reader, ou
 				unrecorded = &current
 			}
 		}
-	}
-	if useStatusInteractive(in, out) {
-		action, err := runStacksInteractive(in, out, stack, unrecorded, 0)
-		if err != nil {
-			return err
-		}
-		return runStacksAction(ctx, engine, out, action)
 	}
 	printStatusSummary(out, stack, unrecorded)
 	return nil
@@ -2552,33 +1662,6 @@ func printRevisionAgentLines(out io.Writer, revisions []authoring.RevisionSummar
 	}
 }
 
-func printModifySummary(out io.Writer, result authoring.ModifyResult) {
-	invocation := "gx edit"
-	if result.CurrentChange.ChangeID != "" {
-		invocation += " " + shortID(result.CurrentChange.ChangeID, 12)
-	}
-	fmt.Fprintln(out, commandLine(invocation, false))
-	fmt.Fprintln(out)
-	if strings.TrimSpace(result.Output) != "" {
-		fmt.Fprintln(out, muted(strings.TrimSpace(result.Output)))
-	}
-	fmt.Fprintln(out, labelToken("revision", shortID(result.CurrentChange.ChangeID, 12)))
-	if result.CurrentChange.CommitID != "" {
-		fmt.Fprintln(out, labelToken("commit", shortID(result.CurrentChange.CommitID, 8)))
-	}
-	if result.CurrentChange.Description != "" {
-		fmt.Fprintln(out, labelToken("message", result.CurrentChange.Description))
-	}
-	if result.Stack != nil {
-		fmt.Fprintln(out, labelToken("stack", result.Stack.Name)+"  "+muted(stackMeta(authoring.StackSummary{Stack: result.Stack, Revisions: []authoring.RevisionSummary{{ChangeID: result.CurrentChange.ChangeID}}}, *result.Stack)))
-	}
-	if result.Repo.BranchName != nil && strings.TrimSpace(*result.Repo.BranchName) != "" {
-		fmt.Fprintln(out, labelToken("git branch", strings.TrimSpace(*result.Repo.BranchName)))
-	}
-	fmt.Fprintln(out, muted(strings.Repeat("-", 48)))
-	fmt.Fprintln(out, labelToken("next", `git add <files> && gx commit -m "describe this revision"`))
-}
-
 func stackAgentLine(summary authoring.StackSummary, entry authoring.StackInfo, includeName bool) string {
 	current := summary.Stack != nil && entry.BookmarkName == summary.Stack.BookmarkName
 	changeTotal, publishedTotal := stackEntryRevisionCounts(summary, entry)
@@ -2684,7 +1767,7 @@ func statusBookmarkLine(marker string, stack authoring.StackInfo, meta string, s
 }
 
 func stacksLegend() string {
-	return mint("j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local")
+	return mint("↑/↓ navigate · enter open revisions · esc stacks · q quit · ● selected · ↑ cloud · ↓ local")
 }
 
 func compactBookmarkRef(ref string) string {
@@ -2915,6 +1998,126 @@ type stackDisplaySummary struct {
 	HiddenEmpty int
 }
 
+func enrichStatusStack(ctx context.Context, engine *authoring.Engine, stack *authoring.StackSummary) error {
+	root := strings.TrimSpace(stack.Repo.RootPath)
+	if root == "" {
+		return nil
+	}
+	gitWorking, err := engine.GitWorkingStatus(ctx, root)
+	if err != nil {
+		return err
+	}
+	stack.GitWorking = gitWorking
+	stack.Next = statusNextHints(gitWorking, *stack)
+	return nil
+}
+
+func statusNextHints(gitWorking vcs.GitWorkingStatus, stack authoring.StackSummary) []string {
+	switch {
+	case gitWorking.StagedCount() > 0:
+		return []string{`gx commit -m "describe this revision"`}
+	case gitWorking.UnstagedCount()+gitWorking.UntrackedCount() > 0:
+		return []string{"git add"}
+	case unpublishedCount(stack) > 0:
+		return []string{vcs.HintPush}
+	default:
+		if pr := currentStackPRURL(stack); pr != "" {
+			return []string{pr}
+		}
+		return nil
+	}
+}
+
+func currentStackPRURL(stack authoring.StackSummary) string {
+	if stack.Stack == nil || stack.Stack.GitHubPRURL == nil {
+		return ""
+	}
+	return strings.TrimSpace(*stack.Stack.GitHubPRURL)
+}
+
+func printDefaultStatusView(out io.Writer, stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) {
+	fmt.Fprint(out, renderDefaultStatusSummary(stack, unrecorded, hiddenEmpty, showAll))
+}
+
+func renderDefaultStatusSummary(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int, showAll bool) string {
+	stack = stackSummaryWithDisplayFallback(stack)
+	var out strings.Builder
+	fmt.Fprintln(&out, commandLine("gx status", true))
+	fmt.Fprintln(&out)
+	if hiddenEmpty > 0 {
+		fmt.Fprintln(&out, muted(emptyStacksNotice(hiddenEmpty)))
+		fmt.Fprintln(&out)
+	}
+	gitLines := gitWorkingSectionLines(stack.GitWorking, showAll)
+	for _, line := range gitLines {
+		fmt.Fprintln(&out, line)
+	}
+	if len(gitLines) > 0 {
+		fmt.Fprintln(&out)
+	}
+	stacks := orderedStacks(stack)
+	currentIdx := currentStackIndex(stack)
+	if len(stacks) == 0 {
+		printCurrentRevisions(&out, stack, unrecorded, 0)
+	} else if currentIdx >= 0 && currentIdx < len(stacks) {
+		entry := stacks[currentIdx]
+		fmt.Fprintln(&out, stacksHeaderLine(stack, 1, false))
+		fmt.Fprintln(&out)
+		fmt.Fprintln(&out, statusBookmarkLine("●", entry, stackStatusMeta(stack, entry), true))
+		fmt.Fprint(&out, renderStackRevisionLines(stack, entry, unrecorded, latestRevisionDisplayIndex(stack.Revisions, unrecorded)))
+		other := len(stacks) - 1
+		if other > 0 {
+			fmt.Fprintln(&out)
+			fmt.Fprintf(&out, "%s\n", muted(fmt.Sprintf("%d other stacks — run gx status list", other)))
+		}
+	} else {
+		fmt.Fprint(&out, renderStacksSummaryWithHidden(stack, unrecorded, 0, false, latestRevisionDisplayIndex(stack.Revisions, unrecorded), hiddenEmpty))
+		return strings.TrimRight(out.String(), "\n") + "\n"
+	}
+	if len(stack.Next) > 0 {
+		fmt.Fprintln(&out)
+		fmt.Fprintln(&out, section("Next"))
+		for _, hint := range stack.Next {
+			fmt.Fprintf(&out, "  %s\n", command(hint))
+		}
+	}
+	return strings.TrimRight(out.String(), "\n") + "\n"
+}
+
+func gitWorkingSectionLines(status vcs.GitWorkingStatus, showAll bool) []string {
+	var lines []string
+	lines = append(lines, gitWorkingFileLines("Staged", status.Staged, showAll)...)
+	lines = append(lines, gitWorkingFileLines("Unstaged", status.Unstaged, showAll)...)
+	lines = append(lines, gitWorkingFileLines("Untracked", status.Untracked, showAll)...)
+	return lines
+}
+
+func gitWorkingFileLines(title string, files []string, showAll bool) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	lines := []string{section(title)}
+	display := files
+	if !showAll && len(files) > 3 {
+		display = files[:3]
+	}
+	for _, file := range display {
+		lines = append(lines, "  "+danger(file))
+	}
+	if !showAll && len(files) > 3 {
+		lines = append(lines, muted(fmt.Sprintf("  ... %d more (gx status --all)", len(files)-3)))
+	}
+	return lines
+}
+
+func printDeletedEmptyStacksNotice(out io.Writer, count int) {
+	if count == 0 {
+		return
+	}
+	fmt.Fprintln(out, muted(deletedEmptyStacksNotice(count)))
+	fmt.Fprintln(out)
+}
+
 func stackSummaryForStacksDisplay(stack authoring.StackSummary, opts stackDisplayOptions) authoring.StackSummary {
 	return stackDisplaySummaryForStacksDisplay(stack, opts).Stack
 }
@@ -3017,195 +2220,6 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func newPushCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "push [stack]",
-		Short:  "Disabled — use git push instead",
-		Hidden: true,
-		Args:   cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = ctx
-			_ = engine
-			_ = args
-			return fmt.Errorf("gx push is disabled; publish with plain `git push` (the GX pre-push hook captures and publishes), then open a PR with `gh pr create`")
-		},
-	}
-	return cmd
-}
-
-func emitPushRunTelemetry(ctx context.Context, pushes []authoring.PushResult, cloudConfigured bool, uploadQueued bool, publishAllRequested bool, selectedStack bool) {
-	revisionCount := 0
-	githubPRCount := 0
-	gitPushCount := 0
-	warningCount := 0
-	for _, push := range pushes {
-		publishedCount := len(push.Published)
-		if publishedCount == 0 && push.CurrentChange != nil {
-			publishedCount = 1
-		}
-		revisionCount += publishedCount
-		warningCount += len(push.Warnings)
-		if pushWasPushedToGitHub(push.GitPushStatus) {
-			gitPushCount++
-		}
-		githubPRCount += pushGitHubPRCount(push)
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIPushRun, map[string]any{
-		"status":             "success",
-		"cloud_configured":   cloudConfigured,
-		"upload_queued":      uploadQueued,
-		"push_all_requested": publishAllRequested,
-		"selected_stack":     selectedStack,
-		"stack_count":        len(pushes),
-		"revision_count":     revisionCount,
-		"github_pr_count":    githubPRCount,
-		"git_push_count":     gitPushCount,
-		"warning_count":      warningCount,
-	})
-}
-
-func pushWasPushedToGitHub(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "pushed", "force pushed", "already up to date":
-		return true
-	default:
-		return false
-	}
-}
-
-func pushGitHubPRCount(push authoring.PushResult) int {
-	seen := map[string]bool{}
-	if push.GitHubPullRequestURL != nil {
-		if url := strings.TrimSpace(*push.GitHubPullRequestURL); url != "" {
-			seen[url] = true
-		}
-	}
-	for _, published := range push.Published {
-		if published.GitHubPullRequestURL == nil {
-			continue
-		}
-		if url := strings.TrimSpace(*published.GitHubPullRequestURL); url != "" {
-			seen[url] = true
-		}
-	}
-	return len(seen)
-}
-
-func printPushResult(out io.Writer, result authoring.PushResult) {
-	if strings.TrimSpace(result.Output) != "" {
-		fmt.Fprintln(out, highlightPushRevisions(strings.TrimSpace(result.Output)))
-	}
-	if strings.TrimSpace(result.GXStackRef) != "" || result.Repo.BranchName != nil {
-		branch := firstNonEmptyString(result.GXStackRef, pointerString(result.Repo.BranchName))
-		fmt.Fprintln(out, labelValue("Branch", branch))
-		if status := pushGitPushStatusText(result.GitPushStatus); status != "" {
-			fmt.Fprintln(out, labelStatus("GitHub", status))
-		}
-		if prStatus := pushGitHubPRStatusText(result.GitHubPRStatus); prStatus != "" {
-			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(prStatus)), "warn:") {
-				fmt.Fprintln(out, labelWarningValue("GitHub PR", strings.TrimSpace(prStatus)))
-			} else {
-				fmt.Fprintln(out, labelStatus("GitHub PR", prStatus))
-			}
-		}
-		if result.GitHubPullRequestURL != nil && strings.TrimSpace(*result.GitHubPullRequestURL) != "" {
-			fmt.Fprintln(out, labelValue("GitHub PR", strings.TrimSpace(*result.GitHubPullRequestURL)))
-		}
-		if result.Repo.RemoteURL != nil {
-			if repoFull := githubRepoFullNameFromRemote(*result.Repo.RemoteURL); repoFull != "" {
-				fmt.Fprintln(out, labelValue("Actions", fmt.Sprintf("https://github.com/%s/actions", repoFull)))
-			}
-		}
-	}
-	for _, warning := range result.Warnings {
-		if strings.TrimSpace(warning) != "" {
-			fmt.Fprintln(out, labelWarningValue("Warning", strings.TrimSpace(warning)))
-		}
-	}
-}
-
-func pushGitPushStatusText(status string) string {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "pushed":
-		return "ok: pushed"
-	case "force pushed":
-		return "ok: force pushed with lease"
-	case "already up to date":
-		return "ok: already pushed"
-	case "not pushed":
-		return "not pushed"
-	default:
-		if strings.TrimSpace(status) == "" {
-			return ""
-		}
-		return "warn: " + strings.TrimSpace(status)
-	}
-}
-
-func pushGitHubPRStatusText(status string) string {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "created", "existing", "stored":
-		return "ok: " + strings.TrimSpace(status)
-	case "warning":
-		return "warn: not created"
-	default:
-		return strings.TrimSpace(status)
-	}
-}
-
-func highlightPushRevisions(output string) string {
-	lines := strings.Split(output, "\n")
-	for i, line := range lines {
-		matches := publishRevisionOutputLine.FindStringSubmatch(line)
-		if len(matches) != 5 {
-			continue
-		}
-		if strings.TrimSpace(matches[4]) == "" {
-			continue
-		}
-		lines[i] = matches[1] + mint(matches[2]) + matches[3] + matches[4]
-	}
-	return strings.Join(lines, "\n")
-}
-
-func printPushReview(out io.Writer, result publication.Result) {
-	if result.Queued {
-		fmt.Fprintln(out, labelValue("GX Cloud", "queued for background upload"))
-		if result.QueueID != "" {
-			fmt.Fprintln(out, labelValue("Upload ID", result.QueueID))
-		}
-		if result.ArtifactPath != "" {
-			fmt.Fprintln(out, labelValue("Local artifact", result.ArtifactPath))
-		}
-		return
-	}
-	if !result.Uploaded {
-		return
-	}
-	if result.ReviewID != "" {
-		fmt.Fprintln(out, labelValue("Review ID", result.ReviewID))
-	}
-	if result.ReviewURL != "" {
-		fmt.Fprintln(out, labelValue("Review:", result.ReviewURL))
-	} else {
-		fmt.Fprintln(out, labelValue("Remote", "gx session context"))
-	}
-	if result.ArtifactPath != "" {
-		fmt.Fprintln(out, labelValue("Local artifact", result.ArtifactPath))
-	}
-	if result.SemanticIndexed {
-		if result.SemanticCodeChunks > 0 {
-			fmt.Fprintln(out, labelValue("Semantic index", fmt.Sprintf("%d chunks (%d code, %d session)", result.SemanticChunks, result.SemanticCodeChunks, result.SemanticSessionChunks)))
-		} else {
-			fmt.Fprintln(out, labelValue("Semantic index", fmt.Sprintf("%d transcript chunks", result.SemanticChunks)))
-		}
-	} else if result.SemanticIndexError != "" {
-		fmt.Fprintln(out, labelValue("Semantic index", danger(result.SemanticIndexError)))
-	} else if result.IndexStatus != "" {
-		fmt.Fprintln(out, labelValue("Semantic index", result.IndexStatus))
-	}
 }
 
 func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {

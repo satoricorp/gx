@@ -9,7 +9,7 @@ import { ensureGxInitialized } from "../session-workspace";
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
   message: z.string().describe("Commit message for the staged revision."),
-  branch: z.string().optional().describe("Optional new branch to create at HEAD and record onto. Default: the revision lands on the current branch and HEAD does not move, like git commit."),
+  branch: z.string().optional().describe("Optional new branch to create and switch to before committing. By default, the commit advances the current branch and HEAD."),
   task_summary: z.string().optional().describe("Optional agent-declared summary of the work being committed."),
   commands_run: z.array(z.string()).optional().describe("Optional shell commands the agent ran while doing this work."),
   tests_run: z.array(z.string()).optional().describe("Optional test commands the agent ran while doing this work."),
@@ -19,7 +19,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_commit",
   description:
-    "Record staged Git changes as a GX revision with gx commit. Stage files with git add first. This is the default GX save verb; use gx_status afterward and publish with plain git push when the stack is ready. To amend an existing revision, use gx_edit instead.",
+    "Record staged Git changes as a GX revision with gx commit. Stage files with git add first. This is the default GX save verb; use gx_status afterward and publish with plain git push when the stack is ready. To amend the latest commit, use git commit --amend and preserve the GX revision trailer.",
   annotations: {
     title: "GX Commit",
     readOnlyHint: false,

@@ -419,7 +419,7 @@ func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanu
 	for _, stack := range result.Stale {
 		names = append(names, stack.BookmarkName)
 	}
-	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing jj bookmarks: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 func newRepairCommand(ctx context.Context) *cobra.Command {
@@ -812,7 +812,14 @@ func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
 func doctorStatsRepos(ctx context.Context, store *storage.Store, repoRoot string) ([]storage.Repo, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	if repoRoot != "" {
-		repo, err := store.FindRepoByRoot(ctx, repoRoot)
+		repoInfo, resolveErr := vcs.NewService().ResolveGXRepoAtPath(ctx, repoRoot)
+		var repo *storage.Repo
+		var err error
+		if resolveErr == nil {
+			repo, err = store.FindRepoByIdentity(ctx, repoInfo.GitCommonDir, repoInfo.RootPath)
+		} else {
+			repo, err = store.FindRepoByRoot(ctx, repoRoot)
+		}
 		if err != nil {
 			return nil, err
 		}

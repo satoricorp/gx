@@ -13,9 +13,6 @@ func TestStatusPreservesGitIndexAcrossModes(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found")
 	}
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj not found")
-	}
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Test")
 	runGitTest(t, root, "config", "user.email", "t@e.com")
@@ -31,12 +28,6 @@ func TestStatusPreservesGitIndexAcrossModes(t *testing.T) {
 	before := statusGitCachedDiff(t, root)
 	if len(before) == 0 {
 		t.Fatal("expected staged content before gx status")
-	}
-
-	jjCmd := exec.Command("jj", "git", "init", ".")
-	jjCmd.Dir = root
-	if out, err := jjCmd.CombinedOutput(); err != nil {
-		t.Fatalf("jj git init error = %v\n%s", err, out)
 	}
 
 	gxHome := t.TempDir()

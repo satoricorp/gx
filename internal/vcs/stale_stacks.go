@@ -3,11 +3,12 @@ package vcs
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
 
-// StaleStack describes a stored stack whose jj bookmark no longer resolves.
+// StaleStack describes a stored stack whose git branch no longer resolves.
 type StaleStack struct {
 	StackID      int64  `json:"stack_id"`
 	Name         string `json:"name"`
@@ -22,7 +23,7 @@ type StaleStackCleanupResult struct {
 	Actions  []string     `json:"actions"`
 }
 
-// ListStaleStacks returns non-terminal stack rows whose bookmarks are missing from jj.
+// ListStaleStacks returns non-terminal stack rows whose branches are missing locally.
 func (s *Service) ListStaleStacks(ctx context.Context) (StaleStackCleanupResult, error) {
 	return s.staleStacks(ctx, false)
 }
@@ -33,7 +34,11 @@ func (s *Service) CleanupStaleStacks(ctx context.Context) (StaleStackCleanupResu
 }
 
 func (s *Service) staleStacks(ctx context.Context, repair bool) (StaleStackCleanupResult, error) {
-	repo, err := s.configuredJJRepo(ctx)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return StaleStackCleanupResult{}, err
+	}
+	repo, err := s.ResolveGXRepoAtPath(ctx, cwd)
 	if err != nil {
 		return StaleStackCleanupResult{}, err
 	}
@@ -43,7 +48,7 @@ func (s *Service) staleStacks(ctx context.Context, repair bool) (StaleStackClean
 		return result, err
 	}
 	defer store.Close()
-	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
+	repoRow, err := store.FindRepoByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
 	if err != nil {
 		return result, err
 	}
@@ -63,11 +68,7 @@ func (s *Service) staleStacks(ctx context.Context, repair bool) (StaleStackClean
 		if bookmark == "" {
 			continue
 		}
-		exists, err := s.RevisionExists(ctx, repo.RootPath, bookmark)
-		if err != nil {
-			return result, err
-		}
-		if exists {
+		if s.refExists(ctx, repo.RootPath, bookmark) {
 			continue
 		}
 		result.Stale = append(result.Stale, StaleStack{
@@ -80,9 +81,7 @@ func (s *Service) staleStacks(ctx context.Context, repair bool) (StaleStackClean
 			if err := store.MarkStackStatus(ctx, stack.ID, "closed", now); err != nil {
 				return result, err
 			}
-			result.Actions = append(result.Actions, fmt.Sprintf(
-				"marked stale stack %s as closed (bookmark not found in jj)", bookmark,
-			))
+			result.Actions = append(result.Actions, fmt.Sprintf("closed stale stack %s", bookmark))
 		}
 	}
 	return result, nil

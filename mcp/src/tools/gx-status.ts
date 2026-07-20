@@ -11,7 +11,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_status",
   description:
-    "Inspect GX unstaged files, local features, revisions, and remote state with gx status --json. Use after gx_commit or gx_edit, and before publishing with git push.",
+    "Inspect GX unstaged files, local features, revisions, and remote state with gx status --json. Use after gx_commit and before publishing with git push.",
   annotations: {
     title: "GX Status",
     readOnlyHint: true,
@@ -30,7 +30,7 @@ export default async function gxStatus(params: InferSchema<typeof schema>) {
     return formatJsonResult(await runGxJson(args, { cwd: params.cwd, timeoutMs: 120_000 }), {
       action: "status",
       nextActions: [
-        "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or git push to publish when a stack is ready.",
+        "Stage with git add and gx_commit for new work, or git push to publish when a stack is ready.",
       ],
     });
   } catch (error) {

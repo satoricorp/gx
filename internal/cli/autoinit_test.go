@@ -4,16 +4,12 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestStatusAutoInitializesUnbornGitRepo(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
@@ -47,24 +43,50 @@ func TestStatusAutoInitializesUnbornGitRepo(t *testing.T) {
 	if !strings.Contains(errOut.String(), "Initializing gx for this repository") {
 		t.Fatalf("gx status missing auto-init notice on stderr:\nstdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
-		t.Fatalf("after gx status .jj missing: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".jj")); !os.IsNotExist(err) {
+		t.Fatalf("gx status unexpectedly created .jj: %v", err)
 	}
 }
 
-func TestStatusAutoBootstrapsRegisteredRepoWithoutMain(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
+func TestStatusWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
+	root := initGitRepo(t)
+	runGitTest(t, root, "config", "user.name", "Joe Example")
+	runGitTest(t, root, "config", "user.email", "joe@example.com")
+	hooksDir := filepath.Join(root, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-push"), []byte("#!/bin/sh\necho foreign\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	gxHome := t.TempDir()
+	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("TERM", "dumb")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	cmd := NewRoot(context.Background())
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"status"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("gx status should remain usable: %v\n%s", err, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "warning: GX lifecycle hooks not installed:") {
+		t.Fatalf("missing lifecycle hook warning:\n%s", errOut.String())
+	}
+}
+
+func TestStatusHandlesRegisteredRepoWithoutMain(t *testing.T) {
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
 	writeTestFile(t, root, "README.md", "# repo\n")
-	jjCmd := exec.Command("jj", "git", "init", ".")
-	jjCmd.Dir = root
-	if out, err := jjCmd.CombinedOutput(); err != nil {
-		t.Fatalf("jj git init error = %v\n%s", err, out)
-	}
 
 	gxHome := t.TempDir()
 	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
@@ -91,8 +113,8 @@ func TestStatusAutoBootstrapsRegisteredRepoWithoutMain(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx status error = %v\n%s", err, out.String())
 	}
-	if strings.Contains(out.String(), "Revision `main` doesn't exist") {
-		t.Fatalf("gx status leaked jj main error:\n%s", out.String())
+	if strings.Contains(out.String(), "doesn't exist") {
+		t.Fatalf("gx status reported a missing base revision:\n%s", out.String())
 	}
 }
 
@@ -104,7 +126,7 @@ func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 		"gx auth status":             true,
 		"gx set inference-key dummy": true,
 		"gx demo":                    true,
-		"gx commit -m test":          true,
+		"gx commit -m test":          false,
 		"gx status":                  false,
 	}
 	for path, want := range cases {

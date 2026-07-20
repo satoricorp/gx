@@ -273,39 +273,6 @@ func displayColumn(line string, needle string) int {
 	return runewidth.StringWidth(line[:index])
 }
 
-func TestStacksModelDShowsDiffForSelectedRevision(t *testing.T) {
-	current := authoring.StackInfo{
-		Name:         "waitlist",
-		BookmarkName: "feature/waitlist",
-		BaseRef:      "main",
-		Status:       "draft",
-	}
-	model := newStacksModel(authoring.StackSummary{
-		Stack:  &current,
-		Stacks: []authoring.StackInfo{current},
-		Revisions: []authoring.RevisionSummary{
-			{ChangeID: "oldchange", Description: "old"},
-			{ChangeID: "latestchange", Description: "latest", Active: true},
-		},
-	}, nil)
-	model.mode = stacksModeRevisions
-
-	if model.revCursor != 0 {
-		t.Fatalf("newStacksModel().revCursor = %d, want latest revision at top", model.revCursor)
-	}
-	next, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Text: "d"}))
-	updated, ok := next.(stacksModel)
-	if !ok {
-		t.Fatalf("Update() = %T, want stacksModel", next)
-	}
-	if updated.mode != stacksModeDiff {
-		t.Fatalf("Update(d).mode = %v, want diff", updated.mode)
-	}
-	if updated.action != (stacksAction{}) {
-		t.Fatalf("Update(d).action = %#v, want no exit action", updated.action)
-	}
-}
-
 func TestStacksModelEnterShowsSelectedStackRevisions(t *testing.T) {
 	current := authoring.StackInfo{
 		Name:         "waitlist",
@@ -341,8 +308,8 @@ func TestStacksModelEnterShowsSelectedStackRevisions(t *testing.T) {
 	if updated.mode != stacksModeRevisions {
 		t.Fatalf("Update(enter).mode = %v, want revisions", updated.mode)
 	}
-	if got := updated.selectedRevision(); got != "latest-docs-change" {
-		t.Fatalf("selectedRevision() = %q, want latest selected stack revision", got)
+	if got := updated.selectedRevision(); got != "old-docs-change" {
+		t.Fatalf("selectedRevision() = %q, want first selected stack revision", got)
 	}
 }
 
@@ -372,14 +339,6 @@ func TestStacksModelEnterUsesCurrentStackEntryRevisions(t *testing.T) {
 	}
 	if got := updated.selectedRevision(); got != "entry-change" {
 		t.Fatalf("selectedRevision() = %q, want current stack entry revision", got)
-	}
-}
-
-func TestJjDiffArgsPreserveColorForInteractiveDiffs(t *testing.T) {
-	args := jjDiffArgs("change123")
-	want := []string{"diff", "-r", "change123", "--color=always"}
-	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("jjDiffArgs() = %#v, want %#v", args, want)
 	}
 }
 
@@ -610,7 +569,7 @@ func TestRenderStacksInteractiveShowsNavigationHintAndCursor(t *testing.T) {
 	}
 
 	first := renderInteractiveStacksSummaryWithHidden(stack, nil, 0, false, 0, 0)
-	for _, want := range []string{"j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
+	for _, want := range []string{"↑/↓ navigate · enter open revisions", "● waitlist + gx-pr", "gx-pr payload sync", "latest"} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("renderStacksSummary(cursor 0) missing %q in:\n%s", want, first)
 		}
@@ -657,35 +616,26 @@ func TestStacksViewportKeepsHeaderFooterAndShowsScrollIndicators(t *testing.T) {
 		})
 	}
 	model := newStacksModel(summary, nil)
-	next, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
-	model = next.(stacksModel)
 
 	text := model.View().Content
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if lines[0] != "$ gx status" {
-		t.Fatalf("top line = %q, want gx status header in:\n%s", lines[0], text)
+	if !strings.Contains(text, "$ gx status") {
+		t.Fatalf("missing gx status header in:\n%s", text)
 	}
-	if !strings.Contains(lines[len(lines)-1], "j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local") {
-		t.Fatalf("last line should be legend, got %q in:\n%s", lines[len(lines)-1], text)
+	if !strings.Contains(text, "↑/↓ navigate · enter open revisions · q quit") {
+		t.Fatalf("missing legend in:\n%s", text)
 	}
-	if !strings.Contains(text, "... more below") {
-		t.Fatalf("viewport missing lower scroll indicator:\n%s", text)
+	for _, want := range []string{"stack 0", "stack 7", "change7"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
 	}
 
 	for i := 0; i < 6; i++ {
-		next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+		next, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 		model = next.(stacksModel)
 	}
-	text = model.View().Content
-	if !strings.Contains(text, "... more above") {
-		t.Fatalf("viewport missing upper scroll indicator after moving down:\n%s", text)
-	}
-	if !strings.Contains(text, "stack 6") {
-		t.Fatalf("viewport should keep selected stack visible:\n%s", text)
-	}
-	lines = strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if !strings.Contains(lines[len(lines)-1], "j/k up/down · d diff · esc stacks · q quit · ● selected · ↑ cloud · ↓ local") {
-		t.Fatalf("last line should remain legend after scroll, got %q in:\n%s", lines[len(lines)-1], text)
+	if model.stackCursor != 6 {
+		t.Fatalf("stackCursor = %d, want 6 after moving down", model.stackCursor)
 	}
 }
 
@@ -839,281 +789,6 @@ func TestPrintStatusAgentListsStacksAndTargetDetails(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printStatusAgent(target) missing %q in:\n%s", want, text)
-		}
-	}
-}
-
-func TestPrintModifySummaryKeepsTargetAndNextCommand(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	result := authoring.ModifyResult{
-		Output:        "Working copy now at abc",
-		CurrentChange: authoring.ChangeInfo{ChangeID: "qpvkpnrmtxyp", CommitID: "abcdef1234", Description: "Review demux hunk coverage"},
-		Stack:         &authoring.StackInfo{Name: "waitlist + gx-pr", Alias: "waitlist", BookmarkName: "feature/waitlist", BaseRef: "main", Status: "draft"},
-	}
-	var out bytes.Buffer
-
-	printModifySummary(&out, result)
-
-	text := out.String()
-	for _, want := range []string{
-		"Working copy now at abc",
-		"revision qpvkpnrmtxyp",
-		"commit abcdef12",
-		"message Review demux hunk coverage",
-		"stack waitlist + gx-pr",
-		"next git add <files> && gx commit -m \"describe this revision\"",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printModifySummary() missing %q in:\n%s", want, text)
-		}
-	}
-}
-
-func TestPrintDemuxProposalHidesDiagnosticsByDefault(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	proposal := authoring.DemuxProposal{
-		ID:               "demux-1",
-		ProposedChangeID: "change-1",
-		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "split generated work", Files: []string{"alpha.go"}},
-		},
-		FeasibilityWarnings: []authoring.FeasibilityWarning{
-			{
-				RevisionID: "r1",
-				Severity:   "warning",
-				Source:     "structural_dependency",
-				Message:    "alpha.go references Beta from beta.go, but r2 is proposed after it",
-			},
-		},
-		Warnings: []string{"no structural dependency edges found"},
-	}
-	var out bytes.Buffer
-
-	printDemuxProposal(&out, proposal, demuxPrintOptions{})
-
-	text := out.String()
-	for _, want := range []string{
-		"Generate plan",
-		"Found 1 file",
-		"Proposes 1 revisions",
-		"Status needs review",
-		"Revisions",
-		"r1 split generated work",
-		"Diagnostics 2 hidden; use --raw or --json",
-		"JSON gx generate --json",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printDemuxProposal() missing %q in:\n%s", want, text)
-		}
-	}
-	for _, unwanted := range []string{
-		"[structural_dependency / r1]",
-		"alpha.go references Beta from beta.go, but r2 is proposed after it",
-		"no structural dependency edges found",
-	} {
-		if strings.Contains(text, unwanted) {
-			t.Fatalf("printDemuxProposal() should hide %q by default:\n%s", unwanted, text)
-		}
-	}
-}
-
-func TestPrintDemuxProposalGroupsRevisionsByStack(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	proposal := authoring.DemuxProposal{
-		ID:               "demux-1",
-		ProposedChangeID: "change-1",
-		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "stack storage", Files: []string{"internal/storage/schema.sql"}, TargetStack: "feature/stack-management"},
-			{ID: "r2", Intent: "route planner", Files: []string{"internal/authoring/demux_routing.go"}, TargetStack: "feature/demux-routing"},
-			{ID: "r3", Intent: "stack CLI", Files: []string{"internal/cli/root.go"}, TargetStack: "feature/stack-management"},
-		},
-	}
-	var out bytes.Buffer
-
-	printDemuxProposal(&out, proposal, demuxPrintOptions{})
-
-	text := out.String()
-	for _, want := range []string{
-		"Stacks",
-		"● feature/stack-management  2 revisions",
-		"r1 stack storage",
-		"r3 stack CLI",
-		"● feature/demux-routing  1 revision",
-		"r2 route planner",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printDemuxProposal() missing %q in:\n%s", want, text)
-		}
-	}
-	if strings.Contains(text, "Revisions") {
-		t.Fatalf("stacked proposal should use Stacks section:\n%s", text)
-	}
-}
-
-func TestPrintDemuxProposalRawIncludesDiagnostics(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	proposal := authoring.DemuxProposal{
-		ID:               "demux-1",
-		ProposedChangeID: "change-1",
-		Revisions: []authoring.RevisionProposal{
-			{ID: "r1", Intent: "split generated work", Files: []string{"alpha.go"}},
-		},
-		FeasibilityWarnings: []authoring.FeasibilityWarning{
-			{
-				RevisionID: "r1",
-				Severity:   "warning",
-				Source:     "structural_dependency",
-				Message:    "alpha.go references Beta from beta.go, but r2 is proposed after it",
-			},
-		},
-		Warnings: []string{"no structural dependency edges found"},
-	}
-	var out bytes.Buffer
-
-	printDemuxProposal(&out, proposal, demuxPrintOptions{Raw: true})
-
-	text := out.String()
-	for _, want := range []string{
-		"Warnings",
-		"alpha.go references Beta from beta.go, but r2 is proposed after it",
-		"[structural_dependency / r1]",
-		"no structural dependency edges found",
-		"JSON gx generate --json",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printDemuxProposal() missing %q in:\n%s", want, text)
-		}
-	}
-	if strings.Contains(text, "hidden; use --raw or --json") {
-		t.Fatalf("raw print should not include hidden diagnostics summary:\n%s", text)
-	}
-}
-
-func TestPrintDemuxChangesPacketIncludesWorkflowHeader(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	packet := authoring.DemuxPlanPacket{
-		State:    authoring.DemuxWorkflowReadyToApply,
-		NextTool: "gx_apply_revision_plan",
-		Proposal: authoring.DemuxProposal{
-			ID:               "demux-1",
-			ProposedChangeID: "change-1",
-			Revisions: []authoring.RevisionProposal{
-				{ID: "r1", Intent: "split generated work", Files: []string{"alpha.go"}},
-			},
-		},
-	}
-	var out bytes.Buffer
-
-	printDemuxChangesPacket(&out, packet, demuxPrintOptions{})
-
-	text := out.String()
-	for _, want := range []string{
-		"$ gx generate",
-		"Generate plan",
-		"Found 1 file",
-		"Revisions",
-		"JSON gx generate --json",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printDemuxChangesPacket() missing %q in:\n%s", want, text)
-		}
-	}
-}
-
-func TestDemuxAutoAcceptBlockedReasonRequiresCleanReadyProposal(t *testing.T) {
-	ready := authoring.DemuxPlanPacket{
-		State: authoring.DemuxWorkflowReadyToApply,
-		Proposal: authoring.DemuxProposal{
-			ID: "demux-1",
-			Revisions: []authoring.RevisionProposal{
-				{ID: "r1", Intent: "ready"},
-			},
-		},
-	}
-	if reason := demuxAutoAcceptBlockedReason(ready); reason != "" {
-		t.Fatalf("ready proposal blocked: %s", reason)
-	}
-
-	withInfo := ready
-	withInfo.Proposal.FeasibilityWarnings = []authoring.FeasibilityWarning{{Severity: "info", Message: "diagnostic"}}
-	withInfo.Proposal.Warnings = []string{"deterministic proposal uses file heuristics"}
-	if reason := demuxAutoAcceptBlockedReason(withInfo); reason != "" {
-		t.Fatalf("info-only diagnostics blocked: %s", reason)
-	}
-
-	withWarning := ready
-	withWarning.Proposal.FeasibilityWarnings = []authoring.FeasibilityWarning{{Severity: "warning", Message: "blocked"}}
-	if reason := demuxAutoAcceptBlockedReason(withWarning); !strings.Contains(reason, "blocking warnings") {
-		t.Fatalf("warning reason = %q, want blocking warnings", reason)
-	}
-
-	withPlainWarning := ready
-	withPlainWarning.Proposal.Warnings = []string{"Compose apply preflight failed: blocked"}
-	if reason := demuxAutoAcceptBlockedReason(withPlainWarning); !strings.Contains(reason, "blocking warnings") {
-		t.Fatalf("plain warning reason = %q, want blocking warnings", reason)
-	}
-
-	withRepairHint := ready
-	withRepairHint.Review.RepairHints = []authoring.RepairHint{{Kind: "split"}}
-	if reason := demuxAutoAcceptBlockedReason(withRepairHint); !strings.Contains(reason, "repair hints") {
-		t.Fatalf("repair reason = %q, want repair hints", reason)
-	}
-}
-
-func TestPrintDemuxChangesPacketShowsPartialAcceptAndFollowup(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	packet := authoring.DemuxPlanPacket{
-		State: authoring.DemuxWorkflowReadyToApply,
-		Proposal: authoring.DemuxProposal{
-			ID: "demux-partial",
-			Revisions: []authoring.RevisionProposal{
-				{ID: "r1", Intent: "alpha", Files: []string{"alpha.go"}},
-			},
-			Warnings: []string{demuxPartialComposeWarning},
-		},
-	}
-	var out bytes.Buffer
-
-	printDemuxChangesPacket(&out, packet, demuxPrintOptions{})
-
-	text := out.String()
-	for _, want := range []string{
-		"Partial proposal",
-		demuxPartialComposeWarning,
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("printDemuxChangesPacket() missing %q in:\n%s", want, text)
-		}
-	}
-}
-
-func TestGenerateHelpRemovesManualProposalCommandsAndOldAliases(t *testing.T) {
-	root := NewRoot(context.Background())
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"generate", "--help"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("root.Execute() error = %v", err)
-	}
-
-	text := out.String()
-	for _, want := range []string{"Save your work in branches & commits", "--intent", "--exclude", "--legacy"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("generate help missing %q in:\n%s", want, text)
-		}
-	}
-	for _, unwanted := range []string{"  apply ", "  accept ", "  review ", "  fix ", "apply-plan", "review-plan", "proposal"} {
-		if strings.Contains(text, unwanted) {
-			t.Fatalf("generate help should hide %q:\n%s", unwanted, text)
-		}
-	}
-
-	for _, args := range [][]string{{"compose"}, {"stacks"}, {"login"}, {"add"}, {"publish"}, {"demux"}, {"gxa"}, {"gxt"}, {"pr"}, {"modify"}, {"stack", "--new", "demo"}} {
-		cmd, _, err := root.Find(args)
-		if err == nil && cmd != nil && cmd.Name() == args[0] {
-			t.Fatalf("Find(%v) resolved removed command %q", args, cmd.Name())
 		}
 	}
 }
@@ -1279,6 +954,7 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 
 func TestOpsCommandPrintsCompactMenu(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
+	t.Chdir(t.TempDir())
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
@@ -1313,42 +989,6 @@ func TestOpsDiagnoseAliasStillWorks(t *testing.T) {
 		if err != nil || cmd == nil || cmd.Name() != "doctor" {
 			t.Fatalf("Find(%v) = cmd=%v err=%v, want doctor", args, cmd, err)
 		}
-	}
-}
-
-func TestPushCommandIsDisabled(t *testing.T) {
-	root := NewRoot(context.Background())
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"push"})
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("push.Execute() error = nil, want disabled error")
-	}
-	if !strings.Contains(err.Error(), "gx push is disabled") {
-		t.Fatalf("push error = %v, want disabled message", err)
-	}
-	if !strings.Contains(err.Error(), "git push") {
-		t.Fatalf("push error = %v, want git push guidance", err)
-	}
-}
-
-func TestPushIsHiddenFromRootHelp(t *testing.T) {
-	root := NewRoot(context.Background())
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"--help"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("root.Execute() error = %v", err)
-	}
-
-	text := out.String()
-	if strings.Contains(text, "gx push") {
-		t.Fatalf("root help should hide disabled gx push:\n%s", text)
 	}
 }
 
@@ -1402,134 +1042,6 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	}
 }
 
-func TestGenerateAutoInitializesGitRepo(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
-	root := initGitRepo(t)
-	runGitTest(t, root, "config", "user.name", "Joe Example")
-	runGitTest(t, root, "config", "user.email", "joe@example.com")
-	writeTestFile(t, root, "README.md", "# repo\n")
-	gitAddTestFiles(t, root, "README.md")
-	runGitTest(t, root, "commit", "-m", "initial")
-	writeTestFile(t, root, "README.md", "# repo\n\nchanged\n")
-	t.Chdir(root)
-	gxHome := t.TempDir()
-	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
-	t.Setenv("GX_HOME", gxHome)
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("TERM", "dumb")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-
-	cmd := NewRoot(context.Background())
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"generate", "--json", "--intent", "auto init"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx generate error = %v\n%s", err, out.String())
-	}
-	if strings.Contains(out.String(), "There is no jj repo") {
-		t.Fatalf("gx generate leaked jj init error:\n%s", out.String())
-	}
-	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
-		t.Fatalf("after gx generate .jj missing: %v\n%s", err, out.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
-		t.Fatalf("decode generate JSON: %v\n%s", err, out.String())
-	}
-	if _, ok := payload["proposal"].(map[string]any); !ok {
-		t.Fatalf("generate JSON missing proposal:\n%s", out.String())
-	}
-}
-
-func TestRequireAuthoringBaseBootstrapsUnbornRepo(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
-	root := initGitRepo(t)
-	runGitTest(t, root, "config", "user.name", "Joe Example")
-	runGitTest(t, root, "config", "user.email", "joe@example.com")
-	writeTestFile(t, root, "internal/foo.go", "package foo\n")
-	t.Chdir(root)
-	gxHome := t.TempDir()
-	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
-	t.Setenv("GX_HOME", gxHome)
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-
-	if _, err := authoring.NewEngine().Init(context.Background(), authoring.InitOptions{}); err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
-	if err := authoring.NewEngine().RequireAuthoringBase(context.Background(), "gx generate"); err != nil {
-		t.Fatalf("RequireAuthoringBase() error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "README.md")); err != nil {
-		t.Fatalf("README.md missing after bootstrap: %v", err)
-	}
-	jjOut, err := exec.Command("jj", "bookmark", "list").CombinedOutput()
-	if err != nil {
-		t.Fatalf("jj bookmark list: %v\n%s", err, jjOut)
-	}
-	if !strings.Contains(string(jjOut), "main") {
-		t.Fatalf("jj bookmark list missing main:\n%s", jjOut)
-	}
-}
-
-func TestGenerateBootstrapsUnbornGitRepo(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
-	root := initGitRepo(t)
-	runGitTest(t, root, "config", "user.name", "Joe Example")
-	runGitTest(t, root, "config", "user.email", "joe@example.com")
-	writeTestFile(t, root, "internal/foo.go", "package foo\n")
-	t.Chdir(root)
-	gxHome := t.TempDir()
-	writeTestGXConfig(t, gxHome, "Joe Example", "joe@example.com")
-	t.Setenv("GX_HOME", gxHome)
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("TERM", "dumb")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-
-	cmd := NewRoot(context.Background())
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"generate", "--json", "--intent", "bootstrap unborn"})
-
-	if err := cmd.Execute(); err != nil {
-		jjOut, _ := exec.Command("jj", "bookmark", "list").CombinedOutput()
-		gitOut, _ := exec.Command("git", "log", "--oneline", "--all").CombinedOutput()
-		readmeStat := "missing"
-		if _, statErr := os.Stat(filepath.Join(root, "README.md")); statErr == nil {
-			readmeStat = "present"
-		}
-		t.Fatalf("gx generate error = %v\nreadme=%s\njj bookmarks:\n%s\ngit log:\n%s\ngx output:\n%s", err, readmeStat, jjOut, gitOut, out.String())
-	}
-	readmePath := filepath.Join(root, "README.md")
-	data, err := os.ReadFile(readmePath)
-	if err != nil {
-		t.Fatalf("README.md missing after bootstrap: %v\n%s", err, out.String())
-	}
-	baseName := filepath.Base(root)
-	if got, want := string(data), "# "+baseName+"\n"; got != want {
-		t.Fatalf("README content = %q, want %q", got, want)
-	}
-	if outLog, err := exec.Command("git", "-C", root, "log", "--reverse", "-1", "--format=%s").CombinedOutput(); err != nil {
-		t.Fatalf("git log after bootstrap: %v\n%s", err, outLog)
-	} else if strings.TrimSpace(string(outLog)) != "init commit" {
-		t.Fatalf("initial commit message = %q, want %q", strings.TrimSpace(string(outLog)), "init commit")
-	}
-}
-
 func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
 	t.Helper()
 	if err := os.MkdirAll(gxHome, 0o755); err != nil {
@@ -1541,18 +1053,7 @@ func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
 	}
 }
 
-func TestPrintGenerateRoundFailureShowsError(t *testing.T) {
-	var out bytes.Buffer
-	printGenerateRoundFailure(&out, fmt.Errorf("Revision `main` doesn't exist"))
-	if !strings.Contains(out.String(), "Revision `main` doesn't exist") {
-		t.Fatalf("printGenerateRoundFailure() output = %q, want the error text", out.String())
-	}
-}
-
 func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
@@ -1575,50 +1076,8 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	if out.String() != "" {
 		t.Fatalf("gx init -y output = %q, want empty", out.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
-		t.Fatalf("after gx init -y .jj missing: %v", err)
-	}
-}
-
-func TestGenerateAutoInitSuppressesInteractiveInitOutput(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
-	root := initGitRepo(t)
-	runGitTest(t, root, "config", "user.name", "Joe Example")
-	runGitTest(t, root, "config", "user.email", "joe@example.com")
-	writeTestFile(t, root, "README.md", "# repo\n")
-	gitAddTestFiles(t, root, "README.md")
-	runGitTest(t, root, "commit", "-m", "initial")
-	writeTestFile(t, root, "README.md", "# repo\n\nchanged\n")
-	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-
-	cmd := NewRoot(context.Background())
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"generate", "--json", "--intent", "auto init"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx generate error = %v\n%s", err, out.String())
-	}
-	for _, unwanted := range []string{
-		"Your config is stored",
-		"gx name",
-		"gx email",
-		"gx init",
-	} {
-		if strings.Contains(out.String(), unwanted) {
-			t.Fatalf("gx generate auto-init leaked %q:\n%s", unwanted, out.String())
-		}
-	}
-	if _, err := os.Stat(filepath.Join(root, ".jj")); err != nil {
-		t.Fatalf("after gx generate .jj missing: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+		t.Fatalf("after gx init -y .git missing: %v", err)
 	}
 }
 

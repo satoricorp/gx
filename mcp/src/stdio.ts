@@ -3,7 +3,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "./tools/gx-commit";
-import gxEdit, { metadata as editMetadata, schema as editSchema } from "./tools/gx-edit";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "./tools/gx-status";
 import { withUpdateNotice } from "./update";
@@ -19,12 +18,12 @@ type ToolModule = {
 };
 
 const instructions = [
-  "GX MCP exposes gx_commit, gx_status, gx_edit, and gx_review.",
+  "GX MCP exposes gx_commit, gx_status, and gx_review.",
   "If a repo is not initialized for GX, MCP runs gx init non-interactively before repository tools continue.",
   "When the user says save work, save using gx, or save with gx, run the GX save workflow: git add, gx_commit, gx_status, then publish ready work with plain git push (the GX pre-push hook captures the session and publishes) unless the user asks to keep work local.",
   "gx_commit is the default verb. Use it after git add to record staged work as a GX revision.",
-  "Use gx_edit only to re-enter an existing revision for further edits (gx commit --amend is unsupported).",
-  "Run gx_status after commits or edits to inspect local/remote stack state before publishing.",
+  "To amend the latest commit message or restage work, use git commit --amend and preserve the GX revision trailer.",
+  "Run gx_status after commits to inspect local/remote stack state before publishing.",
   "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
   "Publish with plain git push, then open the PR with gh pr create. Do not run gx push or gx capture push; they bypass or suppress the pre-push hook that GX publishes through.",
   "Use GX MCP tools before the CLI for GX workflows; use the CLI only as fallback when MCP is unavailable.",
@@ -34,7 +33,6 @@ const instructions = [
 const tools: ToolModule[] = [
   defineTool(commitMetadata, commitSchema, gxCommit),
   defineTool(statusMetadata, statusSchema, gxStatus),
-  defineTool(editMetadata, editSchema, gxEdit),
   defineTool(reviewMetadata, reviewSchema, gxReview),
 ];
 

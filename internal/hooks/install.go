@@ -1,13 +1,17 @@
 package hooks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-const hookMarker = "# gx capture pre-push hook"
+const (
+	hookMarker          = "# gx lifecycle hooks"
+	legacyPrePushMarker = "# gx capture pre-push hook"
+)
 
 // AgentHookConfig documents future Claude/Codex lifecycle hook settings (V1.1).
 type AgentHookConfig struct {
@@ -15,13 +19,13 @@ type AgentHookConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// InstallOptions configures pre-push hook installation.
+// InstallOptions configures git lifecycle hook installation.
 type InstallOptions struct {
 	RepoRoot string
 	GXPath   string
 }
 
-// Install writes .git/hooks/pre-push invoking gx capture push.
+// Install writes gx lifecycle hooks using git's hooks directory resolution.
 func Install(opts InstallOptions) error {
 	repoRoot, err := filepath.Abs(opts.RepoRoot)
 	if err != nil {
@@ -34,41 +38,107 @@ func Install(opts InstallOptions) error {
 			return fmt.Errorf("resolve gx binary: %w", err)
 		}
 	}
-	gitDir := filepath.Join(repoRoot, ".git")
-	if _, err := os.Stat(gitDir); err != nil {
-		return fmt.Errorf("not a git repository: %w", err)
-	}
-	hookPath := filepath.Join(gitDir, "hooks", "pre-push")
-	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
+	hooksDir, err := ResolveHooksDir(context.Background(), repoRoot)
+	if err != nil {
 		return err
 	}
-	script := prePushScript(gxPath)
-	if data, err := os.ReadFile(hookPath); err == nil {
-		if string(data) == script {
-			return nil
-		}
-		// A gx-owned hook with different content is an older template
-		// (missing --local-ref/--head-sha, or blocking on failure) or
-		// points at a stale binary; regenerate it.
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		return err
 	}
-	return os.WriteFile(hookPath, []byte(script), 0o755)
+	scripts := map[string]string{
+		"prepare-commit-msg": prepareCommitMsgScript(gxPath),
+		"post-commit":        postCommitScript(gxPath),
+		"post-rewrite":       postRewriteScript(gxPath),
+		"pre-push":           prePushScript(gxPath),
+	}
+	for name, script := range scripts {
+		hookPath := filepath.Join(hooksDir, name)
+		if data, readErr := os.ReadFile(hookPath); readErr == nil {
+			if string(data) == script {
+				continue
+			}
+			if !gxOwnedHook(name, string(data)) {
+				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying gx init", name, hookPath)
+			}
+		}
+		if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
+			return fmt.Errorf("install %s hook: %w", name, err)
+		}
+	}
+	return nil
 }
 
-// IsInstalled reports whether the gx pre-push hook is present.
+// IsInstalled reports whether gx lifecycle hooks are present.
 func IsInstalled(repoRoot string) bool {
 	repoRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return false
 	}
-	data, err := os.ReadFile(filepath.Join(repoRoot, ".git", "hooks", "pre-push"))
+	hooksDir, err := ResolveHooksDir(context.Background(), repoRoot)
 	if err != nil {
 		return false
 	}
-	return containsHookMarker(string(data))
+	for _, name := range []string{"prepare-commit-msg", "post-commit", "post-rewrite", "pre-push"} {
+		data, err := os.ReadFile(filepath.Join(hooksDir, name))
+		if err != nil || !containsHookMarker(string(data)) {
+			return false
+		}
+	}
+	return true
 }
 
 func containsHookMarker(content string) bool {
 	return strings.Contains(content, hookMarker)
+}
+
+func gxOwnedHook(name, content string) bool {
+	if containsHookMarker(content) {
+		return true
+	}
+	return name == "pre-push" && strings.Contains(content, legacyPrePushMarker)
+}
+
+func hookRepoArg() string {
+	return `repo="$(git rev-parse --show-toplevel)"`
+}
+
+func prepareCommitMsgScript(gxPath string) string {
+	if gxPath == "" {
+		gxPath = "gx"
+	}
+	return fmt.Sprintf(`#!/bin/sh
+%s
+%s
+%q __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
+`, hookMarker, hookRepoArg(), gxPath)
+}
+
+func postCommitScript(gxPath string) string {
+	if gxPath == "" {
+		gxPath = "gx"
+	}
+	return fmt.Sprintf(`#!/bin/sh
+%s
+%s
+%q __hooks post-commit --repo "$repo" || {
+  echo "gx post-commit metadata recording failed" >&2
+  exit 0
+}
+`, hookMarker, hookRepoArg(), gxPath)
+}
+
+func postRewriteScript(gxPath string) string {
+	if gxPath == "" {
+		gxPath = "gx"
+	}
+	return fmt.Sprintf(`#!/bin/sh
+%s
+%s
+%q __hooks post-rewrite --repo "$repo" || {
+  echo "gx post-rewrite metadata update failed" >&2
+  exit 0
+}
+`, hookMarker, hookRepoArg(), gxPath)
 }
 
 func prePushScript(gxPath string) string {

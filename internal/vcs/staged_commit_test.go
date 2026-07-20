@@ -18,6 +18,41 @@ import (
 	"github.com/satoricorp/gx/internal/storage"
 )
 
+type fakeRunner struct {
+	outputs map[string][]string
+}
+
+func runnerKey(dir, name string, args ...string) string {
+	return strings.Join(append([]string{dir, name}, args...), "\x00")
+}
+
+func (r *fakeRunner) run(dir, name string, args ...string) (string, error) {
+	key := runnerKey(dir, name, args...)
+	outputs := r.outputs[key]
+	if len(outputs) == 0 {
+		return "", fmt.Errorf("unexpected command: %s", strings.Join(append([]string{name}, args...), " "))
+	}
+	r.outputs[key] = outputs[1:]
+	return outputs[0], nil
+}
+
+func (r *fakeRunner) Run(_ context.Context, dir, name string, args ...string) (string, error) {
+	return r.run(dir, name, args...)
+}
+
+func (r *fakeRunner) RunStdout(_ context.Context, dir, name string, args ...string) (string, error) {
+	return r.run(dir, name, args...)
+}
+
+func (r *fakeRunner) RunStream(_ context.Context, dir, name string, args ...string) error {
+	_, err := r.run(dir, name, args...)
+	return err
+}
+
+func (r *fakeRunner) RunWithStdin(_ context.Context, dir, name, _ string, args ...string) (string, error) {
+	return r.run(dir, name, args...)
+}
+
 func gitCachedDiff(t *testing.T, root string) []byte {
 	t.Helper()
 	cmd := exec.Command("git", "diff", "--cached", "--binary")
@@ -31,9 +66,6 @@ func gitCachedDiff(t *testing.T, root string) []byte {
 
 func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string) {
 	t.Helper()
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git executable not found")
 	}
@@ -49,7 +81,6 @@ func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string
 	}
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "init")
-	runJJ(t, root, "git", "init", "--colocate", ".")
 
 	gxHome := t.TempDir()
 	t.Setenv("GX_HOME", gxHome)
@@ -103,23 +134,6 @@ func gitCurrentBranch(t *testing.T, root string) string {
 		t.Fatalf("git branch --show-current: %v\n%s", err, out)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-func countUndescribedJJChanges(t *testing.T, root string) int {
-	t.Helper()
-	cmd := exec.Command("jj", "log", "-r", `description("") ~ @`, "--no-graph", "-T", "change_id")
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("jj log: %v\n%s", err, out)
-	}
-	count := 0
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) != "" && strings.Trim(line, "z") != "" {
-			count++
-		}
-	}
-	return count
 }
 
 func TestParseCachedRawDiffIntentToAddAndSubmodule(t *testing.T) {
@@ -225,10 +239,6 @@ func TestStagedCommitStampsGXTrailer(t *testing.T) {
 	if parsed != wantTrailerValue {
 		t.Fatalf("parsed GX trailer = %q, want %q", parsed, wantTrailerValue)
 	}
-
-	if err := svc.ensureRevisionDescription(context.Background(), root, "@-", "work change"); err != nil {
-		t.Fatalf("ensureRevisionDescription() error = %v", err)
-	}
 }
 
 func gitCommitMessage(t *testing.T, root, rev string) (string, error) {
@@ -326,48 +336,6 @@ func TestStagedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	if result.Stack == nil || result.Stack.BookmarkName != "master" {
 		t.Fatalf("stack bookmark = %v, want master", result.Stack)
 	}
-}
-
-func TestStagedCommitNoOrphanJJChanges(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "checkout", "-b", "feature-x")
-	for i := 0; i < 2; i++ {
-		name := fmt.Sprintf("file%d.txt", i)
-		if err := os.WriteFile(filepath.Join(root, name), []byte("x\n"), 0o644); err != nil {
-			t.Fatalf("WriteFile() error = %v", err)
-		}
-		runGit(t, root, "add", name)
-		if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: fmt.Sprintf("commit %d", i)}); err != nil {
-			t.Fatalf("RecordStagedRevision(%d) error = %v", i, err)
-		}
-	}
-}
-
-func TestStagedCommitRollbackRestoresBranchAndIndex(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "checkout", "-b", "rollback-branch")
-	if err := os.WriteFile(filepath.Join(root, "rb.txt"), []byte("rb\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "rb.txt")
-	beforeStatus := gitStatusPorcelain(t, root)
-	beforeCached := gitCachedDiff(t, root)
-
-	stagedCommitAfterImportHook = func() error { return fmt.Errorf("injected post-import failure") }
-	t.Cleanup(func() { stagedCommitAfterImportHook = nil })
-
-	_, commitErr := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "should rollback"})
-	if commitErr == nil || !strings.Contains(commitErr.Error(), "injected post-import failure") {
-		t.Fatalf("RecordStagedRevision() error = %v, want injected failure", commitErr)
-	}
-	if branch := gitCurrentBranch(t, root); branch != "rollback-branch" {
-		t.Fatalf("branch after rollback = %q, want rollback-branch", branch)
-	}
-	afterCached := gitCachedDiff(t, root)
-	if string(afterCached) != string(beforeCached) {
-		t.Fatalf("cached diff changed after rollback:\nbefore=%q\nafter=%q", beforeCached, afterCached)
-	}
-	_ = beforeStatus
 }
 
 func TestAttributionLedgerSurvivesStoreReopen(t *testing.T) {
@@ -637,7 +605,11 @@ func TestFilterUnattributedSessionEventsSkipsAttributed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("storage.NewStore() error = %v", err)
 	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: root, Backend: "jj"})
+	repoInfo, err := svc.ResolveGXRepoAtPath(ctx, root)
+	if err != nil {
+		t.Fatalf("ResolveGXRepoAtPath() error = %v", err)
+	}
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: root, GitCommonDir: repoInfo.GitCommonDir, Backend: "git"})
 	if err != nil {
 		t.Fatalf("UpsertRepo() error = %v", err)
 	}
@@ -732,93 +704,8 @@ func TestRejectProtectedStackBookmarkSecondChokePoint(t *testing.T) {
 	}
 }
 
-func TestEnsureBranchMutationAllowedProtectedRefRules(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	ctx := context.Background()
-	forkPoint := gitHeadCommit(t, root)
-
-	// A branch that forks before main's tip: not a descendant once main advances.
-	runGit(t, root, "checkout", "-b", "sibling", forkPoint)
-	runGit(t, root, "commit", "--allow-empty", "-m", "sibling work")
-	siblingHead := gitHeadCommit(t, root)
-	// Advance main past the fork point so sibling is a true sideways target.
-	runGit(t, root, "checkout", "main")
-	runGit(t, root, "commit", "--allow-empty", "-m", "main advance")
-	mainHead := gitHeadCommit(t, root)
-	// A true descendant of main's new tip, on its own branch.
-	runGit(t, root, "checkout", "-b", "descendant", mainHead)
-	runGit(t, root, "commit", "--allow-empty", "-m", "descendant work")
-	descendantHead := gitHeadCommit(t, root)
-
-	// Not checked out (descendant is): even a fast-forward of main is blocked.
-	err := svc.attachGitBranch(ctx, root, "main", descendantHead, false)
-	if err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("attachGitBranch(main, descendant) while not checked out error = %v, want protected", err)
-	}
-
-	// Checked out but not a descendant: blocked.
-	runGit(t, root, "checkout", "main")
-	err = svc.attachGitBranch(ctx, root, "main", siblingHead, false)
-	if err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("attachGitBranch(main, sibling) error = %v, want protected: sideways moves stay blocked", err)
-	}
-
-	// Checked out and fast-forward: allowed (git-commit semantics).
-	if err := svc.attachGitBranch(ctx, root, "main", descendantHead, false); err != nil {
-		t.Fatalf("attachGitBranch(main, descendant) while checked out error = %v, want allowed", err)
-	}
-}
-
-func TestSetBaseAfterStagedCommitOnFeatureBranch(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "checkout", "-b", "feature/set-base")
-	if err := os.WriteFile(filepath.Join(root, "base-test.txt"), []byte("x\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "base-test.txt")
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "feature work"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
-
-	result, err := svc.SetBase(context.Background(), "main")
-	if err != nil {
-		t.Fatalf("SetBase() error = %v", err)
-	}
-	if result.BaseRef != "main" {
-		t.Fatalf("SetBase() base ref = %q, want main", result.BaseRef)
-	}
-	if branch := gitCurrentBranch(t, root); branch != "main" {
-		t.Fatalf("current branch after SetBase = %q, want main", branch)
-	}
-	if !result.OnBase {
-		t.Fatalf("SetBase() OnBase = false, want true after returning to base")
-	}
-}
-
-func TestRequireAuthoringBaseAfterFeatureCommit(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "checkout", "-b", "feature/gate")
-	if err := os.WriteFile(filepath.Join(root, "gate.txt"), []byte("g\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "gate.txt")
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "gate work"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
-	if _, err := svc.SetBase(context.Background(), "main"); err != nil {
-		t.Fatalf("SetBase() error = %v", err)
-	}
-	if err := svc.RequireAuthoringBase(context.Background(), "gx commit"); err != nil {
-		t.Fatalf("RequireAuthoringBase() after SetBase error = %v", err)
-	}
-	_ = root
-}
-
 func setupUnbornStagedCommitRepo(t *testing.T) (*Service, string) {
 	t.Helper()
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git executable not found")
 	}
@@ -826,7 +713,6 @@ func setupUnbornStagedCommitRepo(t *testing.T) (*Service, string) {
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Test User")
 	runGit(t, root, "config", "user.email", "test@example.com")
-	runJJ(t, root, "git", "init", "--colocate", ".")
 
 	gxHome := t.TempDir()
 	t.Setenv("GX_HOME", gxHome)
@@ -849,24 +735,12 @@ func setupUnbornStagedCommitRepo(t *testing.T) (*Service, string) {
 	return svc, root
 }
 
-func TestStagedCommitUnbornHEADRejected(t *testing.T) {
-	svc, root := setupUnbornStagedCommitRepo(t)
-	if err := os.WriteFile(filepath.Join(root, "first.txt"), []byte("first\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "first.txt")
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "first"})
-	if err == nil || !strings.Contains(err.Error(), "no commits yet") {
-		t.Fatalf("RecordStagedRevision() error = %v, want unborn HEAD message", err)
-	}
-}
-
 func TestPreflightStagedIndexRejectsIntentToAddRawDiff(t *testing.T) {
 	repoRoot := t.TempDir()
 	intentRaw := ":000000 100644 0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 A\tnew.txt\n"
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "git", "ls-files", "-u"):                          {""},
+			runnerKey(repoRoot, "git", "ls-files", "-u"):                           {""},
 			runnerKey(repoRoot, "git", "diff", "--cached", "--raw", "--no-abbrev"): {intentRaw},
 		},
 	}
@@ -882,7 +756,7 @@ func TestPreflightStagedIndexRejectsSubmoduleRawDiff(t *testing.T) {
 	subRaw := ":160000 160000 abc1234567890123456789012345678901234567890 def4567890123456789012345678901234567890 M\tsub\n"
 	runner := &fakeRunner{
 		outputs: map[string][]string{
-			runnerKey(repoRoot, "git", "ls-files", "-u"):                          {""},
+			runnerKey(repoRoot, "git", "ls-files", "-u"):                           {""},
 			runnerKey(repoRoot, "git", "diff", "--cached", "--raw", "--no-abbrev"): {subRaw},
 		},
 	}
@@ -946,25 +820,6 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func TestStagedCommitResolveStackRejectsBadRequestedBranch(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "branch", "existing-branch")
-	repo, err := svc.ResolveJJRepoAtPath(context.Background(), root)
-	if err != nil {
-		t.Fatalf("ResolveJJRepoAtPath() error = %v", err)
-	}
-	head, err := svc.runTrimmed(context.Background(), root, "git", "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatalf("rev-parse HEAD: %v", err)
-	}
-	if _, _, err = svc.resolveStagedCommitStack(context.Background(), repo, "main", "master", head); err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("resolveStagedCommitStack(--branch master) error = %v, want protected", err)
-	}
-	if _, _, err = svc.resolveStagedCommitStack(context.Background(), repo, "main", "existing-branch", head); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("resolveStagedCommitStack(--branch existing-branch) error = %v, want already exists", err)
-	}
 }
 
 func TestStagedCommitExplicitBranchCreatesAndSwitches(t *testing.T) {
@@ -1081,62 +936,7 @@ func TestStagedCommitAfterRawGitCommitSyncs(t *testing.T) {
 	}
 }
 
-func TestStagedCommitReportsJJClobberedIndex(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	if err := os.WriteFile(filepath.Join(root, "c.txt"), []byte("c\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "c.txt")
-	runJJ(t, root, "status")
-	if staged := gitStagedNames(t, root); staged != "" {
-		t.Skip("this jj version does not rewrite the git index on snapshot")
-	}
-
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "clobbered"})
-	if err == nil {
-		t.Fatal("RecordStagedRevision() error = nil, want clobbered-index explanation")
-	}
-	if !strings.Contains(err.Error(), "re-run git add") {
-		t.Fatalf("error = %v, want intent-to-add explanation with re-run git add", err)
-	}
-	var coded *CodedError
-	if !errors.As(err, &coded) || coded.Code != ExitCodeNoStagedChanges {
-		t.Fatalf("error = %v, want CodedError code %d", err, ExitCodeNoStagedChanges)
-	}
-}
-
-func TestStagedCommitRollbackDeletesMintedBranch(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	if err := os.WriteFile(filepath.Join(root, "mint.txt"), []byte("m\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "mint.txt")
-	beforeCached := gitCachedDiff(t, root)
-
-	stagedCommitAfterImportHook = func() error { return fmt.Errorf("injected mint failure") }
-	t.Cleanup(func() { stagedCommitAfterImportHook = nil })
-
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "minted branch rollback"})
-	if err == nil || !strings.Contains(err.Error(), "injected mint failure") {
-		t.Fatalf("RecordStagedRevision() error = %v, want injected failure", err)
-	}
-	if branch := gitCurrentBranch(t, root); branch != "main" {
-		t.Fatalf("branch after rollback = %q, want main", branch)
-	}
-	branches := exec.Command("git", "branch", "--list", "feature/*", "bug/*")
-	branches.Dir = root
-	if out, _ := branches.CombinedOutput(); strings.TrimSpace(string(out)) != "" {
-		t.Fatalf("minted branch left behind after rollback:\n%s", out)
-	}
-	if after := gitCachedDiff(t, root); string(after) != string(beforeCached) {
-		t.Fatalf("cached diff changed after rollback:\nbefore=%q\nafter=%q", beforeCached, after)
-	}
-}
-
 func TestStagedCommitSelfInitializesPlainGitRepo(t *testing.T) {
-	if _, err := exec.LookPath("jj"); err != nil {
-		t.Skip("jj executable not found")
-	}
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Test User")

@@ -203,7 +203,7 @@ The ideal agent loop is:
 3. `gx_status`
 4. plain `git push` when ready
 5. `gh pr create`
-6. `gx_edit` only to re-enter an existing revision
+6. `git commit --amend` when updating the latest revision, preserving its GX trailer
 7. `gx_review` when review context is needed
 
 There is no `gx_publish` / `gx_push` MCP tool. Agents must publish with plain

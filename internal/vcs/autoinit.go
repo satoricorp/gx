@@ -2,7 +2,6 @@ package vcs
 
 import (
 	"context"
-	"fmt"
 	"os"
 )
 
@@ -16,23 +15,23 @@ func (s *Service) repoRootFromPath(ctx context.Context, startPath string) (strin
 	if gitRepo, err := s.ResolveGitRepoAtPath(ctx, startPath); err == nil {
 		return gitRepo.RootPath, true, nil
 	}
-	if jjRepo, err := s.ResolveJJRepoAtPath(ctx, startPath); err == nil {
-		return jjRepo.RootPath, true, nil
-	}
 	return "", false, nil
 }
 
 func (s *Service) isRepoInitialized(ctx context.Context, repoRoot string) (bool, error) {
-	store, err := openStore(ctx)
+	repo, err := s.ResolveGXRepoAtPath(ctx, repoRoot)
 	if err != nil {
-		return false, err
+		store, storeErr := openStore(ctx)
+		if storeErr != nil {
+			return false, storeErr
+		}
+		defer store.Close()
+		return store.IsInitializedRepo(ctx, repoRoot)
 	}
-	defer store.Close()
-	return store.IsInitializedRepo(ctx, repoRoot)
+	return s.isRepoInitializedByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
 }
 
-// EnsureReadyRepo initializes gx for the repository at startPath when needed and
-// bootstraps the authoring base revision so stack commands can resolve main.
+// EnsureReadyRepo initializes gx for the repository at startPath when needed.
 func (s *Service) EnsureReadyRepo(ctx context.Context, startPath string) (EnsureReadyResult, error) {
 	repoRoot, inRepo, err := s.repoRootFromPath(ctx, startPath)
 	if err != nil {
@@ -42,51 +41,29 @@ func (s *Service) EnsureReadyRepo(ctx context.Context, startPath string) (Ensure
 		return EnsureReadyResult{}, nil
 	}
 
-	initialized, err := s.isRepoInitialized(ctx, repoRoot)
+	repo, err := s.ResolveGXRepoAtPath(ctx, repoRoot)
+	if err != nil {
+		return EnsureReadyResult{}, err
+	}
+	initialized, err := s.isRepoInitializedByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
 	if err != nil {
 		return EnsureReadyResult{}, err
 	}
 
-	var repo RepoInfo
-	needsBase := false
-	jjRepo, jjErr := s.ResolveJJRepoAtPath(ctx, repoRoot)
-	switch {
-	case jjErr != nil:
-		needsBase = true
-	default:
-		repo = jjRepo
-		exists, revErr := s.RevisionExists(ctx, repoRoot, repo.defaultBaseBranch())
-		if revErr != nil {
-			return EnsureReadyResult{}, revErr
-		}
-		needsBase = !exists
-	}
-
-	if initialized && !needsBase {
+	if initialized {
 		return EnsureReadyResult{InitResult: InitResult{Repo: repo}}, nil
 	}
 
 	result := EnsureReadyResult{Prepared: true}
 	initResult, err := s.InitAtPath(ctx, repoRoot, InitOptions{Interactive: false})
 	if err != nil {
-		return EnsureReadyResult{}, fmt.Errorf("initialize gx: %w", err)
+		return EnsureReadyResult{}, err
 	}
 	result.InitResult = initResult
-
-	if needsBase {
-		target := initResult.Repo
-		if target.RootPath == "" {
-			target = repo
-		}
-		if err := s.ensureAuthoringBaseRevision(ctx, target, target.defaultBaseBranch()); err != nil {
-			return result, fmt.Errorf("prepare gx authoring base: %w", err)
-		}
-	}
-
 	return result, nil
 }
 
-// RepoRootFromWorkingDirectory resolves the git or jj repository root for cwd.
+// RepoRootFromWorkingDirectory resolves the git repository root for cwd.
 func (s *Service) RepoRootFromWorkingDirectory(ctx context.Context) (string, bool, error) {
 	cwd, err := os.Getwd()
 	if err != nil {

@@ -1,15 +1,18 @@
-# Git hooks for gx capture
+# Git lifecycle hooks
 
-gx installs a **pre-push** hook that runs the capture pipeline locally before your push completes. Staged extracts and sessions are written to `~/.gx/gx.db` without network access.
+GX installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
+hooks. Together they stamp revision trailers, record commits, follow rewritten
+commit OIDs, and run capture before a push completes. Staged extracts and
+sessions are written to `~/.gx/gx.db` without network access.
 
 Installing the GX menu-bar app installs the bundled `gx` CLI and `gx-mcp`
 binary. It does not rewrite every repository immediately; each repo gets the
 Git hook when it is initialized with `gx init`, initialized automatically by
-MCP, or configured with `gx capture install`.
+the CLI or MCP.
 
-## Native git hook
+## Native Git hooks
 
-`gx init` writes `.git/hooks/pre-push` that invokes:
+The `pre-push` hook invokes:
 
 ```bash
 gx capture push --remote "$remote" --ref-range "$range" --repo "$(git rev-parse --show-toplevel)"
@@ -61,3 +64,12 @@ When `GX_POSTHOG_KEY` is set, each capture run emits `capture.coverage` and `mat
 ## Agent lifecycle hooks
 
 Claude Code and Codex machine hooks are planned for V1.1. The `hooks.AgentHookConfig` struct reserves the interface; no install yet.
+
+## Git lifecycle recovery
+
+GX installs `prepare-commit-msg`, `post-commit`, and `post-rewrite` alongside
+`pre-push`. Commit-message stamping is deterministic and runs in-process for
+`gx commit`, so a missing post hook cannot lose the revision identity.
+`post-commit` and `post-rewrite` warn but do not block Git when metadata
+recording fails. Before publication, `pre-push` scans revision trailers and
+recovers missing rows or stale commit OIDs in the GX database.

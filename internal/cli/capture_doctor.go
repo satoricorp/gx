@@ -284,7 +284,7 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 		issues = append(issues, captureIssueJSON{
 			Code:     "hook_missing",
 			Severity: "fail",
-			Message:  "pre-push hook missing",
+			Message:  "GX lifecycle hooks missing",
 			Action:   "run `gx init` in this repo",
 		})
 	}
@@ -300,7 +300,7 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 		issues = append(issues, captureIssueJSON{
 			Code:     "repo_hooks_missing",
 			Severity: "fail",
-			Message:  fmt.Sprintf("%d registered repo hooks missing", status.RepoHooksMissing),
+			Message:  fmt.Sprintf("%d registered repo lifecycle hook sets missing", status.RepoHooksMissing),
 			Action:   "run `gx init` in each registered repo",
 		})
 	}
