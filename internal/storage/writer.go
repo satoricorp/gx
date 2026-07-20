@@ -299,11 +299,44 @@ func (s *Store) WriteResponse(ctx context.Context, resp Response) error {
 }
 
 func (s *Store) UpsertRepo(ctx context.Context, repo Repo) (int64, error) {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO repos (root_path, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	gitCommonDir := strings.TrimSpace(repo.GitCommonDir)
+	if gitCommonDir == "" {
+		gitCommonDir = strings.TrimSpace(repo.RootPath)
+	}
+	var existingID int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM repos
+		WHERE git_common_dir = ? OR root_path = ?
+		ORDER BY CASE WHEN git_common_dir = ? THEN 0 ELSE 1 END, updated_at DESC
+		LIMIT 1
+	`, gitCommonDir, repo.RootPath, gitCommonDir).Scan(&existingID)
+	if err == nil {
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE repos
+			SET git_common_dir = ?,
+				backend = CASE WHEN backend = 'jj' THEN backend ELSE ? END,
+				default_remote = ?,
+				default_branch = ?,
+				authoring_base_ref = COALESCE(?, authoring_base_ref),
+				remote_url = ?,
+				updated_at = ?
+			WHERE id = ?
+		`, gitCommonDir, repo.Backend, repo.DefaultRemote, repo.DefaultBranch, repo.AuthoringBase, repo.RemoteURL, repo.UpdatedAt, existingID)
+		if err != nil {
+			return 0, fmt.Errorf("update repo: %w", err)
+		}
+		return existingID, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("lookup repo identity: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO repos (root_path, git_common_dir, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(root_path) DO UPDATE SET
-			backend = excluded.backend,
+			git_common_dir = COALESCE(NULLIF(excluded.git_common_dir, ''), repos.git_common_dir),
+			backend = CASE WHEN repos.backend = 'jj' THEN repos.backend ELSE excluded.backend END,
 			default_remote = excluded.default_remote,
 			default_branch = excluded.default_branch,
 			authoring_base_ref = COALESCE(excluded.authoring_base_ref, repos.authoring_base_ref),
@@ -311,6 +344,7 @@ func (s *Store) UpsertRepo(ctx context.Context, repo Repo) (int64, error) {
 			updated_at = excluded.updated_at
 	`,
 		repo.RootPath,
+		gitCommonDir,
 		repo.Backend,
 		repo.DefaultRemote,
 		repo.DefaultBranch,
@@ -323,6 +357,11 @@ func (s *Store) UpsertRepo(ctx context.Context, repo Repo) (int64, error) {
 		return 0, fmt.Errorf("upsert repo: %w", err)
 	}
 	var id int64
+	if gitCommonDir != "" {
+		if err := s.db.QueryRowContext(ctx, `SELECT id FROM repos WHERE git_common_dir = ? ORDER BY updated_at DESC LIMIT 1`, gitCommonDir).Scan(&id); err == nil {
+			return id, nil
+		}
+	}
 	if err := s.db.QueryRowContext(ctx, `SELECT id FROM repos WHERE root_path = ?`, repo.RootPath).Scan(&id); err != nil {
 		return 0, fmt.Errorf("lookup repo id: %w", err)
 	}
@@ -2217,12 +2256,13 @@ func usageTokenValue(usage map[string]any, keys ...string) int {
 
 func (s *Store) FindRepoByRoot(ctx context.Context, rootPath string) (*Repo, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, root_path, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
+		SELECT id, root_path, git_common_dir, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
 		FROM repos
 		WHERE root_path = ?
 	`, rootPath)
 
 	var repo Repo
+	var gitCommonDir sql.NullString
 	var defaultRemote sql.NullString
 	var defaultBranch sql.NullString
 	var authoringBase sql.NullString
@@ -2230,6 +2270,7 @@ func (s *Store) FindRepoByRoot(ctx context.Context, rootPath string) (*Repo, err
 	if err := row.Scan(
 		&repo.ID,
 		&repo.RootPath,
+		&gitCommonDir,
 		&repo.Backend,
 		&defaultRemote,
 		&defaultBranch,
@@ -2242,6 +2283,9 @@ func (s *Store) FindRepoByRoot(ctx context.Context, rootPath string) (*Repo, err
 			return nil, nil
 		}
 		return nil, fmt.Errorf("find repo by root: %w", err)
+	}
+	if gitCommonDir.Valid {
+		repo.GitCommonDir = gitCommonDir.String
 	}
 	if defaultRemote.Valid {
 		repo.DefaultRemote = &defaultRemote.String
@@ -2258,9 +2302,129 @@ func (s *Store) FindRepoByRoot(ctx context.Context, rootPath string) (*Repo, err
 	return &repo, nil
 }
 
+func (s *Store) FindRepoByIdentity(ctx context.Context, gitCommonDir, worktreeRoot string) (*Repo, error) {
+	gitCommonDir = strings.TrimSpace(gitCommonDir)
+	worktreeRoot = strings.TrimSpace(worktreeRoot)
+	if gitCommonDir != "" {
+		repo, err := s.findRepoByGitCommonDir(ctx, gitCommonDir)
+		if err != nil || repo != nil {
+			return repo, err
+		}
+	}
+	if worktreeRoot != "" {
+		return s.FindRepoByRoot(ctx, worktreeRoot)
+	}
+	return nil, nil
+}
+
+func (s *Store) findRepoByGitCommonDir(ctx context.Context, gitCommonDir string) (*Repo, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, root_path, git_common_dir, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
+		FROM repos
+		WHERE git_common_dir = ?
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, gitCommonDir)
+	return scanRepoRow(row)
+}
+
+func scanRepoRow(row *sql.Row) (*Repo, error) {
+	var repo Repo
+	var gitCommonDir sql.NullString
+	var defaultRemote sql.NullString
+	var defaultBranch sql.NullString
+	var authoringBase sql.NullString
+	var remoteURL sql.NullString
+	if err := row.Scan(
+		&repo.ID,
+		&repo.RootPath,
+		&gitCommonDir,
+		&repo.Backend,
+		&defaultRemote,
+		&defaultBranch,
+		&authoringBase,
+		&remoteURL,
+		&repo.CreatedAt,
+		&repo.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan repo row: %w", err)
+	}
+	if gitCommonDir.Valid {
+		repo.GitCommonDir = gitCommonDir.String
+	}
+	if defaultRemote.Valid {
+		repo.DefaultRemote = &defaultRemote.String
+	}
+	if defaultBranch.Valid {
+		repo.DefaultBranch = &defaultBranch.String
+	}
+	if authoringBase.Valid {
+		repo.AuthoringBase = &authoringBase.String
+	}
+	if remoteURL.Valid {
+		repo.RemoteURL = &remoteURL.String
+	}
+	return &repo, nil
+}
+
+func (s *Store) FindChangeByCommitID(ctx context.Context, repoID int64, commitID string) (*Change, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, repo_id, jj_change_id, current_commit_id, description, parent_change_id, status, first_seen_at, updated_at
+		FROM changes
+		WHERE repo_id = ? AND current_commit_id = ?
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, repoID, commitID)
+	change, err := scanChangeRow(row)
+	if err != nil || change == nil {
+		return change, err
+	}
+	return change, nil
+}
+
+func (s *Store) UpdateChangeCommitID(ctx context.Context, changeID int64, commitID string, updatedAt int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE changes
+		SET current_commit_id = ?, updated_at = ?
+		WHERE id = ?
+	`, commitID, updatedAt, changeID)
+	if err != nil {
+		return fmt.Errorf("update change commit id: %w", err)
+	}
+	return nil
+}
+
+func scanChangeRow(row *sql.Row) (*Change, error) {
+	var change Change
+	var parent sql.NullString
+	if err := row.Scan(
+		&change.ID,
+		&change.RepoID,
+		&change.JJChangeID,
+		&change.CurrentCommitID,
+		&change.Description,
+		&parent,
+		&change.Status,
+		&change.FirstSeenAt,
+		&change.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan change row: %w", err)
+	}
+	if parent.Valid {
+		change.ParentChangeID = &parent.String
+	}
+	return &change, nil
+}
+
 func (s *Store) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, root_path, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
+		SELECT id, root_path, git_common_dir, backend, default_remote, default_branch, authoring_base_ref, remote_url, created_at, updated_at
 		FROM repos
 		ORDER BY updated_at DESC, id DESC
 	`)
@@ -2272,6 +2436,7 @@ func (s *Store) ListRepos(ctx context.Context) ([]Repo, error) {
 	var repos []Repo
 	for rows.Next() {
 		var repo Repo
+		var gitCommonDir sql.NullString
 		var defaultRemote sql.NullString
 		var defaultBranch sql.NullString
 		var authoringBase sql.NullString
@@ -2279,6 +2444,7 @@ func (s *Store) ListRepos(ctx context.Context) ([]Repo, error) {
 		if err := rows.Scan(
 			&repo.ID,
 			&repo.RootPath,
+			&gitCommonDir,
 			&repo.Backend,
 			&defaultRemote,
 			&defaultBranch,
@@ -2288,6 +2454,9 @@ func (s *Store) ListRepos(ctx context.Context) ([]Repo, error) {
 			&repo.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan repo: %w", err)
+		}
+		if gitCommonDir.Valid {
+			repo.GitCommonDir = gitCommonDir.String
 		}
 		if defaultRemote.Valid {
 			repo.DefaultRemote = &defaultRemote.String

@@ -2,8 +2,8 @@ package vcs
 
 import (
 	"context"
-	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -15,6 +15,11 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 	if resolved, err := filepath.EvalSymlinks(repoRoot); err == nil {
 		repoRoot = resolved
 	}
+	runGit(t, repoRoot, "init", "-b", "main")
+	runGit(t, repoRoot, "commit", "--allow-empty", "-m", "init")
+	runGit(t, repoRoot, "branch", "feature/healthy")
+	runGit(t, repoRoot, "checkout", "main")
+
 	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := storage.Open(ctx)
@@ -27,7 +32,7 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 	}
 	repoID, err := store.UpsertRepo(ctx, storage.Repo{
 		RootPath:      repoRoot,
-		Backend:       "jj",
+		Backend:       "git",
 		DefaultBranch: ptr("main"),
 		CreatedAt:     1,
 		UpdatedAt:     1,
@@ -83,26 +88,8 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 	defer os.Chdir(prev)
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd() error = %v", err)
-	}
-	revisionQuery := func(rev string) string {
-		return runnerKey(cwd, "jj", "log", "-r", rev, "--limit", "1", "--no-graph", "-T", "commit_id")
-	}
-	runner := &fakeRunner{
-		stdoutOutputs: map[string][]string{
-			runnerKey(cwd, "jj", "root"):     {cwd + "\n", cwd + "\n"},
-			revisionQuery("feature/healthy"): {"abc123\n", "abc123\n"},
-		},
-		errors: map[string][]error{
-			revisionQuery("feature/env-example"): {
-				fmt.Errorf(`Error: Revision "feature/env-example" doesn't exist`),
-				fmt.Errorf(`Error: Revision "feature/env-example" doesn't exist`),
-			},
-		},
-	}
-	svc := NewServiceWithRunner(runner)
+
+	svc := NewService()
 
 	listed, err := svc.ListStaleStacks(ctx)
 	if err != nil {
@@ -151,5 +138,14 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 	}
 	if statuses[mergedID] != "merged" {
 		t.Fatalf("merged stack status = %q, want merged", statuses[mergedID])
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
 	}
 }

@@ -91,12 +91,13 @@ After installing the app, add GX instructions to the start or end of your
 `AGENTS.md` or `CLAUDE.md` so agents save with GX instead of raw Git:
 
 ```md
-Version control: use GX, not `git commit`.
+Version control: use Git with GX hooks and metadata, not raw `git commit` for normal agent work.
 
 Use GX MCP first:
 - `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
-- `gx_edit` only to re-enter an existing revision for further edits.
+
+To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer.
 
 Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
 then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
@@ -124,8 +125,10 @@ Git for the save flow unless the user explicitly asks. If supported, deny or req
 
 The menu-bar app gives you the bundled `gx` CLI and `gx-mcp`; repo hooks are
 installed when a repo is initialized with `gx init` or by MCP
-auto-initialization. GX writes `.git/hooks/pre-push`, which runs
-`gx capture push` for each pushed ref range before the push completes.
+auto-initialization. GX installs `prepare-commit-msg` to stamp GX revision
+trailers, `post-commit` to record commit metadata, `post-rewrite` to follow
+amended or rebased commit OIDs, and `pre-push` to capture and publish each
+pushed ref range.
 
 The hook captures Claude, Codex, and Cursor session context into `~/.gx/gx.db`.
 It stages locally without network access when upload credentials are absent,

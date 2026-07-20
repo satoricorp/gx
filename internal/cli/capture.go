@@ -116,6 +116,9 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 			if outcome.Publication.Queued {
 				fmt.Fprintf(cmd.OutOrStdout(), "publication queued id=%s\n", outcome.Publication.QueueID)
 			}
+			if outcome.RecoveryError != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: repair GX revision metadata: %s\n", outcome.RecoveryError)
+			}
 			return nil
 		},
 	}
@@ -165,7 +168,7 @@ func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSucc
 		return err
 	}
 	if printSuccess {
-		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Pre-push hook", success("ok")+": capture on git push"))
+		fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX lifecycle hooks", success("ok")+": commit metadata and push capture"))
 	}
 	return nil
 }

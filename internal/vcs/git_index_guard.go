@@ -8,11 +8,8 @@ import (
 	"strings"
 )
 
-// preservingGitIndex snapshots the colocated Git index around fn and restores
-// it byte-for-byte if fn changed it without moving git HEAD. jj rewrites the
-// index whenever it snapshots the working copy or imports git refs, converting
-// the user's staged entries into intent-to-add placeholders; read-only gx
-// operations must not surface that side effect.
+// preservingGitIndex snapshots the Git index around fn and restores it
+// byte-for-byte if fn changed it without moving git HEAD.
 func (s *Service) preservingGitIndex(ctx context.Context, repoRoot string, fn func() error) error {
 	indexPath := s.gitIndexPath(ctx, repoRoot)
 	if indexPath == "" {

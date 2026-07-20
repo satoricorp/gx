@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -109,6 +110,10 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate repos table: %w", err)
 	}
+	if err := ensureRepoGitCommonDirColumn(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate repos git_common_dir: %w", err)
+	}
 	if err := ensureChangeBookmarksTable(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate change_bookmarks table: %w", err)
@@ -164,6 +169,70 @@ func ensureRepoColumns(ctx context.Context, db *sql.DB) error {
 	}
 	if !columns["authoring_base_ref"] {
 		if _, err := db.ExecContext(ctx, `ALTER TABLE repos ADD COLUMN authoring_base_ref TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureRepoGitCommonDirColumn(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(repos)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !columns["git_common_dir"] {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE repos ADD COLUMN git_common_dir TEXT`); err != nil {
+			return err
+		}
+	}
+	repos, err := db.QueryContext(ctx, `
+		SELECT id, root_path
+		FROM repos
+		WHERE git_common_dir IS NULL OR git_common_dir = ''
+	`)
+	if err != nil {
+		return err
+	}
+	type repoPath struct {
+		id   int64
+		root string
+	}
+	var pending []repoPath
+	for repos.Next() {
+		var repo repoPath
+		if err := repos.Scan(&repo.id, &repo.root); err != nil {
+			repos.Close()
+			return err
+		}
+		pending = append(pending, repo)
+	}
+	if err := repos.Close(); err != nil {
+		return err
+	}
+	for _, repo := range pending {
+		commonDir := filepath.Clean(repo.root)
+		cmd := exec.CommandContext(ctx, "git", "-C", repo.root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+		if out, commandErr := cmd.Output(); commandErr == nil && strings.TrimSpace(string(out)) != "" {
+			commonDir = filepath.Clean(strings.TrimSpace(string(out)))
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE repos SET git_common_dir = ? WHERE id = ?`, commonDir, repo.id); err != nil {
 			return err
 		}
 	}

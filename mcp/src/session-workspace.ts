@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { commandEnvironment, resolveGxBinary } from "./gx";
 
-const jjBinary = () => process.env.JJ_BINARY || "jj";
 const gitBinary = () => process.env.GIT_BINARY || "git";
 
 export async function ensureGxInitialized(rawCwd?: string): Promise<{
@@ -11,31 +10,31 @@ export async function ensureGxInitialized(rawCwd?: string): Promise<{
   initOutput?: string;
 }> {
   const cwd = resolve(rawCwd || process.cwd());
+  const repoRoot = await gitRepoRoot(cwd);
+  if (await gxRepoReady(cwd)) {
+    return { repoRoot, autoInitialized: false };
+  }
+  const initOutput = await initializeWithGx(cwd);
+  return { repoRoot, autoInitialized: true, initOutput };
+}
+
+async function gitRepoRoot(cwd: string): Promise<string> {
+  return commandOutput(gitBinary(), ["rev-parse", "--show-toplevel"], cwd);
+}
+
+async function gxRepoReady(cwd: string): Promise<boolean> {
   try {
-    return {
-      repoRoot: await commandOutput(jjBinary(), ["root"], cwd),
-      autoInitialized: false,
-    };
-  } catch (firstError) {
-    const initOutput = await initializeWithGx(cwd, firstError);
-    return {
-      repoRoot: await commandOutput(jjBinary(), ["root"], cwd),
-      autoInitialized: true,
-      initOutput,
-    };
+    await commandOutput(resolveGxBinary(), ["status", "--json"], cwd);
+    return true;
+  } catch {
+    return false;
   }
 }
 
-async function initializeWithGx(cwd: string, cause: unknown): Promise<string> {
+async function initializeWithGx(cwd: string): Promise<string> {
   const name = await initName(cwd);
   const email = await initEmail(cwd);
-  try {
-    return await commandOutput(resolveGxBinary(), ["init", "--name", name, "--email", email], cwd);
-  } catch (error) {
-    const causeText = cause instanceof Error ? cause.message : String(cause);
-    const initText = error instanceof Error ? error.message : String(error);
-    throw new Error(`repo is not initialized for GX and automatic gx init failed: ${initText}; initial jj root error: ${causeText}`);
-  }
+  return commandOutput(resolveGxBinary(), ["init", "--name", name, "--email", email], cwd);
 }
 
 async function initName(cwd: string): Promise<string> {

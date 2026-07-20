@@ -158,7 +158,10 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		return Result{}, fmt.Errorf("discover sessions: %w", err)
 	}
 
-	revisionIDs, _ := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
+	revisionIDs, err := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve GX revision IDs: %w", err)
+	}
 
 	stager := opts.DB
 	if stager == nil {

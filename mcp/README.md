@@ -1,14 +1,13 @@
 # GX MCP Server
 
-TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` CLI. Local repo, JJ, and Git work stay on the user's machine; cloud review context is reached by outbound HTTPS from `gx` when cloud auth or API-key env is configured.
+TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` CLI. Local repository and Git work stay on the user's machine; cloud review context is reached by outbound HTTPS from `gx` when cloud auth or API-key env is configured.
 
 ## Primary workflow
 
 1. `gx_commit` after `git add` to record staged work as a GX revision (default verb).
 2. `gx_status` to inspect staged files, local features, revisions, and remote state.
 3. Publish with plain `git push` when the stack is ready — the GX pre-push hook captures the session and publishes. Open the PR with `gh pr create`.
-4. `gx_edit` to re-enter an existing revision when amending or continuing work.
-5. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
+4. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 
 When a user says "save work", "save using gx", or "save with gx", treat that as
 a request to run the GX save workflow: `git add`, then `gx_commit`, then
@@ -29,12 +28,13 @@ Add a block like this to the start or end of `AGENTS.md` or `CLAUDE.md` in repos
 where agents should use GX:
 
 ```md
-Version control: use GX, not `git commit`.
+Version control: use Git with GX hooks and metadata, not raw `git commit` for normal agent work.
 
 Use GX MCP first:
 - `gx_commit` after `git add` to record staged work (default verb).
 - `gx_status` to inspect local and remote stack state.
-- `gx_edit` only to re-enter an existing revision for further edits.
+
+To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer.
 
 Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
 then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
@@ -65,7 +65,6 @@ policies, deny or require approval for `git commit`, `git reset`, and branch del
 |------|-----|---------|
 | `gx_commit` | `gx commit -m "..."` | Record staged Git changes as a GX revision (default verb) |
 | `gx_status` | `gx status --json` | Inspect unstaged files, local features, revisions, and remote state |
-| `gx_edit` | `gx edit <rev>` | Re-enter an existing revision to keep working on it |
 | `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
 
 Publish is not an MCP tool: push the stack with plain `git push` (the pre-push hook captures the session and publishes), then open the PR with `gh pr create`.
@@ -128,7 +127,6 @@ GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
 | Variable | Description |
 |----------|-------------|
 | `GX_BINARY` | Optional path to `gx` executable |
-| `JJ_BINARY` | Path to `jj` executable (default: `jj` on PATH) |
 | `GIT_BINARY` | Path to `git` executable (default: `git` on PATH) |
 | `GX_CLOUD_URL` | GX cloud API base URL for review AI fallback |
 | `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |

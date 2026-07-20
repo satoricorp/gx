@@ -2,7 +2,6 @@ package vcs
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -17,83 +16,6 @@ type stackReadModel struct {
 	stacks                []StackInfo
 	currentRevisions      []RevisionSummary
 	currentPublishedCount int
-}
-
-func (s *Service) loadStackReadModel(ctx context.Context, repo RepoInfo) (stackReadModel, error) {
-	model := stackReadModel{repo: repo}
-	store, err := openStore(ctx)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	defer store.Close()
-
-	repoRow, err := store.FindRepoByRoot(ctx, repo.RootPath)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	if repoRow == nil {
-		return model, nil
-	}
-	if err := s.normalizeLegacyStackBookmarks(ctx, store, repo.RootPath, repoRow.ID); err != nil {
-		return stackReadModel{}, err
-	}
-	if err := s.repairMissingStackRowsFromBookmarks(ctx, store, repo, repoRow.ID); err != nil {
-		return stackReadModel{}, err
-	}
-
-	current, found, err := s.resolveCurrentStackForReadWithStore(ctx, store, repo, repoRow.ID)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	model.currentStack = current
-	model.currentStackFound = found
-
-	stackContainer := repo.defaultBaseBranch()
-	if found && strings.TrimSpace(current.BaseRef) != "" {
-		candidate := strings.TrimSpace(current.BaseRef)
-		remoteName := ""
-		if current.RemoteName != nil {
-			remoteName = strings.TrimSpace(*current.RemoteName)
-		}
-		if s.stackBaseRefExists(ctx, repo.RootPath, candidate, remoteName) {
-			stackContainer = candidate
-		}
-	}
-	entries, err := s.jjStackEntries(ctx, repo.RootPath, stackContainer)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	changes, err := store.ListChangesByRepoID(ctx, repoRow.ID)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	changeByJJ := make(map[string]storage.Change, len(changes))
-	for _, change := range changes {
-		changeByJJ[change.JJChangeID] = change
-	}
-	activeChangeID, err := s.currentWorkChangeID(ctx, repo.RootPath)
-	if err != nil {
-		activeChangeID = ""
-	}
-	publishedThrough := int64(-1)
-	if latestPush, err := store.LatestPushByRepoID(ctx, repoRow.ID); err != nil {
-		return stackReadModel{}, err
-	} else if latestPush != nil && latestPush.CurrentChangeID != nil {
-		publishedThrough = *latestPush.CurrentChangeID
-	}
-	model.currentRevisions, model.currentPublishedCount = stackRevisionsFromEntries(entries, activeChangeID, publishedThrough, changeByJJ)
-
-	stacks, err := s.loadStoredStackInfos(ctx, store, repo, repoRow.ID)
-	if err != nil {
-		return stackReadModel{}, err
-	}
-	model.stacks = stacks
-	if model.currentStackFound {
-		if hydrated, ok := matchingHydratedStack(model.currentStack, stacks); ok {
-			model.currentStack = hydrated
-		}
-	}
-	return model, nil
 }
 
 func (s *Service) loadStoredStackInfos(ctx context.Context, store *storage.Store, repo RepoInfo, repoID int64) ([]StackInfo, error) {
@@ -138,13 +60,13 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 	if err != nil {
 		return nil, err
 	}
-	targets, err := s.jjBookmarkTargets(ctx, repo.RootPath)
+	targets, err := s.gitBranchTargets(ctx, repo.RootPath)
 	if err != nil {
 		return nil, err
 	}
 	bookmarkTargets := make(map[string]string, len(targets))
 	for _, target := range targets {
-		bookmarkTargets[target.Name] = target.ChangeID
+		bookmarkTargets[target.Name] = target.CommitID
 	}
 	mergedByStack := s.stackMergeStates(ctx, repo.RootPath, repo.defaultBaseBranch(), infos, bookmarkTargets)
 
@@ -245,55 +167,8 @@ type stackMergeCandidate struct {
 
 func (s *Service) stackMergeStates(ctx context.Context, repoRoot, fallbackBaseRef string, stacks []StackInfo, bookmarkTargets map[string]string) map[int64]bool {
 	merged := make(map[int64]bool, len(stacks))
-	candidates := stackMergeCandidates(stacks, bookmarkTargets)
-	if len(candidates) == 0 {
-		return merged
-	}
-	revsets := make([]string, 0, len(candidates))
-	baseSelectors := map[string][]string{}
-	for _, candidate := range candidates {
-		cacheKey := candidate.baseRef + "\x00" + candidate.remoteName + "\x00" + fallbackBaseRef
-		selectors, ok := baseSelectors[cacheKey]
-		if !ok {
-			selectors = s.stackMergeBaseSelectors(ctx, repoRoot, candidate.baseRef, candidate.remoteName, fallbackBaseRef)
-			baseSelectors[cacheKey] = selectors
-		}
-		for _, baseSelector := range selectors {
-			revsets = append(revsets, fmt.Sprintf("(%s) & ancestors(%s)", quoteJJRev(candidate.selector), quoteJJRev(baseSelector)))
-		}
-	}
-	if len(revsets) == 0 {
-		return merged
-	}
-	out, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", strings.Join(revsets, " | "), "--no-graph", "-T", `change_id ++ "|" ++ commit_id ++ "\n"`)
-	if err != nil {
-		for _, stack := range stacks {
-			merged[stack.ID] = s.stackMergedIntoBase(ctx, repoRoot, fallbackBaseRef, stack, bookmarkTargets)
-		}
-		return merged
-	}
-	seenChanges := map[string]struct{}{}
-	seenCommits := map[string]struct{}{}
-	for _, line := range splitLines(out) {
-		parts := strings.SplitN(line, "|", 2)
-		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-			seenChanges[strings.TrimSpace(parts[0])] = struct{}{}
-		}
-		if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
-			seenCommits[strings.TrimSpace(parts[1])] = struct{}{}
-		}
-	}
-	for _, candidate := range candidates {
-		if candidate.changeID != "" {
-			if _, ok := seenChanges[candidate.changeID]; ok {
-				merged[candidate.stackID] = true
-			}
-		}
-		if candidate.commitID != "" {
-			if _, ok := seenCommits[candidate.commitID]; ok {
-				merged[candidate.stackID] = true
-			}
-		}
+	for _, stack := range stacks {
+		merged[stack.ID] = s.stackMergedIntoBase(ctx, repoRoot, fallbackBaseRef, stack, bookmarkTargets)
 	}
 	return merged
 }
@@ -380,6 +255,6 @@ func (s *Service) revExists(ctx context.Context, repoRoot, rev string) bool {
 	if rev == "" {
 		return false
 	}
-	_, err := s.runStdoutTrimmed(ctx, repoRoot, "jj", "log", "-r", rev, "-n", "1", "--no-graph", "-T", "change_id")
+	_, err := s.runStdoutTrimmed(ctx, repoRoot, "git", "rev-parse", "--verify", rev+"^{commit}")
 	return err == nil
 }

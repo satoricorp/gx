@@ -3,12 +3,98 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/commitcontext"
 )
+
+func TestRepoIdentityMigrationAndLinkedWorktreeUpsert(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "init", "-b", "main")
+	cmd.Dir = repoRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	dbPath := filepath.Join(home, "gx.db")
+	legacy, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`
+		CREATE TABLE repos (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			root_path TEXT NOT NULL UNIQUE,
+			backend TEXT NOT NULL,
+			default_remote TEXT,
+			default_branch TEXT,
+			authoring_base_ref TEXT,
+			remote_url TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		INSERT INTO repos (root_path, backend, created_at, updated_at)
+		VALUES (?, 'jj', 1, 1);
+	`, repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	commonCommand := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	commonCommand.Dir = repoRoot
+	commonOutput, err := commonCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commonDir := filepath.Clean(strings.TrimSpace(string(commonOutput)))
+	row, err := store.FindRepoByIdentity(context.Background(), commonDir, repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil || row.GitCommonDir != commonDir || row.Backend != "jj" {
+		t.Fatalf("migrated repo = %+v", row)
+	}
+	id, err := store.UpsertRepo(context.Background(), Repo{
+		RootPath:     filepath.Join(t.TempDir(), "linked"),
+		GitCommonDir: commonDir,
+		Backend:      "git",
+		UpdatedAt:    2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != row.ID {
+		t.Fatalf("linked worktree repo id = %d, want %d", id, row.ID)
+	}
+	repos, err := store.ListRepos(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Backend != "jj" {
+		t.Fatalf("repos = %+v, want one preserved jj repo", repos)
+	}
+}
 
 func TestOpenRepairsCorruptedJJChangeIDs(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())

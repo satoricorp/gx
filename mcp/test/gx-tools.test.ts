@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "../src/tools/gx-commit";
-import gxEdit, { metadata as editMetadata, schema as editSchema } from "../src/tools/gx-edit";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
 import { ensureGxInitialized } from "../src/session-workspace";
@@ -15,15 +14,8 @@ describe("gx_commit metadata and schema", () => {
     expect(commitMetadata.annotations?.readOnlyHint).toBe(false);
     expect(commitSchema.message.parse("record staged work")).toBe("record staged work");
     expect(commitSchema.commands_run.parse(["go test ./..."])).toEqual(["go test ./..."]);
-  });
-});
-
-describe("gx_edit metadata and schema", () => {
-  test("describes the edit surface", () => {
-    expect(editMetadata.name).toBe("gx_edit");
-    expect(editMetadata.description).toMatch(/gx edit/i);
-    expect(editMetadata.annotations?.readOnlyHint).toBe(false);
-    expect(editSchema.revision.parse("abc123")).toBe("abc123");
+    expect(commitSchema.branch.description).toMatch(/create and switch/i);
+    expect(commitSchema.branch.description).toMatch(/advances the current branch and HEAD/i);
   });
 });
 
@@ -48,11 +40,12 @@ describe("gx_status metadata and schema", () => {
 });
 
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_commit, gx_status, gx_edit, gx_review", () => {
-    const registered = [commitMetadata.name, statusMetadata.name, editMetadata.name, reviewMetadata.name].sort();
-    expect(registered).toEqual(["gx_commit", "gx_edit", "gx_review", "gx_status"]);
+  test("exposes exactly gx_commit, gx_status, gx_review", () => {
+    const registered = [commitMetadata.name, statusMetadata.name, reviewMetadata.name].sort();
+    expect(registered).toEqual(["gx_commit", "gx_review", "gx_status"]);
     expect(registered).not.toContain("gx_push");
     expect(registered).not.toContain("gx_publish");
+    expect(registered).not.toContain("gx_edit");
   });
 });
 
@@ -62,13 +55,14 @@ describe("gx MCP CLI invocation", () => {
   let callLog: string;
   let previousEnv: Record<string, string | undefined>;
 
-  const envKeys = ["GX_BINARY", "JJ_BINARY", "GX_MOCK_LOG", "GX_MOCK_AUTH_ERROR"];
+  const envKeys = ["GX_BINARY", "GX_MOCK_LOG", "GX_MOCK_AUTH_ERROR"];
 
   beforeEach(async () => {
     mockDir = await mkdtemp(join(tmpdir(), "gx-mcp-tools-"));
     repoRoot = join(mockDir, "repo");
     callLog = join(mockDir, "calls.log");
     await mkdir(join(repoRoot, ".git"), { recursive: true });
+    await Bun.spawn(["git", "init", repoRoot]).exited;
     previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
 
     const mockGx = join(mockDir, "mock-gx.sh");
@@ -76,6 +70,11 @@ describe("gx MCP CLI invocation", () => {
       mockGx,
       `#!/bin/sh
 printf 'gx|%s|%s|%s\\n' "$PWD" "$GX_REVIEW_AI" "$*" >> "$GX_MOCK_LOG"
+if [ "$1" = init ]; then
+  touch "$PWD/.gx-initialized"
+  echo "initialized"
+  exit 0
+fi
 if [ "$1" = commit ]; then
   if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
     echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
@@ -84,15 +83,15 @@ if [ "$1" = commit ]; then
   echo "commit ok"
   exit 0
 fi
-if [ "$1" = edit ]; then
-  echo "edit ok"
-  exit 0
-fi
 if [ "$1" = review ]; then
   echo "review ok"
   exit 0
 fi
 if [ "$1" = status ]; then
+  if [ ! -f "$PWD/.gx-initialized" ]; then
+    echo "gx not initialized" >&2
+    exit 1
+  fi
   echo '{"stacks":[],"files":[]}'
   exit 0
 fi
@@ -103,24 +102,7 @@ exit 1
     );
     await Bun.spawn(["chmod", "+x", mockGx]).exited;
 
-    const mockJj = join(mockDir, "mock-jj.sh");
-    await writeFile(
-      mockJj,
-      `#!/bin/sh
-printf 'jj|%s|%s\\n' "$PWD" "$*" >> "$GX_MOCK_LOG"
-if [ "$1" = root ]; then
-  echo "$PWD"
-  exit 0
-fi
-echo "unexpected jj args: $@" >&2
-exit 1
-`,
-      "utf8",
-    );
-    await Bun.spawn(["chmod", "+x", mockJj]).exited;
-
     process.env.GX_BINARY = mockGx;
-    process.env.JJ_BINARY = mockJj;
     process.env.GX_MOCK_LOG = callLog;
     delete process.env.GX_MOCK_AUTH_ERROR;
   });
@@ -159,14 +141,6 @@ exit 1
     expect(calls).toContain("--context-file");
   });
 
-  test("gx_edit passes the revision id", async () => {
-    const output = await gxEdit({ cwd: repoRoot, revision: "abc123def" });
-    const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("edit");
-    expect(parsed.display).toBe("edit ok");
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "edit", "abc123def"]);
-  });
-
   test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {
     const output = await gxReview({
       cwd: repoRoot,
@@ -192,7 +166,6 @@ exit 1
     ]);
 
     const calls = await readFile(callLog, "utf8");
-    expect(calls).toContain("jj|");
     expect(calls).toContain("gx|");
     expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
   });
@@ -204,7 +177,7 @@ exit 1
     expect(parsed.result).toEqual({ stacks: [], files: [] });
     expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json"]);
     expect(parsed.next_actions).toEqual([
-      "Stage with git add and gx_commit for new work, gx_edit to continue a revision, or git push to publish when a stack is ready.",
+      "Stage with git add and gx_commit for new work, or git push to publish when a stack is ready.",
     ]);
   });
 
@@ -237,34 +210,15 @@ describe("ensureGxInitialized auto-init", () => {
   let callLog: string;
   let previousEnv: Record<string, string | undefined>;
 
-  const envKeys = ["GX_BINARY", "JJ_BINARY", "GX_MOCK_LOG", "GX_MCP_INIT_NAME", "GX_MCP_INIT_EMAIL"];
+  const envKeys = ["GX_BINARY", "GX_MOCK_LOG", "GX_MCP_INIT_NAME", "GX_MCP_INIT_EMAIL"];
 
   beforeEach(async () => {
     mockDir = await mkdtemp(join(tmpdir(), "gx-mcp-autoinit-"));
     repoRoot = join(mockDir, "repo");
     callLog = join(mockDir, "calls.log");
     await mkdir(join(repoRoot, ".git"), { recursive: true });
+    await Bun.spawn(["git", "init", repoRoot]).exited;
     previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
-
-    const mockJj = join(mockDir, "mock-jj.sh");
-    await writeFile(
-      mockJj,
-      `#!/bin/sh
-printf 'jj|%s|%s\\n' "$PWD" "$*" >> "$GX_MOCK_LOG"
-if [ "$1" = root ]; then
-  if [ -f "$PWD/.gx-initialized" ]; then
-    echo "$PWD"
-    exit 0
-  fi
-  echo "There is no jj repo in the current directory" >&2
-  exit 1
-fi
-echo "unexpected jj args: $@" >&2
-exit 1
-`,
-      "utf8",
-    );
-    await Bun.spawn(["chmod", "+x", mockJj]).exited;
 
     const mockGx = join(mockDir, "mock-gx.sh");
     await writeFile(
@@ -280,6 +234,14 @@ if [ "$1" = commit ]; then
   echo "commit ok"
   exit 0
 fi
+if [ "$1" = status ]; then
+  if [ ! -f "$PWD/.gx-initialized" ]; then
+    echo "gx not initialized" >&2
+    exit 1
+  fi
+  echo '{"stacks":[]}'
+  exit 0
+fi
 echo "unexpected gx args: $@" >&2
 exit 1
 `,
@@ -288,7 +250,6 @@ exit 1
     await Bun.spawn(["chmod", "+x", mockGx]).exited;
 
     process.env.GX_BINARY = mockGx;
-    process.env.JJ_BINARY = mockJj;
     process.env.GX_MOCK_LOG = callLog;
     process.env.GX_MCP_INIT_NAME = "Autoinit Test";
     process.env.GX_MCP_INIT_EMAIL = "autoinit@test.local";

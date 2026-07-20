@@ -2,6 +2,7 @@ package hooks_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -10,9 +11,10 @@ import (
 
 func TestInstallPrePushHook(t *testing.T) {
 	repo := t.TempDir()
-	gitDir := filepath.Join(repo, ".git", "hooks")
-	if err := os.MkdirAll(gitDir, 0o755); err != nil {
-		t.Fatal(err)
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	if err := hooks.Install(hooks.InstallOptions{
 		RepoRoot: repo,
@@ -20,7 +22,7 @@ func TestInstallPrePushHook(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(gitDir, "pre-push"))
+	data, err := os.ReadFile(filepath.Join(repo, ".git", "hooks", "pre-push"))
 	if err != nil {
 		t.Fatal(err)
 	}

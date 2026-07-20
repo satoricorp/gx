@@ -69,14 +69,12 @@ func TestRootRemovesStackCommand(t *testing.T) {
 	}
 }
 
-func TestRootKeepsEditUtilityHiddenAndRemovesModifyAlias(t *testing.T) {
+func TestRootRemovesEditAndModifyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"edit"})
-	if err != nil || cmd == nil || cmd.Name() != "edit" || !cmd.Hidden {
-		t.Fatalf("Find(edit) = cmd=%v hidden=%v err=%v, want hidden edit utility command", cmd, cmd != nil && cmd.Hidden, err)
-	}
-	if cmd, _, err := root.Find([]string{"modify"}); err == nil && cmd != nil && cmd.Name() == "modify" {
-		t.Fatalf("Find(modify) resolved removed alias")
+	for _, name := range []string{"edit", "modify"} {
+		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
+			t.Fatalf("Find(%s) resolved removed command", name)
+		}
 	}
 }
 
@@ -96,14 +94,12 @@ func TestStacksRemovesSwitchSubcommand(t *testing.T) {
 	}
 }
 
-func TestRootRemovesAddAndKeepsBaseUtilityHidden(t *testing.T) {
+func TestRootRemovesAddAndBaseCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	if add, _, err := root.Find([]string{"add"}); err == nil && add != nil && add.Name() == "add" {
-		t.Fatalf("Find(add) resolved removed command")
-	}
-	base, _, baseErr := root.Find([]string{"base"})
-	if baseErr != nil || base == nil || !base.Hidden {
-		t.Fatalf("Find(base) = cmd=%v hidden=%v err=%v, want hidden base command", base, base != nil && base.Hidden, baseErr)
+	for _, name := range []string{"add", "base"} {
+		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
+			t.Fatalf("Find(%s) resolved removed command", name)
+		}
 	}
 }
 
@@ -140,7 +136,6 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"  review (gxr)",
 		"  status (gxs)",
 		"Ship:",
-		"  push",
 		"  sync",
 		"Help:",
 		"  doctor",
@@ -207,6 +202,26 @@ func TestRootDoesNotExposeDaemonCommand(t *testing.T) {
 	root := cli.NewRoot(context.Background())
 	if cmd, _, err := root.Find([]string{"daemon"}); err == nil && cmd != root {
 		t.Fatalf("unexpected daemon command exposed: %s", cmd.Name())
+	}
+}
+
+func TestCommitHelpUsesGitNativeAmendmentGuidance(t *testing.T) {
+	root := cli.NewRoot(context.Background())
+	cmd, _, err := root.Find([]string{"commit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range []string{"gx_edit", "gx edit", "gx base"} {
+		if strings.Contains(cmd.Long, stale) {
+			t.Fatalf("commit help contains removed command %q:\n%s", stale, cmd.Long)
+		}
+	}
+	if !strings.Contains(cmd.Long, "git commit --amend") {
+		t.Fatalf("commit help missing Git-native amend guidance:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "advances the current branch and HEAD") ||
+		!strings.Contains(cmd.Long, "create and switch to a new branch") {
+		t.Fatalf("commit help describes HEAD or branch behavior incorrectly:\n%s", cmd.Long)
 	}
 }
 

@@ -56,6 +56,7 @@ type Response struct {
 type Repo struct {
 	ID            int64
 	RootPath      string
+	GitCommonDir  string
 	Backend       string
 	DefaultRemote *string
 	DefaultBranch *string
@@ -105,7 +106,7 @@ type StackChange struct {
 	StackID  int64
 	ChangeID int64
 	// JJChangeID and CommitID mirror the referenced change row so a stack
-	// entry carries both JJ logical identity and an exact current target.
+	// entry carries both the legacy-named GX revision identity and its current Git target.
 	JJChangeID string
 	CommitID   string
 	Position   int

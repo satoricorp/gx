@@ -26,7 +26,7 @@ type publishUploadResultMsg struct {
 }
 
 func runPublishUploadWithLoader(in io.Reader, out io.Writer, run publishUploadRunFunc) (publication.Result, error) {
-	if !useDemuxLoader(in, out) {
+	if !useStatusInteractive(in, out) {
 		return run()
 	}
 	model := publishUploadModel{

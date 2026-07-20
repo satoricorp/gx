@@ -80,15 +80,19 @@ func (s *Service) isProtectedRef(ctx context.Context, repoRoot, name string) boo
 		"trunk":  {},
 	}
 	if store, err := openStore(ctx); err == nil {
-		if repo, repoErr := store.FindRepoByRoot(ctx, repoRoot); repoErr == nil && repo != nil {
-			if repo.DefaultBranch != nil {
-				if ref := cleanRefName(*repo.DefaultBranch); ref != "" {
-					protected[ref] = struct{}{}
+		repoInfo, resolveErr := s.ResolveGXRepoAtPath(ctx, repoRoot)
+		if resolveErr == nil {
+			repo, repoErr := store.FindRepoByIdentity(ctx, repoInfo.GitCommonDir, repoInfo.RootPath)
+			if repoErr == nil && repo != nil {
+				if repo.DefaultBranch != nil {
+					if ref := cleanRefName(*repo.DefaultBranch); ref != "" {
+						protected[ref] = struct{}{}
+					}
 				}
-			}
-			if repo.AuthoringBase != nil {
-				if ref := cleanRefName(*repo.AuthoringBase); ref != "" {
-					protected[ref] = struct{}{}
+				if repo.AuthoringBase != nil {
+					if ref := cleanRefName(*repo.AuthoringBase); ref != "" {
+						protected[ref] = struct{}{}
+					}
 				}
 			}
 		}

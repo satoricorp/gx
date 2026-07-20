@@ -22,15 +22,15 @@ const SuppressAdoptedPublicationEnv = "GX_SUPPRESS_ADOPTED_PUBLICATION"
 
 // PushOptions configures a hook-triggered capture run.
 type PushOptions struct {
-	RepoRoot string
-	Remote   string
-	RefRange string
-	Base     string
-	Head     string
-	LocalRef string
-	HeadSHA  string
-	HomeDir  string
-	Tools    []string
+	RepoRoot    string
+	Remote      string
+	RefRange    string
+	Base        string
+	Head        string
+	LocalRef    string
+	HeadSHA     string
+	HomeDir     string
+	Tools       []string
 	SkipCapture bool
 }
 
@@ -38,6 +38,7 @@ type PushOptions struct {
 type PushOutcome struct {
 	Result           orchestrator.Result
 	RevisionIDs      []string
+	RecoveryError    string
 	ShareableExtract int
 	ShareableSession int
 	Publication      publication.Result
@@ -97,9 +98,20 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	}
 	revisionIDs, err := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
 	if err != nil {
+		outcome.RecoveryError = fmt.Sprintf("scan GX revision trailers: %v", err)
 		return outcome, nil
 	}
 	outcome.RevisionIDs = revisionIDs
+
+	if len(revisionIDs) > 0 {
+		if repo, repoErr := vcs.NewService().ResolveGXRepoAtPath(ctx, repoRoot); repoErr == nil {
+			if _, recoverErr := vcs.NewService().RecoverMissingRevisions(ctx, repo, revisionIDs); recoverErr != nil {
+				outcome.RecoveryError = recoverErr.Error()
+			}
+		} else {
+			outcome.RecoveryError = repoErr.Error()
+		}
+	}
 
 	att, _ := gitCaptureAttestation(ctx, repoRoot)
 	stager, err := storage.OpenCaptureStager(ctx)

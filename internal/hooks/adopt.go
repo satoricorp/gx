@@ -64,8 +64,12 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 	}
 	repo := vcs.RepoInfo{
 		RootPath:   repoRoot,
-		Backend:    "jj",
+		Backend:    "git",
 		BranchName: branchPtr,
+	}
+	if gxRepo, err := vcs.NewService().ResolveGXRepoAtPath(ctx, repoRoot); err == nil {
+		repo = gxRepo
+		repo.BranchName = branchPtr
 	}
 	if remotePtr != nil {
 		repo.DefaultRemote = remotePtr
@@ -114,18 +118,49 @@ func lookupAdoptedChanges(ctx context.Context, repoRoot string, revisionIDs []st
 		return nil, err
 	}
 	defer db.Close()
+	store, err := storage.NewStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	repo, err := vcs.NewService().ResolveGXRepoAtPath(ctx, repoRoot)
+	if err != nil {
+		return lookupAdoptedChangesByRoot(ctx, db, repoRoot, revisionIDs)
+	}
+	repoRow, err := store.FindRepoByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	if repoRow == nil {
+		return lookupAdoptedChangesByRoot(ctx, db, repoRoot, revisionIDs)
+	}
+	return lookupAdoptedChangesForRepo(ctx, db, repoRow.ID, revisionIDs)
+}
+
+func lookupAdoptedChangesByRoot(ctx context.Context, db *sql.DB, repoRoot string, revisionIDs []string) ([]vcs.ChangeInfo, error) {
+	var repoID int64
+	err := db.QueryRowContext(ctx, `SELECT id FROM repos WHERE root_path = ?`, repoRoot).Scan(&repoID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return lookupAdoptedChangesForRepo(ctx, db, repoID, revisionIDs)
+}
+
+func lookupAdoptedChangesForRepo(ctx context.Context, db *sql.DB, repoID int64, revisionIDs []string) ([]vcs.ChangeInfo, error) {
 	var out []vcs.ChangeInfo
 	for _, revisionID := range revisionIDs {
 		var change vcs.ChangeInfo
 		var parent sql.NullString
 		err := db.QueryRowContext(ctx, `
 			SELECT c.jj_change_id, c.current_commit_id, c.description, c.parent_change_id
-			FROM repos r
-			JOIN changes c ON c.repo_id = r.id
-			WHERE r.root_path = ? AND c.jj_change_id = ?
+			FROM changes c
+			WHERE c.repo_id = ? AND c.jj_change_id = ?
 			ORDER BY c.updated_at DESC
 			LIMIT 1
-		`, repoRoot, revisionID).Scan(&change.ChangeID, &change.CommitID, &change.Description, &parent)
+		`, repoID, revisionID).Scan(&change.ChangeID, &change.CommitID, &change.Description, &parent)
 		if err == sql.ErrNoRows {
 			continue
 		}

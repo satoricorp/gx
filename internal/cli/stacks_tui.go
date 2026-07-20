@@ -2,9 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
@@ -17,7 +17,6 @@ type stacksMode int
 const (
 	stacksModeStacks stacksMode = iota
 	stacksModeRevisions
-	stacksModeDiff
 )
 
 type stacksAction struct {
@@ -33,7 +32,6 @@ type stacksModel struct {
 	height      int
 	stackCursor int
 	revCursor   int
-	diffView    tuiDiffView
 	action      stacksAction
 }
 
@@ -71,7 +69,7 @@ func newStacksModel(stack authoring.StackSummary, unrecorded *authoring.ChangeIn
 
 func newStacksModelWithHidden(stack authoring.StackSummary, unrecorded *authoring.ChangeInfo, hiddenEmpty int) stacksModel {
 	stack = stackSummaryWithDisplayFallback(stack)
-	model := stacksModel{stack: stack, unrecorded: unrecorded, hiddenEmpty: hiddenEmpty, stackCursor: currentStackIndex(stack), mode: stacksModeStacks, diffView: newTUIDiffView()}
+	model := stacksModel{stack: stack, unrecorded: unrecorded, hiddenEmpty: hiddenEmpty, stackCursor: currentStackIndex(stack), mode: stacksModeStacks}
 	if model.stackCursor < 0 {
 		model.stackCursor = 0
 	}
@@ -84,29 +82,9 @@ func (m stacksModel) Init() tea.Cmd {
 }
 
 func (m stacksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.mode == stacksModeDiff {
-		switch msg := msg.(type) {
-		case tea.WindowSizeMsg:
-			m.diffView.resize(msg.Width, msg.Height)
-			return m, nil
-		case tea.KeyPressMsg:
-			switch msg.String() {
-			case "esc":
-				m.mode = stacksModeRevisions
-				return m, nil
-			case "ctrl+c", "q":
-				m.action = stacksAction{Kind: "quit"}
-				return m, tea.Quit
-			}
-		}
-		view, cmd := m.diffView.view.Update(msg)
-		m.diffView.view = view
-		return m, cmd
-	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
-		m.diffView.resize(msg.Width, msg.Height)
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up", "k":
@@ -115,7 +93,7 @@ func (m stacksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.move(1)
 		case "enter":
 			if m.mode == stacksModeStacks {
-				if len(m.visibleRevisions()) > 0 {
+				if len(m.selectedStackRevisions()) > 0 {
 					m.mode = stacksModeRevisions
 					m.revCursor = latestRevisionDisplayIndex(m.selectedStackRevisions(), m.selectedStackUnrecorded())
 					return m, nil
@@ -125,21 +103,6 @@ func (m stacksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == stacksModeRevisions {
 				m.mode = stacksModeStacks
 				return m, nil
-			}
-		case "e":
-			if m.mode == stacksModeRevisions {
-				if target := m.selectedRevision(); target != "" {
-					m.action = stacksAction{Kind: "edit", Target: target}
-					return m, tea.Quit
-				}
-			}
-		case "d":
-			if m.mode == stacksModeRevisions {
-				if target := m.selectedRevision(); target != "" {
-					m.openDiff(target)
-				}
-			} else if target := m.selectedStackDiffTarget(); target != "" {
-				m.openDiff(target)
 			}
 		case "ctrl+c", "q":
 			m.action = stacksAction{Kind: "quit"}
@@ -185,15 +148,6 @@ func (m *stacksModel) clamp() {
 	}
 }
 
-func (m *stacksModel) openDiff(target string) {
-	diff, err := captureJjDiff(target)
-	if err != nil {
-		diff = err.Error()
-	}
-	m.diffView.open("gx diff "+target, diff)
-	m.mode = stacksModeDiff
-}
-
 func (m stacksModel) selectedStack() *authoring.StackInfo {
 	stacks := orderedStacks(m.stack)
 	if m.stackCursor < 0 || m.stackCursor >= len(stacks) {
@@ -223,27 +177,6 @@ func (m stacksModel) selectedStackIsCurrent() bool {
 	return stack != nil && m.stack.Stack != nil && stack.BookmarkName == m.stack.Stack.BookmarkName
 }
 
-func (m stacksModel) selectedStackDiffTarget() string {
-	stack := m.selectedStack()
-	if stack == nil {
-		return ""
-	}
-	if m.selectedStackIsCurrent() {
-		for _, revision := range revisionsWithUnrecorded(m.stack.Revisions, m.unrecorded) {
-			if revision.Active && firstNonEmptyString(revision.CommitID, revision.ChangeID) != "" {
-				return firstNonEmptyString(revision.CommitID, revision.ChangeID)
-			}
-		}
-	}
-	if stack.HeadCommitID != nil && *stack.HeadCommitID != "" {
-		return *stack.HeadCommitID
-	}
-	if stack.HeadChangeID != nil && *stack.HeadChangeID != "" {
-		return *stack.HeadChangeID
-	}
-	return m.selectedStackSelector()
-}
-
 func (m stacksModel) selectedStackRevisions() []authoring.RevisionSummary {
 	stack := m.selectedStack()
 	if stack == nil {
@@ -253,18 +186,19 @@ func (m stacksModel) selectedStackRevisions() []authoring.RevisionSummary {
 }
 
 func (m stacksModel) selectedStackUnrecorded() *authoring.ChangeInfo {
-	if m.selectedStackIsCurrent() {
-		return m.unrecorded
+	if !m.selectedStackIsCurrent() {
+		return nil
 	}
-	return nil
+	return m.unrecorded
 }
 
 func (m stacksModel) visibleRevisions() []authoring.RevisionSummary {
-	stack := m.selectedStack()
-	if stack == nil {
-		return nil
+	switch m.mode {
+	case stacksModeRevisions:
+		return m.selectedStackRevisions()
+	default:
+		return m.stack.Revisions
 	}
-	return displayRevisions(m.selectedStackRevisions(), m.selectedStackUnrecorded())
 }
 
 func (m stacksModel) selectedRevision() string {
@@ -276,24 +210,21 @@ func (m stacksModel) selectedRevision() string {
 }
 
 func (m stacksModel) View() tea.View {
-	if m.mode == stacksModeDiff {
-		return tea.NewView(m.diffView.render("gx stacks"))
+	var buf bytes.Buffer
+	switch m.mode {
+	case stacksModeRevisions:
+		stack := m.selectedStack()
+		if stack == nil {
+			fmt.Fprint(&buf, renderStacksSummary(m.stack, m.unrecorded, m.stackCursor, false, m.revCursor))
+		} else {
+			lines := renderStackRevisionLines(m.stack, *stack, m.selectedStackUnrecorded(), m.revCursor)
+			for _, line := range lines {
+				fmt.Fprintln(&buf, line)
+			}
+		}
+	default:
+		fmt.Fprint(&buf, renderStacksSummary(m.stack, m.unrecorded, m.stackCursor, true, m.revCursor))
 	}
-	if m.height > 0 {
-		return tea.NewView(renderStacksSummaryViewport(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor, m.hiddenEmpty, m.height))
-	}
-	return tea.NewView(renderStacksSummaryWithHidden(m.stack, m.unrecorded, m.stackCursor, m.mode == stacksModeStacks, m.revCursor, m.hiddenEmpty))
-}
-
-func captureJjDiff(rev string) (string, error) {
-	var out bytes.Buffer
-	cmd := exec.Command("jj", jjDiffArgs(rev)...)
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	return out.String(), err
-}
-
-func jjDiffArgs(rev string) []string {
-	return []string{"diff", "-r", rev, "--color=always"}
+	fmt.Fprint(&buf, muted("\n↑/↓ navigate · enter open revisions · q quit"))
+	return tea.NewView(buf.String())
 }

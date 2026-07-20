@@ -15,8 +15,6 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 		return nil
 	}
 	var result authoring.EnsureReadyResult
-	// Guard the index: autoinit runs jj, and jj rewrites the git index on
-	// snapshot/import, which would silently discard the user's git add state.
 	err := engine.PreservingGitIndex(ctx, func() error {
 		var readyErr error
 		result, readyErr = engine.EnsureReadyRepo(ctx)
@@ -25,14 +23,13 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 	if err != nil {
 		return err
 	}
-	if !result.Prepared {
-		return nil
-	}
-	if !commandRequestsJSON(cmd) {
+	if result.Prepared && !commandRequestsJSON(cmd) {
 		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing gx for this repository..."))
 	}
 	if result.Repo.RootPath != "" {
-		_ = installCaptureHookQuiet(cmd, result.Repo.RootPath)
+		if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: GX lifecycle hooks not installed: %v\n", hookErr)
+		}
 	}
 	return nil
 }
@@ -59,10 +56,7 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		// commit skips autoinit because autoinit runs jj, and jj rewrites the
-		// git index (staged entries become intent-to-add) before gx commit can
-		// capture them; RecordStagedRevision self-initializes after capture.
-		case "init", "version", "login", "auth", "set", "demo", "commit":
+		case "init", "version", "login", "auth", "set", "demo":
 			return true
 		}
 	}
