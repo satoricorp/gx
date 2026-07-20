@@ -954,6 +954,7 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 
 func TestOpsCommandPrintsCompactMenu(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
+	t.Chdir(t.TempDir())
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
