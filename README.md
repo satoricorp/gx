@@ -78,36 +78,32 @@ This is required to use GX code review.
 ## Add Instructions To Your AGENTS.md
 
 ```md
-Version control: use Git with GX hooks and metadata.
+Version control: plain Git. Once `gx init` installs the hooks, GX records and
+publishes automatically — there is no GX save verb.
 
-Use GX MCP first:
-- `gx_commit` after `git add` to record staged work (default verb).
-- `gx_status` to inspect local and remote stack state.
+Save work:
+- `git add` to stage.
+- `git commit -m "..."` to save. A GX hook records the commit as a reviewable revision.
+- `git status` to inspect; `gx review` for AI review of the current change.
 
 Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
 then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
 bypass or suppress the hook.
 
-If MCP is unavailable, use the CLI fallback:
-- `git add`
-- `gx commit -m "..."`
-- `gx status`
-- `git push`
+When the user says "save work", "save using gx", or "save with gx", stage with
+`git add`, save with `git commit`, and publish with plain `git push` unless the user
+asks to keep the work local.
 
-When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
-`gx_status`, and publish ready stacks with plain `git push` unless the user asks to keep them local.
+To amend, use `git commit --amend` and preserve the GX revision trailer.
 
-To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer.
+Use `gx_review` (MCP) or `gx review` (CLI) for review context on the current change.
 
 GX PR summaries are posted for PRs whose branch was pushed through GX with `git push`
 while the pre-push hook is installed. A PR opened before that push will not get a summary
 until the branch is pushed through GX.
 
-GX hooks also support ordinary `git commit`. Agents should prefer `gx_commit`
-so session context and failures are surfaced directly. If your agent client
-supports tool policies, require approval for destructive reset and branch
-deletion.
+If your agent client supports tool policies, require approval for destructive reset and
+branch deletion.
 ```
 
 Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.
@@ -122,9 +118,9 @@ credentials are configured.
 
 ```bash
 git add <files>
-gx commit -m "describe this revision"
-gxs        # gx status
-git push   # push code; GX hook publishes sessions and PR summaries
+git commit -m "describe this change"   # a GX hook records the revision
+git status                             # inspect with plain Git
+git push                               # push code; GX hook publishes sessions and PR summaries
 ```
 
 Useful review command:
@@ -163,10 +159,12 @@ save using gx
 save with gx
 ```
 
-Expected MCP flow:
+Expected flow:
 
 ```text
-gx_commit -> gx_status -> git push -> gh pr create
+git add -> git commit -> git push -> gh pr create
 ```
+
+MCP exposes `gx_review` only; saving and publishing are plain Git.
 
 Publish with plain `git push` only. Do not run `gx push` or `gx capture push`.

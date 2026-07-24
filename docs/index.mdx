@@ -14,7 +14,7 @@ curl -fsSL https://download.gx.run/install.sh | sh
 To uninstall the CLI and menu-bar app:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gx-mcp
 rm -rf /Applications/GX.app ~/Applications/GX.app
 ```
 
@@ -23,30 +23,42 @@ in `~/.gx`.
 
 ## Core Workflow
 
-```bash
-git add <files>
-gx commit -m "describe this revision"
-gx status
-git push
-gh pr create
-```
-
-`gx commit` records staged work as a GX revision. Plain `git push` publishes the
-branch; the GX pre-push hook captures the session and uploads review context.
-Open the PR with `gh pr create` — GX Cloud posts the rich PR summary comment.
-Do not run `gx push`.
-
-For a manual Git-like save path, stage exactly what you want and replace
-`git commit` with `gx commit`:
+You work in plain Git. Once `gx init` installs the hooks, your normal `git` commands do
+the GX work automatically — there is no GX save verb to learn.
 
 ```bash
-git add <files>
-gx commit -m "describe this revision"
-git push
+git add <files>                        # choose the scope of one logical change
+git commit -m "describe this change"   # a GX hook records it as a revision
+git push                               # the pre-push hook captures the session and publishes
+gh pr create                           # open the PR (GX Cloud posts the summary)
 ```
 
-`gx commit` records the staged tree as a Git-native GX revision. To update the
-latest revision, use `git commit --amend` and preserve the GX revision trailer.
+A commit looks like any other:
+
+```text
+$ git add src/retry.js
+$ git commit -m "add retry helper with attempt limit"
+[main b694d3be] add retry helper with attempt limit
+ 1 file changed, 12 insertions(+)
+```
+
+Behind that ordinary commit, GX's `prepare-commit-msg` and `post-commit` hooks record a
+GX **revision** — a Git commit plus the review context that explains how it was produced:
+which captured session made it, and where it sits among your branches. Inspect state with
+plain Git; a stack is just the Git branch your revisions sit on:
+
+```bash
+git status              # working-tree state
+git log --oneline -10   # the revisions on this stack (branch)
+```
+
+Plain `git push` publishes the branch; the GX pre-push hook captures the session, matches
+it to the hunks each revision changed, and uploads the review bundle. Open the PR with
+`gh pr create` — GX Cloud posts the rich summary comment below your description. Do not
+run `gx push`; it has been removed — publish with `git push`.
+
+To update the latest revision, use `git commit --amend`; the `post-rewrite` hook follows
+the amended commit so its context stays linked.
 
 ## Local Inference
 
@@ -61,38 +73,34 @@ Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/
 ## Agent Setup
 
 <Note>
-  Add GX instructions to the start or end of your `AGENTS.md` or `CLAUDE.md`
-  so agents save with GX instead of raw Git. Prefer the GX MCP tools first, and
-  use the CLI as the fallback.
+  Add GX instructions to the start or end of your `AGENTS.md` or `CLAUDE.md` so agents
+  know GX is active. Agents work in plain Git; GX's hooks record and publish
+  automatically. GX MCP exposes `gx_review` only.
 </Note>
 
 ```md
-Version control: use Git with GX hooks and metadata, not raw `git commit` for normal agent work.
+Version control: use plain Git. GX's hooks record and publish your work automatically —
+there is no GX save verb, and there is no `gx commit` / `gx status` / `gx push`.
 
-Use GX MCP first:
-- `gx_commit` after `git add` to record staged work (default verb).
-- `gx_status` to inspect local and remote stack state.
+Save changes with Git:
+- `git add <files>` to choose the scope of one logical change.
+- `git commit -m "..."` — a GX hook records the commit as a reviewable revision.
+- Start a new stack with `git checkout -b <branch>` before committing.
 
-To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer.
+To amend the latest revision, use `git commit --amend`; the post-rewrite hook follows it.
 
 Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
-then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push`.
+then open the PR with `gh pr create`. Do not run `gx push` — it is removed; use `git push`.
+Do not seed a `## Summary` section in the PR body; GX Cloud appends the summary itself.
 
-If MCP is unavailable, use the CLI fallback:
-- `git add <files>` then `gx commit -m "..."` for manual saves
-- `gx status`
-- `git push`
+When the user says "save work", "save using gx", or "save with gx", run the plain-Git
+save workflow: stage with `git add`, record with `git commit`, inspect with `git status`,
+and publish with `git push` unless the user asks to keep the work local.
 
-When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
-`gx_status`, and publish ready stacks with plain `git push` unless the user asks to keep them local.
+For AI review, use `gx review` (or the `gx_review` MCP tool).
 
 GX PR summaries are posted by GX Cloud for PRs whose branch was pushed through GX
 with `git push` while the pre-push hook is installed.
-
-Use raw Git for read-only inspection and the `git push` publish step; do not use other raw
-Git for the save flow unless the user explicitly asks. If your agent client supports tool
-policies, deny or require approval for `git commit`, `git reset`, and branch deletion.
 ```
 
 <Info>
@@ -109,7 +117,8 @@ policies, deny or require approval for `git commit`, `git reset`, and branch del
 GX centers the reviewable revision rather than the branch:
 
 - **Session**: captured context from agent prompts, responses, commands, tests, and files touched.
-- **Revision**: one logical change with attached evidence.
-- **Stack**: an ordered set of revisions that can be published as stacked PRs.
+- **Revision**: one logical change — a Git commit plus the captured context that explains how it was produced.
+- **Stack**: an ordered line of revisions reviewed together, exported as a single Git branch and PR.
 
-JJ provides the local change engine, and Git remains the remote compatibility layer.
+These map onto ordinary Git: a revision is a Git commit, and a stack is the Git branch it
+sits on — GX records the review context around them, so you never leave Git.

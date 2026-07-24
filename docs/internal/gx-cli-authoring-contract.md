@@ -199,15 +199,16 @@ MCP should call the same authoring engine behavior as the CLI.
 The ideal agent loop is:
 
 1. `git add` staged files
-2. `gx_commit`
-3. `gx_status`
+2. `gx commit`
+3. `gx status`
 4. plain `git push` when ready
 5. `gh pr create`
 6. `git commit --amend` when updating the latest revision, preserving its GX trailer
 7. `gx_review` when review context is needed
 
-There is no `gx_publish` / `gx_push` MCP tool. Agents must publish with plain
-`git push` only (never `gx push` or `gx capture push`).
+MCP exposes `gx_review` only — there is no `gx_commit` / `gx_status` / `gx_publish` /
+`gx_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
+(never `gx push` or `gx capture push`).
 
 The important invariant is shared: agent commits must create the same revisions
 that the human CLI path would create.
