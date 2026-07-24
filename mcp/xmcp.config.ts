@@ -13,14 +13,11 @@ const config: XmcpConfig = {
   template: {
     name: "GX MCP",
     instructions: [
-      "GX MCP exposes gx_commit, gx_status, and gx_review.",
-      "When the user says save work, save using gx, or save with gx, run the GX save workflow: git add, gx_commit, gx_status, then publish ready work with plain git push (the GX pre-push hook captures the session and publishes) unless the user asks to keep work local.",
-      "gx_commit is the default verb. Use it after git add to record staged work as a GX revision.",
-      "Run gx_status after commits to inspect local/remote stack state before publishing.",
+      "GX MCP exposes gx_review.",
+      "Save work with plain Git: git add, then git commit. GX installs Git hooks that stamp each commit with its GX revision trailer and record it, so no GX-specific commit verb is needed.",
+      "Publish with plain git push, then open the PR with gh pr create. The GX pre-push hook captures the agent session, links edits to the changed hunks, and publishes the GX metadata that becomes the PR summary. Do not run gx push or gx capture push; they bypass or suppress that hook.",
       "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
-      "Publish with plain git push, then open the PR with gh pr create. Do not run gx push or gx capture push; they bypass or suppress the pre-push hook that GX publishes through.",
-      "Use GX MCP tools before the CLI for GX workflows; use the CLI only as fallback when MCP is unavailable.",
-      "Do not use git commit for normal GX save flows unless the user explicitly asks for raw Git. Prefer denying or requiring approval for raw git commit, reset, and branch deletion in clients that support tool policies.",
+      "Use git status and gx status for inspection.",
     ].join(" "),
   },
 };

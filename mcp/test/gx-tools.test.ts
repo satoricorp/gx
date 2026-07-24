@@ -2,22 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import gxCommit, { metadata as commitMetadata, schema as commitSchema } from "../src/tools/gx-commit";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
-import gxStatus, { metadata as statusMetadata, schema as statusSchema } from "../src/tools/gx-status";
 import { ensureGxInitialized } from "../src/session-workspace";
-
-describe("gx_commit metadata and schema", () => {
-  test("describes the commit surface", () => {
-    expect(commitMetadata.name).toBe("gx_commit");
-    expect(commitMetadata.description).toMatch(/gx commit/i);
-    expect(commitMetadata.annotations?.readOnlyHint).toBe(false);
-    expect(commitSchema.message.parse("record staged work")).toBe("record staged work");
-    expect(commitSchema.commands_run.parse(["go test ./..."])).toEqual(["go test ./..."]);
-    expect(commitSchema.branch.description).toMatch(/create and switch/i);
-    expect(commitSchema.branch.description).toMatch(/advances the current branch and HEAD/i);
-  });
-});
 
 describe("gx_review metadata and schema", () => {
   test("describes the review surface", () => {
@@ -30,19 +16,12 @@ describe("gx_review metadata and schema", () => {
   });
 });
 
-describe("gx_status metadata and schema", () => {
-  test("describes status as read-only", () => {
-    expect(statusMetadata.name).toBe("gx_status");
-    expect(statusMetadata.description).toMatch(/gx status --json/i);
-    expect(statusMetadata.annotations?.readOnlyHint).toBe(true);
-    expect(statusSchema.show_all.parse(true)).toBe(true);
-  });
-});
-
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_commit, gx_status, gx_review", () => {
-    const registered = [commitMetadata.name, statusMetadata.name, reviewMetadata.name].sort();
-    expect(registered).toEqual(["gx_commit", "gx_review", "gx_status"]);
+  test("exposes exactly gx_review", () => {
+    const registered = [reviewMetadata.name].sort();
+    expect(registered).toEqual(["gx_review"]);
+    expect(registered).not.toContain("gx_commit");
+    expect(registered).not.toContain("gx_status");
     expect(registered).not.toContain("gx_push");
     expect(registered).not.toContain("gx_publish");
     expect(registered).not.toContain("gx_edit");
@@ -75,15 +54,11 @@ if [ "$1" = init ]; then
   echo "initialized"
   exit 0
 fi
-if [ "$1" = commit ]; then
+if [ "$1" = review ]; then
   if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
     echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
     exit 1
   fi
-  echo "commit ok"
-  exit 0
-fi
-if [ "$1" = review ]; then
   echo "review ok"
   exit 0
 fi
@@ -118,29 +93,6 @@ exit 1
     }
   });
 
-  test("gx_commit passes message and context file", async () => {
-    const output = await gxCommit({
-      cwd: repoRoot,
-      message: "record staged work",
-      task_summary: "add commit surface",
-      commands_run: ["go test ./internal/commitcontext"],
-      tests_run: ["mcp/test/gx-tools.test.ts"],
-      session_id: "session-commit",
-    });
-    const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("commit");
-    expect(parsed.display).toBe("commit ok");
-    expect(parsed.command[0]).toBe(process.env.GX_BINARY);
-    expect(parsed.command).toContain("commit");
-    expect(parsed.command).toContain("-m");
-    expect(parsed.command).toContain("record staged work");
-    expect(parsed.command).toContain("--context-file");
-
-    const calls = await readFile(callLog, "utf8");
-    expect(calls).toContain("commit -m");
-    expect(calls).toContain("--context-file");
-  });
-
   test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {
     const output = await gxReview({
       cwd: repoRoot,
@@ -170,31 +122,14 @@ exit 1
     expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
   });
 
-  test("gx_status runs status json", async () => {
-    const output = await gxStatus({ cwd: repoRoot });
-    const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("status");
-    expect(parsed.result).toEqual({ stacks: [], files: [] });
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json"]);
-    expect(parsed.next_actions).toEqual([
-      "Stage with git add and gx_commit for new work, or git push to publish when a stack is ready.",
-    ]);
-  });
-
-  test("gx_status passes --all when show_all is set", async () => {
-    const output = await gxStatus({ cwd: repoRoot, show_all: true });
-    const parsed = JSON.parse(output);
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "status", "--json", "--all"]);
-  });
-
-  test("gx_commit surfaces MCP auth login guidance", async () => {
+  test("gx_review surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const output = await gxCommit({ cwd: repoRoot, message: "record staged work" });
+    const output = await gxReview({ cwd: repoRoot });
     const parsed = JSON.parse(output);
 
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("commit");
+    expect(parsed.action).toBe("review");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.display).toBe(
       "GX cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",
@@ -230,8 +165,8 @@ if [ "$1" = init ]; then
   echo "initialized"
   exit 0
 fi
-if [ "$1" = commit ]; then
-  echo "commit ok"
+if [ "$1" = review ]; then
+  echo "review ok"
   exit 0
 fi
 if [ "$1" = status ]; then
@@ -281,16 +216,16 @@ exit 1
     expect(initCalls).toHaveLength(1);
   });
 
-  test("gx_commit auto-inits an uninitialized repo before committing", async () => {
-    const output = await gxCommit({ cwd: repoRoot, message: "record staged work" });
+  test("gx_review auto-inits an uninitialized repo before reviewing", async () => {
+    const output = await gxReview({ cwd: repoRoot });
     const parsed = JSON.parse(output);
     expect(parsed.ok).toBe(true);
 
     const log = await readFile(callLog, "utf8");
     const lines = log.trim().split("\n");
     const initIndex = lines.findIndex((line) => line.includes("|init --name"));
-    const commitIndex = lines.findIndex((line) => line.includes("|commit -m"));
+    const reviewIndex = lines.findIndex((line) => line.includes("|review"));
     expect(initIndex).toBeGreaterThanOrEqual(0);
-    expect(commitIndex).toBeGreaterThan(initIndex);
+    expect(reviewIndex).toBeGreaterThan(initIndex);
   });
 });
