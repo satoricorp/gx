@@ -63,9 +63,6 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if err := ValidateOptions(opts); err != nil {
 		return Report{}, err
 	}
-	if opts.Format == "html" {
-		return Report{}, fmt.Errorf("html review output is not implemented yet")
-	}
 	scanner := e.scanner
 	if scanner == nil {
 		scanner = LocalScanner{}
@@ -114,9 +111,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		return Report{
 			RepoRoot:          repoRoot,
 			Scope:             opts.Scope,
-			Format:            opts.Format,
 			Deep:              opts.Deep,
-			Since:             strings.TrimSpace(opts.Since),
 			Focus:             strings.TrimSpace(opts.Focus),
 			Prompt:            strings.TrimSpace(opts.Prompt),
 			BaselineScopes:    baselineFor(opts.Scope),
@@ -199,20 +194,23 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		reviewProgress(opts, "Verifying review findings")
 		candidates := prepareFindingsForJudge(reviewContext, advisory)
 		if results, err := judge.Judge(ctx, buildJudgeRequest(reviewContext, candidates)); err == nil {
+			// Precision filter: surface only confirmed, human-worthy findings,
+			// impact-gated and ranked (not capped). No findings is a valid result.
 			advisory = applyJudgeResults(candidates, results)
+		} else {
+			// Judge call failed: fall back to the deduped, strength-capped set
+			// rather than the pre-dedup findings.
+			advisory = capAdvisoryFindings(candidates)
 		}
 	} else {
-		advisory = prepareFindingsForJudge(reviewContext, advisory)
+		advisory = capAdvisoryFindings(prepareFindingsForJudge(reviewContext, advisory))
 	}
-	advisory = capAdvisoryFindings(advisory)
 	findings = append(blocking, advisory...)
 
 	return Report{
 		RepoRoot:          repoRoot,
 		Scope:             opts.Scope,
-		Format:            opts.Format,
 		Deep:              opts.Deep,
-		Since:             strings.TrimSpace(opts.Since),
 		Focus:             strings.TrimSpace(opts.Focus),
 		Prompt:            strings.TrimSpace(opts.Prompt),
 		BaselineScopes:    baselineFor(opts.Scope),

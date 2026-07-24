@@ -18,7 +18,6 @@ import (
 
 const (
 	DefaultScope    = "architecture"
-	DefaultFormat   = "markdown"
 	reviewMintANSI  = "\x1b[38;2;61;220;151m"
 	reviewResetANSI = "\x1b[0m"
 )
@@ -34,18 +33,11 @@ var supportedScopes = map[string]struct{}{
 	"maintainability": {},
 }
 
-var supportedFormats = map[string]struct{}{
-	"markdown": {},
-	"html":     {},
-}
-
 var baselineScopes = []string{"dependencies", "testing", "maintainability"}
 
 type Options struct {
 	Scope        string
-	Format       string
 	Deep         bool
-	Since        string
 	Focus        string
 	Prompt       string
 	Verbose      bool
@@ -59,9 +51,7 @@ type Options struct {
 type Report struct {
 	RepoRoot          string
 	Scope             string
-	Format            string
 	Deep              bool
-	Since             string
 	Focus             string
 	Prompt            string
 	BaselineScopes    []string
@@ -92,9 +82,6 @@ func ValidateOptions(opts Options) error {
 	opts = normalizeOptions(opts)
 	if _, ok := supportedScopes[opts.Scope]; !ok {
 		return fmt.Errorf("unsupported review scope %q", opts.Scope)
-	}
-	if _, ok := supportedFormats[opts.Format]; !ok {
-		return fmt.Errorf("unsupported review format %q", opts.Format)
 	}
 	return nil
 }
@@ -171,11 +158,6 @@ func RenderMarkdown(report Report) string {
 			fmt.Fprintln(&b, "- Dependency manifests: none detected")
 		} else {
 			fmt.Fprintf(&b, "- Dependency manifests: `%s`\n", strings.Join(report.DependencyFiles, "`, `"))
-		}
-		if report.Since != "" {
-			fmt.Fprintf(&b, "- Since: `%s`\n", report.Since)
-		} else {
-			fmt.Fprintln(&b, "- Since: `forever`")
 		}
 		fmt.Fprintln(&b)
 
@@ -334,10 +316,6 @@ func normalizeOptions(opts Options) Options {
 		}
 	} else {
 		opts.Scope = scope
-	}
-	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
-	if opts.Format == "" {
-		opts.Format = DefaultFormat
 	}
 	return opts
 }

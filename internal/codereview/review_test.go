@@ -30,8 +30,8 @@ func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if report.Scope != DefaultScope || report.Format != DefaultFormat {
-		t.Fatalf("Review() scope/format = %q/%q, want defaults", report.Scope, report.Format)
+	if report.Scope != DefaultScope {
+		t.Fatalf("Review() scope = %q, want default %q", report.Scope, DefaultScope)
 	}
 	if !strings.Contains(strings.Join(report.DependencyFiles, ","), "go.mod") {
 		t.Fatalf("dependency files = %#v, want go.mod", report.DependencyFiles)
@@ -125,25 +125,13 @@ func TestValidateOptionsRejectsUnsupportedValues(t *testing.T) {
 	if err := ValidateOptions(Options{Scope: "ai-readiness"}); err == nil {
 		t.Fatal("ValidateOptions() with unsupported scope succeeded")
 	}
-	if err := ValidateOptions(Options{Format: "json"}); err == nil {
-		t.Fatal("ValidateOptions() with unsupported format succeeded")
-	}
-}
-
-func TestReviewHTMLErrorIsExplicit(t *testing.T) {
-	_, err := Review(context.Background(), t.TempDir(), Options{Format: "html"})
-	if err == nil || !strings.Contains(err.Error(), "html review output is not implemented yet") {
-		t.Fatalf("Review(html) error = %v", err)
-	}
 }
 
 func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 	report := Report{
 		RepoRoot:         "/repo",
 		Scope:            "security",
-		Format:           "markdown",
 		Deep:             true,
-		Since:            "30d",
 		Focus:            "internal",
 		BaselineScopes:   []string{"dependencies", "testing", "maintainability"},
 		DependencyFiles:  []string{"go.mod"},
@@ -179,7 +167,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Since: `30d`", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
+	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("RenderMarkdown() should not include %q by default:\n%s", unwanted, text)
 		}
@@ -228,8 +216,6 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 	report := Report{
 		RepoRoot:         "/repo",
 		Scope:            "security",
-		Format:           "markdown",
-		Since:            "30d",
 		BaselineScopes:   []string{"dependencies", "testing", "maintainability"},
 		DependencyFiles:  []string{"go.mod"},
 		TestFileCount:    2,
@@ -239,7 +225,7 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 		Verbose:          true,
 	}
 	text := RenderMarkdown(report)
-	for _, want := range []string{"## Repo Facts", "Since: `30d`", "Dependency manifests: `go.mod`", "## Changed Files", "`main.go`"} {
+	for _, want := range []string{"## Repo Facts", "Dependency manifests: `go.mod`", "## Changed Files", "`main.go`"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown(verbose) missing %q in:\n%s", want, text)
 		}

@@ -3,7 +3,6 @@ package codereview
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -342,8 +341,3 @@ func stringSet(values []string) map[string]struct{} {
 	return out
 }
 
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
-	return out
-}

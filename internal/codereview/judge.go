@@ -15,8 +15,39 @@ import (
 const (
 	defaultJudgeMaxOutputTokens = 4000
 	maxJudgeCandidateBytes      = 24 * 1024
-	maxAdvisoryFindings         = 3
+	// maxAdvisoryFindings caps the fallback path (no judge / judge error), where
+	// we have no impact signal and rely on heuristic strength. The judged path is
+	// gated by impact instead and is intentionally uncapped.
+	maxAdvisoryFindings = 3
+	// minSurfaceConfidence is the confidence floor for surfacing a confirmed
+	// finding whose impact is only functional (not breaking).
+	minSurfaceConfidence = 0.5
 )
+
+// Judge impact levels, in ascending order of real-world consequence.
+const (
+	impactNone       = "none"
+	impactCosmetic   = "cosmetic"
+	impactFunctional = "functional"
+	impactBreaking   = "breaking"
+)
+
+// impactRank orders impact levels. Unknown/blank ranks as functional, so a
+// malformed judge response surfaces the finding rather than silently hiding it.
+func impactRank(impact string) int {
+	switch strings.ToLower(strings.TrimSpace(impact)) {
+	case impactBreaking:
+		return 3
+	case impactFunctional:
+		return 2
+	case impactCosmetic:
+		return 1
+	case impactNone:
+		return 0
+	default:
+		return 2
+	}
+}
 
 type FindingJudge interface {
 	Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error)
@@ -68,6 +99,7 @@ type judgeResponse struct {
 type judgeResult struct {
 	CandidateID      string  `json:"candidate_id"`
 	Verdict          string  `json:"verdict"`
+	Impact           string  `json:"impact"`
 	Severity         int     `json:"severity"`
 	Confidence       float64 `json:"confidence"`
 	VerificationNote string  `json:"verification_note"`
@@ -167,12 +199,17 @@ func judgeAvailable(judge FindingJudge) bool {
 
 func judgeDeveloperPrompt() string {
 	return strings.Join([]string{
-		"You are GX Review Judge. Verify candidate findings against the provided real file content.",
-		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"verdict\":\"confirmed|unverified|wrong\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
-		"Verdict must be confirmed, unverified, or wrong.",
-		"Drop weak claims by marking them unverified or wrong; only confirmed findings should survive.",
+		"You are GX Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
+		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
+		"Verdict must be confirmed, unverified, or wrong. Only confirmed findings survive; mark weak or unsupported claims unverified or wrong.",
 		"Confirm only when the named files and file content snippets support the title, summary, recommendation, and evidence.",
 		"If a candidate names no file, treat that as a strike and do not confirm unless static tool evidence conclusively proves it.",
+		"impact rates the real-world consequence if the finding is acted on or ignored:",
+		"- breaking: risks incorrect behavior, a crash, data loss, a security hole, or a broken build or test.",
+		"- functional: affects behavior, an API or contract, or maintainability in a way a reviewer should weigh.",
+		"- cosmetic: style, naming, wording, or clarity only — nothing that can break.",
+		"- none: not a real issue.",
+		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — GX will not surface those.",
 		"Severity is 1-5. Confidence is 0-1. Include a one-line verification note.",
 	}, "\n")
 }
@@ -204,6 +241,12 @@ func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
 	}
 }
 
+// applyJudgeResults keeps only confirmed findings the judge considers worth a
+// human's time before merge. It drops anything marked cosmetic or none (a change
+// the judge is confident cannot break anything) and drops low-confidence
+// non-breaking findings as noise; breaking findings always survive. Results are
+// ranked by impact and left uncapped, so an empty result is a trustworthy
+// "nothing here needs review".
 func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 	byID := map[string]judgeResult{}
 	for _, result := range results {
@@ -213,27 +256,51 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 		}
 		byID[id] = result
 	}
-	var out []Finding
+	type judged struct {
+		finding Finding
+		result  judgeResult
+	}
+	var kept []judged
 	for _, finding := range findings {
 		result, ok := byID[finding.ID]
 		if !ok || !strings.EqualFold(strings.TrimSpace(result.Verdict), "confirmed") {
 			continue
 		}
-		finding.Strength = strengthFromJudge(result.Severity, result.Confidence)
+		rank := impactRank(result.Impact)
+		if rank <= impactRank(impactCosmetic) {
+			continue // confidently benign — the whole point is to not surface these
+		}
+		if rank == impactRank(impactFunctional) && result.Confidence < minSurfaceConfidence {
+			continue // non-breaking and low confidence — noise
+		}
+		finding.Strength = strengthFromImpact(result.Impact)
 		if note := strings.TrimSpace(result.VerificationNote); note != "" {
 			finding.Evidence = append(finding.Evidence, Evidence{Label: "Judge verification", Value: note})
 		}
-		out = append(out, finding)
+		kept = append(kept, judged{finding: finding, result: result})
+	}
+	sort.SliceStable(kept, func(i, j int) bool {
+		if ri, rj := impactRank(kept[i].result.Impact), impactRank(kept[j].result.Impact); ri != rj {
+			return ri > rj
+		}
+		if kept[i].result.Confidence != kept[j].result.Confidence {
+			return kept[i].result.Confidence > kept[j].result.Confidence
+		}
+		if kept[i].result.Severity != kept[j].result.Severity {
+			return kept[i].result.Severity > kept[j].result.Severity
+		}
+		return kept[i].finding.ID < kept[j].finding.ID
+	})
+	out := make([]Finding, 0, len(kept))
+	for _, k := range kept {
+		out = append(out, k.finding)
 	}
 	return out
 }
 
-func strengthFromJudge(severity int, confidence float64) string {
-	if severity >= 4 && confidence >= 0.70 {
+func strengthFromImpact(impact string) string {
+	if impactRank(impact) >= impactRank(impactBreaking) {
 		return "Strong"
-	}
-	if severity <= 2 || confidence < 0.50 {
-		return "Speculative"
 	}
 	return "Worth exploring"
 }

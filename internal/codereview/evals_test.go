@@ -404,7 +404,7 @@ func TestEvalCapEnforcementWithBlockingToolFinding(t *testing.T) {
 		t.Fatalf("Findings order = %#v, want blocking finding first", report.Findings)
 	}
 	if got := findingIDs(evalAdvisoryFindings(report.Findings)); got != "ai.review.1,ai.review.2,ai.review.3" {
-		t.Fatalf("capped advisory order = %q, want strongest three by judge severity", got)
+		t.Fatalf("capped advisory order = %q, want three by cap", got)
 	}
 
 	text := RenderMarkdown(report)
