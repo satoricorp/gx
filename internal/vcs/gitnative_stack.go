@@ -82,7 +82,7 @@ func (s *Service) gitStackEntries(ctx context.Context, repo RepoInfo) ([]stackEn
 	}
 	branch = cleanRefName(strings.TrimSpace(branch))
 	if branch == "" {
-		return nil, fmt.Errorf("%w; check out a branch before running gx status", ErrDetachedHEAD)
+		return nil, fmt.Errorf("%w; check out a branch before running gx", ErrDetachedHEAD)
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 	rangeSpec := fmt.Sprintf("%s..HEAD", baseCheckoutRef(baseRef))

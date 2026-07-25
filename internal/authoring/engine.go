@@ -15,7 +15,6 @@ type StackInfo = vcs.StackInfo
 type SyncResult = vcs.SyncResult
 type RevisionSummary = vcs.RevisionSummary
 type StackSummary = vcs.StackSummary
-type StatusSnapshot = vcs.StatusSnapshot
 type GitWorkingStatus = vcs.GitWorkingStatus
 type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
 type PruneGitHubPullRequestsResult = vcs.PruneGitHubPullRequestsResult
@@ -50,10 +49,6 @@ func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error)
 
 func (e *Engine) Status(ctx context.Context) (StackSummary, error) {
 	return e.vcs.Stack(ctx)
-}
-
-func (e *Engine) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
-	return e.vcs.StatusSnapshot(ctx)
 }
 
 func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {

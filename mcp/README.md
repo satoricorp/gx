@@ -32,7 +32,7 @@ Version control: use plain Git. GX works through Git hooks, so no GX-specific sa
 - `git add`, then `git commit -m "..."` to record work. The GX `prepare-commit-msg`
   hook stamps the commit with its GX revision trailer; `post-commit` records it.
 - To amend, use `git commit --amend` and preserve the GX revision trailer.
-- `git status` / `gx status` to inspect local and remote stack state.
+- `git status` to inspect the working tree.
 
 Publish with plain `git push` (the GX pre-push hook captures the agent session, links
 edits to the changed hunks, and publishes the metadata that becomes the PR summary),
@@ -55,7 +55,7 @@ until the branch is pushed through GX.
 Saving and publishing are not MCP tools. Record work with plain `git add` + `git commit`
 (GX's hooks stamp and record the revision), push the stack with plain `git push` (the
 pre-push hook captures the session and publishes), then open the PR with `gh pr create`.
-Inspect state with `git status` or `gx status`.
+Inspect state with `git status`.
 
 ## Install
 

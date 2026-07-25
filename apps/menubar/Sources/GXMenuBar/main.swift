@@ -152,7 +152,7 @@ private enum CLIInstaller {
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installPath.path)
             try installShortcutSymlinks()
-            return "CLI installed at \(installPath.path) with gxr and gxs shortcuts"
+            return "CLI installed at \(installPath.path) with the gxr shortcut"
         } catch {
             return "CLI install failed: \(error.localizedDescription)"
         }
@@ -186,7 +186,7 @@ private enum CLIInstaller {
     }
 
     private static func installShortcutSymlinks() throws {
-        for name in ["gxr", "gxs"] {
+        for name in ["gxr"] {
             let shortcut = installDirectory.appendingPathComponent(name)
             try? FileManager.default.removeItem(at: shortcut)
             try FileManager.default.createSymbolicLink(atPath: shortcut.path, withDestinationPath: "gx")

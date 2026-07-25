@@ -773,9 +773,6 @@ func recordCommit(ctx context.Context, result CommitResult) error {
 	})
 }
 
-// ResetPublished clears push history and marks every stack draft so `gx status` shows
-// the full stack as unpublished again.
-
 func (s *Service) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
 	publishRef = strings.TrimPrefix(strings.TrimSpace(publishRef), "refs/heads/")
 	if publishRef == "" {

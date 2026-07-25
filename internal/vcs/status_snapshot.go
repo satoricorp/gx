@@ -1,7 +1,6 @@
 package vcs
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +31,7 @@ type BookmarkSnapshot struct {
 	Revisions     []RevisionSnapshot
 }
 
-// StatusSnapshot is the structured input for gx status/switch rendering.
+// StatusSnapshot is the structured input for stack rendering in internal/clitui.
 type StatusSnapshot struct {
 	RepoLabel string
 	RepoRoot  string
@@ -40,165 +39,11 @@ type StatusSnapshot struct {
 	Bookmarks []BookmarkSnapshot
 }
 
-func (s *Service) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
-	var snapshot StatusSnapshot
-	err := s.preservingGitIndexForCwd(ctx, func() error {
-		var snapErr error
-		snapshot, snapErr = s.statusSnapshotUnguarded(ctx)
-		return snapErr
-	})
-	return snapshot, err
-}
-
-func (s *Service) statusSnapshotUnguarded(ctx context.Context) (StatusSnapshot, error) {
-	stack, err := s.Stack(ctx)
-	if err != nil {
-		return StatusSnapshot{}, err
-	}
-
-	activeFiles := 0
-	if stack.Repo.RootPath != "" {
-		if current, currentErr := s.CurrentChange(ctx, stack.Repo.RootPath, "@"); currentErr == nil {
-			activeFiles = len(current.Files)
-		}
-	}
-
-	baseRef := stack.Repo.defaultBaseBranch()
-	if stack.Stack != nil && strings.TrimSpace(stack.Stack.BaseRef) != "" {
-		baseRef = stack.Stack.BaseRef
-	}
-
-	snapshot := StatusSnapshot{
-		RepoLabel: repoLabel(stack.Repo),
-		RepoRoot:  stack.Repo.RootPath,
-		BaseRef:   baseRef,
-	}
-
-	if len(stack.Stacks) == 0 {
-		if stack.Stack != nil {
-			snapshot.Bookmarks = []BookmarkSnapshot{
-				buildBookmarkSnapshot(*stack.Stack, true, stack.Units, activeFiles),
-			}
-		}
-		return snapshot, nil
-	}
-
-	bookmarks := make([]BookmarkSnapshot, 0, len(stack.Stacks))
-	for index, entry := range stack.Stacks {
-		entry.Alias = stackAlias(index)
-		current := stack.Stack != nil && entry.BookmarkName == stack.Stack.BookmarkName
-		var units []UnitSummary
-		fileCount := 0
-		if current {
-			units = stack.Units
-			fileCount = activeFiles
-		}
-		bookmarks = append(bookmarks, buildBookmarkSnapshot(entry, current, units, fileCount))
-	}
-	snapshot.Bookmarks = bookmarks
-	return snapshot, nil
-}
-
-func buildBookmarkSnapshot(body StackInfo, current bool, units []UnitSummary, fileCount int) BookmarkSnapshot {
-	changeCount := len(units)
-	approved := 0
-	for _, unit := range units {
-		if unit.Published {
-			approved++
-		}
-	}
-	if changeCount == 0 && body.RevisionCount > 0 {
-		changeCount = body.RevisionCount
-		approved = body.PublishedCount
-	}
-
-	revisions := revisionSnapshots(body, units)
-	if len(revisions) == 0 && len(body.Revisions) > 0 {
-		revisions = revisionSnapshots(body, body.Revisions)
-	}
-	if changeCount == 0 {
-		changeCount = len(revisions)
-	}
-
-	return BookmarkSnapshot{
-		Stack:         body,
-		Current:       current,
-		ChangeCount:   changeCount,
-		ApprovedCount: approved,
-		FileCount:     fileCount,
-		Units:         units,
-		Revisions:     revisions,
-	}
-}
-
-func revisionSnapshots(body StackInfo, units []UnitSummary) []RevisionSnapshot {
-	revisions := make([]RevisionSnapshot, 0, len(units))
-	for _, unit := range units {
-		note := revisionSyncNote(body, unit.Published)
-		if unit.Active {
-			note = firstNonEmpty(note, "working change")
-		}
-		revisions = append(revisions, RevisionSnapshot{
-			Index:       unit.Index,
-			ChangeID:    unit.ChangeID,
-			CommitID:    unit.CommitID,
-			Description: unit.Description,
-			ShortID:     shortID(firstNonEmpty(unit.CommitID, unit.ChangeID), 7),
-			Active:      unit.Active,
-			Published:   unit.Published,
-			Working:     unit.Active,
-			SyncNote:    note,
-		})
-	}
-	return revisions
-}
-
-func revisionSyncNote(body StackInfo, published bool) string {
-	parts := []string{"local"}
-	if published || hasRemoteSync(body) {
-		parts = append(parts, "origin")
-	}
-	if len(parts) == 1 {
-		return parts[0] + " only"
-	}
-	return strings.Join(parts, ",")
-}
-
 func hasRemoteSync(body StackInfo) bool {
 	if body.RemoteRef != nil && strings.TrimSpace(*body.RemoteRef) != "" {
 		return true
 	}
 	return body.Status == "published"
-}
-
-func bookmarkSyncLabel(body StackInfo) string {
-	parts := []string{"local"}
-	if hasRemoteSync(body) {
-		parts = append(parts, "origin")
-	}
-	return "sync " + strings.Join(parts, ",")
-}
-
-func bookmarkSyncIcons(body StackInfo) string {
-	icons := "⌂"
-	if hasRemoteSync(body) {
-		icons += "⇡"
-	}
-	return icons
-}
-
-func bookmarkMetaLine(body StackInfo, changeCount, approved int) string {
-	parts := []string{
-		"alias " + body.Alias,
-		"base " + firstNonEmpty(body.BaseRef, "main"),
-		fmtChanges(changeCount),
-		fmtApproved(approved, changeCount),
-		bookmarkSyncLabel(body),
-	}
-	if body.Status == "published" {
-		parts = append(parts, "published")
-	}
-	return strings.Join(parts, " · ")
 }
 
 func fmtChanges(n int) string {

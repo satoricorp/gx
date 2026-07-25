@@ -21,7 +21,7 @@ curl -fsSL https://download.gx.run/install.sh | sh
 
 Re-run the same command to upgrade or repair an existing installation. The
 installer replaces only the GX-managed `gx` and `gx-mcp` binaries and refreshes
-the `gxr`/`gxs` aliases. It does not remove `~/.gx`, repository metadata, or
+the `gxr` alias. It does not remove `~/.gx`, repository metadata, or
 hooks. `--with-menubar` similarly replaces the existing GX app bundle.
 
 ```bash
@@ -42,7 +42,7 @@ MCP server, and offers to add GX workflow instructions to `AGENTS.md`.
 To uninstall the CLI and menu-bar app:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxg ~/.local/bin/gxr ~/.local/bin/gxs ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gx-mcp
 rm -rf /Applications/GX.app ~/Applications/GX.app
 ```
 

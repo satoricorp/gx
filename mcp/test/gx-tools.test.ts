@@ -62,12 +62,12 @@ if [ "$1" = review ]; then
   echo "review ok"
   exit 0
 fi
-if [ "$1" = status ]; then
+if [ "$1" = doctor ]; then
   if [ ! -f "$PWD/.gx-initialized" ]; then
     echo "gx not initialized" >&2
     exit 1
   fi
-  echo '{"stacks":[],"files":[]}'
+  echo '{"doctor":{}}'
   exit 0
 fi
 echo "unexpected gx args: $@" >&2
@@ -169,12 +169,12 @@ if [ "$1" = review ]; then
   echo "review ok"
   exit 0
 fi
-if [ "$1" = status ]; then
+if [ "$1" = doctor ]; then
   if [ ! -f "$PWD/.gx-initialized" ]; then
     echo "gx not initialized" >&2
     exit 1
   fi
-  echo '{"stacks":[]}'
+  echo '{"doctor":{}}'
   exit 0
 fi
 echo "unexpected gx args: $@" >&2

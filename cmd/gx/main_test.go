@@ -54,7 +54,7 @@ func TestRootExposesAuthCommand(t *testing.T) {
 
 func TestRootRemovesShortcutCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"gxa", "gxt"} {
+	for _, name := range []string{"gxa", "gxs", "gxt"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
 			t.Fatalf("%s command resolved after removal", name)
 		}
@@ -133,7 +133,6 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"  set",
 		"Work:",
 		"  review (gxr)",
-		"  status (gxs)",
 		"Ship:",
 		"  sync",
 		"Help:",
@@ -183,7 +182,7 @@ func TestRootRemovesHiddenDemuxCompatibilityCommand(t *testing.T) {
 
 func TestRootDoesNotExposeRemovedLegacyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"commit", "compose", "publish", "stacks", "codex", "claude"} {
+	for _, name := range []string{"commit", "status", "compose", "publish", "stacks", "codex", "claude"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != root {
 			t.Fatalf("unexpected legacy command exposed: %s", cmd.Name())
 		}

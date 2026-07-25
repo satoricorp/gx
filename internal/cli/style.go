@@ -214,18 +214,6 @@ func commandPadded(text string, width int) string {
 	return command(padRight(text, width))
 }
 
-const helpNameAnnotation = "gx.helpName"
-
-func setHelpName(cmd *cobra.Command, name string) {
-	if strings.TrimSpace(name) == "" {
-		return
-	}
-	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
-	}
-	cmd.Annotations[helpNameAnnotation] = name
-}
-
 func commandDisplayPadded(cmd *cobra.Command, commands []*cobra.Command) string {
 	return logoText(padRight(commandDisplay(cmd), commandDisplayPadding(commands)))
 }
@@ -299,7 +287,7 @@ func rootHelpCommandOrder(groupID string) []string {
 	case groupSetup:
 		return []string{"init", "auth"}
 	case groupWork:
-		return []string{"review", "status"}
+		return []string{"review"}
 	case groupShip:
 		return []string{"push", "sync"}
 	case groupHelp:

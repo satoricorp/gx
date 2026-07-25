@@ -1,7 +1,7 @@
 # GX Menu-Bar App
 
 Native macOS menu-bar app for GX. It bundles the `gx` CLI, installs it plus
-the `gxr` and `gxs` shortcuts to `~/.local/bin` on launch, shows
+the `gxr` shortcut to `~/.local/bin` on launch, shows
 `gx doctor --json` status and stats, checks the latest GitHub release, updates
 the local CLI when a newer release is available, checks app-bundle updates with
 Sparkle, links to gx.run, and provides MCP setup snippets.
@@ -28,7 +28,7 @@ Open the DMG to get the standard drag-to-Applications install window.
 | **Stats** | Capture backlog, disk, and ledger summary from doctor JSON |
 | **Update CLI to vX.Y.Z** | Downloads the newest matching CLI release asset from GitHub Releases and installs it to `~/.local/bin` |
 | **Check for Updates** | Fetches the latest `satoricorp/gx` GitHub release and compares it with `gx version --json` |
-| **Install Bundled CLI** | Installs or updates `~/.local/bin/gx`, `gxr`, and `gxs` from the bundled CLI |
+| **Install Bundled CLI** | Installs or updates `~/.local/bin/gx` and `gxr` from the bundled CLI |
 | **Check for App Updates** | Runs Sparkle against the configured appcast feed and updates `GX.app` in place |
 | **Open https://gx.run** | Opens `https://gx.run` |
 | **MCP** | Shows setup instructions at `https://docs.gx.run` |
@@ -43,9 +43,9 @@ Resolution order:
 3. Packaged app: `Contents/Resources/bin/gx`
 4. Fallback: `gx` on `PATH`
 
-The app installs or updates `~/.local/bin/gx`, `~/.local/bin/gxr`,
-and `~/.local/bin/gxs` from the bundled CLI on launch and
-through the **Install Bundled CLI** menu item.
+The app installs or updates `~/.local/bin/gx` and `~/.local/bin/gxr`
+from the bundled CLI on launch and through the **Install Bundled CLI**
+menu item.
 
 ## CLI updates
 
@@ -91,11 +91,12 @@ After installing the app, add GX instructions to the start or end of your
 `AGENTS.md` or `CLAUDE.md` so agents save with GX instead of raw Git:
 
 ```md
-Version control: use Git with GX hooks and metadata, not raw `git commit` for normal agent work.
+Version control: use plain Git. GX's hooks record and publish your work automatically —
+there is no GX save verb.
 
-Use GX MCP first:
-- `gx_commit` after `git add` to record staged work (default verb).
-- `gx_status` to inspect local and remote stack state.
+- `git add`, then `git commit -m "..."` — a GX hook records the commit as a revision.
+- `git status` to inspect the working tree.
+- `gx_review` (MCP) or `gx review` (CLI) for AI review of the current change.
 
 To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer.
 

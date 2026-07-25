@@ -24,7 +24,7 @@ async function gitRepoRoot(cwd: string): Promise<string> {
 
 async function gxRepoReady(cwd: string): Promise<boolean> {
   try {
-    await commandOutput(resolveGxBinary(), ["status", "--json"], cwd);
+    await commandOutput(resolveGxBinary(), ["doctor", "--json"], cwd);
     return true;
   } catch {
     return false;

@@ -50,7 +50,7 @@ func TestDemoCommandWalksThroughRequestedScreens(t *testing.T) {
 		"Your branch goes up like always",
 		"── done",
 		"That's the loop: stage and commit with git, gx records the rest.",
-		"gx status",
+		"git status",
 		"gx review",
 		"gx doctor",
 	} {

@@ -173,11 +173,11 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	// Any gx command run inside the linked worktree bootstraps the repo and
 	// installs the lifecycle hooks; the commit itself is plain git.
 	gxPath := buildGXBinary(t)
-	cmd := exec.Command(gxPath, "status")
+	cmd := exec.Command(gxPath, "doctor")
 	cmd.Dir = linked
 	cmd.Env = append(os.Environ(), "GX_HOME="+gxHome, "GX_DISABLE_BACKGROUND_WORKERS=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gx status: %v\n%s", err, out)
+		t.Fatalf("gx doctor: %v\n%s", err, out)
 	}
 
 	if !hooks.IsInstalled(linked) {

@@ -254,7 +254,7 @@ func (d *demoSession) printDone() {
 	d.println("")
 	d.println("  That's the loop: stage and commit with git, gx records the rest.")
 	d.println("")
-	d.println("    " + command("gx status") + "    your stacks at a glance")
+	d.println("    " + command("git status") + "   your working tree at a glance")
 	d.println("    " + command("gx review") + "    context-aware code review")
 	d.println("    " + command("gx doctor") + "    check and fix your setup")
 	d.println("")

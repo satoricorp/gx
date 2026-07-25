@@ -685,7 +685,7 @@ func TestRecordedCommitAfterExternalCheckout(t *testing.T) {
 	}
 }
 
-func TestStatusSnapshotPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
+func TestStackPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "topic")
 	if err := os.WriteFile(filepath.Join(root, "p.txt"), []byte("p\n"), 0o644); err != nil {
@@ -693,11 +693,11 @@ func TestStatusSnapshotPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
 	}
 	runGit(t, root, "add", "p.txt")
 
-	if _, err := svc.StatusSnapshot(context.Background()); err != nil {
-		t.Fatalf("StatusSnapshot() error = %v", err)
+	if _, err := svc.Stack(context.Background()); err != nil {
+		t.Fatalf("Stack() error = %v", err)
 	}
 	if staged := gitStagedNames(t, root); staged != "p.txt" {
-		t.Fatalf("staged files after StatusSnapshot = %q, want p.txt", staged)
+		t.Fatalf("staged files after Stack = %q, want p.txt", staged)
 	}
 }
 

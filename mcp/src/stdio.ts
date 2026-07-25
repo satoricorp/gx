@@ -22,7 +22,7 @@ const instructions = [
   "To amend the latest commit message or restage work, use git commit --amend and preserve the GX revision trailer.",
   "Publish with plain git push, then open the PR with gh pr create. The GX pre-push hook captures the agent session, links edits to the changed hunks, and publishes the GX metadata that becomes the PR summary. Do not run gx push or gx capture push; they bypass or suppress that hook.",
   "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
-  "Use git status and gx status for inspection.",
+  "Use git status for inspection.",
 ].join(" ");
 
 const tools: ToolModule[] = [
