@@ -12,7 +12,14 @@ import (
 	"time"
 )
 
-const maxStaticToolOutputBytes = 12000
+const (
+	maxStaticToolOutputBytes = 12000
+	// maxStaticToolFileArgs caps how many changed files a file-scoped tool is
+	// handed so one sweeping change cannot blow up the command line.
+	maxStaticToolFileArgs = 40
+	// maxStaticToolConfigBytes caps config files read while detecting tools.
+	maxStaticToolConfigBytes = 256 * 1024
+)
 
 type StaticToolResult struct {
 	Name     string `json:"name"`
@@ -23,54 +30,120 @@ type StaticToolResult struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// staticToolEnv is what every runner detects against: the repo on disk, the
+// facts already gathered for the review, and the files in this change.
+type staticToolEnv struct {
+	repoRoot     string
+	facts        RepoFacts
+	changedFiles []string
+}
+
+// staticToolCommand is a resolved invocation. bin is the executable gx runs;
+// argv is what humans and the AI brief see, so argv[0] stays the plain tool
+// name even when bin points at a repo-local binary.
+type staticToolCommand struct {
+	bin  string
+	argv []string
+}
+
+// staticToolRunner is one entry in the static tool registry. detect inspects
+// the repo layout, the files in review, and the installed binaries, returning
+// the invocation to run from the repo root; ok is false when the ecosystem
+// does not apply or the tool is not installed, and the runner is then skipped
+// silently — a missing tool is never a review finding.
+//
+// Runners must be fast and side-effect free. Outside Go, whose runner is
+// already scoped to the changed packages, gx review never runs a test suite:
+// type checkers and linters scoped to the change only.
+type staticToolRunner struct {
+	name     string
+	progress string
+	detect   func(env staticToolEnv) (staticToolCommand, bool)
+}
+
+// staticToolRunners is the registry; adding an ecosystem is one entry plus its
+// detect function. Order is the order results are reported in.
+var staticToolRunners = []staticToolRunner{
+	{name: "go test", progress: "Running go test", detect: goStaticTool("test")},
+	{name: "go vet", progress: "Running go vet", detect: goStaticTool("vet")},
+	{name: "tsc", progress: "Running tsc", detect: detectTypeScriptCompiler},
+	{name: "eslint", progress: "Running eslint", detect: detectESLint},
+	{name: "ruff", progress: "Running ruff", detect: detectRuff},
+	{name: "mypy", progress: "Running mypy", detect: detectMypy},
+	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck},
+}
+
 func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options) []StaticToolResult {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0") {
 		return nil
 	}
-	if !hasDependencyFile(facts.DependencyFiles, "go.mod") {
+	env := staticToolEnv{
+		repoRoot:     repoRoot,
+		facts:        facts,
+		changedFiles: normalizedChangedFiles(reviewChangedFiles(ctx, repoRoot)),
+	}
+	if len(env.changedFiles) == 0 {
 		return nil
 	}
-	pkgs, ok := changedGoPackageArgs(ctx, repoRoot)
-	if !ok {
+	type plannedStaticTool struct {
+		runner  staticToolRunner
+		command staticToolCommand
+	}
+	var planned []plannedStaticTool
+	for _, runner := range staticToolRunners {
+		command, ok := runner.detect(env)
+		if !ok {
+			continue
+		}
+		planned = append(planned, plannedStaticTool{runner: runner, command: command})
+	}
+	if len(planned) == 0 {
 		return nil
 	}
 	timeout := 90 * time.Second
 	if opts.Deep {
 		timeout = 180 * time.Second
 	}
-	tools := []struct {
-		progress string
-		name     string
-		command  []string
-	}{
-		{progress: "Running go test", name: "go test", command: append([]string{"go", "test"}, pkgs...)},
-		{progress: "Running go vet", name: "go vet", command: append([]string{"go", "vet"}, pkgs...)},
-	}
-	out := make([]StaticToolResult, len(tools))
+	out := make([]StaticToolResult, len(planned))
 	if !opts.Deep {
-		for i, tool := range tools {
-			reviewProgress(opts, tool.progress)
-			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.name, tool.command...)
+		for i, tool := range planned {
+			reviewProgress(opts, tool.runner.progress)
+			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}
 		return out
 	}
 
 	var wg sync.WaitGroup
-	for i, tool := range tools {
+	for i, tool := range planned {
 		i, tool := i, tool
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reviewProgress(opts, tool.progress)
-			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.name, tool.command...)
+			reviewProgress(opts, tool.runner.progress)
+			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}()
 	}
 	wg.Wait()
 	return out
 }
 
-func changedGoPackageArgs(ctx context.Context, repoRoot string) ([]string, bool) {
-	return goPackageArgsForChangedFiles(repoRoot, reviewChangedFiles(ctx, repoRoot))
+// goStaticTool runs `go <sub>` over the packages the change touches, falling
+// back to the whole module when the change is wide enough to affect it.
+func goStaticTool(sub string) func(staticToolEnv) (staticToolCommand, bool) {
+	return func(env staticToolEnv) (staticToolCommand, bool) {
+		if !hasDependencyFile(env.facts.DependencyFiles, "go.mod") {
+			return staticToolCommand{}, false
+		}
+		pkgs, ok := goPackageArgsForChangedFiles(env.repoRoot, env.changedFiles)
+		if !ok {
+			return staticToolCommand{}, false
+		}
+		bin, ok := lookStaticTool(env.repoRoot, "go")
+		if !ok {
+			return staticToolCommand{}, false
+		}
+		return staticToolCommand{bin: bin, argv: append([]string{"go", sub}, pkgs...)}, true
+	}
 }
 
 func goPackageArgsForChangedFiles(repoRoot string, files []string) ([]string, bool) {
@@ -129,13 +202,234 @@ func goStaticToolsRequireRepoWide(file string) bool {
 		strings.HasPrefix(file, "scripts/")
 }
 
-func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, name string, command ...string) StaticToolResult {
-	if len(command) == 0 {
+// detectTypeScriptCompiler type-checks the whole project rather than the
+// changed files: tsc ignores tsconfig.json as soon as files are named on the
+// command line, which would check them with the wrong compiler options.
+func detectTypeScriptCompiler(env staticToolEnv) (staticToolCommand, bool) {
+	if !repoFileExists(env.repoRoot, "tsconfig.json") {
+		return staticToolCommand{}, false
+	}
+	if !changedFilesInclude(env.changedFiles, typeScriptFileExtensions...) &&
+		!changedFilesIncludeBase(env.changedFiles, "tsconfig.json") {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "tsc", nodeLocalBinDirs...)
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: []string{"tsc", "--noEmit"}}, true
+}
+
+func detectESLint(env staticToolEnv) (staticToolCommand, bool) {
+	if !repoFileExists(env.repoRoot, eslintConfigFiles...) &&
+		!repoFileContains(env.repoRoot, "package.json", `"eslintConfig"`) {
+		return staticToolCommand{}, false
+	}
+	files := staticToolFileArgs(env.repoRoot, env.changedFiles, javaScriptFileExtensions...)
+	if len(files) == 0 {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "eslint", nodeLocalBinDirs...)
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: append([]string{"eslint"}, files...)}, true
+}
+
+// detectRuff needs no manifest: ruff runs without configuration, so changed
+// Python files plus an installed binary are signal enough.
+func detectRuff(env staticToolEnv) (staticToolCommand, bool) {
+	files := staticToolFileArgs(env.repoRoot, env.changedFiles, pythonFileExtensions...)
+	if len(files) == 0 {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "ruff", pythonLocalBinDirs...)
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: append([]string{"ruff", "check"}, files...)}, true
+}
+
+// detectMypy only runs where mypy is configured: unconfigured runs over single
+// files report import errors that say nothing about the change.
+func detectMypy(env staticToolEnv) (staticToolCommand, bool) {
+	if !mypyConfigured(env.repoRoot) {
+		return staticToolCommand{}, false
+	}
+	files := staticToolFileArgs(env.repoRoot, env.changedFiles, pythonFileExtensions...)
+	if len(files) == 0 {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "mypy", pythonLocalBinDirs...)
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: append([]string{"mypy"}, files...)}, true
+}
+
+func mypyConfigured(repoRoot string) bool {
+	return repoFileExists(repoRoot, "mypy.ini", ".mypy.ini") ||
+		repoFileContains(repoRoot, "pyproject.toml", "[tool.mypy]") ||
+		repoFileContains(repoRoot, "setup.cfg", "[mypy]")
+}
+
+// detectCargoCheck compiles without running anything; cargo has no per-file
+// scope, so the manifest plus any Rust or dependency change is the trigger.
+func detectCargoCheck(env staticToolEnv) (staticToolCommand, bool) {
+	if !repoFileExists(env.repoRoot, "Cargo.toml") {
+		return staticToolCommand{}, false
+	}
+	if !changedFilesInclude(env.changedFiles, ".rs") &&
+		!changedFilesIncludeBase(env.changedFiles, "Cargo.toml", "Cargo.lock") {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "cargo")
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: []string{"cargo", "check"}}, true
+}
+
+var (
+	typeScriptFileExtensions = []string{".ts", ".tsx", ".mts", ".cts"}
+	javaScriptFileExtensions = []string{".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
+	pythonFileExtensions     = []string{".py", ".pyi"}
+	nodeLocalBinDirs         = []string{"node_modules/.bin"}
+	pythonLocalBinDirs       = []string{".venv/bin", "venv/bin"}
+	eslintConfigFiles        = []string{
+		"eslint.config.js", "eslint.config.mjs", "eslint.config.cjs",
+		"eslint.config.ts", "eslint.config.mts", "eslint.config.cts",
+		".eslintrc", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.mjs",
+		".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml",
+	}
+)
+
+// lookStaticTool resolves a tool binary, preferring the repo's conventional
+// local bin directories over PATH. Only those fixed directories are trusted:
+// gx never execs a path the repo content chose.
+func lookStaticTool(repoRoot, name string, localBinDirs ...string) (string, bool) {
+	for _, dir := range localBinDirs {
+		path := filepath.Join(repoRoot, filepath.FromSlash(dir), name)
+		if !filepath.IsAbs(path) {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				continue
+			}
+			path = abs
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+		return path, true
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+// staticToolFileArgs turns changed files into safe arguments: paths that
+// escape the repo root, live in vendored or generated trees, no longer exist,
+// or do not match the requested extensions are dropped, and every argument
+// keeps a "./" prefix so a file name can never be read as a flag.
+func staticToolFileArgs(repoRoot string, files []string, exts ...string) []string {
+	var out []string
+	for _, file := range files {
+		rel, ok := staticToolRelPath(repoRoot, file)
+		if !ok || !hasFileExtension(rel, exts) {
+			continue
+		}
+		out = append(out, "./"+rel)
+		if len(out) >= maxStaticToolFileArgs {
+			break
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func staticToolRelPath(repoRoot, file string) (string, bool) {
+	file = strings.TrimSpace(file)
+	if file == "" || filepath.IsAbs(file) {
+		return "", false
+	}
+	file = filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))
+	file = strings.TrimPrefix(file, "./")
+	if file == "." || file == ".." || strings.HasPrefix(file, "../") || strings.HasPrefix(file, "/") {
+		return "", false
+	}
+	if skipDir(file) {
+		return "", false
+	}
+	info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(file)))
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	return file, true
+}
+
+func hasFileExtension(file string, exts []string) bool {
+	lower := strings.ToLower(file)
+	for _, ext := range exts {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func changedFilesInclude(files []string, exts ...string) bool {
+	for _, file := range files {
+		if hasFileExtension(file, exts) {
+			return true
+		}
+	}
+	return false
+}
+
+func changedFilesIncludeBase(files []string, bases ...string) bool {
+	for _, file := range files {
+		for _, base := range bases {
+			if filepath.Base(filepath.ToSlash(file)) == base {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func repoFileExists(repoRoot string, names ...string) bool {
+	for _, name := range names {
+		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(name)))
+		if err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+func repoFileContains(repoRoot, name, needle string) bool {
+	path := filepath.Join(repoRoot, filepath.FromSlash(name))
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() > maxStaticToolConfigBytes {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(data, []byte(needle))
+}
+
+func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, name string, command staticToolCommand) StaticToolResult {
+	if strings.TrimSpace(command.bin) == "" || len(command.argv) == 0 {
 		return StaticToolResult{Name: name, Skipped: true, Reason: "empty command"}
 	}
 	toolCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(toolCtx, command[0], command[1:]...)
+	cmd := exec.CommandContext(toolCtx, command.bin, command.argv[1:]...)
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(os.TempDir(), "gx-review-gocache"))
 	var output bytes.Buffer
@@ -148,7 +442,7 @@ func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, 
 	}
 	result := StaticToolResult{
 		Name:    name,
-		Command: strings.Join(command, " "),
+		Command: strings.Join(command.argv, " "),
 		Output:  strings.TrimSpace(text),
 	}
 	if err != nil {
