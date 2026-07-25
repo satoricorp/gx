@@ -30,10 +30,16 @@ const (
 	maxAIStaticToolOutputBytes   = 4000
 	maxAIContextSnippets         = 14
 	maxAIDeepContextSnippets     = 40
-	maxAICodeQualityHints        = 20
-	maxAIModuleSummaries         = 12
-	maxAIChangedFiles            = 60
-	bedrockReviewModel           = "anthropic.claude-sonnet-4-6"
+	// Diff snippets are the primary evidence for what changed, so they get their
+	// own budget rather than sharing the retrieved-context one. A PR summary
+	// builds a wide diff on purpose; capping it at the context limit silently
+	// hid most of a large change from the model.
+	maxAIDiffSnippets     = 32
+	maxAIDeepDiffSnippets = 64
+	maxAICodeQualityHints = 20
+	maxAIModuleSummaries  = 12
+	maxAIChangedFiles     = 60
+	bedrockReviewModel    = "anthropic.claude-sonnet-4-6"
 )
 
 type AIReviewer interface {
@@ -753,13 +759,15 @@ func responseOutputText(response responseResult) string {
 func compactReviewBriefForAI(brief ReviewBrief) ReviewBrief {
 	deep := strings.EqualFold(brief.Depth, "deep")
 	contextLimit := maxAIContextSnippets
+	diffLimit := maxAIDiffSnippets
 	if deep {
 		contextLimit = maxAIDeepContextSnippets
+		diffLimit = maxAIDeepDiffSnippets
 	}
 
 	brief.Static.DependencyFiles = limitStrings(brief.Static.DependencyFiles, maxAIChangedFiles)
 	brief.Static.ChangedFiles = limitStrings(brief.Static.ChangedFiles, maxAIChangedFiles)
-	brief.Static.DiffSnippets = compactDiffSnippets(brief.Static.DiffSnippets, contextLimit)
+	brief.Static.DiffSnippets = compactDiffSnippets(brief.Static.DiffSnippets, diffLimit)
 	brief.Static.Modules = limitModules(brief.Static.Modules, maxAIModuleSummaries)
 	brief.Static.ToolResults = compactStaticToolResults(brief.Static.ToolResults)
 	brief.Static.CodeQuality = limitCodeQualityHints(brief.Static.CodeQuality, maxAICodeQualityHints)

@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -352,4 +353,36 @@ type callbackAIReviewer struct {
 
 func (c callbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
 	return c.fn(ctx, brief)
+}
+
+func TestCompactBriefKeepsDiffSnippetsBeyondTheContextBudget(t *testing.T) {
+	// Diff snippets are the primary evidence for what changed, so they must not
+	// be throttled by the retrieved-context budget. A PR summary runs shallow
+	// and deliberately builds a wide diff; capping it at maxAIContextSnippets
+	// used to hide most of a large change from the model.
+	brief := ReviewBrief{Depth: "shallow"}
+	for i := 0; i < maxAIDiffSnippets+5; i++ {
+		brief.Static.DiffSnippets = append(brief.Static.DiffSnippets, DiffSnippet{
+			File: fmt.Sprintf("file%02d.go", i),
+			Diff: "@@ -1 +1,2 @@\n+// change\n",
+		})
+	}
+	for i := 0; i < maxAIContextSnippets+5; i++ {
+		brief.Context = append(brief.Context, ContextSnippet{
+			Ref:  fmt.Sprintf("doc%02d.md", i),
+			Text: "context",
+		})
+	}
+
+	compacted := compactReviewBriefForAI(brief)
+
+	if got := len(compacted.Static.DiffSnippets); got != maxAIDiffSnippets {
+		t.Fatalf("diff snippets = %d, want %d", got, maxAIDiffSnippets)
+	}
+	if got := len(compacted.Static.DiffSnippets); got <= maxAIContextSnippets {
+		t.Fatalf("diff snippets = %d, still bounded by the context budget %d", got, maxAIContextSnippets)
+	}
+	if got := len(compacted.Context); got != maxAIContextSnippets {
+		t.Fatalf("context snippets = %d, want %d", got, maxAIContextSnippets)
+	}
 }

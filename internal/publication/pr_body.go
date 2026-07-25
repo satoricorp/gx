@@ -765,14 +765,45 @@ func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact
 	return summary, true, info, nil
 }
 
-func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) codereview.ReviewBrief {
-	diffSnippets := make([]codereview.DiffSnippet, 0, len(catalog.Hunks))
-	for _, hunk := range catalog.Hunks {
-		diffSnippets = append(diffSnippets, codereview.DiffSnippet{File: hunk.File, Diff: hunk.Patch})
-		if len(diffSnippets) >= 32 {
-			break
-		}
+// maxPRSummaryDiffSnippets bounds how much of the diff the summary model sees.
+const maxPRSummaryDiffSnippets = 32
+
+// prSummaryDiffSnippets picks the hunks most worth summarizing. A large PR has
+// more hunks than fit in the brief, and taking them in catalog order means a
+// risky change can be dropped purely because of where it sorted. Rank by the
+// same impact signal the Quick scan uses, then by size, so whatever survives
+// the cap is the part a reviewer most needs described.
+func prSummaryDiffSnippets(catalog prBodyCatalog, policy codereview.ReviewPolicy) []codereview.DiffSnippet {
+	ranked := append([]prHunkSummary(nil), catalog.Hunks...)
+	impact := make(map[string]int, len(ranked))
+	for _, hunk := range ranked {
+		score, _, _ := hunkImpact(catalog, hunk, policy)
+		impact[hunk.File+"\x00"+hunk.Patch] = score
 	}
+	key := func(hunk prHunkSummary) string { return hunk.File + "\x00" + hunk.Patch }
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left, right := ranked[i], ranked[j]
+		if leftImpact, rightImpact := impact[key(left)], impact[key(right)]; leftImpact != rightImpact {
+			return leftImpact > rightImpact
+		}
+		leftTest, rightTest := isTestPath(left.File), isTestPath(right.File)
+		if leftTest != rightTest {
+			return rightTest
+		}
+		return left.NewLines+left.OldLines > right.NewLines+right.OldLines
+	})
+	if len(ranked) > maxPRSummaryDiffSnippets {
+		ranked = ranked[:maxPRSummaryDiffSnippets]
+	}
+	out := make([]codereview.DiffSnippet, 0, len(ranked))
+	for _, hunk := range ranked {
+		out = append(out, codereview.DiffSnippet{File: hunk.File, Diff: hunk.Patch})
+	}
+	return out
+}
+
+func prReviewBrief(artifact reviewbundle.Artifact, catalog prBodyCatalog, summaryContext prSummaryContext, reach lexicalReach, policy codereview.ReviewPolicy) codereview.ReviewBrief {
+	diffSnippets := prSummaryDiffSnippets(catalog, policy)
 	snippets := append(append([]codereview.ContextSnippet(nil), summaryContext.Snippets...), lexicalReachContextSnippets(reach)...)
 	labeled := codereview.LabelContextSnippets(snippets)
 	focus := strings.Join(catalog.Files, " ")
@@ -1870,11 +1901,15 @@ func humanizeSignal(value string) string {
 	return value
 }
 
+func isTestPath(file string) bool {
+	lower := strings.ToLower(file)
+	return strings.HasSuffix(lower, "_test.go") || strings.Contains(lower, "test")
+}
+
 func countTestFiles(files []string) int {
 	count := 0
 	for _, file := range files {
-		lower := strings.ToLower(file)
-		if strings.HasSuffix(lower, "_test.go") || strings.Contains(lower, "test") {
+		if isTestPath(file) {
 			count++
 		}
 	}
