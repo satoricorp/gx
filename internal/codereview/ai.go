@@ -40,11 +40,6 @@ type AIReviewer interface {
 	Review(ctx context.Context, brief ReviewBrief) ([]Finding, error)
 }
 
-type AIReviewerWithOverview interface {
-	AIReviewer
-	ReviewWithOverview(ctx context.Context, brief ReviewBrief) (overview string, findings []Finding, err error)
-}
-
 type NotableChange struct {
 	File string
 	Line int
@@ -217,10 +212,6 @@ func reviewerModelName(reviewer AIReviewer) string {
 			return model
 		}
 		return reviewerModelName(r.fallback)
-	case *agenticResponsesAIReviewer:
-		if r != nil && r.base != nil {
-			return strings.TrimSpace(r.base.model)
-		}
 	}
 	return ""
 }
@@ -249,26 +240,33 @@ func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 	return multiAIReviewer{reviewers: reviewers}
 }
 
-func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
-	model := strings.TrimSpace(firstNonEmpty(
-		modelOverride,
+// resolveOpenAIReviewModel picks the OpenAI model for review and judge calls,
+// preferring an explicit override (e.g. a REVIEW.md model hint) then the
+// GX/OpenAI model env vars, then the default.
+func resolveOpenAIReviewModel(override string) string {
+	return strings.TrimSpace(firstNonEmpty(
+		override,
 		os.Getenv("GX_REVIEW_OPENAI_MODEL"),
 		os.Getenv("GX_REVIEW_MODEL"),
 		os.Getenv("OPENAI_MODEL"),
 		defaultReviewModel,
 	))
+}
+
+func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
+	model := resolveOpenAIReviewModel(modelOverride)
 	direct, directErr := directOpenAIReviewerFromEnv(model)
 	cloudReviewer := cloudOpenAIReviewerFromEnv(model)
 	if direct != nil {
 		if cloudReviewer != nil {
-			return maybeAgenticReviewer(fallbackAIReviewer{primary: direct, fallback: cloudReviewer})
+			return fallbackAIReviewer{primary: direct, fallback: cloudReviewer}
 		}
-		return maybeAgenticReviewer(direct)
+		return direct
 	}
 	if directErr != nil {
 		return nil
 	}
-	return maybeAgenticReviewer(cloudReviewer)
+	return cloudReviewer
 }
 
 func cloudOpenAIReviewerFromEnv(model string) AIReviewer {
@@ -373,9 +371,8 @@ func reviewerAvailable(reviewer AIReviewer) bool {
 }
 
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	overview, findings, err := m.ReviewWithOverview(ctx, brief)
-	_ = overview
-	return findings, err
+	summary, err := m.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
@@ -399,11 +396,6 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 			if withSummary, ok := item.reviewer.(AIReviewerWithSummary); ok {
 				summary, err := withSummary.ReviewForSummary(ctx, brief)
 				results[i] = reviewerResult{item: item, summary: summary, err: err}
-				return
-			}
-			if withOverview, ok := item.reviewer.(AIReviewerWithOverview); ok {
-				overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-				results[i] = reviewerResult{item: item, summary: PRSummaryReview{Overview: overview, Findings: findings}, err: err}
 				return
 			}
 			findings, err := item.reviewer.Review(ctx, brief)
@@ -452,18 +444,9 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	return PRSummaryReview{}, fmt.Errorf("AI reviewers failed")
 }
 
-func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := m.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
-}
-
 func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	overview, findings, err := r.ReviewWithOverview(ctx, brief)
-	_ = overview
-	return findings, err
+	summary, err := r.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (r fallbackAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
@@ -472,36 +455,19 @@ func (r fallbackAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBr
 		if err == nil {
 			return summary, nil
 		}
-	} else if withOverview, ok := r.primary.(AIReviewerWithOverview); ok {
-		overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-		if err == nil {
-			return PRSummaryReview{Overview: overview, Findings: findings}, nil
-		}
 	} else if findings, err := r.primary.Review(ctx, brief); err == nil {
 		return PRSummaryReview{Findings: findings}, nil
 	}
 	if withFallback, ok := r.fallback.(AIReviewerWithSummary); ok {
 		return withFallback.ReviewForSummary(ctx, brief)
 	}
-	if withFallback, ok := r.fallback.(AIReviewerWithOverview); ok {
-		overview, findings, err := withFallback.ReviewWithOverview(ctx, brief)
-		return PRSummaryReview{Overview: overview, Findings: findings}, err
-	}
 	findings, err := r.fallback.Review(ctx, brief)
 	return PRSummaryReview{Findings: findings}, err
 }
 
-func (r fallbackAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
-}
-
 func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	_, findings, err := r.ReviewWithOverview(ctx, brief)
-	return findings, err
+	summary, err := r.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (r *responsesAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
@@ -515,14 +481,6 @@ func (r *responsesAIReviewer) ReviewForSummary(ctx context.Context, brief Review
 		return PRSummaryReview{}, err
 	}
 	return aiReviewOutputToPRSummaryReview(output), nil
-}
-
-func (r *responsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
 }
 
 func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
@@ -581,8 +539,8 @@ func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions str
 }
 
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	_, findings, err := r.ReviewWithOverview(ctx, brief)
-	return findings, err
+	summary, err := r.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
@@ -653,14 +611,6 @@ func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief R
 		return PRSummaryReview{}, err
 	}
 	return aiReviewOutputToPRSummaryReview(output), nil
-}
-
-func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
 }
 
 func parseAIReviewContent(content string, brief ReviewBrief) ([]Finding, error) {

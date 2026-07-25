@@ -109,11 +109,11 @@ func judgeFromEnvWithPolicy(policy *ReviewPolicy) FindingJudge {
 	if judgeDisabledFromEnv() {
 		return nil
 	}
-	model := strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE_MODEL"))
-	if model == "" && policy != nil {
-		model = policy.OpenAIModelHint()
+	override := strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE_MODEL"))
+	if override == "" && policy != nil {
+		override = policy.OpenAIModelHint()
 	}
-	model = firstNonEmpty(model, os.Getenv("GX_REVIEW_OPENAI_MODEL"), os.Getenv("GX_REVIEW_MODEL"), os.Getenv("OPENAI_MODEL"), defaultReviewModel)
+	model := resolveOpenAIReviewModel(override)
 
 	direct, directErr := directOpenAIReviewerFromEnv(model)
 	cloudReviewer := cloudOpenAIReviewerFromEnv(model)

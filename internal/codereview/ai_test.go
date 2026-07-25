@@ -116,25 +116,25 @@ func TestParsePRSummaryReviewMissingNotableChangesIsEmpty(t *testing.T) {
 	}
 }
 
-func TestReviewWithOverviewDropsNotableChanges(t *testing.T) {
+func TestReviewReturnsFindingsWithoutSummaryFields(t *testing.T) {
 	reviewer := cannedAIReviewer{payload: `{
 		"overview":"Hidden overview.",
 		"notable_changes":[{"file":"main.go","line":3,"note":"Notable change."}],
 		"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]
 	}`}
-	overview, findings, err := reviewer.ReviewWithOverview(context.Background(), ReviewBrief{})
+	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
 	if err != nil {
-		t.Fatalf("ReviewWithOverview() error = %v", err)
+		t.Fatalf("Review() error = %v", err)
 	}
-	if overview != "Hidden overview." || len(findings) != 1 {
-		t.Fatalf("overview=%q findings=%#v", overview, findings)
+	if len(findings) != 1 {
+		t.Fatalf("findings=%#v, want 1", findings)
 	}
 	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
 	if err != nil {
 		t.Fatalf("ReviewForSummary() error = %v", err)
 	}
-	if len(summary.NotableChanges) != 1 {
-		t.Fatalf("ReviewForSummary() NotableChanges = %#v", summary.NotableChanges)
+	if summary.Overview != "Hidden overview." || len(summary.NotableChanges) != 1 {
+		t.Fatalf("ReviewForSummary() overview=%q notable=%#v", summary.Overview, summary.NotableChanges)
 	}
 }
 
@@ -239,12 +239,12 @@ func TestBedrockAnthropicReviewerParsesCannedResponse(t *testing.T) {
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
 		})},
 	}
-	overview, findings, err := reviewer.ReviewWithOverview(context.Background(), ReviewBrief{})
+	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
 	if err != nil {
-		t.Fatalf("ReviewWithOverview() error = %v", err)
+		t.Fatalf("ReviewForSummary() error = %v", err)
 	}
-	if overview != "Overview text" || len(findings) != 0 {
-		t.Fatalf("overview=%q findings=%#v", overview, findings)
+	if summary.Overview != "Overview text" || len(summary.Findings) != 0 {
+		t.Fatalf("overview=%q findings=%#v", summary.Overview, summary.Findings)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestMultiAIReviewerErrorsWhenAllProvidersFail(t *testing.T) {
 func TestFallbackAIReviewerDoesNotFallbackOnEmptyFindings(t *testing.T) {
 	var fallbackCalls int
 	reviewer := fallbackAIReviewer{
-		primary:  cannedAIReviewer{payload: `{"recommendations":[]}`},
+		primary: cannedAIReviewer{payload: `{"recommendations":[]}`},
 		fallback: callbackAIReviewer{fn: func(context.Context, ReviewBrief) ([]Finding, error) {
 			fallbackCalls++
 			return []Finding{{ID: "fallback", Title: "Fallback", Summary: "S", Benefit: "B", Recommendation: "R"}}, nil
@@ -328,14 +328,6 @@ func (c cannedAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Find
 		return nil, err
 	}
 	return output.Findings, nil
-}
-
-func (c cannedAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	output, err := parseAIReviewOutput(c.payload, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return output.Overview, output.Findings, nil
 }
 
 func (c cannedAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {

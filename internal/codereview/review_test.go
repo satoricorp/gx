@@ -2,9 +2,6 @@ package codereview
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -333,71 +330,6 @@ func TestAnchorValidationDropsOutOfRangeAnchorsButKeepsFinding(t *testing.T) {
 	}
 	if len(findings[0].Anchors) != 0 {
 		t.Fatalf("Anchors = %#v, want out-of-range anchor dropped", findings[0].Anchors)
-	}
-}
-
-func TestAgenticEnvGatePreservesSingleShotByDefault(t *testing.T) {
-	t.Setenv("GX_REVIEW_AGENTIC", "0")
-	base := &responsesAIReviewer{}
-	if got := maybeAgenticReviewer(base); got != base {
-		t.Fatalf("maybeAgenticReviewer() = %T, want original reviewer", got)
-	}
-	t.Setenv("GX_REVIEW_AGENTIC", "1")
-	if _, ok := maybeAgenticReviewer(base).(*agenticResponsesAIReviewer); !ok {
-		t.Fatalf("maybeAgenticReviewer() did not wrap responses reviewer when enabled")
-	}
-}
-
-func TestAgenticToolLoopCanCallReadFile(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
-	var sawToolOutput bool
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if requests == 1 {
-			_, _ = w.Write([]byte(`{"id":"resp_1","output":[{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"file\":\"internal/app/app.go\",\"start_line\":2,\"end_line\":2}"}]}`))
-			return
-		}
-		body, _ := json.Marshal(payload["input"])
-		sawToolOutput = strings.Contains(string(body), "internal/app/app.go:2: func Run()")
-		_, _ = w.Write([]byte(`{"id":"resp_2","output_text":"{\"recommendations\":[{\"title\":\"Read file finding\",\"summary\":\"internal/app/app.go needs review\",\"benefit\":\"Keeps agentic loop tested\",\"recommendation\":\"Inspect internal/app/app.go\",\"evidence\":[\"internal/app/app.go:2\"],\"anchors\":[{\"file\":\"internal/app/app.go\",\"line\":2}]}]}"}`))
-	}))
-	defer server.Close()
-
-	reviewer := &agenticResponsesAIReviewer{base: &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}}
-	findings, err := reviewer.Review(context.Background(), ReviewBrief{RepoRoot: root})
-	if err != nil {
-		t.Fatalf("Review() error = %v", err)
-	}
-	if !sawToolOutput || len(findings) != 1 || findings[0].Title != "Read file finding" {
-		t.Fatalf("sawToolOutput=%v findings=%#v", sawToolOutput, findings)
-	}
-}
-
-func TestAgenticToolsCanCallGrepListChangedHunksAndSearchKnowledge(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
-	brief := ReviewBrief{
-		RepoRoot: root,
-		Static: StaticSnapshot{DiffSnippets: []DiffSnippet{{
-			File: "internal/app/app.go",
-			Diff: "@@ -1 +1,2 @@\n package app\n+func Run() {}\n",
-		}}},
-		Context: []ContextSnippet{{SourceLabel: "L1", Ref: "REVIEW.md", Text: "Always inspect authorization rollback paths."}},
-	}
-	if got := executeAgenticTool(context.Background(), brief, "grep", `{"pattern":"func Run"}`); !strings.Contains(got, "internal/app/app.go:2") {
-		t.Fatalf("grep output = %q", got)
-	}
-	if got := executeAgenticTool(context.Background(), brief, "list_changed_hunks", `{"file":"internal/app/app.go"}`); !strings.Contains(got, "+func Run") {
-		t.Fatalf("list_changed_hunks output = %q", got)
-	}
-	if got := executeAgenticTool(context.Background(), brief, "search_knowledge", `{"query":"authorization rollback"}`); !strings.Contains(got, "REVIEW.md") {
-		t.Fatalf("search_knowledge output = %q", got)
 	}
 }
 

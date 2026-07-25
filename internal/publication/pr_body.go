@@ -33,14 +33,14 @@ const (
 	maxPRContextSnippetSize   = 1800
 	maxPROverviewLength       = 500
 
-	verdictNoReview  = "No review needed"
-	verdictQuickScan = "Quick scan"
+	verdictNoReview   = "No review needed"
+	verdictQuickScan  = "Quick scan"
 	verdictDeepReview = "Requires Deep Review"
 )
 
 var (
-	hunkHeaderRE  = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
-	prURLStripRE  = regexp.MustCompile(`https?://\S+`)
+	hunkHeaderRE = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
+	prURLStripRE = regexp.MustCompile(`https?://\S+`)
 )
 
 var prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
@@ -422,9 +422,9 @@ func notableChanges(artifact reviewbundle.Artifact, catalog prBodyCatalog, summa
 			continue
 		}
 		item := prNotableChange{
-			Title:  title,
-			Link:   lineLinkForAnchor(prURL, catalog.Hunks, change.File, change.Line),
-			Score:  800,
+			Title:   title,
+			Link:    lineLinkForAnchor(prURL, catalog.Hunks, change.File, change.Line),
+			Score:   800,
 			Flagged: false,
 		}
 		if includeNotableChangeItem(item, prURL) {
@@ -486,9 +486,9 @@ func appendTopHunkFill(items []prNotableChange, catalog prBodyCatalog, prURL str
 		revision := firstNonEmpty(strings.TrimSpace(hunk.Revision), "change")
 		title := trimSentence(sanitizePRVisibleText(fmt.Sprintf("%s: %s", revision, path.Base(hunk.File))), 120)
 		items = append(items, prNotableChange{
-			Title:  title,
-			Link:   hunk.Link,
-			Score:  400,
+			Title:   title,
+			Link:    hunk.Link,
+			Score:   400,
 			Flagged: false,
 			Attributions: []prAttribution{{
 				Kind:  "codebase",
@@ -587,10 +587,10 @@ func heuristicNotableChangeItems(artifact reviewbundle.Artifact, catalog prBodyC
 			title += " in " + path.Base(hunk.File)
 		}
 		item := prNotableChange{
-			Title:  title,
-			Detail: trimSentence(firstNonEmpty(warning.Message, "GX found a feasibility or structural warning tied to this change."), 240),
-			Link:   hunkLink(hunk),
-			Score:  score,
+			Title:   title,
+			Detail:  trimSentence(firstNonEmpty(warning.Message, "GX found a feasibility or structural warning tied to this change."), 240),
+			Link:    hunkLink(hunk),
+			Score:   score,
 			Flagged: true,
 			Attributions: []prAttribution{{
 				Kind:  "heuristic",
@@ -609,10 +609,10 @@ func heuristicNotableChangeItems(artifact reviewbundle.Artifact, catalog prBodyC
 		}
 		flagged := hunkMatchesRiskPath(hunk.File, policy)
 		item := prNotableChange{
-			Title:  title,
-			Detail: detail,
-			Link:   hunk.Link,
-			Score:  score,
+			Title:   title,
+			Detail:  detail,
+			Link:    hunk.Link,
+			Score:   score,
 			Flagged: flagged,
 			Attributions: []prAttribution{{
 				Kind:  "codebase",
@@ -627,10 +627,10 @@ func heuristicNotableChangeItems(artifact reviewbundle.Artifact, catalog prBodyC
 	if highRiskCatalog(catalog) {
 		if hunk := firstHunk(catalog.Hunks, ""); hunk != nil {
 			item := prNotableChange{
-				Title:  "Review the broadest behavioral change",
-				Detail: "GX scored this stack as high risk from breadth, structural dependencies, or warning signals. Start with this changed hunk and follow its call path.",
-				Link:   hunk.Link,
-				Score:  520,
+				Title:   "Review the broadest behavioral change",
+				Detail:  "GX scored this stack as high risk from breadth, structural dependencies, or warning signals. Start with this changed hunk and follow its call path.",
+				Link:    hunk.Link,
+				Score:   520,
 				Flagged: false,
 				Attributions: []prAttribution{{
 					Kind:  "heuristic",
@@ -742,10 +742,6 @@ func reviewPRSummaryFindings(ctx context.Context, artifact reviewbundle.Artifact
 	attemptReview := func() (codereview.PRSummaryReview, error) {
 		if withSummary, ok := reviewer.(codereview.AIReviewerWithSummary); ok {
 			return withSummary.ReviewForSummary(ctx, brief)
-		}
-		if withOverview, ok := reviewer.(codereview.AIReviewerWithOverview); ok {
-			overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-			return codereview.PRSummaryReview{Overview: overview, Findings: findings}, err
 		}
 		findings, err := reviewer.Review(ctx, brief)
 		return codereview.PRSummaryReview{Findings: findings}, err

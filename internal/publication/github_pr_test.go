@@ -211,17 +211,6 @@ func (f *fakePRSummaryReviewer) ReviewForSummary(_ context.Context, _ codereview
 	}, nil
 }
 
-func (f *fakePRSummaryReviewer) ReviewWithOverview(_ context.Context, _ codereview.ReviewBrief) (string, []codereview.Finding, error) {
-	f.attempts++
-	if f.attempts <= f.failCount {
-		if f.err != nil {
-			return "", nil, f.err
-		}
-		return "", nil, fmt.Errorf("transient reviewer failure")
-	}
-	return f.overview, f.findings, nil
-}
-
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
 	return reviewbundle.Bundle{
 		Event:         "gx.pr",
