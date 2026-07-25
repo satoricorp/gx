@@ -25,6 +25,7 @@ type captureDoctorJSON struct {
 	RepoHooksMissing     int                  `json:"repoHooksMissing"`
 	RepoHooksUnreachable int                  `json:"repoHooksUnreachable"`
 	RepoHooksOK          bool                 `json:"repoHooksOK"`
+	GlobalHooks          globalHookDoctorJSON `json:"globalHooks"`
 	UploadAuthed         bool                 `json:"uploadAuthed"`
 	UploadAPI            string               `json:"uploadAPI,omitempty"`
 	UploadAuthError      string               `json:"uploadAuthError,omitempty"`
@@ -45,6 +46,15 @@ type captureIssueJSON struct {
 	Action   string `json:"action"`
 }
 
+type globalHookDoctorJSON struct {
+	Dir            string `json:"dir,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	Installed      bool   `json:"installed"`
+	ConfiguredPath string `json:"configuredPath,omitempty"`
+	Conflict       string `json:"conflict,omitempty"`
+	NeedsRepair    bool   `json:"needsRepair"`
+}
+
 type repoHookDoctorJSON struct {
 	RepoRoot      string `json:"repoRoot"`
 	HookInstalled bool   `json:"hookInstalled"`
@@ -55,6 +65,7 @@ type repoHookDoctorJSON struct {
 func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON {
 	status := captureDoctorJSON{}
 	status.HookInstalled, status.HookApplicable, status.RepoRoot = capturePrimaryHookStatus(ctx, repoRoot)
+	status.GlobalHooks = captureGlobalHookStatus(ctx)
 	status.RepoHooks = captureRegisteredRepoHooks(ctx)
 	status.RepoHooksTotal = len(status.RepoHooks)
 	status.RepoHooksOK = true
@@ -97,8 +108,26 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 	return status
 }
 
+// captureGlobalHookStatus reports the machine-wide `gx init --global` state.
+// It only reads git config; repairs stay behind an explicit `gx init --global`.
+func captureGlobalHookStatus(ctx context.Context) globalHookDoctorJSON {
+	state, err := hooks.GlobalStatus(ctx)
+	if err != nil {
+		return globalHookDoctorJSON{}
+	}
+	return globalHookDoctorJSON{
+		Dir:            state.HooksDir,
+		Enabled:        state.Enabled,
+		Installed:      state.Installed,
+		ConfiguredPath: state.ConfiguredPath,
+		Conflict:       state.Conflict,
+		NeedsRepair:    state.NeedsRepair(),
+	}
+}
+
 func captureDoctorOK(status captureDoctorJSON) bool {
 	return (!status.HookApplicable || status.HookInstalled) &&
+		!status.GlobalHooks.NeedsRepair &&
 		status.RepoHooksOK &&
 		status.UploadAuthed &&
 		status.CursorReachable &&
@@ -107,6 +136,9 @@ func captureDoctorOK(status captureDoctorJSON) bool {
 
 func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	fmt.Fprintln(out, labelValue("Hooks installed", captureHooksDoctorValue(status)))
+	if value := captureGlobalHooksDoctorValue(status.GlobalHooks); value != "" {
+		fmt.Fprintln(out, labelValue("Global hooks", value))
+	}
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload", success("ok")+": "+status.UploadAPI))
 	} else {
@@ -136,6 +168,21 @@ func captureHooksDoctorValue(status captureDoctorJSON) string {
 		return success("ok")
 	}
 	return "not checked: run `gx doctor` inside a git repo"
+}
+
+// captureGlobalHooksDoctorValue renders the machine-wide hook row, or "" when
+// the user never opted into `gx init --global` (nothing worth a line then).
+func captureGlobalHooksDoctorValue(global globalHookDoctorJSON) string {
+	switch {
+	case global.Conflict != "":
+		return danger("warn") + ": core.hooksPath points at " + global.Conflict + "; run `gx init --global` to restore"
+	case global.NeedsRepair:
+		return danger("warn") + ": incomplete; run `gx init --global`"
+	case global.Enabled:
+		return success("ok") + ": " + global.Dir
+	default:
+		return ""
+	}
 }
 
 func formatDiskUsedGB(bytes int64) string {
@@ -286,6 +333,21 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Severity: "fail",
 			Message:  "GX lifecycle hooks missing",
 			Action:   "run `gx init` in this repo",
+		})
+	}
+	if status.GlobalHooks.Conflict != "" {
+		issues = append(issues, captureIssueJSON{
+			Code:     "global_hooks_overridden",
+			Severity: "fail",
+			Message:  "global core.hooksPath points at " + status.GlobalHooks.Conflict + " instead of GX",
+			Action:   "run `gx init --global` (GX chains to each repo's own hooks)",
+		})
+	} else if status.GlobalHooks.NeedsRepair {
+		issues = append(issues, captureIssueJSON{
+			Code:     "global_hooks_incomplete",
+			Severity: "fail",
+			Message:  "machine-wide GX hooks are incomplete",
+			Action:   "run `gx init --global`",
 		})
 	}
 	if status.RepoHooksUnreachable > 0 {

@@ -42,6 +42,13 @@ func Install(opts InstallOptions) error {
 	if err != nil {
 		return err
 	}
+	// Under a machine-wide install (`gx init --global`) git resolves every
+	// repo's hooks dir to the shared GX directory. Those scripts chain to repo
+	// hooks; overwriting them with the per-repo variants would break chaining
+	// for every repository on the machine.
+	if globalDir, globalErr := GlobalHooksDir(); globalErr == nil && sameHooksPath(hooksDir, globalDir) {
+		return nil
+	}
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return err
 	}

@@ -68,6 +68,11 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	if err != nil {
 		return outcome, nil
 	}
+	// Per-repo opt-out: `git config gx.enabled false` excludes one repository
+	// from GX, including from a machine-wide `gx init --global` install.
+	if !EnabledForRepo(ctx, repoRoot) {
+		return outcome, nil
+	}
 
 	base, head := parseRefRange(opts.RefRange, opts.Base, opts.Head)
 	tools := opts.Tools

@@ -190,10 +190,24 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	var name string
 	var email string
 	var yes bool
+	var global bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Set up gx in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if global {
+				if !yes {
+					fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init --global", true))
+					fmt.Fprintln(cmd.OutOrStdout())
+				}
+				err := runGlobalInit(ctx, cmd, yes)
+				telemetry.EmitProductEvent(ctx, telemetry.EventCLIInitRun, map[string]any{
+					"status":      initRunStatus(err),
+					"interactive": !yes,
+					"global":      true,
+				})
+				return err
+			}
 			if !yes {
 				fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
 				fmt.Fprintln(cmd.OutOrStdout())
@@ -266,6 +280,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	cmd.Flags().StringVar(&name, "name", "", "user name to store in GX config")
 	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX config")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
+	cmd.Flags().BoolVar(&global, "global", false, "install machine-wide git hooks (~/.gx/hooks) so GX works in every repo; skips per-repo setup")
 	return cmd
 }
 

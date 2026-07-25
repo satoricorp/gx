@@ -26,6 +26,9 @@ func PrepareCommitMsg(opts PrepareCommitMsgOptions) error {
 	if repoRoot == "" || messagePath == "" {
 		return fmt.Errorf("repo root and message path required")
 	}
+	if !EnabledForRepo(context.Background(), repoRoot) {
+		return nil
+	}
 	data, err := os.ReadFile(messagePath)
 	if err != nil {
 		return fmt.Errorf("read commit message: %w", err)
@@ -54,6 +57,9 @@ func RunPostCommit(ctx context.Context, opts PostCommitOptions) error {
 			return err
 		}
 		repoRoot = cwd
+	}
+	if !EnabledForRepo(ctx, repoRoot) {
+		return nil
 	}
 	return vcs.NewService().RunPostCommitHook(ctx, repoRoot)
 }
@@ -86,6 +92,10 @@ func RunPostRewrite(ctx context.Context, opts PostRewriteOptions) error {
 	}
 	if err := scanner.Err(); err != nil {
 		return err
+	}
+	// Checked after draining stdin so git never sees a short write.
+	if !EnabledForRepo(ctx, repoRoot) {
+		return nil
 	}
 	return vcs.NewService().RunPostRewriteHook(ctx, repoRoot, vcs.ParsePostRewriteMappings(builder.String()))
 }

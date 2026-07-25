@@ -24,6 +24,42 @@ The hook skips deleted refs, captures Claude/Codex/Cursor session context by
 default, stages capture data locally when upload credentials are missing, and
 uploads when credentials are configured.
 
+## Machine-wide install (`gx init --global`)
+
+`gx init --global` writes the same lifecycle scripts to `~/.gx/hooks`
+(`$GX_HOME/hooks` when set) and points `git config --global core.hooksPath` at
+that directory, so GX works in every repo without a per-repo `gx init`. It does
+not have to run inside a repository.
+
+A global `core.hooksPath` makes Git ignore every repository's own
+`.git/hooks/*`, so the global scripts shim more than GX's four hooks: each
+script does GX's work (if any) and then executes the repository's own hook of
+the same name, forwarding arguments, stdin, and exit status. `pre-push` and
+`post-rewrite` tee stdin to a temp file so both GX and the repo hook see every
+ref. GX's own failures never block a commit or push; a repo hook's non-zero
+exit still does. See `globalHookSpecs` in `internal/hooks/global.go` for the
+installed set and the deliberate exclusions (`push-to-checkout`,
+`proc-receive`, `fsmonitor-watchman`, `p4-*`).
+
+Repo hook lookup deliberately avoids `git rev-parse --git-path hooks/<name>`:
+that call honors `core.hooksPath` and would resolve straight back to the global
+script. The scripts read the repo-scoped `core.hooksPath` with the global and
+system config masked, and otherwise fall back to `--git-common-dir`. Repo hooks
+carrying the `# gx lifecycle hooks` marker are skipped so a repo that also ran
+plain `gx init` does not run GX twice.
+
+Refusals and opt-outs:
+
+- If `core.hooksPath` is already set globally to a non-GX directory, install
+  refuses instead of overwriting; re-running against the GX directory is
+  idempotent.
+- `git config gx.enabled false` inside a repo excludes it (checked by the Go
+  handlers via `hooks.EnabledForRepo`); `~/.gx/pause-capture` and
+  `GX_CAPTURE_PAUSED` still pause capture globally.
+- Undo with `git config --global --unset core.hooksPath`.
+- `gx doctor` reports the global state and flags an overridden or incomplete
+  install; it never repairs it silently.
+
 ## Team propagation
 
 ### lefthook
