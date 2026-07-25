@@ -28,7 +28,8 @@ func runGlobalInit(ctx context.Context, cmd *cobra.Command, quiet bool) error {
 	}
 	fmt.Fprintln(out, labelValue("Scope", fmt.Sprintf("every git repo on this machine; %d hooks installed, repo hooks still run", len(result.Scripts))))
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, labelValue("Opt out (one repo)", "git config gx.enabled false"))
-	fmt.Fprintln(out, labelValue("Undo (machine-wide)", "git config --global --unset core.hooksPath"))
+	// Labels stay short so they fit the shared label column without wrapping.
+	fmt.Fprintln(out, labelValue("Opt out", "git config gx.enabled false          (one repo)"))
+	fmt.Fprintln(out, labelValue("Undo", "git config --global --unset core.hooksPath"))
 	return nil
 }

@@ -439,6 +439,36 @@ func TestBuildReviewContextComputesRiskFromEvidence(t *testing.T) {
 	}
 }
 
+func TestProvenanceRiskHandlesEveryReportedStatus(t *testing.T) {
+	// Every status reviewsource can report must produce a signal, so a new or
+	// unrecognized status can never pass through risk scoring unnoticed.
+	for _, status := range []string{
+		reviewsource.StatusAbsent,
+		reviewsource.StatusRepoLocal,
+		reviewsource.StatusUnknown,
+		reviewsource.StatusLinked,
+		reviewsource.StatusExplicit,
+		"some-status-we-have-not-seen",
+	} {
+		points, signal := provenanceRisk(status)
+		if signal == "" {
+			t.Fatalf("provenanceRisk(%q) returned no signal", status)
+		}
+		if points < 0 {
+			t.Fatalf("provenanceRisk(%q) points = %d, want >= 0", status, points)
+		}
+	}
+	if points, _ := provenanceRisk(reviewsource.StatusAbsent); points <= 0 {
+		t.Fatal("absent provenance should raise risk")
+	}
+	if points, _ := provenanceRisk(reviewsource.StatusExplicit); points != 0 {
+		t.Fatal("explicit provenance should not raise risk")
+	}
+	if points, signal := provenanceRisk(""); points != 0 || signal != "" {
+		t.Fatalf("empty status = (%d, %q), want (0, \"\")", points, signal)
+	}
+}
+
 func newBundleTestStore(t *testing.T) *storage.Store {
 	t.Helper()
 	t.Setenv("GX_HOME", t.TempDir())

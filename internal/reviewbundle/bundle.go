@@ -749,6 +749,30 @@ func evidenceForContext(context ReviewContextPayload) []ReviewEvidencePayload {
 	}
 }
 
+// provenanceRisk scores one provenance status. Every status reviewsource can
+// report is handled here, so a status never passes through without a signal:
+// the weaker the link between the change and a captured session, the less a
+// reviewer can lean on the recorded context.
+func provenanceRisk(status string) (int, string) {
+	switch status {
+	case reviewsource.StatusAbsent:
+		return 20, "missing_provenance"
+	case reviewsource.StatusRepoLocal:
+		return 10, "repo_local_provenance"
+	case reviewsource.StatusUnknown:
+		return 10, "unknown_provenance"
+	case reviewsource.StatusLinked:
+		return 0, "linked_session_provenance"
+	case reviewsource.StatusExplicit:
+		return 0, "explicit_session_provenance"
+	case "":
+		return 0, ""
+	default:
+		// An unrecognized status is itself a reason not to trust provenance.
+		return 10, "unknown_provenance"
+	}
+}
+
 func computeRisk(files []string, evidence []DemuxEvidencePayload, context ReviewContextPayload) RiskPayload {
 	score := 0
 	var signals []string
@@ -759,12 +783,10 @@ func computeRisk(files []string, evidence []DemuxEvidencePayload, context Review
 	totalHunks := 0
 	for _, item := range evidence {
 		totalHunks += len(item.HunkIDs)
-		if item.ProvenanceStatus == "absent" {
-			score += 20
-			signals = append(signals, "missing_provenance")
-		} else if item.ProvenanceStatus == "repo_local" {
-			score += 10
-			signals = append(signals, "repo_local_provenance")
+		points, signal := provenanceRisk(item.ProvenanceStatus)
+		score += points
+		if signal != "" {
+			signals = append(signals, signal)
 		}
 		if item.Confidence > 0 && item.Confidence < 0.6 {
 			score += 15
@@ -772,11 +794,10 @@ func computeRisk(files []string, evidence []DemuxEvidencePayload, context Review
 		}
 	}
 	if len(evidence) == 0 {
-		if context.ProvenanceStatus == "absent" {
-			score += 20
-			signals = append(signals, "missing_provenance")
-		} else if context.ProvenanceStatus == "linked" {
-			signals = append(signals, "linked_session_provenance")
+		points, signal := provenanceRisk(context.ProvenanceStatus)
+		score += points
+		if signal != "" {
+			signals = append(signals, signal)
 		}
 	}
 	if totalHunks >= 5 {

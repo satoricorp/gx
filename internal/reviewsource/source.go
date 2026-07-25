@@ -1,5 +1,21 @@
 package reviewsource
 
+// Provenance statuses reported for a change. These are the only values
+// BuildGraph produces; consumers should handle all of them.
+const (
+	// StatusExplicit means every piece of hunk evidence resolved to a session.
+	StatusExplicit = "explicit"
+	// StatusLinked means sessions are attached to the change but there is no
+	// per-hunk evidence to confirm which session produced which hunk.
+	StatusLinked = "linked"
+	// StatusRepoLocal means the evidence resolved only to repo-local activity.
+	StatusRepoLocal = "repo_local"
+	// StatusUnknown means evidence exists but did not report a status.
+	StatusUnknown = "unknown"
+	// StatusAbsent means no session was matched to the change.
+	StatusAbsent = "absent"
+)
+
 type ProvenanceSource struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
@@ -37,20 +53,20 @@ func BuildGraph(evidenceStatuses []string, sessionIDs []string, transcriptSource
 func provenanceStatus(evidenceStatuses []string, linkedSessionCount int) string {
 	if len(evidenceStatuses) == 0 {
 		if linkedSessionCount > 0 {
-			return "linked"
+			return StatusLinked
 		}
-		return "absent"
+		return StatusAbsent
 	}
-	status := "explicit"
+	status := StatusExplicit
 	for _, item := range evidenceStatuses {
 		switch item {
-		case "absent":
-			return "absent"
-		case "repo_local":
-			status = "repo_local"
+		case StatusAbsent:
+			return StatusAbsent
+		case StatusRepoLocal:
+			status = StatusRepoLocal
 		case "":
-			if status == "explicit" {
-				status = "unknown"
+			if status == StatusExplicit {
+				status = StatusUnknown
 			}
 		}
 	}
