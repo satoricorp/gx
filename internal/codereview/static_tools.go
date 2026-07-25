@@ -73,14 +73,17 @@ var staticToolRunners = []staticToolRunner{
 	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck},
 }
 
-func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options) []StaticToolResult {
+// collectStaticToolResults runs the detected checkers scoped to changed, the
+// files this review resolved — the caller owns that resolution so the tools see
+// the same change set as the rest of the review, working tree or ref range.
+func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changed []string) []StaticToolResult {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0") {
 		return nil
 	}
 	env := staticToolEnv{
 		repoRoot:     repoRoot,
 		facts:        facts,
-		changedFiles: normalizedChangedFiles(reviewChangedFiles(ctx, repoRoot)),
+		changedFiles: normalizedChangedFiles(changed),
 	}
 	if len(env.changedFiles) == 0 {
 		return nil

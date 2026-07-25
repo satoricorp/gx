@@ -15,20 +15,23 @@ import (
 var fileTokenPattern = regexp.MustCompile(`[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]+`)
 
 type Finding struct {
-	ID               string
-	Scopes           []string
-	Title            string
-	Summary          string
-	Benefit          string
-	Evidence         []Evidence
-	Anchors          []FindingAnchor
-	File             string
-	Line             int
-	ResolvedSources  []ResolvedSource
-	Recommendation   string
-	Strength         string
-	SourceIDs        []string
-	SourcePublishers []string
+	ID       string          `json:"id"`
+	Scopes   []string        `json:"scopes,omitempty"`
+	Title    string          `json:"title"`
+	Summary  string          `json:"summary,omitempty"`
+	Benefit  string          `json:"benefit,omitempty"`
+	Evidence []Evidence      `json:"evidence,omitempty"`
+	Anchors  []FindingAnchor `json:"anchors,omitempty"`
+	File     string          `json:"file,omitempty"`
+	Line     int             `json:"line,omitempty"`
+
+	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
+	Recommendation  string           `json:"recommendation,omitempty"`
+	// Strength is the severity vocabulary gates read: "Blocking", "Strong",
+	// "Worth exploring", or "Speculative".
+	Strength         string   `json:"strength,omitempty"`
+	SourceIDs        []string `json:"source_ids,omitempty"`
+	SourcePublishers []string `json:"source_publishers,omitempty"`
 }
 
 type FindingAnchor struct {
@@ -37,8 +40,8 @@ type FindingAnchor struct {
 }
 
 type Evidence struct {
-	Label string
-	Value string
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 type Rule interface {

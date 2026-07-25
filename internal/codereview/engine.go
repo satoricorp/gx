@@ -87,8 +87,9 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	}
 	policy := LoadReviewPolicy(ctx, repoRoot)
 	opts.ReviewPolicy = &policy
-	changed := reviewChangedFiles(ctx, repoRoot)
-	diffs := collectDiffSnippets(ctx, repoRoot, changed, opts.Deep)
+	changes := reviewChangeSet(ctx, repoRoot, opts)
+	changed := changes.Files
+	diffs := collectDiffSnippets(ctx, repoRoot, changed, opts.Deep, changes.Range)
 	triage := ChangeTriage{}
 	if triageEnabled() {
 		triage = TriageChange(changed, diffs, opts)
@@ -101,12 +102,35 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		plan.RunReviewResources = true
 		plan.RiskTags = riskTagsForReview(changed, facts.DependencyFiles, opts)
 	}
+	if !changes.Reviewed() {
+		// Nothing was inspected: never spend an AI call or a tool run on it,
+		// and never let the result read like a clean review.
+		plan.RunAI = false
+		plan.RunStaticTools = false
+	}
 	active := plan.ActiveScopes
 	if len(active) == 0 {
 		active = activeScopeList(opts)
 		plan.ActiveScopes = active
 	}
 	sources := catalog.SourcesForScopes(active)
+	if !changes.Reviewed() {
+		return Report{
+			RepoRoot:         repoRoot,
+			Scope:            opts.Scope,
+			Deep:             opts.Deep,
+			Focus:            strings.TrimSpace(opts.Focus),
+			Prompt:           strings.TrimSpace(opts.Prompt),
+			BaselineScopes:   baselineFor(opts.Scope),
+			Docs:             facts.Docs,
+			DependencyFiles:  facts.DependencyFiles,
+			TestFileCount:    facts.TestFileCount,
+			TrackedFileCount: facts.TrackedFileCount,
+			Reviewer:         "none",
+			Verbose:          opts.Verbose,
+			Color:            opts.Color,
+		}.applyChangeSet(changes), nil
+	}
 	if shouldShortCircuitDocsOnly(opts, explicitScope, plan) {
 		return Report{
 			RepoRoot:          repoRoot,
@@ -128,7 +152,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			Color:             opts.Color,
 			Triage:            triage,
 			NoFindingsMessage: "No material issues in this change (documentation-only).",
-		}, nil
+		}.applyChangeSet(changes), nil
 	}
 	reviewProgress(opts, "Building review context")
 	input := RetrieveInput{
@@ -139,6 +163,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Plan:         plan,
 		ChangedFiles: changed,
 		DiffSnippets: diffs,
+		DiffRange:    changes.Range,
 	}
 	brief, err := BuildReviewBrief(ctx, input, sources, retriever)
 	if err != nil {
@@ -229,11 +254,37 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Color:             opts.Color,
 		Triage:            triage,
 		DegradedReasons:   degradedReasons,
-	}, nil
+	}.applyChangeSet(changes), nil
 }
 
 func Review(ctx context.Context, repoRoot string, opts Options) (Report, error) {
 	return NewEngine().Review(ctx, repoRoot, opts)
+}
+
+// reviewChangeSet resolves what this review looks at. A scope-directed,
+// prompt-directed, or deep review is a whole-repo review by request, so an
+// empty diff is not "nothing to review" there. An explicit --base is the
+// exception: the caller named the subject, so an empty range means exactly
+// what it says.
+func reviewChangeSet(ctx context.Context, repoRoot string, opts Options) ChangeSet {
+	changes := resolveChangeSet(ctx, repoRoot, opts.Base)
+	if changes.Reviewed() || strings.TrimSpace(opts.Base) != "" || opts.PatchFocused {
+		return changes
+	}
+	changes.Mode = ReviewModeRepo
+	changes.Target = "the repository"
+	return changes
+}
+
+// applyChangeSet records what the review read, so callers can tell a clean
+// review apart from one that never opened a diff.
+func (r Report) applyChangeSet(changes ChangeSet) Report {
+	r.Reviewed = changes.Reviewed()
+	r.ReviewMode = changes.Mode
+	r.ReviewBase = changes.Base
+	r.ReviewRange = changes.Range
+	r.ReviewTarget = changes.Target
+	return r
 }
 
 func activeScopeList(opts Options) []string {

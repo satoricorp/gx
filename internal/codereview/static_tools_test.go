@@ -20,7 +20,7 @@ func TestStaticToolsUseAffectedPackagesForNarrowGoChanges(t *testing.T) {
 	installFakeGo(t)
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
-	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{})
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {
 		t.Fatalf("results = %#v, want go test and go vet", results)
 	}
@@ -39,7 +39,7 @@ func TestStaticToolsFallbackForGoModChanges(t *testing.T) {
 	installFakeGo(t)
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
-	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{})
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {
 		t.Fatalf("results = %#v, want go test and go vet", results)
 	}
@@ -57,7 +57,7 @@ func TestStaticToolsSkipDocsOnlyChanges(t *testing.T) {
 	writeFile(t, root, "README.md", "# new\n")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
-	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{})
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 0 {
 		t.Fatalf("results = %#v, want no static tools for docs-only change", results)
 	}
@@ -298,7 +298,7 @@ func TestStaticToolsRunDetectedNonGoTools(t *testing.T) {
 	writeExecutable(t, filepath.Join(root, "node_modules", ".bin", "eslint"), "#!/bin/sh\necho \"src/a.ts: error\"\nexit 1\n")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
-	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{})
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {
 		t.Fatalf("results = %#v, want tsc and eslint", results)
 	}

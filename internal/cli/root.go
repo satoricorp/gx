@@ -303,11 +303,26 @@ func initOutput(cmd *cobra.Command, quiet bool) io.Writer {
 	return cmd.OutOrStdout()
 }
 
+// Exit codes for `gx review` as an automated gate. Both are distinct from the
+// generic failure exit so a CI step can tell a policy failure from a crash.
+const (
+	// reviewFindingsExitCode means findings at or above --fail-on survived.
+	reviewFindingsExitCode = 3
+	// reviewNothingToReviewExitCode means the review inspected no code at all.
+	// A gate that passes without looking is the false pass --fail-on exists to
+	// prevent, so an explicit gate treats "never looked" as a failure too.
+	reviewNothingToReviewExitCode = 4
+)
+
 func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
 	var scope string
 	var focus string
+	var base string
 	var deep bool
 	var verbose bool
+	var jsonOut bool
+	var failOn string
+	var noPublish bool
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
 		Aliases: []string{"gxr"},
@@ -321,6 +336,11 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 					autoReportFailure(ctx, engine, runErr, "gx review")
 				}
 			}()
+			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
+			if err != nil {
+				runErr = err
+				return runErr
+			}
 			reviewScope := ""
 			scopeExplicit := cmd.Flags().Changed("scope")
 			if scopeExplicit {
@@ -336,37 +356,87 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
 				return runErr
 			}
-			report, err := runReviewWithLoader(
-				cmd.InOrStdin(),
-				cmd.ErrOrStderr(),
-				func(progress io.Writer) (codereview.Report, error) {
-					return codereview.Review(ctx, repo.RootPath, codereview.Options{
-						Scope:          reviewScope,
-						Deep:           deep,
-						Focus:          focus,
-						Prompt:         prompt,
-						Verbose:        verbose,
-						ProgressWriter: progress,
-						Color:          true,
-					})
-				},
-			)
+			runReview := func(progress io.Writer) (codereview.Report, error) {
+				return codereview.Review(ctx, repo.RootPath, codereview.Options{
+					Scope:          reviewScope,
+					Deep:           deep,
+					Focus:          focus,
+					Base:           base,
+					Prompt:         prompt,
+					Verbose:        verbose,
+					ProgressWriter: progress,
+					Color:          !jsonOut,
+				})
+			}
+			var report codereview.Report
+			if jsonOut {
+				// Machine-readable output: no spinner, no ANSI, nothing on
+				// stdout but the report.
+				report, err = runReview(nil)
+			} else {
+				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
+			}
 			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
 			if err != nil {
 				runErr = err
 				return runErr
 			}
-			fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
-			postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
-			recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, cmd.ErrOrStderr())
-			return nil
+			if jsonOut {
+				if err := writeReviewJSON(cmd.OutOrStdout(), report); err != nil {
+					runErr = err
+					return runErr
+				}
+			} else {
+				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
+			}
+			// Nothing was reviewed: publishing would overwrite a real review
+			// comment with a no-op, and there is no review to record.
+			if !noPublish && report.Reviewed {
+				postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
+				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, cmd.ErrOrStderr())
+			}
+			runErr = reviewGateError(report, failOnLevel)
+			return runErr
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
 	cmd.Flags().StringVar(&focus, "focus", "", "limit review to files under this path prefix")
+	cmd.Flags().StringVar(&base, "base", "", "review the commit range <ref>...HEAD instead of the working tree, e.g. --base origin/main")
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
+	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode))
+	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
 	return cmd
+}
+
+func writeReviewJSON(out io.Writer, report codereview.Report) error {
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+// reviewGateError turns a review outcome into an exit code. "Nothing to
+// review" is its own outcome: it never counts as findings-clean, and under an
+// explicit gate it fails, because a gate that passes on a diff it never opened
+// is exactly the silent false pass --fail-on is meant to catch. Without
+// --fail-on the default stays exit 0, so interactive use is unaffected.
+func reviewGateError(report codereview.Report, level codereview.FailOnLevel) error {
+	if !level.Enabled() {
+		return nil
+	}
+	if !report.Reviewed {
+		target := strings.TrimSpace(report.ReviewTarget)
+		if target == "" {
+			target = "the working tree"
+		}
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
+	}
+	failures := report.GateFailures(level)
+	if len(failures) == 0 {
+		return nil
+	}
+	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx review: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
 func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, verbose bool, duration time.Duration) {
@@ -407,6 +477,12 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	}
 	if strings.TrimSpace(report.Reviewer) != "" {
 		props["reviewer"] = report.Reviewer
+	}
+	if strings.TrimSpace(report.ReviewMode) != "" {
+		// What the review actually read, so a fleet-wide "nothing to review"
+		// rate is visible rather than hiding inside the success count.
+		props["review_mode"] = report.ReviewMode
+		props["reviewed"] = report.Reviewed
 	}
 	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
 }

@@ -33,16 +33,19 @@ type ReviewBrief struct {
 }
 
 type StaticSnapshot struct {
-	FileCount       int                `json:"file_count"`
-	TestFileCount   int                `json:"test_file_count"`
-	DependencyFiles []string           `json:"dependency_files"`
-	Docs            []FilePresence     `json:"docs"`
-	ADRFiles        []string           `json:"adr_files,omitempty"`
-	Modules         []ModuleSummary    `json:"modules"`
-	ChangedFiles    []string           `json:"changed_files"`
-	DiffSnippets    []DiffSnippet      `json:"diff_snippets,omitempty"`
-	ToolResults     []StaticToolResult `json:"static_tool_results,omitempty"`
-	CodeQuality     []CodeQualityHint  `json:"code_quality_hints,omitempty"`
+	FileCount       int             `json:"file_count"`
+	TestFileCount   int             `json:"test_file_count"`
+	DependencyFiles []string        `json:"dependency_files"`
+	Docs            []FilePresence  `json:"docs"`
+	ADRFiles        []string        `json:"adr_files,omitempty"`
+	Modules         []ModuleSummary `json:"modules"`
+	ChangedFiles    []string        `json:"changed_files"`
+	// ReviewRange is the git ref range the changed files and diffs come from,
+	// empty when the subject is the working tree.
+	ReviewRange  string             `json:"review_range,omitempty"`
+	DiffSnippets []DiffSnippet      `json:"diff_snippets,omitempty"`
+	ToolResults  []StaticToolResult `json:"static_tool_results,omitempty"`
+	CodeQuality  []CodeQualityHint  `json:"code_quality_hints,omitempty"`
 }
 
 type ModuleSummary struct {
@@ -150,11 +153,11 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 	changed := normalizedChangedFiles(in.ChangedFiles)
 	diffSnippets := in.DiffSnippets
 	if diffSnippets == nil {
-		diffSnippets = collectDiffSnippets(ctx, in.RepoRoot, changed, opts.Deep)
+		diffSnippets = collectDiffSnippets(ctx, in.RepoRoot, changed, opts.Deep, in.DiffRange)
 	}
 	toolResults := []StaticToolResult(nil)
 	if in.Plan.RunStaticTools || !reviewExecutionPlanConfigured(in.Plan) {
-		toolResults = collectStaticToolResults(ctx, in.RepoRoot, in.Facts, opts)
+		toolResults = collectStaticToolResults(ctx, in.RepoRoot, in.Facts, opts, changed)
 	}
 	return ReviewBrief{
 		RepoRoot:      in.RepoRoot,
@@ -172,6 +175,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 			ADRFiles:        in.Facts.ADRFiles,
 			Modules:         moduleSummaries(in.Facts),
 			ChangedFiles:    changed,
+			ReviewRange:     strings.TrimSpace(in.DiffRange),
 			DiffSnippets:    diffSnippets,
 			ToolResults:     toolResults,
 			CodeQuality:     collectCodeQualityHints(in.RepoRoot, in.Facts, opts),
@@ -263,7 +267,10 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 	return snippets, nil
 }
 
-func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, deep bool) []DiffSnippet {
+// collectDiffSnippets renders the diff for each changed file. refRange selects
+// the source: empty means the working tree (the interactive case), otherwise
+// the files are diffed across that git ref range.
+func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, deep bool, refRange string) []DiffSnippet {
 	files = normalizedChangedFiles(files)
 	limit := maxDiffSnippetFiles
 	if deep {
@@ -274,7 +281,7 @@ func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, d
 	}
 	var snippets []DiffSnippet
 	for _, file := range files {
-		diff := fileDiff(ctx, repoRoot, file)
+		diff := diffForFile(ctx, repoRoot, refRange, file)
 		if strings.TrimSpace(diff) == "" {
 			diff = fileContentSnippet(repoRoot, file)
 		}
@@ -289,6 +296,27 @@ func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, d
 
 func truncateDiffText(text string, limit int) string {
 	return truncateAtHunkBoundary(text, limit)
+}
+
+// diffForFile picks the working-tree or ref-range diff for one file.
+func diffForFile(ctx context.Context, repoRoot, refRange, file string) string {
+	if strings.TrimSpace(refRange) == "" {
+		return fileDiff(ctx, repoRoot, file)
+	}
+	return rangeFileDiff(ctx, repoRoot, refRange, file)
+}
+
+// rangeFileDiff diffs one file across a ref range, e.g. "main...HEAD".
+func rangeFileDiff(ctx context.Context, repoRoot, refRange, file string) string {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", refRange, "--", file)
+	cmd.Dir = repoRoot
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out.String())
 }
 
 func fileDiff(ctx context.Context, repoRoot, file string) string {

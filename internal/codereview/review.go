@@ -3,7 +3,6 @@ package codereview
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
@@ -36,9 +34,13 @@ var supportedScopes = map[string]struct{}{
 var baselineScopes = []string{"dependencies", "testing", "maintainability"}
 
 type Options struct {
-	Scope        string
-	Deep         bool
-	Focus        string
+	Scope string
+	Deep  bool
+	Focus string
+	// Base names the ref to review against. When set, the review covers
+	// "<Base>...HEAD" (three-dot: what HEAD added since the merge base) and
+	// ignores the working tree.
+	Base         string
 	Prompt       string
 	Verbose      bool
 	PatchFocused bool
@@ -49,33 +51,44 @@ type Options struct {
 }
 
 type Report struct {
-	RepoRoot          string
-	Scope             string
-	Deep              bool
-	Focus             string
-	Prompt            string
-	BaselineScopes    []string
-	Docs              []FilePresence
-	DependencyFiles   []string
-	TestFileCount     int
-	TrackedFileCount  int
-	ChangedFiles      []string
-	ObservationLabels []string
-	Findings          []Finding
-	Sources           []Source
-	SourceRefs        []SourceRef
-	Reviewer          string
-	ContextSnippets   int
-	Verbose           bool
-	Color             bool
-	Triage            ChangeTriage
-	NoFindingsMessage string
-	DegradedReasons   []string
+	RepoRoot          string         `json:"repo_root,omitempty"`
+	Scope             string         `json:"scope,omitempty"`
+	Deep              bool           `json:"deep"`
+	Focus             string         `json:"focus,omitempty"`
+	Prompt            string         `json:"prompt,omitempty"`
+	BaselineScopes    []string       `json:"baseline_scopes,omitempty"`
+	Docs              []FilePresence `json:"docs,omitempty"`
+	DependencyFiles   []string       `json:"dependency_files,omitempty"`
+	TestFileCount     int            `json:"test_file_count"`
+	TrackedFileCount  int            `json:"tracked_file_count"`
+	ChangedFiles      []string       `json:"changed_files,omitempty"`
+	ObservationLabels []string       `json:"observation_labels,omitempty"`
+	Findings          []Finding      `json:"findings"`
+	Sources           []Source       `json:"sources,omitempty"`
+	SourceRefs        []SourceRef    `json:"source_refs,omitempty"`
+	Reviewer          string         `json:"reviewer,omitempty"`
+	ContextSnippets   int            `json:"context_snippets"`
+	Verbose           bool           `json:"-"`
+	Color             bool           `json:"-"`
+	Triage            ChangeTriage   `json:"triage,omitempty"`
+	NoFindingsMessage string         `json:"no_findings_message,omitempty"`
+	DegradedReasons   []string       `json:"degraded_reasons,omitempty"`
+
+	// Reviewed and the fields below answer "what did this review actually
+	// read?". Reviewed is false only when nothing was inspected, which is a
+	// distinct outcome from a clean review and must never be reported as one.
+	Reviewed    bool   `json:"reviewed"`
+	ReviewMode  string `json:"review_mode,omitempty"`
+	ReviewBase  string `json:"review_base,omitempty"`
+	ReviewRange string `json:"review_range,omitempty"`
+	// ReviewTarget is the human phrase naming what was inspected, or where gx
+	// looked when it found nothing.
+	ReviewTarget string `json:"review_target,omitempty"`
 }
 
 type FilePresence struct {
-	Path    string
-	Present bool
+	Path    string `json:"path"`
+	Present bool   `json:"present"`
 }
 
 func ValidateOptions(opts Options) error {
@@ -91,6 +104,11 @@ func RenderMarkdown(report Report) string {
 	if len(report.DegradedReasons) > 0 {
 		reason := strings.Join(report.DegradedReasons, "; ")
 		fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
+	}
+	if report.ReviewMode == ReviewModeNone {
+		fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
+		fmt.Fprintf(&b, "- %s\n", NothingToReviewMessage(report))
+		return strings.TrimRight(b.String(), "\n") + "\n"
 	}
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
 	if len(report.Findings) == 0 {
@@ -182,6 +200,17 @@ func RenderMarkdown(report Report) string {
 		fmt.Fprintln(&b)
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+// NothingToReviewMessage states plainly that no code was inspected. It exists
+// so this outcome can never be confused with "reviewed and clean": a gate that
+// reads "no material issues" for a diff nobody opened is a silent false pass.
+func NothingToReviewMessage(report Report) string {
+	target := strings.TrimSpace(report.ReviewTarget)
+	if target == "" {
+		target = "the working tree"
+	}
+	return fmt.Sprintf("Nothing to review: no changes found in %s. No code was inspected, so this is not a clean review.", target)
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {
@@ -606,79 +635,6 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 		if file != "" {
 			files = append(files, file)
 		}
-	}
-	sort.Strings(files)
-	return files
-}
-
-func reviewChangedFiles(ctx context.Context, repoRoot string) []string {
-	files := changedFiles(ctx, repoRoot)
-	if len(files) > 0 {
-		return files
-	}
-	return gxRevisionChangedFiles(ctx, repoRoot)
-}
-
-func gxRevisionChangedFiles(ctx context.Context, repoRoot string) []string {
-	repoRoot = strings.TrimSpace(repoRoot)
-	if repoRoot == "" {
-		return nil
-	}
-	db, err := storage.Open(ctx)
-	if err != nil {
-		return nil
-	}
-	defer db.Close()
-
-	rows, err := db.QueryContext(ctx, `
-		WITH latest_revisions AS (
-			SELECT cr.change_id, cr.changed_files_json
-			FROM change_revisions cr
-			JOIN (
-				SELECT change_id, MAX(created_at) AS created_at
-				FROM change_revisions
-				GROUP BY change_id
-			) latest
-				ON latest.change_id = cr.change_id AND latest.created_at = cr.created_at
-		)
-		SELECT lr.changed_files_json
-		FROM repos r
-		JOIN stacks s ON s.repo_id = r.id
-		JOIN stack_changes sc ON sc.stack_id = s.id
-		JOIN changes c ON c.id = sc.change_id
-		JOIN latest_revisions lr ON lr.change_id = c.id
-		WHERE r.root_path = ? AND COALESCE(s.status, '') != 'merged'
-		ORDER BY sc.position ASC, c.updated_at DESC
-	`, repoRoot)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	seen := map[string]struct{}{}
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil
-		}
-		var files []string
-		if err := json.Unmarshal([]byte(raw), &files); err != nil {
-			continue
-		}
-		for _, file := range files {
-			file = strings.TrimSpace(filepath.ToSlash(file))
-			if file == "" {
-				continue
-			}
-			seen[file] = struct{}{}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil
-	}
-	files := make([]string, 0, len(seen))
-	for file := range seen {
-		files = append(files, file)
 	}
 	sort.Strings(files)
 	return files

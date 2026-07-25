@@ -6,11 +6,11 @@ import (
 )
 
 type Source struct {
-	ID        string
-	Title     string
-	URL       string
-	Publisher string
-	Scopes    []string
+	ID        string   `json:"id"`
+	Title     string   `json:"title,omitempty"`
+	URL       string   `json:"url,omitempty"`
+	Publisher string   `json:"publisher,omitempty"`
+	Scopes    []string `json:"scopes,omitempty"`
 }
 
 type StaticCatalog struct{}

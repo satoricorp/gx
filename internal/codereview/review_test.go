@@ -55,9 +55,12 @@ func TestUnpromptedDefaultReviewStaysPatchFocused(t *testing.T) {
 }
 
 func TestReviewEmitsProgress(t *testing.T) {
-	root := t.TempDir()
+	root := initRepo(t)
 	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
+	gitAdd(t, root, "README.md", "go.mod")
+	gitCommit(t, root)
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	var progress strings.Builder
 
 	_, err := Review(context.Background(), root, Options{ProgressWriter: &progress})
@@ -904,13 +907,15 @@ func (f fakeRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippe
 
 func buildReviewBriefForTest(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
 	opts = normalizeOptions(opts)
+	changes := resolveChangeSet(ctx, repoRoot, opts.Base)
 	return BuildReviewBrief(ctx, RetrieveInput{
 		RepoRoot:     repoRoot,
 		Options:      opts,
 		Facts:        facts,
 		Hints:        reviewHints(facts),
 		Plan:         reviewPlanFor(opts, ChangeTriage{}),
-		ChangedFiles: reviewChangedFiles(ctx, repoRoot),
+		ChangedFiles: changes.Files,
+		DiffRange:    changes.Range,
 	}, sources, retriever)
 }
 
