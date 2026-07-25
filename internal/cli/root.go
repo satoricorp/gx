@@ -81,7 +81,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
 		newDemoCommand(),
-		newCommitCommand(ctx, engine),
 		newStatusCommand(ctx, engine, "status", "status", false),
 		newReportCommand(ctx, engine),
 		newReviewCommand(ctx, engine),
@@ -111,7 +110,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth", "set", "demo":
 			cmd.GroupID = groupSetup
-		case "commit", "review", "status":
+		case "review", "status":
 			cmd.GroupID = groupWork
 		case "sync":
 			cmd.GroupID = groupShip
@@ -272,7 +271,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}
 			if !yes {
 				fmt.Fprintln(cmd.OutOrStdout())
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Next", "git add <files> && gx commit -m \"...\""))
+				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Next", "git add <files> && git commit -m \"...\""))
 			}
 			return nil
 		},
@@ -303,137 +302,6 @@ func initOutput(cmd *cobra.Command, quiet bool) io.Writer {
 		return nil
 	}
 	return cmd.OutOrStdout()
-}
-
-func newCommitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	var message string
-	var branch string
-	var jsonOut bool
-	var all bool
-	var amend bool
-	var fileMessage string
-	cmd := &cobra.Command{
-		Use:   "commit",
-		Short: "Record staged Git changes as a GX revision",
-		Long: strings.Join([]string{
-			"Record staged Git changes as a GX revision.",
-			"",
-			"Like git commit, the revision advances the current branch and HEAD to the new commit.",
-			"Pass -b to create and switch to a new branch before committing.",
-			"",
-			"Use git add or git add -p to choose scope, then run gx commit -m.",
-			"The resulting revision is recorded in GX metadata. Amend it with git commit --amend",
-			"and preserve the GX revision trailer.",
-			"",
-			"Exit codes: 0 success, 1 general error, 2 no staged changes.",
-		}, "\n"),
-		Example: strings.Join([]string{
-			`  git add internal/cli/root.go`,
-			`  gx commit -m "record staged CLI change"`,
-			`  git add -p`,
-			`  gx commit -m "record selected hunks"`,
-		}, "\n"),
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				return fmt.Errorf("gx commit does not accept path arguments; choose scope with git add or git add -p")
-			}
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if all {
-				return fmt.Errorf("gx commit -a is not supported; stage changes with git add first")
-			}
-			if amend {
-				return fmt.Errorf("gx commit --amend is not supported; amend with git commit --amend and keep the GX revision trailer")
-			}
-			if strings.TrimSpace(fileMessage) != "" {
-				return fmt.Errorf("gx commit -F is not supported yet; pass a message with -m")
-			}
-			if strings.TrimSpace(message) == "" {
-				return fmt.Errorf("commit message is required; pass -m \"describe this revision\"")
-			}
-			startedAt := time.Now()
-			result, err := engine.CommitStaged(ctx, authoring.CommitStagedOptions{
-				Message: message,
-				Branch:  branch,
-			})
-			emitCommitRunTelemetry(ctx, result, err, branch, time.Since(startedAt))
-			if err != nil {
-				return err
-			}
-			if result.Repo.RootPath != "" {
-				if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: lifecycle hooks were not installed: %v\n", hookErr)
-				}
-			}
-			if jsonOut {
-				return writeJSON(cmd, commitResultJSON{
-					Result:           result,
-					CreatedBranch:    result.CreatedBranch,
-					ProvenanceStatus: result.ProvenanceStatus,
-				})
-			}
-			if strings.TrimSpace(result.Output) != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(result.Output))
-			}
-			printCommitSummary(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message (required)")
-	cmd.Flags().StringVarP(&branch, "branch", "b", "", "create this branch at HEAD and record the revision onto it (default: current branch)")
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "unsupported; stage changes with git add first")
-	cmd.Flags().BoolVar(&amend, "amend", false, "unsupported; use git commit --amend and preserve the GX revision trailer")
-	cmd.Flags().StringVarP(&fileMessage, "file", "F", "", "unsupported; pass a message with -m")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	return cmd
-}
-
-type commitResultJSON struct {
-	Result           authoring.CheckpointResult `json:"result"`
-	CreatedBranch    bool                       `json:"created_branch"`
-	ProvenanceStatus string                     `json:"provenance_status"`
-}
-
-func emitCommitRunTelemetry(ctx context.Context, result authoring.CheckpointResult, runErr error, branch string, duration time.Duration) {
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	}
-	props := map[string]any{
-		"status":            status,
-		"duration_ms":       duration.Milliseconds(),
-		"requested_branch":  strings.TrimSpace(branch) != "",
-		"created_branch":    result.CreatedBranch,
-		"provenance_status": strings.TrimSpace(result.ProvenanceStatus),
-		"file_count":        len(result.Change.Files),
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLICommitRun, props)
-}
-
-func printCommitSummary(out io.Writer, result authoring.CheckpointResult) {
-	invocation := "gx commit"
-	if result.Change.Description != "" {
-		invocation = fmt.Sprintf("gx commit -m %q", result.Change.Description)
-	}
-	fmt.Fprintln(out, commandLine(invocation, false))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, success("Revision recorded"))
-	if result.CreatedBranch && result.Stack != nil {
-		fmt.Fprintln(out, labelValue("Created branch", fmt.Sprintf("%s (from %s)", result.Stack.BookmarkName, result.Stack.BaseRef)))
-	}
-	fmt.Fprintln(out, labelValue("Message", result.Change.Description))
-	fmt.Fprintln(out, labelValue("Revision", shortID(result.Change.ChangeID, 12)))
-	if result.Change.CommitID != "" {
-		fmt.Fprintln(out, labelValue("Commit", shortID(result.Change.CommitID, 8)))
-	}
-	if result.Stack != nil {
-		fmt.Fprintln(out, labelValue("Stack", result.Stack.BookmarkName))
-	}
-	fmt.Fprintln(out, labelValue("Provenance", firstNonEmptyString(result.ProvenanceStatus, "absent")))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, hint("Choose the next manual scope with git add or git add -p."))
-	fmt.Fprintln(out, labelValue("Next", fmt.Sprintf("gx commit -m %q", result.Change.Description)))
 }
 
 func statusWithPruning(ctx context.Context, engine *authoring.Engine) (authoring.StackSummary, int, error) {
@@ -1063,10 +931,7 @@ func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (curr
 	}
 	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
 	gitCheckoutRef := pointerString(stack.Repo.BranchName)
-	next := []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"}
-	if stack.Stack != nil && stack.Stack.BookmarkName != "" && gitCheckoutRef == stack.Stack.BookmarkName && len(current.Files) > 0 {
-		next = []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"}
-	}
+	next := []string{`git add <files>`, `git commit -m "describe this revision"`, "gx status"}
 	refs := currentStatusRefs{
 		GXBaseRef:      currentStatusBaseStack(currentStatus{Repo: stack.Repo, Stack: stack.Stack}),
 		GitCheckoutRef: gitCheckoutRef,
@@ -2017,7 +1882,7 @@ func enrichStatusStack(ctx context.Context, engine *authoring.Engine, stack *aut
 func statusNextHints(gitWorking vcs.GitWorkingStatus, stack authoring.StackSummary) []string {
 	switch {
 	case gitWorking.StagedCount() > 0:
-		return []string{`gx commit -m "describe this revision"`}
+		return []string{`git commit -m "describe this revision"`}
 	case gitWorking.UnstagedCount()+gitWorking.UntrackedCount() > 0:
 		return []string{"git add"}
 	case unpublishedCount(stack) > 0:
@@ -2451,7 +2316,9 @@ func Execute(ctx context.Context) error {
 	return nil
 }
 
-// ExitCode returns a non-zero process exit code when err carries one.
+// ExitCode maps an error to a process exit status. Commands that need to fail
+// with a specific status wrap their error with vcs.CodedErrorf; everything else
+// falls through to the caller's generic failure code.
 func ExitCode(err error) int {
 	var coded *vcs.CodedError
 	if errors.As(err, &coded) && coded.Code != 0 {

@@ -281,7 +281,7 @@ func RenderModifyResult(snapshot vcs.StatusSnapshot, result vcs.ModifyResult, re
 		lines = append(lines, renderKV(row.label, row.val, row.meta))
 	}
 	lines = append(lines, "    "+divider())
-	lines = append(lines, renderKV("next", fmt.Sprintf(`gx commit -m %q`, result.CurrentChange.Description), ""))
+	lines = append(lines, renderKV("next", fmt.Sprintf(`git commit -m %q`, result.CurrentChange.Description), ""))
 	return strings.Join(lines, "\n")
 }
 

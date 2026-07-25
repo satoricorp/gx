@@ -3,83 +3,8 @@ package vcs
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 )
-
-// CommitStagedViaGit records staged changes by delegating to native git commit.
-func (s *Service) CommitStagedViaGit(ctx context.Context, opts StagedRevisionOptions) (CommitResult, error) {
-	if err := ValidateCommitMessage(opts.Message); err != nil {
-		return CommitResult{}, err
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return CommitResult{}, err
-	}
-	repo, err := s.ResolveGXRepoAtPath(ctx, cwd)
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("gx commit must run inside a git repository: %w", err)
-	}
-	var result CommitResult
-	err = func() error {
-		if err := s.preflightStagedIndex(ctx, repo.RootPath); err != nil {
-			return err
-		}
-		stagedFiles, err := s.stagedFileNames(ctx, repo.RootPath)
-		if err != nil {
-			return err
-		}
-		if len(stagedFiles) == 0 {
-			return codedError(ExitCodeNoStagedChanges, ErrNoStagedChanges)
-		}
-		branch, err := s.currentStagedCommitBranch(ctx, repo.RootPath)
-		if err != nil {
-			return err
-		}
-		requestedBranch := cleanRefName(opts.Branch)
-		if requestedBranch != "" {
-			if s.isProtectedRef(ctx, repo.RootPath, requestedBranch) {
-				return fmt.Errorf("branch %s is protected; choose a non-base branch name", requestedBranch)
-			}
-			if s.refExists(ctx, repo.RootPath, requestedBranch) {
-				return fmt.Errorf("branch %s already exists; git switch %s and run gx commit without --branch", requestedBranch, requestedBranch)
-			}
-			if _, err := s.runner.Run(ctx, repo.RootPath, "git", "checkout", "-b", requestedBranch); err != nil {
-				return fmt.Errorf("create branch %s: %w", requestedBranch, err)
-			}
-			branch = requestedBranch
-		}
-		pending := PendingCommitContext{
-			WorktreeRoot:        repo.RootPath,
-			GitCommonDir:        repo.GitCommonDir,
-			Branch:              branch,
-			PreferredSessionIDs: opts.PreferredSessionIDs,
-			SessionContexts:     opts.SessionContexts,
-		}
-		if err := writePendingCommitContext(repo.GitDir, pending); err != nil {
-			return fmt.Errorf("write commit context: %w", err)
-		}
-		defer clearPendingCommitContext(repo.GitDir)
-		stamped, err := PrepareCommitMessageHook(opts.Message)
-		if err != nil {
-			return err
-		}
-		if err := s.runner.RunStream(ctx, repo.RootPath, "git", "commit", "-m", stamped); err != nil {
-			return fmt.Errorf("git commit: %w", err)
-		}
-		headOID, err := s.runTrimmed(ctx, repo.RootPath, "git", "rev-parse", "HEAD")
-		if err != nil {
-			return fmt.Errorf("read HEAD: %w", err)
-		}
-		result, err = s.loadCommitResultFromHEAD(ctx, repo, strings.TrimSpace(headOID), pending)
-		if err != nil {
-			return err
-		}
-		result.CreatedBranch = requestedBranch != ""
-		return s.assertStagedCommitPostcondition(ctx, repo.RootPath)
-	}()
-	return result, err
-}
 
 // PrepareCommitMessageHook ensures exactly one GX revision trailer is present.
 func PrepareCommitMessageHook(message string) (string, error) {
@@ -152,25 +77,6 @@ func ParsePostRewriteMappings(input string) []CommitOIDMapping {
 		out = append(out, CommitOIDMapping{OldOID: fields[0], NewOID: fields[1]})
 	}
 	return out
-}
-
-// CommitContextFromOptions builds pending hook context from staged commit options.
-func CommitContextFromOptions(repo RepoInfo, branch string, opts StagedRevisionOptions) PendingCommitContext {
-	return PendingCommitContext{
-		WorktreeRoot:        repo.RootPath,
-		GitCommonDir:        repo.GitCommonDir,
-		Branch:              branch,
-		RequestedBranch:     cleanRefName(opts.Branch),
-		PreferredSessionIDs: opts.PreferredSessionIDs,
-		SessionContexts:     opts.SessionContexts,
-	}
-}
-
-func (s *Service) loadCommitResultFromHEAD(ctx context.Context, repo RepoInfo, commitOID string, pending PendingCommitContext) (CommitResult, error) {
-	if result, err := s.commitResultFromDB(ctx, repo, commitOID); err == nil {
-		return result, nil
-	}
-	return s.RecordGitCommit(ctx, repo, commitOID, pending)
 }
 
 func (s *Service) commitResultFromDB(ctx context.Context, repo RepoInfo, commitOID string) (CommitResult, error) {

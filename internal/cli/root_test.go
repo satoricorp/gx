@@ -156,8 +156,8 @@ func TestStatusNextHints(t *testing.T) {
 		Revisions: []authoring.RevisionSummary{{Published: true}},
 	}
 
-	if got := statusNextHints(staged, authoring.StackSummary{}); len(got) != 1 || !strings.Contains(got[0], "gx commit") {
-		t.Fatalf("staged hints = %v, want gx commit", got)
+	if got := statusNextHints(staged, authoring.StackSummary{}); len(got) != 1 || !strings.Contains(got[0], "git commit") {
+		t.Fatalf("staged hints = %v, want git commit", got)
 	}
 	if got := statusNextHints(dirty, authoring.StackSummary{}); len(got) != 1 || got[0] != "git add" {
 		t.Fatalf("dirty hints = %v, want git add", got)
@@ -188,7 +188,7 @@ func TestRenderDefaultStatusSummaryShowsGitSectionsAndNext(t *testing.T) {
 			Staged:    []string{"internal/cli/root.go"},
 			Untracked: []string{"scratch.txt"},
 		},
-		Next: []string{`gx commit -m "describe this revision"`},
+		Next: []string{`git commit -m "describe this revision"`},
 	}
 
 	text := renderDefaultStatusSummary(stack, nil, 0, false)
@@ -201,7 +201,7 @@ func TestRenderDefaultStatusSummaryShowsGitSectionsAndNext(t *testing.T) {
 		"waitlist",
 		"1 other stacks — run gx status list",
 		"Next",
-		`gx commit -m "describe this revision"`,
+		`git commit -m "describe this revision"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("renderDefaultStatusSummary() missing %q in:\n%s", want, text)
@@ -445,7 +445,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		},
 		NeedsMessage:  true,
 		Files:         []string{"internal/cli/root.go", "internal/cli/stacks_tui.go"},
-		Next:          []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
+		Next:          []string{`git add <files>`, `git commit -m "describe this revision"`, "gx status"},
 		GitStatusNote: "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -458,7 +458,7 @@ func TestPrintCurrentStatusHumanExplainsMessageAssignment(t *testing.T) {
 		"internal/cli/stacks_tui.go",
 		"gx stores new changes in revisions, so `git status` may be clean.",
 		"Next",
-		"gx commit -m \"describe this revision\"",
+		"git commit -m \"describe this revision\"",
 		"gx status",
 	} {
 		if !strings.Contains(text, want) {
@@ -500,14 +500,14 @@ func TestPrintCurrentStatusHumanPointsDirtyEditModeToAdd(t *testing.T) {
 		},
 		NeedsMessage: true,
 		Files:        []string{"internal/cli/root.go", "internal/cli/style.go"},
-		Next:         []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
+		Next:         []string{`git add <files>`, `git commit -m "describe this revision"`, "gx status"},
 	}
 	var out bytes.Buffer
 
 	printCurrentStatusHuman(&out, status)
 	text := out.String()
 	for _, want := range []string{
-		"gx commit -m \"describe this revision\"",
+		"git commit -m \"describe this revision\"",
 		"gx status",
 	} {
 		if !strings.Contains(text, want) {
@@ -524,7 +524,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 	status := currentStatus{
 		PublishUploads: publication.QueueStatus{LastError: `POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`},
 		Files:          []string{"internal/github/client_test.go"},
-		Next:           []string{`git add <files>`, `gx commit -m "describe this revision"`, "gx status"},
+		Next:           []string{`git add <files>`, `git commit -m "describe this revision"`, "gx status"},
 		GitStatusNote:  "gx stores new changes in revisions, so `git status` may be clean.",
 	}
 	var out bytes.Buffer
@@ -535,7 +535,7 @@ func TestPrintCurrentStatusHumanShowsReportPromptForUploadError(t *testing.T) {
 		`ERROR: POST "https://api.gx.run/v1/publish": tls: failed to verify certificate`,
 		"Run `gx report` to report this issue.",
 		"internal/github/client_test.go",
-		"gx commit -m \"describe this revision\"",
+		"git commit -m \"describe this revision\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("printCurrentStatusHuman() missing %q in:\n%s", want, text)
@@ -862,7 +862,7 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	if !strings.Contains(text, "Not signed in  gx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	for _, want := range []string{"review (gxr)", "status (gxs)", "commit"} {
+	for _, want := range []string{"review (gxr)", "status (gxs)"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("root help missing alias %q:\n%s", want, text)
 		}

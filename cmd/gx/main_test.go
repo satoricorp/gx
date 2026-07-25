@@ -132,7 +132,6 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"  demo",
 		"  set",
 		"Work:",
-		"  commit",
 		"  review (gxr)",
 		"  status (gxs)",
 		"Ship:",
@@ -184,7 +183,7 @@ func TestRootRemovesHiddenDemuxCompatibilityCommand(t *testing.T) {
 
 func TestRootDoesNotExposeRemovedLegacyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"compose", "publish", "stacks", "codex", "claude"} {
+	for _, name := range []string{"commit", "compose", "publish", "stacks", "codex", "claude"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != root {
 			t.Fatalf("unexpected legacy command exposed: %s", cmd.Name())
 		}
@@ -202,26 +201,6 @@ func TestRootDoesNotExposeDaemonCommand(t *testing.T) {
 	root := cli.NewRoot(context.Background())
 	if cmd, _, err := root.Find([]string{"daemon"}); err == nil && cmd != root {
 		t.Fatalf("unexpected daemon command exposed: %s", cmd.Name())
-	}
-}
-
-func TestCommitHelpUsesGitNativeAmendmentGuidance(t *testing.T) {
-	root := cli.NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"commit"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, stale := range []string{"gx_edit", "gx edit", "gx base"} {
-		if strings.Contains(cmd.Long, stale) {
-			t.Fatalf("commit help contains removed command %q:\n%s", stale, cmd.Long)
-		}
-	}
-	if !strings.Contains(cmd.Long, "git commit --amend") {
-		t.Fatalf("commit help missing Git-native amend guidance:\n%s", cmd.Long)
-	}
-	if !strings.Contains(cmd.Long, "advances the current branch and HEAD") ||
-		!strings.Contains(cmd.Long, "create and switch to a new branch") {
-		t.Fatalf("commit help describes HEAD or branch behavior incorrectly:\n%s", cmd.Long)
 	}
 }
 

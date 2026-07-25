@@ -169,10 +169,8 @@ type CommitResult struct {
 	Change                   ChangeInfo
 	Stack                    *StackInfo
 	OperationID              string
-	Output                   string
 	PreferredSessionIDs      []string
 	SessionContexts          []storage.SessionContext
-	CreatedBranch            bool
 	ProvenanceStatus         string
 	SkipRepoLocalSessions    bool
 	SessionEventAttributions []storage.SessionEventAttribution

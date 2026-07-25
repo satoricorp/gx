@@ -209,20 +209,20 @@ func (d *demoSession) stepStage() error {
 
 func (d *demoSession) stepCommit() error {
 	d.printStepHeader("4/5", "commit")
-	d.println("  Record it as a gx revision.")
+	d.println("  Commit with git — nothing new to learn.")
 	d.println("")
-	d.println("    $ " + command(`gx commit -m "add rate limiter"`))
+	d.println("    $ " + command(`git commit -m "add rate limiter"`))
 	d.println("")
-	d.println("  Looks like a commit. Records more: the sessions, models,")
-	d.println("  and tokens behind the change — provenance your reviewer")
-	d.println("  can actually use.")
+	d.println("  The hooks gx installed record the revision as you commit:")
+	d.println("  the sessions, models, and tokens behind the change —")
+	d.println("  provenance your reviewer can actually use.")
 	d.println("")
 	d.println("  " + muted("↵ run it"))
 	d.println("")
 	if err := d.waitContinue(); err != nil {
 		return err
 	}
-	return d.runAndShowDisplay(`gx commit -m "add rate limiter"`, d.gxBin, "commit", "-m", "add rate limiter")
+	return d.runAndShowDisplay(`git commit -m "add rate limiter"`, "git", "commit", "-m", "add rate limiter")
 }
 
 func (d *demoSession) stepPush() error {
@@ -252,7 +252,7 @@ func (d *demoSession) stepPush() error {
 func (d *demoSession) printDone() {
 	d.println("  " + section("── done ───────────────────────────────────────────"))
 	d.println("")
-	d.println("  That's the loop: stage with git, commit with gx.")
+	d.println("  That's the loop: stage and commit with git, gx records the rest.")
 	d.println("")
 	d.println("    " + command("gx status") + "    your stacks at a glance")
 	d.println("    " + command("gx review") + "    context-aware code review")

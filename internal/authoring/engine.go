@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
@@ -12,7 +11,6 @@ type RepoInfo = vcs.RepoInfo
 type ChangeInfo = vcs.ChangeInfo
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
-type CheckpointResult = vcs.CommitResult
 type StackInfo = vcs.StackInfo
 type SyncResult = vcs.SyncResult
 type RevisionSummary = vcs.RevisionSummary
@@ -21,13 +19,6 @@ type StatusSnapshot = vcs.StatusSnapshot
 type GitWorkingStatus = vcs.GitWorkingStatus
 type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
 type PruneGitHubPullRequestsResult = vcs.PruneGitHubPullRequestsResult
-
-type CommitStagedOptions struct {
-	Message             string
-	Branch              string
-	PreferredSessionIDs []string
-	SessionContexts     []storage.SessionContext
-}
 
 // Engine is GX's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
@@ -55,15 +46,6 @@ func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error)
 		return EnsureReadyResult{}, err
 	}
 	return e.vcs.EnsureReadyRepo(ctx, cwd)
-}
-
-func (e *Engine) CommitStaged(ctx context.Context, opts CommitStagedOptions) (CheckpointResult, error) {
-	return e.vcs.RecordStagedRevision(ctx, vcs.StagedRevisionOptions{
-		Message:             opts.Message,
-		Branch:              opts.Branch,
-		PreferredSessionIDs: opts.PreferredSessionIDs,
-		SessionContexts:     opts.SessionContexts,
-	})
 }
 
 func (e *Engine) Status(ctx context.Context) (StackSummary, error) {

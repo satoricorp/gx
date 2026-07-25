@@ -57,7 +57,7 @@ func (s *Service) RecordGitCommit(ctx context.Context, repo RepoInfo, commitOID 
 	if branch == "" {
 		branch, _ = s.currentStagedCommitBranch(ctx, repo.RootPath)
 	}
-	stack, _, err := s.resolveStagedCommitStack(ctx, repo, branch, pending.RequestedBranch, parentOID)
+	stack, err := s.resolveStagedCommitStack(ctx, repo, branch, parentOID)
 	if err != nil {
 		return CommitResult{}, err
 	}

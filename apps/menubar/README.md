@@ -103,15 +103,14 @@ Publish with plain `git push` (the GX pre-push hook captures the session and pub
 then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
 bypass or suppress the hook.
 
-If MCP is unavailable, use the CLI fallback:
+Save and publish with plain Git:
 - `git add`
-- `gx commit -m "..."`
-- `gx status`
+- `git commit -m "..."`
 - `git push`
 
-When the user says "save work", "save using gx", or "save with gx", run the
-GX save workflow: stage with `git add`, record with `gx_commit`, inspect with
-`gx_status`, and publish ready stacks with plain `git push` unless the user asks to keep them local.
+When the user says "save work", "save using gx", or "save with gx", stage with
+`git add`, save with `git commit`, and publish with plain `git push` unless the user
+asks to keep the work local. GX's hooks record the revision and publish on push.
 
 GX PR summaries are posted by GX Cloud for PRs whose branch was pushed through GX
 with `git push` while the pre-push hook is installed.

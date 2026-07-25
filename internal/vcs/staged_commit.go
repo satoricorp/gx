@@ -22,47 +22,7 @@ import (
 	"github.com/satoricorp/gx/internal/storage"
 )
 
-const ExitCodeNoStagedChanges = 2
-
-var (
-	ErrNoStagedChanges = errors.New("no staged changes")
-	ErrDetachedHEAD    = errors.New("detached HEAD")
-)
-
-// CodedError carries a process exit code for CLI callers.
-type CodedError struct {
-	Code int
-	Err  error
-}
-
-func (e *CodedError) Error() string { return e.Err.Error() }
-func (e *CodedError) Unwrap() error { return e.Err }
-
-func codedError(code int, err error) error {
-	if err == nil {
-		return nil
-	}
-	return &CodedError{Code: code, Err: err}
-}
-
-type StagedRevisionOptions struct {
-	Message             string
-	Branch              string // optional: create this branch at HEAD and record onto it
-	PreferredSessionIDs []string
-	SessionContexts     []storage.SessionContext
-}
-
-// stagedCapture is the git-only snapshot of the user's staged selection.
-type stagedCapture struct {
-	originalBranch string
-	headCommit     string
-	stagedFiles    []string
-	treeOID        string
-}
-
-func (s *Service) RecordStagedRevision(ctx context.Context, opts StagedRevisionOptions) (CommitResult, error) {
-	return s.CommitStagedViaGit(ctx, opts)
-}
+var ErrDetachedHEAD = errors.New("detached HEAD")
 
 func isUnbornHEADError(err error) bool {
 	if err == nil {
@@ -82,120 +42,34 @@ func (s *Service) currentStagedCommitBranch(ctx context.Context, repoRoot string
 	}
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
-		return "", fmt.Errorf("%w; check out a branch before running gx commit", ErrDetachedHEAD)
+		return "", fmt.Errorf("%w; check out a branch before committing", ErrDetachedHEAD)
 	}
 	return cleanRefName(branch), nil
 }
 
-func (s *Service) preflightStagedIndex(ctx context.Context, repoRoot string) error {
-	if out, err := s.runTrimmed(ctx, repoRoot, "git", "ls-files", "-u"); err != nil {
-		return fmt.Errorf("check unmerged paths: %w", err)
-	} else if strings.TrimSpace(out) != "" {
-		return fmt.Errorf("unmerged paths are staged; resolve conflicts before gx commit")
-	}
-	raw, err := s.runTrimmed(ctx, repoRoot, "git", "diff", "--cached", "--raw", "--no-abbrev")
-	if err != nil {
-		return fmt.Errorf("inspect staged diff: %w", err)
-	}
-	if intentToAdd, submodule := parseCachedRawDiff(raw); intentToAdd {
-		return fmt.Errorf("intent-to-add entries are not supported; run git add with real content before gx commit")
-	} else if submodule {
-		return fmt.Errorf("staged submodule changes are not supported by gx commit")
-	}
-	if files, err := s.stagedFileNames(ctx, repoRoot); err != nil {
-		return err
-	} else if len(files) == 0 {
-		if s.indexHasIntentToAddEntries(ctx, repoRoot) {
-			return codedError(ExitCodeNoStagedChanges, fmt.Errorf(
-				"%w: the staged selection contains intent-to-add entries; re-run git add with real content",
-				ErrNoStagedChanges))
-		}
-		return codedError(ExitCodeNoStagedChanges, fmt.Errorf("%w; run git add first", ErrNoStagedChanges))
-	}
-	return nil
-}
-
-// indexHasIntentToAddEntries reports whether the index holds intent-to-add
-// placeholders (git status --porcelain " A" lines).
-func (s *Service) indexHasIntentToAddEntries(ctx context.Context, repoRoot string) bool {
-	out, err := s.runTrimmed(ctx, repoRoot, "git", "status", "--porcelain")
-	if err != nil {
-		return false
-	}
-	for _, line := range splitLines(out) {
-		if len(line) >= 2 && line[0] == ' ' && line[1] == 'A' {
-			return true
-		}
-	}
-	return false
-}
-
-func parseCachedRawDiff(raw string) (intentToAdd bool, submodule bool) {
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, ":") {
-			continue
-		}
-		fields := strings.Fields(line[1:])
-		if len(fields) < 4 {
-			continue
-		}
-		oldMode := fields[0]
-		newMode := fields[1]
-		newSHA := fields[3]
-		if oldMode == "160000" || newMode == "160000" {
-			submodule = true
-		}
-		if newMode != "000000" && strings.HasPrefix(newSHA, "0000000") && newSHA == strings.Repeat("0", len(newSHA)) {
-			intentToAdd = true
-		}
-	}
-	return intentToAdd, submodule
-}
-
-func (s *Service) stagedFileNames(ctx context.Context, repoRoot string) ([]string, error) {
-	out, err := s.runTrimmed(ctx, repoRoot, "git", "diff", "--cached", "--name-only")
-	if err != nil {
-		return nil, fmt.Errorf("list staged files: %w", err)
-	}
-	return splitLines(out), nil
-}
-
-// resolveStagedCommitStack maps the commit onto a stack. The stack is the
-// checked-out branch — gx commit never moves HEAD on its own, matching git
-// commit. A new branch is minted only when the caller explicitly requested
-// one (gx commit --branch).
-func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, branch, requestedBranch, headCommit string) (StackInfo, bool, error) {
+// resolveStagedCommitStack maps a recorded commit onto a stack. The stack is
+// the checked-out branch: GX records what git already did and never moves HEAD
+// or mints branches of its own.
+func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, branch, headCommit string) (StackInfo, error) {
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 	onBase := branch == baseCheckoutRef(baseRef) || branch == baseRef
 	bookmark := branch
-	created := false
-	if requested := cleanRefName(requestedBranch); requested != "" {
-		if s.isProtectedRef(ctx, repo.RootPath, requested) {
-			return StackInfo{}, false, fmt.Errorf("branch %s is protected; choose a non-base branch name", requested)
-		}
-		if s.refExists(ctx, repo.RootPath, requested) {
-			return StackInfo{}, false, fmt.Errorf("branch %s already exists; git switch %s and run gx commit without --branch", requested, requested)
-		}
-		bookmark = requested
-		created = true
-	}
 	store, err := openStore(ctx)
 	if err != nil {
-		return StackInfo{}, false, err
+		return StackInfo{}, err
 	}
 	defer store.Close()
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
-		return StackInfo{}, false, err
+		return StackInfo{}, err
 	}
 	if existing, err := store.FindStackByBookmark(ctx, repoID, bookmark); err != nil {
-		return StackInfo{}, false, err
+		return StackInfo{}, err
 	} else if existing != nil {
-		return stackInfoFromStorage(*existing), created, nil
+		return stackInfoFromStorage(*existing), nil
 	}
 	baseCommit := s.stackBaseCommitID(ctx, repo.RootPath, baseRef)
-	if (onBase || created) && strings.TrimSpace(headCommit) != "" {
+	if onBase && strings.TrimSpace(headCommit) != "" {
 		baseCommit = strings.TrimSpace(headCommit)
 	}
 	return StackInfo{
@@ -204,21 +78,12 @@ func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, b
 		BaseRef:      baseRef,
 		BaseCommitID: baseCommit,
 		Status:       "draft",
-	}, created, nil
+	}, nil
 }
 
 func (s *Service) refExists(ctx context.Context, repoRoot, ref string) bool {
 	_, err := s.runTrimmed(ctx, repoRoot, "git", "rev-parse", "--verify", "refs/heads/"+cleanRefName(ref))
 	return err == nil
-}
-
-func (s *Service) assertStagedCommitPostcondition(ctx context.Context, repoRoot string) error {
-	if files, err := s.stagedFileNames(ctx, repoRoot); err != nil {
-		return err
-	} else if len(files) > 0 {
-		return fmt.Errorf("gx commit recorded the revision but staged changes remain; run git status")
-	}
-	return nil
 }
 
 func (s *Service) matchStagedSessions(ctx context.Context, repoRoot, headCommit, treeOID string) ([]string, []storage.SessionContext, []storage.SessionEventAttribution) {
