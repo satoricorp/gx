@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/commitcontext"
 	githubapi "github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/provenance"
@@ -177,7 +176,6 @@ type CommitResult struct {
 	ProvenanceStatus         string
 	SkipRepoLocalSessions    bool
 	SessionEventAttributions []storage.SessionEventAttribution
-	SelfReport               commitcontext.SelfReport
 }
 
 type SplitCommitOptions struct {
@@ -773,7 +771,7 @@ func recordCommit(ctx context.Context, result CommitResult) error {
 			return err
 		}
 		defer store.Close()
-		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts, result.SkipRepoLocalSessions, result.SessionEventAttributions, result.SelfReport)
+		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts, result.SkipRepoLocalSessions, result.SessionEventAttributions)
 	})
 }
 
@@ -950,7 +948,7 @@ func isSQLiteBusy(err error) bool {
 	return strings.Contains(value, "sqlite_busy") || strings.Contains(value, "database is locked")
 }
 
-func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext, skipRepoLocalSessions bool, eventAttributions []storage.SessionEventAttribution, selfReport commitcontext.SelfReport) error {
+func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext, skipRepoLocalSessions bool, eventAttributions []storage.SessionEventAttribution) error {
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
 		return err
@@ -1024,22 +1022,7 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 			return err
 		}
 	}
-	if !selfReport.Empty() {
-		sessionID := agentDeclaredSessionID(preferredSessionIDs)
-		if err := store.WriteAgentDeclaredProvenance(ctx, changeID, sessionID, selfReport, time.Now().UnixMilli()); err != nil {
-			return err
-		}
-	}
 	return nil
-}
-
-func agentDeclaredSessionID(preferredSessionIDs []string) string {
-	for _, sessionID := range append(preferredSessionIDs, provenance.ExplicitSessionIDsFromEnv()...) {
-		if strings.TrimSpace(sessionID) != "" {
-			return strings.TrimSpace(sessionID)
-		}
-	}
-	return "gx-commit-self-report"
 }
 
 func attachExplicitSessions(ctx context.Context, store *storage.Store, changeID int64, preferredSessionIDs []string) error {

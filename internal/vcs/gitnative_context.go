@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -20,7 +19,6 @@ type PendingCommitContext struct {
 	RequestedBranch     string                   `json:"requested_branch,omitempty"`
 	PreferredSessionIDs []string                 `json:"preferred_session_ids,omitempty"`
 	SessionContexts     []storage.SessionContext `json:"session_contexts,omitempty"`
-	SelfReport          commitcontext.SelfReport `json:"self_report,omitempty"`
 }
 
 func pendingCommitContextPath(gitDir string) string {

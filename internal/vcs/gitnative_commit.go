@@ -55,7 +55,6 @@ func (s *Service) CommitStagedViaGit(ctx context.Context, opts StagedRevisionOpt
 			Branch:              branch,
 			PreferredSessionIDs: opts.PreferredSessionIDs,
 			SessionContexts:     opts.SessionContexts,
-			SelfReport:          opts.SelfReport,
 		}
 		if err := writePendingCommitContext(repo.GitDir, pending); err != nil {
 			return fmt.Errorf("write commit context: %w", err)
@@ -164,13 +163,11 @@ func CommitContextFromOptions(repo RepoInfo, branch string, opts StagedRevisionO
 		RequestedBranch:     cleanRefName(opts.Branch),
 		PreferredSessionIDs: opts.PreferredSessionIDs,
 		SessionContexts:     opts.SessionContexts,
-		SelfReport:          opts.SelfReport,
 	}
 }
 
 func (s *Service) loadCommitResultFromHEAD(ctx context.Context, repo RepoInfo, commitOID string, pending PendingCommitContext) (CommitResult, error) {
 	if result, err := s.commitResultFromDB(ctx, repo, commitOID); err == nil {
-		result.SelfReport = pending.SelfReport
 		return result, nil
 	}
 	return s.RecordGitCommit(ctx, repo, commitOID, pending)

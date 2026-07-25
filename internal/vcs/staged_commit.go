@@ -19,7 +19,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/parsers/codex"
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/capture/redact"
-	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -51,7 +50,6 @@ type StagedRevisionOptions struct {
 	Branch              string // optional: create this branch at HEAD and record onto it
 	PreferredSessionIDs []string
 	SessionContexts     []storage.SessionContext
-	SelfReport          commitcontext.SelfReport
 }
 
 // stagedCapture is the git-only snapshot of the user's staged selection.

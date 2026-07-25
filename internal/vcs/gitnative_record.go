@@ -77,7 +77,6 @@ func (s *Service) RecordGitCommit(ctx context.Context, repo RepoInfo, commitOID 
 		ProvenanceStatus:         stagedProvenanceStatus(sessionIDs),
 		SkipRepoLocalSessions:    true,
 		SessionEventAttributions: eventAttributions,
-		SelfReport:               pending.SelfReport,
 	}
 	if err := recordCommit(ctx, result); err != nil {
 		return result, err

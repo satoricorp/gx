@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/satoricorp/gx/internal/agentprovenance"
-	"github.com/satoricorp/gx/internal/commitcontext"
 )
 
 type StorageWriter interface {
@@ -739,43 +738,6 @@ func (s *Store) WriteChangeSessions(ctx context.Context, changeID int64, session
 		if err := s.WriteChangeSessionProvenance(ctx, changeID, sessionID, createdAt); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func (s *Store) WriteAgentDeclaredProvenance(ctx context.Context, changeID int64, sessionID string, report commitcontext.SelfReport, createdAt int64) error {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" || report.Empty() {
-		return nil
-	}
-	payload, err := report.JSON()
-	if err != nil {
-		return fmt.Errorf("marshal agent-declared self-report: %w", err)
-	}
-	source := string(payload)
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, created_at, command, cwd, gx_version, source)
-		VALUES (?, ?, ?, '', '', ?)
-		ON CONFLICT(id) DO UPDATE SET
-			source = CASE WHEN excluded.source != '' THEN excluded.source ELSE sessions.source END
-	`, sessionID, createdAt, commitcontext.AgentDeclaredTool, commitcontext.AgentDeclaredProvider); err != nil {
-		return fmt.Errorf("upsert agent-declared session: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO change_sessions (change_id, session_id, created_at)
-		VALUES (?, ?, ?)
-	`, changeID, sessionID, createdAt); err != nil {
-		return fmt.Errorf("insert agent-declared change session: %w", err)
-	}
-	if err := s.insertChangeSessionProvenance(ctx, changeID, agentprovenance.Record{
-		SessionID: sessionID,
-		AgentTool: commitcontext.AgentDeclaredTool,
-		Provider:  commitcontext.AgentDeclaredProvider,
-		ModelID:   commitcontext.AgentDeclaredModelID,
-		Source:    &source,
-		CreatedAt: createdAt,
-	}); err != nil {
-		return err
 	}
 	return nil
 }

@@ -9,8 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/satoricorp/gx/internal/commitcontext"
 )
 
 func TestRepoIdentityMigrationAndLinkedWorktreeUpsert(t *testing.T) {
@@ -778,67 +776,6 @@ func TestFindAttachableSessionsForRepoReturnsUnlinkedRepoSessions(t *testing.T) 
 	want := []string{"repo-root", "child-cwd"}
 	if !equalStrings(got, want) {
 		t.Fatalf("FindAttachableSessionsForRepo() = %#v, want %#v", got, want)
-	}
-}
-
-func TestWriteAgentDeclaredProvenancePersistsSelfReport(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	ctx := context.Background()
-	db, err := Open(ctx)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	store, err := NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer store.Close()
-
-	repoID, err := store.UpsertRepo(ctx, Repo{
-		RootPath:  "/repo",
-		Backend:   "jj",
-		CreatedAt: 1,
-		UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, Change{
-		RepoID:          repoID,
-		JJChangeID:      "change-1",
-		CurrentCommitID: "commit-1",
-		Description:     "linked",
-		Status:          "draft",
-		FirstSeenAt:     1,
-		UpdatedAt:       1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-
-	report := commitcontext.SelfReport{
-		TaskSummary: "add commit surface",
-		CommandsRun: []string{"go test ./..."},
-		TestsRun:    []string{"internal/storage"},
-	}
-	if err := store.WriteAgentDeclaredProvenance(ctx, changeID, "session-mcp", report, 12); err != nil {
-		t.Fatalf("WriteAgentDeclaredProvenance() error = %v", err)
-	}
-
-	var gotSession, gotAgent, gotProvider, gotModel string
-	var gotSource sql.NullString
-	if err := store.db.QueryRowContext(ctx, `
-		SELECT session_id, agent_tool, provider, model_id, source
-		FROM change_session_provenance
-		WHERE change_id = ?
-	`, changeID).Scan(&gotSession, &gotAgent, &gotProvider, &gotModel, &gotSource); err != nil {
-		t.Fatalf("select change_session_provenance: %v", err)
-	}
-	if gotSession != "session-mcp" || gotAgent != commitcontext.AgentDeclaredTool || gotProvider != commitcontext.AgentDeclaredProvider || gotModel != commitcontext.AgentDeclaredModelID {
-		t.Fatalf("provenance = %s/%s/%s/%s", gotSession, gotAgent, gotProvider, gotModel)
-	}
-	if !strings.Contains(gotSource.String, "add commit surface") {
-		t.Fatalf("source = %q, want self-report JSON", gotSource.String)
 	}
 }
 

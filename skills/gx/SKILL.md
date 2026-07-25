@@ -124,8 +124,8 @@ agent client.
   publishes on `git push`, and provenance is inferred automatically.
 - Hidden utilities such as `gx sync`, `gx base`, or `gx generate` — removed; use plain
   Git (`git pull --rebase`, `git checkout -b`) instead.
-- Declaring provenance by hand (self-report, `--context-file`, task summaries) — there is
-  no such channel; sessions are matched to changed hunks automatically.
+- Declaring provenance by hand (self-reports, task summaries) — there is no such channel;
+  sessions are matched to changed hunks automatically.
 
 ## When a command fails
 

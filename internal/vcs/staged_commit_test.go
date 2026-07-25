@@ -13,7 +13,6 @@ import (
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/storage"
 )
@@ -371,7 +370,7 @@ func TestAttributionLedgerSurvivesStoreReopen(t *testing.T) {
 		EventFingerprint: "fp-1",
 		AttributedVia:    "commit",
 		CreatedAt:        1000,
-	}}, commitcontext.SelfReport{}); err != nil {
+	}}); err != nil {
 		t.Fatalf("recordChangeForStack() error = %v", err)
 	}
 	_ = repoID
