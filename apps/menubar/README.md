@@ -124,8 +124,8 @@ Git for the save flow unless the user explicitly asks. If supported, deny or req
 ## Git hooks
 
 The menu-bar app gives you the bundled `gx` CLI and `gx-mcp`; repo hooks are
-installed when a repo is initialized with `gx init` or by MCP
-auto-initialization. GX installs `prepare-commit-msg` to stamp GX revision
+installed when a repo is initialized with `gx init`. GX installs
+`prepare-commit-msg` to stamp GX revision
 trailers, `post-commit` to record commit metadata, `post-rewrite` to follow
 amended or rebased commit OIDs, and `pre-push` to capture and publish each
 pushed ref range.

@@ -107,7 +107,7 @@ branch deletion.
 ```
 
 Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.
-When a repo is initialized with `gx init` or by MCP auto-initialization, GX
+When a repo is initialized with `gx init`, GX
 installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
 hooks. They preserve durable GX revision IDs across normal Git commits and
 rewrites, capture Claude/Codex/Cursor session context into `~/.gx/gx.db`, mark

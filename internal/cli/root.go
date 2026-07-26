@@ -350,7 +350,9 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			if len(args) > 0 {
 				prompt = strings.TrimSpace(args[0])
 			}
-			repo, err := vcs.NewService().ResolveGitRepo(ctx)
+			// Store-free on purpose: review must leave no GX state behind in a
+			// repo (or on a machine) that has never run `gx init`.
+			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
 				runErr = err
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
@@ -501,7 +503,9 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	}
 	client, err := github.NewClient(host)
 	if err != nil {
-		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post GX review comment: %v", err)))
+		// No GitHub token. Review is read-only and complete without one, so
+		// posting the comment is a bonus, not a failure: skip it quietly
+		// rather than nag on every review from an unauthenticated checkout.
 		return
 	}
 	pr, err := client.FindPullRequest(ctx, github.CreatePullRequestOptions{
@@ -598,6 +602,11 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 	}
 	client := cloud.NewClient()
 	if client == nil {
+		return
+	}
+	if _, err := cloud.CloudAPIToken(); err != nil {
+		// Signed out: history is an extra GX Cloud records for authenticated
+		// users, not something a read-only review depends on.
 		return
 	}
 	mode := "patch"

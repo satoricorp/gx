@@ -126,7 +126,7 @@ func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 		"gx auth status":             true,
 		"gx set inference-key dummy": true,
 		"gx demo":                    true,
-		"gx review":                  false,
+		"gx review":                  true,
 		"gx doctor":                  false,
 	}
 	for path, want := range cases {

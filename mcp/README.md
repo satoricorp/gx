@@ -87,8 +87,8 @@ gx auth login
 ```
 
 The GX menu-bar app installs the bundled `gx` CLI and `gx-mcp` binary. Repo Git
-hooks are installed when a repo is initialized with `gx init` or by MCP
-auto-initialization. The installed `pre-push` hook runs `gx capture push` for
+hooks are installed when a repo is initialized with `gx init`; the `gx_review`
+MCP tool is read-only and never initializes a repo. The `pre-push` hook runs `gx capture push` for
 the pushed ref range, stages captured Claude/Codex/Cursor session context in
 `~/.gx/gx.db`, and uploads only when GX upload credentials are configured.
 

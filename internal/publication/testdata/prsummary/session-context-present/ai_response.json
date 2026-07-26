@@ -1,0 +1,5 @@
+{
+  "overview": "Moves cache eviction from LRU scans to TTL buckets so stale entries drop without full-table walks.",
+  "downstream_impact": "Low customer-facing risk; cache expiry timing may shift slightly but API responses should stay consistent.",
+  "recommendations": []
+}

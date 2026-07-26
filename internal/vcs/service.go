@@ -703,6 +703,28 @@ func (s *Service) ResolveGitRepo(ctx context.Context) (RepoInfo, error) {
 }
 
 func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (RepoInfo, error) {
+	info, err := s.resolveGitRepoWithoutStoreAtPath(ctx, startPath)
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	return s.withStoredRepoConfigByIdentity(ctx, info), nil
+}
+
+// ResolveGitRepoWithoutStore resolves the repo from git alone. Opening the GX
+// store creates ~/.gx and applies its schema, so a read-only command like
+// `gx review` must not go through ResolveGitRepo: it would leave GX state
+// behind on a machine that has never run `gx init`. Everything review needs
+// (root, remote, branch) comes from git; only AuthoringBase and a stored
+// backend override come from the store, and review uses neither.
+func (s *Service) ResolveGitRepoWithoutStore(ctx context.Context) (RepoInfo, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return RepoInfo{}, err
+	}
+	return s.resolveGitRepoWithoutStoreAtPath(ctx, cwd)
+}
+
+func (s *Service) resolveGitRepoWithoutStoreAtPath(ctx context.Context, startPath string) (RepoInfo, error) {
 	paths, err := s.ResolveGitPaths(ctx, startPath)
 	if err != nil {
 		return RepoInfo{}, err
@@ -716,7 +738,6 @@ func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (R
 	if info.Backend == "" {
 		info.Backend = "git"
 	}
-	info = s.withStoredRepoConfigByIdentity(ctx, info)
 	return info, nil
 }
 

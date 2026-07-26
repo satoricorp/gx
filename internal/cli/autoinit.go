@@ -56,7 +56,10 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		case "init", "version", "login", "auth", "set", "demo":
+		// `review` is read-only: it must work as a CI gate and on someone
+		// else's checkout without installing hooks or writing GX state into a
+		// repo the reviewer does not own.
+		case "init", "version", "login", "auth", "set", "demo", "review":
 			return true
 		}
 	}

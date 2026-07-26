@@ -22,6 +22,7 @@ import (
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/gx/internal/reviewsource"
 	"github.com/satoricorp/gx/internal/semantic"
 )
 
@@ -159,8 +160,84 @@ func renderGitHubPullRequestBody(artifact reviewbundle.Artifact, catalog prBodyC
 	linkCtx := newAttributionLinkContext(artifact, catalog, summaryContext.Snippets)
 	body.WriteString(renderNotableChangesSection(items, linkCtx))
 	body.WriteString("\n\n")
+	// Sits with the footer rather than under the opening summary: it is a
+	// caveat about how the summary was produced, which is exactly what the
+	// footer reports, and keeping it out of the summary itself means a
+	// context-rich PR reads no differently from today.
+	if note := missingSessionContextNote(artifact, summaryContext); note != "" {
+		body.WriteString(note)
+		body.WriteString("\n\n")
+	}
 	body.WriteString(provenanceFooter(aiSucceeded, reviewerInfo, summaryContext, linkCtx))
 	return strings.TrimRight(body.String(), "\n")
+}
+
+// missingSessionContextNote tells the reader when a summary had no captured
+// coding session behind it, so a diff-only summary cannot be mistaken for a
+// context-rich one. It stays silent when session context is present: the
+// footer already names "session" among its context sources.
+func missingSessionContextNote(artifact reviewbundle.Artifact, summaryContext prSummaryContext) string {
+	if sessionContextInformedSummary(artifact, summaryContext) {
+		return ""
+	}
+	return "*No captured coding session was linked to this branch, so this summary is based on the diff alone. " +
+		"That usually means the branch was pushed without GX's pre-push hook installed, so nothing was captured.*"
+}
+
+// sessionContextInformedSummary reports whether a captured coding session is
+// behind this summary. Two signals answer that, and the note only appears when
+// both are empty:
+//
+//   - Session transcript snippets in the summary context. These come from
+//     sessionPRContextSnippets, so they are the session text the model actually
+//     read — the precise claim the note makes, and the primary signal. Source
+//     "artifact" is what sessionPRContextSnippets stamps; indexed hits from the
+//     vector store share the kind but are not this branch's captured session.
+//   - Linked sessions in the bundle's review context. semantic.BuildSessionChunks
+//     drops a transcript source whose session payload or request is missing from
+//     the bundle, so a genuinely captured change can still contribute no
+//     snippet. Telling that author nothing was captured would be false, so any
+//     linked session suppresses the note.
+//
+// Provenance status alone is not enough: it describes how hunks resolved to
+// sessions, and reports "linked" for sessions whose transcripts never reached
+// the summary.
+func sessionContextInformedSummary(artifact reviewbundle.Artifact, summaryContext prSummaryContext) bool {
+	for _, snippet := range summaryContext.Snippets {
+		if snippet.Kind == "session_transcript" && snippet.Source == "artifact" {
+			return true
+		}
+	}
+	// The footer prints "context: ... session" off this same label, so reading
+	// it here keeps the note from contradicting the line right below it.
+	for _, source := range summaryContext.Sources {
+		if strings.TrimSpace(source) == "session" {
+			return true
+		}
+	}
+	for _, reviewContext := range artifactReviewContexts(artifact) {
+		if reviewContext.LinkedSessionCount > 0 || len(reviewContext.TranscriptSources) > 0 {
+			return true
+		}
+		switch reviewContext.ProvenanceStatus {
+		case reviewsource.StatusExplicit, reviewsource.StatusLinked, reviewsource.StatusRepoLocal:
+			return true
+		}
+	}
+	return false
+}
+
+func artifactReviewContexts(artifact reviewbundle.Artifact) []*reviewbundle.ReviewContextPayload {
+	var out []*reviewbundle.ReviewContextPayload
+	for _, entry := range artifact.Bundle.Stack {
+		if entry.Change.ReviewContext != nil {
+			out = append(out, entry.Change.ReviewContext)
+		}
+	}
+	if artifact.Bundle.Change != nil && artifact.Bundle.Change.ReviewContext != nil {
+		out = append(out, artifact.Bundle.Change.ReviewContext)
+	}
+	return out
 }
 
 func renderNotableChangesSection(items []prNotableChange, linkCtx attributionLinkContext) string {

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
 import { formatError, formatResult, runGx } from "../gx";
-import { ensureGxInitialized } from "../session-workspace";
 
 const reviewScope = z.enum([
   "architecture",
@@ -54,7 +53,8 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
     args.push(prompt);
   }
   try {
-    await ensureGxInitialized(params.cwd);
+    // No init, no hooks, no GX state: `gx review` reads the repo and nothing
+    // else, which is what readOnlyHint promises the caller.
     return formatResult(await runGx(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: "review",
       nextActions: ["Use findings as context before committing or pushing changes."],
