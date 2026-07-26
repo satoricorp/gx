@@ -76,10 +76,18 @@ func stageRawBlob(
 		ids = []string{""}
 	}
 	contentHash := storage.PayloadContentHash(raw)
+	// capture_sessions.payload_json is NOT NULL, and a raw row is staged before
+	// anything is parsed out of it. Record the identity we do know so the row is
+	// valid JSON rather than a constraint violation that aborts the whole run.
+	payload, err := json.Marshal(StagedSession{SessionID: sessionID, Tool: tool})
+	if err != nil {
+		return err
+	}
 	for _, revisionID := range ids {
 		row := storage.StagedSession{
 			SessionID:   sessionID,
 			Tool:        tool,
+			PayloadJSON: payload,
 			RawBlob:     raw,
 			SourcePath:  sourcePath,
 			RevisionID:  revisionID,
