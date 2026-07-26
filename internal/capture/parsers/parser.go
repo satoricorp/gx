@@ -1,7 +1,9 @@
 package parsers
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,24 +62,7 @@ func DiscoverSessions(opts DiscoverOptions) ([]DiscoveredSession, error) {
 		if claudeDir == "" {
 			claudeDir = filepath.Join(opts.HomeDir, ".claude", "projects")
 		}
-		claudeSlug := repoSlug(opts.RepoRoot)
-		claudeProject := filepath.Join(claudeDir, claudeSlug)
-		if entries, err := os.ReadDir(claudeProject); err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
-					continue
-				}
-				path := filepath.Join(claudeProject, entry.Name())
-				if inWindow(path, opts.Since, opts.Until) {
-					sessions = append(sessions, DiscoveredSession{
-						Tool:      capture.ToolClaude,
-						Path:      path,
-						Kind:      SessionKindJSONL,
-						SessionID: strings.TrimSuffix(entry.Name(), ".jsonl"),
-					})
-				}
-			}
-		}
+		sessions = append(sessions, discoverClaudeSessions(claudeDir, opts.RepoRoot, opts.Since, opts.Until)...)
 	}
 
 	if containsTool(tools, capture.ToolCodex) {
@@ -132,6 +117,206 @@ func DiscoverSessions(opts DiscoverOptions) ([]DiscoveredSession, error) {
 	}
 
 	return sessions, nil
+}
+
+// discoverClaudeSessions returns Claude transcripts that plausibly touched repoRoot.
+//
+// Claude Code files a transcript under the slug of the session's cwd, not the
+// repo it edited, so an agent run from another checkout that edits this repo
+// lands in a different project directory. The repo's own slug directory stays
+// the fast path; every other project directory is scanned with a cheap
+// substring pre-filter so cross-repo sessions still reach the matcher, which
+// remains the layer that decides real attribution.
+func discoverClaudeSessions(claudeDir, repoRoot string, since, until time.Time) []DiscoveredSession {
+	primarySlug := repoSlug(repoRoot)
+	seen := map[string]struct{}{}
+
+	sessions := claudeDirSessions(filepath.Join(claudeDir, primarySlug), since, until, nil, seen)
+
+	needles := repoPathNeedles(repoRoot)
+	if len(needles) == 0 {
+		return sessions
+	}
+	entries, err := os.ReadDir(claudeDir)
+	if err != nil {
+		return sessions
+	}
+	var widened []DiscoveredSession
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == primarySlug {
+			continue
+		}
+		widened = append(widened, claudeDirSessions(filepath.Join(claudeDir, entry.Name()), since, until, needles, seen)...)
+	}
+	sort.SliceStable(widened, func(i, j int) bool {
+		return modTime(widened[i].Path).After(modTime(widened[j].Path))
+	})
+	return append(sessions, widened...)
+}
+
+// claudeDirSessions lists in-window transcripts in one project directory.
+// A non-nil needles slice gates each file on mentioning the repo. seen
+// de-duplicates by session ID so a transcript reachable from two directories
+// is only reported once.
+func claudeDirSessions(dir string, since, until time.Time, needles [][]byte, seen map[string]struct{}) []DiscoveredSession {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var sessions []DiscoveredSession
+	for _, entry := range entries {
+		// A conversation's subagents write their own transcripts under
+		// <conversation>/subagents, and an agent that delegates its edits
+		// leaves most of the evidence there rather than in the parent.
+		if entry.IsDir() {
+			sessions = append(sessions, claudeSubagentSessions(
+				filepath.Join(dir, entry.Name(), "subagents"),
+				entry.Name(), since, until, needles, seen,
+			)...)
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
+		if session, ok := claudeSessionAt(filepath.Join(dir, entry.Name()), sessionID, since, until, needles, seen); ok {
+			sessions = append(sessions, session)
+		}
+	}
+	return sessions
+}
+
+func claudeSubagentSessions(dir, conversationID string, since, until time.Time, needles [][]byte, seen map[string]struct{}) []DiscoveredSession {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var sessions []DiscoveredSession
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		// Namespaced by conversation so two conversations cannot collide on a
+		// subagent name and silently drop one another's evidence.
+		sessionID := conversationID + ":subagent:" + strings.TrimSuffix(entry.Name(), ".jsonl")
+		if session, ok := claudeSessionAt(filepath.Join(dir, entry.Name()), sessionID, since, until, needles, seen); ok {
+			sessions = append(sessions, session)
+		}
+	}
+	return sessions
+}
+
+func claudeSessionAt(path, sessionID string, since, until time.Time, needles [][]byte, seen map[string]struct{}) (DiscoveredSession, bool) {
+	if _, ok := seen[sessionID]; ok {
+		return DiscoveredSession{}, false
+	}
+	if !inWindow(path, since, until) {
+		return DiscoveredSession{}, false
+	}
+	if needles != nil && !fileMentionsRepo(path, needles) {
+		return DiscoveredSession{}, false
+	}
+	seen[sessionID] = struct{}{}
+	return DiscoveredSession{
+		Tool:      capture.ToolClaude,
+		Path:      path,
+		Kind:      SessionKindJSONL,
+		SessionID: sessionID,
+	}, true
+}
+
+// repoPathNeedles returns byte patterns whose presence means a transcript
+// referenced a path inside repoRoot.
+//
+// The trailing separator matters: it keeps a sibling checkout such as
+// /Users/joe/git/gx-cloud from matching /Users/joe/git/gx, and every session
+// that actually edited the repo records at least one absolute path beneath the
+// root. Windows transcripts store backslashes JSON-escaped, so both the raw and
+// escaped spellings are included.
+func repoPathNeedles(repoRoot string) [][]byte {
+	if strings.TrimSpace(repoRoot) == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		abs = repoRoot
+	}
+	seen := map[string]struct{}{}
+	var needles [][]byte
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		needles = append(needles, []byte(s))
+	}
+	addVariants := func(root string) {
+		root = strings.TrimRight(root, `/\`)
+		if root == "" {
+			return
+		}
+		add(filepath.ToSlash(root) + "/")
+		if native := filepath.FromSlash(root); native != filepath.ToSlash(root) {
+			add(native + string(filepath.Separator))
+			add(strings.ReplaceAll(native, `\`, `\\`) + `\\`)
+		}
+	}
+	addVariants(abs)
+	// A repo reached through a symlinked path (macOS /tmp, /var) is recorded
+	// under its resolved name in transcripts.
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		addVariants(resolved)
+	}
+	return needles
+}
+
+// repoScanChunkSize bounds the memory used while scanning one transcript.
+const repoScanChunkSize = 256 * 1024
+
+// fileMentionsRepo streams path looking for any needle. It never holds more
+// than one chunk in memory, which keeps multi-megabyte transcripts cheap, and
+// carries a needle-sized tail between chunks so a match spanning a chunk
+// boundary is still found.
+func fileMentionsRepo(path string, needles [][]byte) bool {
+	if len(needles) == 0 {
+		return false
+	}
+	overlap := 0
+	for _, needle := range needles {
+		if len(needle)-1 > overlap {
+			overlap = len(needle) - 1
+		}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	buf := make([]byte, overlap+repoScanChunkSize)
+	carry := 0
+	for {
+		n, err := io.ReadFull(f, buf[carry:])
+		if n > 0 {
+			window := buf[:carry+n]
+			for _, needle := range needles {
+				if bytes.Contains(window, needle) {
+					return true
+				}
+			}
+			if len(window) > overlap {
+				carry = copy(buf, window[len(window)-overlap:])
+			} else {
+				carry = len(window)
+			}
+		}
+		if err != nil {
+			return false
+		}
+	}
 }
 
 func discoverCursorTranscriptSessions(homeDir, repoRoot string, since, until time.Time) ([]string, error) {
