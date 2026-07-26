@@ -38,6 +38,7 @@ type PushOptions struct {
 type PushOutcome struct {
 	Result           orchestrator.Result
 	RevisionIDs      []string
+	CaptureError     string
 	RecoveryError    string
 	ShareableExtract int
 	ShareableSession int
@@ -91,6 +92,11 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 		})
 		if err == nil {
 			outcome.Result = result
+		} else {
+			// The hook must never block a push, but a failed capture run must
+			// not read as "captured nothing" either — that hid a staging bug
+			// behind a plausible sessions=0 for a long time.
+			outcome.CaptureError = err.Error()
 		}
 	}
 

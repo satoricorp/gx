@@ -122,8 +122,9 @@ agent client.
   `git status`, `git push`, and `git commit --amend`; GX's hooks record revisions for you.
 - `gx capture push` or any manual capture/attach step — the pre-push hook captures and
   publishes on `git push`, and provenance is inferred automatically.
-- Hidden utilities such as `gx sync`, `gx base`, or `gx generate` — removed; use plain
-  Git (`git pull --rebase`, `git checkout -b`) instead.
+- Hidden utilities such as `gx base` or `gx generate` — removed; use plain Git
+  (`git pull --rebase`, `git checkout -b`) instead. (`gx sync` still exists, but it
+  retries queued uploads; it is not part of the save flow.)
 - Declaring provenance by hand (self-reports, task summaries) — there is no such channel;
   sessions are matched to changed hunks automatically.
 

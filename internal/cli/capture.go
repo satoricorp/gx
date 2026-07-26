@@ -116,6 +116,9 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 			if outcome.Publication.Queued {
 				fmt.Fprintf(cmd.OutOrStdout(), "publication queued id=%s\n", outcome.Publication.QueueID)
 			}
+			if outcome.CaptureError != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture failed, so this push has no session context: %s\n", outcome.CaptureError)
+			}
 			if outcome.RecoveryError != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: repair GX revision metadata: %s\n", outcome.RecoveryError)
 			}
