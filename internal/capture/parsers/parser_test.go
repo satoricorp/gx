@@ -256,3 +256,194 @@ func TestDiscoverSessionsFindsClaudeSubagentTranscripts(t *testing.T) {
 		t.Fatalf("len(sessions) = %d, want 4 with no duplicates", len(sessions))
 	}
 }
+
+// makeUnreadable creates dir and removes every permission bit, so reading it
+// fails the way a real permission-denied transcript directory does. Root
+// bypasses mode bits, so the caller is skipped there rather than lied to.
+func makeUnreadable(t *testing.T, dir string) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions, so unreadable directories cannot be simulated")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatalf("chmod %s: %v", dir, err)
+	}
+	// TempDir cleanup has to be able to walk back in.
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, err := os.ReadDir(dir); err == nil {
+		t.Skipf("%s is still readable despite mode 0; filesystem does not enforce permissions", dir)
+	}
+}
+
+// TestDiscoverSurvivesUnreadableCursorTranscripts is the "one bad leg must not
+// kill the others" regression: a single tool's unavailability used to abort the
+// whole sweep, so Claude and Codex transcripts were never discovered either.
+func TestDiscoverSurvivesUnreadableCursorTranscripts(t *testing.T) {
+	home := t.TempDir()
+	repoRoot := filepath.Join(string(filepath.Separator), "gx-nocursor", "repo")
+	now := time.Now()
+
+	claudePath := filepath.Join(home, ".claude", "projects", repoSlug(repoRoot), "claude-1.jsonl")
+	writeClaudeTranscript(t, claudePath, claudeEditLine("claude-1", filepath.Join(repoRoot, "a.go")), now)
+	codexPath := filepath.Join(home, ".codex", "sessions", "2026", "07", "rollout-2026-07-26.jsonl")
+	writeClaudeTranscript(t, codexPath, `{"cwd":"`+filepath.ToSlash(repoRoot)+`"}`+"\n", now)
+	cursorDir := filepath.Join(home, ".cursor", "projects", cursorRepoSlug(repoRoot), "agent-transcripts")
+	makeUnreadable(t, cursorDir)
+
+	opts := DiscoverOptions{
+		HomeDir:  home,
+		RepoRoot: repoRoot,
+		Since:    now.Add(-time.Hour),
+		Until:    now.Add(time.Hour),
+	}
+	discovery, err := Discover(opts)
+	if err != nil {
+		t.Fatalf("Discover() error = %v, want nil: one unavailable tool must not kill the others", err)
+	}
+	got := map[string]string{}
+	for _, session := range discovery.Sessions {
+		got[session.Tool] = session.Path
+	}
+	if got[capture.ToolClaude] != claudePath {
+		t.Fatalf("claude source = %q, want %q (all: %v)", got[capture.ToolClaude], claudePath, discoveredPaths(discovery.Sessions))
+	}
+	if got[capture.ToolCodex] != codexPath {
+		t.Fatalf("codex source = %q, want %q (all: %v)", got[capture.ToolCodex], codexPath, discoveredPaths(discovery.Sessions))
+	}
+
+	// The failure is reported, not swallowed.
+	if len(discovery.Problems) != 1 || discovery.Problems[0].Tool != capture.ToolCursor {
+		t.Fatalf("problems = %v, want one cursor problem", discovery.ProblemStrings())
+	}
+	if !strings.Contains(discovery.Problems[0].String(), cursorDir) {
+		t.Fatalf("problem = %q, want it to name the unreadable directory %q", discovery.Problems[0].String(), cursorDir)
+	}
+
+	sessions, err := DiscoverSessions(opts)
+	if err != nil || len(sessions) != len(discovery.Sessions) {
+		t.Fatalf("DiscoverSessions() = %d sources, %v; want %d sources and no error",
+			len(sessions), err, len(discovery.Sessions))
+	}
+}
+
+// TestDiscoverReportsUnreadableClaudeAndCodexRoots is the finding this whole
+// reporting surface exists for. Claude and Codex hold essentially all the
+// transcripts, and both legs used to be structurally incapable of returning an
+// error: unreadable roots produced zero sessions, zero problems and a nil
+// error, i.e. a sweep that looked exactly like a clean run over an empty
+// machine. Every leg failing is additionally a hard error, which is only
+// reachable because the legs can fail at all.
+func TestDiscoverReportsUnreadableClaudeAndCodexRoots(t *testing.T) {
+	home := t.TempDir()
+	repoRoot := filepath.Join(string(filepath.Separator), "gx-unreadable", "repo")
+	now := time.Now()
+
+	claudeDir := filepath.Join(home, ".claude", "projects")
+	codexDir := filepath.Join(home, ".codex", "sessions")
+	cursorDir := filepath.Join(home, ".cursor", "projects", cursorRepoSlug(repoRoot), "agent-transcripts")
+	makeUnreadable(t, claudeDir)
+	makeUnreadable(t, codexDir)
+	makeUnreadable(t, cursorDir)
+
+	discovery, err := Discover(DiscoverOptions{
+		HomeDir:  home,
+		RepoRoot: repoRoot,
+		Since:    now.Add(-time.Hour),
+		Until:    now.Add(time.Hour),
+	})
+	if len(discovery.Sessions) != 0 {
+		t.Fatalf("sessions = %v, want none: nothing was readable", discoveredPaths(discovery.Sessions))
+	}
+	tools := map[string]bool{}
+	for _, problem := range discovery.Problems {
+		tools[problem.Tool] = true
+	}
+	for _, tool := range []string{capture.ToolClaude, capture.ToolCodex, capture.ToolCursor} {
+		if !tools[tool] {
+			t.Fatalf("problems = %v, want one for %s: an unreadable root must never read as 'this tool found nothing'",
+				discovery.ProblemStrings(), tool)
+		}
+	}
+	if err == nil {
+		t.Fatalf("Discover() error = nil, want a hard error when every leg failed and nothing was discovered (problems: %v)",
+			discovery.ProblemStrings())
+	}
+}
+
+// TestDiscoverStaysInsideRequestedHome pins the hermeticity of a sweep. Cursor's
+// database used to be resolved through os.UserHomeDir() regardless of the home
+// discovery was asked about, so a temp HomeDir still returned — and the
+// orchestrator then opened, inside the pre-push hook — the developer's real
+// multi-gigabyte global Cursor database. A home with no agent tools installed
+// must discover nothing, and must not warn about tools that are merely absent.
+func TestDiscoverStaysInsideRequestedHome(t *testing.T) {
+	home := t.TempDir()
+	repoRoot := filepath.Join(string(filepath.Separator), "gx-empty-home", "repo")
+	now := time.Now()
+
+	discovery, err := Discover(DiscoverOptions{
+		HomeDir:  home,
+		RepoRoot: repoRoot,
+		Since:    now.Add(-time.Hour),
+		Until:    now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v, want nil: nothing installed is not a failure", err)
+	}
+	for _, session := range discovery.Sessions {
+		if !strings.HasPrefix(session.Path, home) {
+			t.Fatalf("discovered %q, which is outside the requested home %q", session.Path, home)
+		}
+	}
+	if len(discovery.Sessions) != 0 {
+		t.Fatalf("sessions = %v, want none from an empty home", discoveredPaths(discovery.Sessions))
+	}
+	// A tool that is not installed is not a skipped tool: warning about it on
+	// every push would be permanent, unactionable noise.
+	if len(discovery.Problems) != 0 {
+		t.Fatalf("problems = %v, want none: no agent tool is installed under this home", discovery.ProblemStrings())
+	}
+}
+
+// TestDiscoverAcceptsMultiGigabyteCursorDatabase locks in that database size
+// never gates discovery. A 256MB ceiling used to skip large databases because
+// parsing began with a whole-file copy; the parser now reads the file in
+// place with window-scoped index queries, so an established install's
+// multi-gigabyte database — precisely the one holding the most history — must
+// be discovered like any other, with no problem reported.
+func TestDiscoverAcceptsMultiGigabyteCursorDatabase(t *testing.T) {
+	home := t.TempDir()
+	repoRoot := filepath.Join(string(filepath.Separator), "gx-bigcursor", "repo")
+	now := time.Now()
+
+	vscdb := filepath.Join(home, "state.vscdb")
+	if err := os.WriteFile(vscdb, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Sparse-extend to 2GB: costs no real disk, but any reintroduced size
+	// gate would trip on it.
+	if err := os.Truncate(vscdb, 2<<30); err != nil {
+		t.Fatal(err)
+	}
+
+	discovery, err := Discover(DiscoverOptions{
+		HomeDir:     home,
+		RepoRoot:    repoRoot,
+		Since:       now.Add(-time.Hour),
+		Until:       now.Add(time.Hour),
+		CursorVSCDB: vscdb,
+		Tools:       []string{capture.ToolCursor},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discovery.Sessions) != 1 || discovery.Sessions[0].Kind != SessionKindCursorVSCDB {
+		t.Fatalf("sessions = %v, want the multi-gigabyte database discovered", discoveredPaths(discovery.Sessions))
+	}
+	if len(discovery.Problems) != 0 {
+		t.Fatalf("problems = %v, want none: size is not a reason to skip", discovery.ProblemStrings())
+	}
+}

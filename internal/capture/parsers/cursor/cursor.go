@@ -6,11 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -30,7 +28,16 @@ type Parser struct {
 
 func (p *Parser) Tool() string { return capture.ToolCursor }
 
-// ParseFile reads Cursor's global state.vscdb (copy-on-read, WAL-safe).
+// ParseFile reads Cursor's global state.vscdb in place, read-only.
+//
+// The database routinely reaches multiple gigabytes, but most of that is the
+// Agents-Window blob store (agentKv:*, unreadable here) and bubbles of
+// long-dead sessions. The old approach copied the whole file per push and
+// then table-scanned it, which is why oversized databases had to be skipped
+// outright. Instead: open the live file read-only (WAL readers do not block
+// Cursor's writer), prune composers on their metadata timestamps, and fetch
+// bubbles per surviving composer through the key index — a push reads
+// megabytes, not gigabytes.
 func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent, error) {
 	if strings.HasSuffix(path, ".jsonl") {
 		return p.parseTranscriptFile(path, repoRoot)
@@ -39,31 +46,34 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 		p.Inventory.RecordSampleFile(capture.ToolCursor, path)
 	}
 
-	dbPath, cleanup, err := copyOnRead(path)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	db, err := openReadOnly(dbPath)
+	db, err := openReadOnly(path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
+	ctx := context.Background()
 	p.contentCache = map[string]string{}
-	composers, err := loadComposers(context.Background(), db)
+	composers, err := loadComposers(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	bubbles, err := loadBubbles(context.Background(), db)
+	composerIDs, err := bubbleComposerIDs(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	workspaces := loadWorkspaceFolders()
 
 	var events []capture.SessionEvent
-	for composerID, bs := range bubbles {
+	for _, composerID := range composerIDs {
+		meta, known := composers[composerID]
+		if known && !metaMayOverlapWindow(meta, p.Since, p.Until) {
+			continue
+		}
+		bs, err := loadComposerBubbles(ctx, db, composerID)
+		if err != nil {
+			return nil, err
+		}
 		if len(bs) == 0 {
 			continue
 		}
@@ -86,7 +96,6 @@ func (p *Parser) ParseFile(path string, repoRoot string) ([]capture.SessionEvent
 			}
 		}
 
-		meta := composers[composerID]
 		sessionID := "cursor-" + composerID
 		lastUpdated := composerLastSeen(meta, bs)
 		if !inTimeWindow(lastUpdated, p.Since, p.Until) && !bubblesInWindow(bs, p.Since, p.Until) {
@@ -348,46 +357,49 @@ func parseTimeString(s string) int64 {
 	return 0
 }
 
-func copyOnRead(vscdbPath string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "cursor-vscdb-*")
-	if err != nil {
-		return "", nil, err
+// unknownEndGrace is how long past createdAt a composer with no lastUpdatedAt
+// is assumed to have stayed active. Cursor maintains lastUpdatedAt on live
+// sessions, so rows without it are sessions that died young: measured across
+// a real 1,703-composer database, no such composer had bubbles more than 1.0
+// days after createdAt. A week of grace on top of the orchestrator's ±24h
+// slack leaves no realistic way to prune a composer whose bubbles were in
+// the window.
+const unknownEndGrace = 7 * 24 * time.Hour
+
+// metaMayOverlapWindow decides from composerData alone whether a composer
+// could have bubbles inside [since, until]. It exists so bubble rows of
+// sessions that ended long before the window are never read; whatever it
+// keeps is still window-checked bubble-by-bubble by the caller. Unknown
+// timestamps always pass, mirroring inTimeWindow. The one deliberate delta
+// from the scan-everything era: a composer whose own metadata bounds its
+// life strictly outside the window is pruned without reading its bubbles,
+// so a stray timestamp-less bubble inside a long-dead session no longer
+// resurrects it.
+func metaMayOverlapWindow(meta composerMeta, since, until time.Time) bool {
+	if since.IsZero() && until.IsZero() {
+		return true
 	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	base := filepath.Base(vscdbPath)
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		src := vscdbPath + suffix
-		if _, err := os.Stat(src); err != nil {
-			continue
-		}
-		dstName := base + suffix
-		if err := copyFile(src, filepath.Join(dir, dstName)); err != nil {
-			cleanup()
-			return "", nil, err
-		}
+	if !until.IsZero() && meta.createdAt > 0 && meta.createdAt > until.UnixMilli() {
+		return false
 	}
-	return filepath.Join(dir, base), cleanup, nil
+	end := meta.lastUpdatedAt
+	if end <= 0 && meta.createdAt > 0 {
+		end = meta.createdAt + unknownEndGrace.Milliseconds()
+	}
+	if !since.IsZero() && end > 0 && end < since.UnixMilli() {
+		return false
+	}
+	return true
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
-}
-
+// openReadOnly opens the live database without copying it. mode=ro plus a
+// busy timeout is the WAL-safe way to read while Cursor is running: readers
+// take shared locks and see committed WAL content without ever blocking the
+// writer. The previous DSN's immutable=1 asserts the file cannot change —
+// true only of a private copy — which is what forced the whole-file copy
+// this parser no longer does.
 func openReadOnly(path string) (*sql.DB, error) {
-	dsn := "file:" + path + "?mode=ro&immutable=1"
+	dsn := "file:" + path + "?mode=ro&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open cursor vscdb: %w", err)
@@ -406,7 +418,11 @@ type composerMeta struct {
 }
 
 func loadComposers(ctx context.Context, db *sql.DB) (map[string]composerMeta, error) {
-	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'`)
+	// Range predicates instead of LIKE: the key column's UNIQUE index serves
+	// prefix ranges, while LIKE runs a full table scan (the default
+	// case-insensitive LIKE cannot use the index). ';' is ':'+1, so the
+	// half-open range covers exactly the 'composerData:' prefix.
+	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'`)
 	if err != nil {
 		return nil, fmt.Errorf("query composers: %w", err)
 	}
@@ -445,22 +461,58 @@ type bubble struct {
 	createdAt int64
 }
 
-func loadBubbles(ctx context.Context, db *sql.DB) (map[string][]bubble, error) {
-	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'`)
+// bubbleComposerIDs enumerates every composer that has at least one bubble,
+// in key order, reading only the key index — no bubble payloads. This is what
+// lets window pruning happen before any large row is touched, and it also
+// finds composers that have bubbles but no composerData row (16 of 1,236 in
+// the database this was built against), which metadata-driven selection alone
+// would miss.
+func bubbleComposerIDs(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT key FROM cursorDiskKV WHERE key >= 'bubbleId:' AND key < 'bubbleId;'`)
+	if err != nil {
+		return nil, fmt.Errorf("query bubble keys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		composerID, _, ok := parseBubbleKey(key)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[composerID]; dup {
+			continue
+		}
+		seen[composerID] = struct{}{}
+		out = append(out, composerID)
+	}
+	return out, rows.Err()
+}
+
+// loadComposerBubbles fetches one composer's bubbles through the key index.
+func loadComposerBubbles(ctx context.Context, db *sql.DB, composerID string) ([]bubble, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT key, value FROM cursorDiskKV WHERE key >= 'bubbleId:'||?||':' AND key < 'bubbleId:'||?||';'`,
+		composerID, composerID)
 	if err != nil {
 		return nil, fmt.Errorf("query bubbles: %w", err)
 	}
 	defer rows.Close()
 
-	out := map[string][]bubble{}
+	var out []bubble
 	for rows.Next() {
 		var key string
 		var value []byte
 		if err := rows.Scan(&key, &value); err != nil {
 			return nil, err
 		}
-		composerID, bubbleID, ok := parseBubbleKey(key)
-		if !ok {
+		keyComposer, bubbleID, ok := parseBubbleKey(key)
+		if !ok || keyComposer != composerID {
 			continue
 		}
 		var doc struct {
@@ -478,7 +530,7 @@ func loadBubbles(ctx context.Context, db *sql.DB) (map[string][]bubble, error) {
 		}
 		_ = json.Unmarshal(value, &doc)
 		ts := parseBubbleTime(doc.CreatedAt, doc.TimingInfo.ClientRpcSendTime, doc.TimingInfo.ClientEndTime)
-		out[composerID] = append(out[composerID], bubble{
+		out = append(out, bubble{
 			id:        bubbleID,
 			composer:  composerID,
 			role:      roleFromType(doc.Type),
@@ -1187,11 +1239,8 @@ func DefaultVSCDBPath() (string, error) {
 	return ingestcursor.DefaultVSCDBPath()
 }
 
-// DiscoverVSCDBPath resolves the vscdb path for session discovery.
-func DiscoverVSCDBPath(home string) (string, error) {
-	if runtime.GOOS != "darwin" {
-		return "", fmt.Errorf("cursor capture spike is only supported on macOS in WP-0")
-	}
-	_ = home
-	return DefaultVSCDBPath()
-}
+// DiscoverVSCDBPath is deliberately gone. It took a home directory, ignored it
+// (`_ = home`) and returned os.UserHomeDir()'s Cursor database instead, so any
+// caller sweeping a specific home silently got the current user's real global
+// database. Session discovery resolves the path under the home it was given;
+// see cursorVSCDBPath in internal/capture/parsers.
