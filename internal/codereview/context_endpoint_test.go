@@ -7,16 +7,23 @@ import (
 	"time"
 )
 
-func TestCompositeContextRetrieverIgnoresRetrieverFailures(t *testing.T) {
+// A failing retriever must not fail the whole review: the rest of the evidence
+// is still worth having. It must, however, be reported — see
+// TestCompositeContextRetrieverRecordsFailuresInsteadOfSwallowingThem.
+func TestCompositeContextRetrieverSurvivesRetrieverFailures(t *testing.T) {
+	log := &EvidenceLog{}
 	snippets, err := (CompositeContextRetriever{Retrievers: []ContextRetriever{
 		fakeRetriever{snippets: []ContextSnippet{{Kind: "repo_doc", Ref: "README.md", Source: "local", Text: "readme"}}},
 		failingRetriever{},
-	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo", Options: Options{}})
+	}}).Retrieve(context.Background(), RetrieveInput{RepoRoot: "/repo", Options: Options{}, Evidence: log})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
 	}
 	if len(snippets) != 1 || snippets[0].Source != "local" {
 		t.Fatalf("snippets = %#v", snippets)
+	}
+	if len(log.Statuses()) != 1 || log.Statuses()[0].State != EvidenceUnavailable {
+		t.Fatalf("statuses = %#v, want the failure recorded", log.Statuses())
 	}
 }
 

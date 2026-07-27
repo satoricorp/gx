@@ -140,7 +140,7 @@ func TestRangeDiffSnippetsComeFromTheRange(t *testing.T) {
 	commitOnFeatureBranch(t, root)
 
 	changes := resolveChangeSet(context.Background(), root, "")
-	snippets := collectDiffSnippets(context.Background(), root, changes.Files, false, changes.Range)
+	snippets := collectDiffSnippets(context.Background(), root, changes.Files, Options{}, changes.Range)
 	if len(snippets) != 1 {
 		t.Fatalf("snippets = %#v, want one range diff", snippets)
 	}

@@ -73,6 +73,20 @@ var staticToolRunners = []staticToolRunner{
 	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck},
 }
 
+// staticToolScope is the file set every runner detects against. It is the
+// change set, except for a whole-repo review that has no diff: there the
+// repository stands in for it. Without that, `gx review --repo` on a clean
+// tree runs no compiler, no test, and no linter — collectStaticToolResults
+// returns before detection on an empty set — and then reports the repository
+// clean, which is the silent pass --fail-on exists to prevent.
+func staticToolScope(facts RepoFacts, opts Options, changed []string) []string {
+	scope := normalizedChangedFiles(changed)
+	if len(scope) > 0 || !opts.WholeRepo {
+		return scope
+	}
+	return repoWideStaticToolScope(facts)
+}
+
 // collectStaticToolResults runs the detected checkers scoped to changed, the
 // files this review resolved — the caller owns that resolution so the tools see
 // the same change set as the rest of the review, working tree or ref range.
@@ -83,7 +97,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	env := staticToolEnv{
 		repoRoot:     repoRoot,
 		facts:        facts,
-		changedFiles: normalizedChangedFiles(changed),
+		changedFiles: staticToolScope(facts, opts, changed),
 	}
 	if len(env.changedFiles) == 0 {
 		return nil

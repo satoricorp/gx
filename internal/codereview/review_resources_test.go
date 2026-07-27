@@ -48,8 +48,8 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	if len(store.requests) != 2 {
 		t.Fatalf("queries = %d, want broad + filtered", len(store.requests))
 	}
-	if !containsString(store.requests[0].IncludeAttributes, "publisher") {
-		t.Fatalf("include attributes = %#v, want publisher", store.requests[0].IncludeAttributes)
+	if !containsString(store.requests[0].IncludeAttributes, "body") {
+		t.Fatalf("include attributes = %#v, want body", store.requests[0].IncludeAttributes)
 	}
 	if !filterContains(store.requests[0].Filters, `"source_kind","Eq","review_corpus"`) {
 		t.Fatalf("broad filter = %#v", store.requests[0].Filters)

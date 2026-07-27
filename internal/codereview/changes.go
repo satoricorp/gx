@@ -18,9 +18,10 @@ const (
 	ReviewModeWorkingTree = "working-tree"
 	// ReviewModeRange is a commit range, "<base>...HEAD".
 	ReviewModeRange = "range"
-	// ReviewModeRepo is a whole-repo review: the caller asked for a scope,
-	// prompt, or deep review, so the repo itself is the subject and no diff
-	// is required.
+	// ReviewModeRepo is a whole-repo review: the repository itself is the
+	// subject and no diff is required. It is reached either by explicit
+	// request (Options.WholeRepo) or as the fallback for a scope-, prompt-, or
+	// deep-directed review that found no diff at all.
 	ReviewModeRepo = "repo"
 	// ReviewModeNone means nothing was inspected. It is never a pass.
 	ReviewModeNone = "none"
@@ -72,6 +73,51 @@ func resolveChangeSet(ctx context.Context, repoRoot string, base string) ChangeS
 		return committed
 	}
 	return ChangeSet{Mode: ReviewModeNone, Target: noCommittedChangeTarget(ctx, repoRoot)}
+}
+
+// wholeRepoChangeSet makes the repository the subject of the review, whatever
+// resolveChangeSet found. It deliberately keeps the resolved Files, Base, and
+// Range: a whole-repo review that threw away the caller's uncommitted work
+// would read everything except the change that prompted the review, so the
+// diff stays as the change in focus while the repo is what gets reviewed.
+//
+// explicitBase reports whether the caller also named a base. Both instructions
+// are explicit and they disagree about the subject, so rather than silently
+// picking one, WholeRepo sets the subject and the target says so.
+//
+// repoHasContent is the honesty guard. Asking for a whole-repo review of a
+// repository with no files and no diff must not manufacture a review: that is
+// still "never looked", and claiming otherwise would let --repo turn the one
+// non-passing outcome into a pass.
+func wholeRepoChangeSet(changes ChangeSet, explicitBase bool, repoHasContent bool) ChangeSet {
+	if !repoHasContent && !changes.Reviewed() {
+		return changes
+	}
+	changes.Mode = ReviewModeRepo
+	changes.Target = wholeRepoTarget(changes, explicitBase)
+	return changes
+}
+
+// wholeRepoTarget names the repository as the subject and, when a diff was
+// resolved, names that diff too, so the report never implies gx ignored it.
+func wholeRepoTarget(changes ChangeSet, explicitBase bool) string {
+	focus := ""
+	switch {
+	case strings.TrimSpace(changes.Range) != "":
+		focus = "`" + strings.TrimSpace(changes.Range) + "`"
+	case len(changes.Files) > 0:
+		focus = "the working tree"
+	}
+	if explicitBase {
+		if focus == "" {
+			focus = "`" + strings.TrimSpace(changes.Base) + "`"
+		}
+		return fmt.Sprintf("the repository (whole-repo review requested, so it set the subject over --base; %s kept as the change in focus)", focus)
+	}
+	if focus == "" {
+		return "the repository"
+	}
+	return fmt.Sprintf("the repository (with %s as the change in focus)", focus)
 }
 
 // committedChangeSet is case (c): the tree is clean, so review the branch's own

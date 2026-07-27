@@ -14,8 +14,18 @@ func TestReviewerAvailable(t *testing.T) {
 	if reviewerAvailable(multiAIReviewer{reviewers: []namedAIReviewer{{reviewer: unavailableAIReviewer{reason: "missing"}}}}) {
 		t.Fatal("reviewerAvailable(unavailable multi) = true, want false")
 	}
-	if !reviewerAvailable(&responsesAIReviewer{}) {
-		t.Fatal("reviewerAvailable(real OpenAI reviewer) = false, want true")
+	// A leg is available when it has a wire to Bedrock, not merely when it
+	// exists: a reviewer with no transport cannot review, and reporting it as
+	// available is how a review with no reviewer reads as a clean review.
+	if reviewerAvailable(&bedrockAnthropicReviewer{model: defaultBedrockReviewModelA}) {
+		t.Fatal("reviewerAvailable(Bedrock reviewer without a transport) = true, want false")
+	}
+	withTransport := newBedrockReviewer(
+		newDirectBedrockTransport(bedrockCredentials{accessKey: "key", secretKey: "secret", region: "us-west-2"}),
+		defaultBedrockReviewModelA,
+	)
+	if !reviewerAvailable(withTransport) {
+		t.Fatal("reviewerAvailable(real Bedrock reviewer) = false, want true")
 	}
 	if !reviewerAvailable(fakeReviewer{}) {
 		t.Fatal("reviewerAvailable(fake without Available) = false, want true")
@@ -232,14 +242,20 @@ func TestNearDupeProviderFindingsMerge(t *testing.T) {
 
 func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GX_OPENAI_API_KEY", "")
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
+	// An OPENAI_API_KEY must no longer produce a judge: the OpenAI judge is
+	// gone, and embeddings keep that variable set on most developer machines.
+	t.Setenv("OPENAI_API_KEY", "sk-embeddings-only")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
 	judge := judgeFromEnvWithPolicy(nil)
 	if judgeAvailable(judge) {
-		t.Fatalf("judgeAvailable(%T) = true, want false without credentials", judge)
+		t.Fatalf("judgeAvailable(%T) = true, want false without AWS credentials", judge)
+	}
+	reason, ok := judge.(unavailableReviewJudge)
+	if !ok || !strings.Contains(reason.reason, "AWS_ACCESS_KEY_ID") {
+		t.Fatalf("judge = %#v, want an unavailable judge naming the missing AWS credentials", judge)
 	}
 }
 

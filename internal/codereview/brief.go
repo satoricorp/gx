@@ -11,10 +11,24 @@ import (
 	"strings"
 )
 
-const maxContextSnippetBytes = 3200
-const maxDiffSnippetBytes = 20000
-const maxDiffSnippetFiles = 10
-const maxDeepDiffSnippetFiles = 24
+// maxContextSnippetBytes and maxDiffSnippetBytes are the same numbers the AI
+// layer enforces, referenced rather than restated. They were 3200 and 20000
+// here against 1200 and 6000 there, so this file spent the work of reading and
+// rendering bytes that compactReviewBriefForAI then discarded — a mismatch
+// nothing could observe except by wondering why a review missed the second half
+// of every file it claimed to have read.
+const maxContextSnippetBytes = maxAIContextSnippetBytes
+const maxDiffSnippetBytes = maxAIDiffSnippetBytes
+
+// maxDiffSnippetFiles bounds how many changed files are diffed. It was 10 (24
+// deep), applied to an alphabetically sorted list, which is how a review of a
+// 181-file branch read files starting with "a" and reported the rest clean.
+// Ranking (rankFilesByImpact) decides the order now and the shard planner packs
+// everything that survives, so this is a guard against a pathological change
+// set rather than the working limit — and whatever it drops is counted and
+// reported, never silently discarded.
+const maxDiffSnippetFiles = 400
+const maxDeepDiffSnippetFiles = 1200
 
 type ReviewBrief struct {
 	RepoRoot      string             `json:"repo_root"`
@@ -30,6 +44,15 @@ type ReviewBrief struct {
 	SourceRefs    []SourceRef        `json:"source_refs,omitempty"`
 	SourceCatalog []SourceBrief      `json:"source_catalog"`
 	Rubric        ArchitectureRubric `json:"rubric"`
+	// Evidence records which retrieval sources answered and which did not. It
+	// travels in the brief so the model is told what it is missing, and so the
+	// report can say the same thing to the reader.
+	Evidence []EvidenceStatus `json:"evidence,omitempty"`
+}
+
+// DegradedEvidence lists the evidence sources that failed this review.
+func (b ReviewBrief) DegradedEvidence() []string {
+	return EvidenceWarnings(b.Evidence)
 }
 
 type StaticSnapshot struct {
@@ -144,16 +167,23 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		opts.ReviewPolicy = policy
 		in.Options = opts
 	}
+	if in.Evidence == nil {
+		in.Evidence = &EvidenceLog{}
+	}
 	contextSnippets, err := retriever.Retrieve(ctx, in)
 	if err != nil {
 		return ReviewBrief{}, err
 	}
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
-	contextSnippets = labelContextSnippets(contextSnippets)
 	changed := normalizedChangedFiles(in.ChangedFiles)
+	// A whole-repo review has to be given the repository, not just told that
+	// the repository is the subject. Added here rather than inside a retriever
+	// so it holds whichever retriever is configured.
+	contextSnippets = append(contextSnippets, wholeRepoContextSnippets(in.RepoRoot, in.Facts, opts, changed, contextSnippets)...)
+	contextSnippets = labelContextSnippets(contextSnippets)
 	diffSnippets := in.DiffSnippets
 	if diffSnippets == nil {
-		diffSnippets = collectDiffSnippets(ctx, in.RepoRoot, changed, opts.Deep, in.DiffRange)
+		diffSnippets = collectDiffSnippets(ctx, in.RepoRoot, changed, opts, in.DiffRange)
 	}
 	toolResults := []StaticToolResult(nil)
 	if in.Plan.RunStaticTools || !reviewExecutionPlanConfigured(in.Plan) {
@@ -185,6 +215,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		SourceRefs:    sourceRefsFromContextSnippets(contextSnippets),
 		SourceCatalog: sourceBriefs(sources),
 		Rubric:        reviewRubric(opts),
+		Evidence:      in.Evidence.Statuses(),
 	}, nil
 }
 
@@ -248,7 +279,15 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 		}
 	}
 	for _, rel := range facts.DependencyFiles {
-		if snippet, ok := readSnippet(repoRoot, rel, "dependency_manifest"); ok {
+		// A declared manifest and its generated lockfile are not the same kind
+		// of evidence and must not compete for the same context slot: go.mod
+		// tells a reviewer what this project depends on, go.sum tells it
+		// nothing it can act on. They were one kind, ranked above source code.
+		kind := "dependency_manifest"
+		if IsLockfilePath(rel) {
+			kind = "dependency_lockfile"
+		}
+		if snippet, ok := readSnippet(repoRoot, rel, kind); ok {
 			snippets = append(snippets, snippet)
 		}
 	}
@@ -270,10 +309,18 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 // collectDiffSnippets renders the diff for each changed file. refRange selects
 // the source: empty means the working tree (the interactive case), otherwise
 // the files are diffed across that git ref range.
-func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, deep bool, refRange string) []DiffSnippet {
+//
+// Files are ordered by impact, not alphabetically. normalizedChangedFiles and
+// rangeChangedFiles both sort by path, which is the right way to make a list
+// reproducible and the wrong way to decide what a reviewer reads first: with a
+// cap on the end of it, "sorted by path" means an auth change is reviewed if
+// and only if it sorts early. rankFilesByImpact is the same ranking the PR
+// summary uses to choose which hunks to describe.
+func collectDiffSnippets(ctx context.Context, repoRoot string, files []string, opts Options, refRange string) []DiffSnippet {
 	files = normalizedChangedFiles(files)
+	files = rankFilesByImpact(files, reviewPolicyOf(opts))
 	limit := maxDiffSnippetFiles
-	if deep {
+	if opts.Deep {
 		limit = maxDeepDiffSnippetFiles
 	}
 	if len(files) > limit {
@@ -575,7 +622,7 @@ func publisherForContextSnippet(snippet ContextSnippet) string {
 		return publisher
 	}
 	switch strings.TrimSpace(snippet.Kind) {
-	case "domain_doc", "repo_doc", "adr", "dependency_manifest", "changed_file", "module_file", "code_quality_file":
+	case "domain_doc", "repo_doc", "adr", "dependency_manifest", "changed_file", "module_file", "code_quality_file", "repo_inventory", "repo_source_file":
 		return "local"
 	case "indexed_session", "session":
 		return "session"
@@ -617,7 +664,7 @@ func sourceRefKind(snippet ContextSnippet) string {
 		return "policy"
 	case "review_reference":
 		return "reference"
-	case "domain_doc", "repo_doc", "adr", "dependency_manifest":
+	case "domain_doc", "repo_doc", "adr", "dependency_manifest", "dependency_lockfile", "repo_inventory", "repo_source_file":
 		return "local"
 	default:
 		return firstNonEmpty(snippet.Kind, "context")
@@ -638,6 +685,12 @@ func sourceRefTitle(snippet ContextSnippet) string {
 }
 
 func reviewRubric(opts Options) ArchitectureRubric {
+	// WholeRepo comes first because it names the subject: depth, scope, and
+	// prompt all describe how to review, and the rubric has to ask about the
+	// repository before it asks how deeply to look at it.
+	if opts.WholeRepo {
+		return wholeRepoReviewRubric(opts)
+	}
 	if opts.Deep {
 		return deepReviewRubric()
 	}

@@ -88,6 +88,9 @@ func reviewResourceRetrieverFromEnv() ContextRetriever {
 	}
 }
 
+// EvidenceSource implements evidenceNamer.
+func (ReviewResourceRetriever) EvidenceSource() string { return "review knowledge" }
+
 func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Embedder == nil || r.Store == nil {
 		return nil, nil
@@ -116,6 +119,8 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	if limit <= 0 {
 		limit = defaultReviewResourceTopK
 	}
+	// The attribute list records what this retriever reads. It is not sent as
+	// include_attributes — see turboPufferReviewResourceStore.Query.
 	include := []string{
 		"body",
 		"text",
@@ -174,10 +179,18 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 	if limit <= 0 {
 		limit = defaultReviewResourceTopK
 	}
+	// include_attributes is deliberately `true` rather than the caller's list.
+	// TurboPuffer rejects the entire query — HTTP 400, zero rows — when the list
+	// names an attribute the namespace does not declare, and the list did:
+	// gx-review-knowledge has no `publisher` column, so every review resource
+	// query in production was failing and, because the composite retriever
+	// swallowed the error, failing invisibly. Asking for all attributes cannot
+	// be rejected. The caller's list is kept in the request as a record of what
+	// the retriever reads.
 	vectorQuery := map[string]any{
 		"rank_by":            []any{"vector", "ANN", req.Vector},
 		"limit":              map[string]any{"total": limit},
-		"include_attributes": req.IncludeAttributes,
+		"include_attributes": true,
 	}
 	if req.Filters != nil {
 		vectorQuery["filters"] = req.Filters
@@ -187,7 +200,7 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 		textQuery := map[string]any{
 			"rank_by":            []any{"body", "BM25", req.Text},
 			"limit":              map[string]any{"total": limit},
-			"include_attributes": req.IncludeAttributes,
+			"include_attributes": true,
 		}
 		if req.Filters != nil {
 			textQuery["filters"] = req.Filters
@@ -553,7 +566,11 @@ func riskTagsForReview(files []string, dependencyFiles []string, opts Options) [
 	for _, tag := range []string{"bug", "regression", "error-handling", "testing"} {
 		tags[tag] = struct{}{}
 	}
-	if opts.PatchFocused || opts.Deep {
+	// WholeRepo belongs with the other two: these tags drive review-resource
+	// retrieval, and a whole-repo review that retrieved less security guidance
+	// than the default patch review would be a narrower review bought with a
+	// broader request.
+	if opts.PatchFocused || opts.Deep || opts.WholeRepo {
 		for _, tag := range []string{"secure-coding", "data-correctness", "race-condition", "idempotency", "observability"} {
 			tags[tag] = struct{}{}
 		}
@@ -719,6 +736,9 @@ func indexedContextRetrieverFromEnv() ContextRetriever {
 		Limit:     reviewEnvInt("GX_REVIEW_INDEXED_CONTEXT_TOP_K", defaultIndexedContextLimit),
 	}
 }
+
+// EvidenceSource implements evidenceNamer.
+func (IndexedContextRetriever) EvidenceSource() string { return "legacy indexed context" }
 
 func (r IndexedContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Embedder == nil || r.Store == nil {

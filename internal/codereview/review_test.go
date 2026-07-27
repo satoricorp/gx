@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -489,21 +490,25 @@ func TestEnginePassesReviewPromptToAIReviewer(t *testing.T) {
 	}
 }
 
-func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
+// TestOpenAICredentialsAloneProduceNoReviewer replaces the deleted
+// TestOpenAIReviewerFromEnvPrefersUserOpenAIKey. OPENAI_API_KEY is still set on
+// every machine that indexes code (internal/semantic embeds with it), so the
+// regression to guard is the opposite of the old one: an OpenAI key must not
+// conjure a reviewer now that Bedrock is the only provider.
+func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
+	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
-	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-	t.Setenv("GX_OPENAI_API_KEY", "gx-key")
-	t.Setenv("GX_OPENAI_BASE_URL", "http://127.0.0.1:43124")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
-	reviewer := openAIReviewerFromEnvWithModel("")
-	got, ok := reviewer.(*responsesAIReviewer)
-	if !ok {
-		t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
+	reviewer := reviewerFromEnvWithPolicy(nil)
+	if reviewerAvailable(reviewer) {
+		t.Fatalf("reviewerAvailable(%T) = true, want false with only an OpenAI key", reviewer)
 	}
-	if got.url != "http://127.0.0.1:43123/v1/responses" || got.token != "openai-key" {
-		t.Fatalf("reviewer config = url %q token %q", got.url, got.token)
+	reason := ReviewerUnavailableReason(reviewer)
+	if !strings.Contains(reason, "AWS credentials") {
+		t.Fatalf("ReviewerUnavailableReason() = %q, want the missing AWS credentials named", reason)
 	}
 }
 
@@ -745,7 +750,7 @@ func TestRenderMarkdownDoesNotRenderOverview(t *testing.T) {
 }
 
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
-	prompt := reviewDeveloperPrompt()
+	prompt := reviewDeveloperPrompt(ReviewBrief{})
 	for _, want := range []string{
 		"patch_focused",
 		"pr_summary",
@@ -927,12 +932,23 @@ func (f fakeReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	return f.findings, nil
 }
 
+// capturingReviewer records the briefs it was asked to review. A review can
+// fan out into several concurrent calls, so the briefs are guarded and all of
+// them are kept: `brief` is the first, which is the whole brief whenever the
+// review did not fan out, and `briefs` is every shard.
 type capturingReviewer struct {
-	brief ReviewBrief
+	mu     sync.Mutex
+	brief  ReviewBrief
+	briefs []ReviewBrief
 }
 
 func (c *capturingReviewer) Review(_ context.Context, brief ReviewBrief) ([]Finding, error) {
-	c.brief = brief
+	c.mu.Lock()
+	if len(c.briefs) == 0 {
+		c.brief = brief
+	}
+	c.briefs = append(c.briefs, brief)
+	c.mu.Unlock()
 	return []Finding{{
 		ID:             "ai.prompt",
 		Title:          "Prompt-directed finding",

@@ -33,6 +33,13 @@ type RetrieveInput struct {
 	ChangedFiles []string
 	DiffRange    string
 	DiffSnippets []DiffSnippet
+	// Evidence collects each retrieval source's availability. It is carried on
+	// the input rather than returned from Retrieve because one retriever reads
+	// several namespaces and can succeed on one while failing on another, which
+	// a single error return cannot express. Nil is safe: every method on
+	// *EvidenceLog tolerates a nil receiver, so a caller that does not care
+	// about evidence reporting need not build one.
+	Evidence *EvidenceLog
 }
 
 func TriageChange(changedFiles []string, diffSnippets []DiffSnippet, opts Options) ChangeTriage {

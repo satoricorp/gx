@@ -150,18 +150,39 @@ func (p ReviewPolicy) QueryText() string {
 	return strings.Join(parts, "\n\n")
 }
 
-func (p ReviewPolicy) OpenAIModelHint() string {
-	for _, hint := range p.ModelHints {
-		if hint.Provider == "openai" && strings.TrimSpace(hint.Model) != "" {
-			return strings.TrimSpace(hint.Model)
-		}
+func (p ReviewPolicy) AnthropicModelHint() string {
+	hints := p.AnthropicModelHints()
+	if len(hints) == 0 {
+		return ""
 	}
-	return ""
+	return hints[0]
 }
 
-func (p ReviewPolicy) AnthropicModelHint() string {
+// AnthropicModelHints returns every Anthropic model a REVIEW.md asks for, in
+// the order the file names them, excluding any hint reserved for the judge.
+//
+// The reviewer panel has two legs now, so a single hint is no longer enough to
+// express the request. Order is the mapping (first hint -> leg A) because it is
+// the only thing REVIEW.md prose reliably carries; AnthropicModelHint() stays
+// as the first element so callers that only ever wanted one are unchanged.
+func (p ReviewPolicy) AnthropicModelHints() []string {
+	var out []string
 	for _, hint := range p.ModelHints {
-		if hint.Provider == "anthropic" && strings.TrimSpace(hint.Model) != "" {
+		model := strings.TrimSpace(hint.Model)
+		if hint.Provider != "anthropic" || model == "" || hint.Role == reviewModelRoleJudge {
+			continue
+		}
+		out = append(out, model)
+	}
+	return out
+}
+
+// JudgeModelHint returns the model a REVIEW.md line naming the judge asks for.
+// It is kept out of AnthropicModelHints so that pinning the judge does not
+// silently also pin a reviewer leg.
+func (p ReviewPolicy) JudgeModelHint() string {
+	for _, hint := range p.ModelHints {
+		if hint.Provider == "anthropic" && hint.Role == reviewModelRoleJudge && strings.TrimSpace(hint.Model) != "" {
 			return strings.TrimSpace(hint.Model)
 		}
 	}
@@ -223,11 +244,11 @@ func fetchReviewReference(ctx context.Context, client *http.Client, rawURL strin
 }
 
 var (
-	reviewURLPattern   = regexp.MustCompile(`https?://[^\s<>()"']+`)
-	htmlTagPattern     = regexp.MustCompile(`(?s)<[^>]+>`)
-	htmlScriptPattern  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	htmlStylePattern   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	reviewModelPattern = regexp.MustCompile(`(?i)\b(?:(openai|anthropic):)?((?:gpt|o)[A-Za-z0-9._-]*|(?:anthropic\.)?claude[A-Za-z0-9._-]*)\b`)
+	reviewURLPattern      = regexp.MustCompile(`https?://[^\s<>()"']+`)
+	htmlTagPattern        = regexp.MustCompile(`(?s)<[^>]+>`)
+	htmlScriptPattern     = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	htmlStylePattern      = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	reviewModelPattern    = regexp.MustCompile(`(?i)\b(?:(openai|anthropic):)?((?:gpt|o)[A-Za-z0-9._-]*|(?:anthropic\.)?claude[A-Za-z0-9._-]*)\b`)
 	reviewRiskPathPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*(?:—|-)\s*(.+?)\s*$`)
 )
 
@@ -394,9 +415,14 @@ func normalizeReviewModel(provider, model string) string {
 	return model
 }
 
+// reviewModelRoleJudge marks a hint as being about the verification model
+// rather than a reviewer leg. It is checked first so that "use X to judge
+// findings for security" pins the judge and not the security reviewer.
+const reviewModelRoleJudge = "judge"
+
 func inferReviewModelRole(line string) string {
 	lower := strings.ToLower(line)
-	for _, role := range []string{"correctness", "security", "dissent", "performance", "testing", "maintainability", "docs", "dependencies"} {
+	for _, role := range []string{reviewModelRoleJudge, "correctness", "security", "dissent", "performance", "testing", "maintainability", "docs", "dependencies"} {
 		if strings.Contains(lower, role) {
 			return role
 		}

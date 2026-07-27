@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -57,13 +58,8 @@ type judgeAvailabilityReporter interface {
 	Available() bool
 }
 
-type openAIReviewJudge struct {
-	client *responsesAIReviewer
-}
-
-type fallbackReviewJudge struct {
-	primary  FindingJudge
-	fallback FindingJudge
+type bedrockReviewJudge struct {
+	client *bedrockAnthropicReviewer
 }
 
 type unavailableReviewJudge struct {
@@ -105,50 +101,65 @@ type judgeResult struct {
 	VerificationNote string  `json:"verification_note"`
 }
 
+// judgeFromEnvWithPolicy builds the verification model.
+//
+// The judge runs on Bedrock like the reviewers, but deliberately on a third
+// model: it decides which candidate findings a human sees, and a model that
+// grades its own output is not a filter. It is also the only model on the
+// sequential path — both reviewers must finish before it starts — so it is the
+// cheaper Sonnet rather than a third Opus.
+//
+// Precedence is env > REVIEW.md hint > default here, inverted from the reviewer
+// legs. That asymmetry is pre-existing (GX_REVIEW_JUDGE_MODEL has always won
+// over the policy hint) and is preserved rather than tidied: a repo pins which
+// models review its code, but an operator debugging a verification failure
+// needs to be able to override the judge from the environment without editing
+// the repo's REVIEW.md.
+//
+// The judge takes the same transport precedence as the reviewer legs — local
+// AWS credentials if present, gx-cloud otherwise — resolved by the same
+// function, so a review cannot end up with reviewers on one wire and its judge
+// on another and no way to tell from the output.
+//
+// There is no OpenAI judge any more, and no fallback judge of any kind. With
+// neither transport reachable the judge is unavailable and says so; the engine
+// then keeps every candidate finding under capAdvisoryFindings rather than
+// silently treating an unreachable judge as a verdict. That fail-open path is
+// what the batching work made visible and it is still the only degraded
+// behavior here.
 func judgeFromEnvWithPolicy(policy *ReviewPolicy) FindingJudge {
 	if judgeDisabledFromEnv() {
 		return nil
 	}
-	override := strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE_MODEL"))
-	if override == "" && policy != nil {
-		override = policy.OpenAIModelHint()
+	plan, err := resolveBedrockTransportPlan()
+	if err != nil {
+		return unavailableReviewJudge{reason: err.Error()}
 	}
-	model := resolveOpenAIReviewModel(override)
+	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel(policy))}
+}
 
-	direct, directErr := directOpenAIReviewerFromEnv(model)
-	cloudReviewer := cloudOpenAIReviewerFromEnv(model)
-	var directJudge FindingJudge
-	if directClient, ok := direct.(*responsesAIReviewer); ok {
-		directJudge = openAIReviewJudge{client: directClient}
+// resolveBedrockJudgeModel applies env > policy hint > default.
+func resolveBedrockJudgeModel(policy *ReviewPolicy) string {
+	hint := ""
+	if policy != nil {
+		hint = policy.JudgeModelHint()
 	}
-	var cloudJudge FindingJudge
-	if cloudClient, ok := cloudReviewer.(*responsesAIReviewer); ok {
-		cloudJudge = openAIReviewJudge{client: cloudClient}
-	}
-	if directJudge != nil && cloudJudge != nil {
-		return fallbackReviewJudge{primary: directJudge, fallback: cloudJudge}
-	}
-	if directJudge != nil {
-		return directJudge
-	}
-	if directErr != nil {
-		return unavailableReviewJudge{reason: directErr.Error()}
-	}
-	if cloudJudge != nil {
-		return cloudJudge
-	}
-	return unavailableReviewJudge{reason: "review judge is not configured"}
+	return normalizeBedrockModelID(firstNonEmpty(
+		os.Getenv("GX_REVIEW_JUDGE_MODEL"),
+		hint,
+		defaultBedrockJudgeModel,
+	))
 }
 
 func judgeDisabledFromEnv() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE")), "0")
 }
 
-func (j openAIReviewJudge) Available() bool {
+func (j bedrockReviewJudge) Available() bool {
 	return j.client != nil
 }
 
-func (j openAIReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error) {
+func (j bedrockReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error) {
 	if j.client == nil {
 		return nil, fmt.Errorf("review judge is not configured")
 	}
@@ -156,27 +167,36 @@ func (j openAIReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judge
 	if err != nil {
 		return nil, err
 	}
+	return parseJudgeResponse(content)
+}
+
+// parseJudgeResponse tolerates a model that wraps its JSON in prose or a fenced
+// block. The deleted OpenAI path could rely on response_format:json_object to
+// guarantee a bare object; Bedrock has no equivalent, so the same
+// truncation-shaped failure the batching work fixed would otherwise come back as
+// a parse error on every batch.
+func parseJudgeResponse(content string) ([]judgeResult, error) {
 	var parsed judgeResponse
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+		return parsed.Results, nil
+	}
+	trimmed := extractJSONObject(content)
+	if trimmed == "" {
+		return nil, fmt.Errorf("decode judge JSON: no JSON object in response")
+	}
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
 		return nil, fmt.Errorf("decode judge JSON: %w", err)
 	}
 	return parsed.Results, nil
 }
 
-func (j fallbackReviewJudge) Available() bool {
-	return judgeAvailable(j.primary) || judgeAvailable(j.fallback)
-}
-
-func (j fallbackReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error) {
-	results, err := j.primary.Judge(ctx, req)
-	if err == nil {
-		return results, nil
+func extractJSONObject(content string) string {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start < 0 || end <= start {
+		return ""
 	}
-	fallbackResults, fallbackErr := j.fallback.Judge(ctx, req)
-	if fallbackErr == nil {
-		return fallbackResults, nil
-	}
-	return nil, fmt.Errorf("%w; fallback judge failed: %v", err, fallbackErr)
+	return content[start : end+1]
 }
 
 func (j unavailableReviewJudge) Available() bool {
@@ -303,6 +323,91 @@ func strengthFromImpact(impact string) string {
 		return "Strong"
 	}
 	return "Worth exploring"
+}
+
+// judgeBatchSize is how many candidates one judge call may carry.
+//
+// The judge answers with one object per candidate, so its output length is
+// linear in the candidate count while defaultJudgeMaxOutputTokens is fixed. It
+// is the output budget, not the input, that binds. Measured against gpt-5.5
+// with the production prompt: 3 candidates -> 640 output tokens, 6 -> 851,
+// 12 -> 1671, 24 -> 2581, 36 -> 3635, and 48 -> the response stopped at
+// max_output_tokens mid-object.
+//
+// A truncated response is not partial data, it is unparseable JSON, so Judge
+// returns an error and every candidate loses its verdict at once. Before
+// batching, a review that produced 48 candidate findings surfaced at most
+// maxAdvisoryFindings (3) of them and said nothing about why. 24 keeps the
+// worst measured batch at roughly 65% of the output budget, which leaves room
+// for the longer verification notes a genuinely complex finding attracts.
+const judgeBatchSize = 24
+
+// judgeBatchOutcome is what one batch of candidates came back with.
+type judgeBatchOutcome struct {
+	// Judged are the candidates a verdict was returned for.
+	Judged []Finding
+	// Unjudged are candidates whose batch failed. They are kept rather than
+	// dropped: "the judge could not be reached" and "the judge rejected this"
+	// are different facts and must not produce the same review.
+	Unjudged []Finding
+	// Err is the first batch failure, for the degraded-reasons line.
+	Err error
+	// Batches / BatchesFailed describe the fan-out for the same line.
+	Batches       int
+	BatchesFailed int
+}
+
+// runJudge verifies candidates in concurrent batches.
+//
+// Concurrency is the point as much as batching. The judge is a second model
+// call that used to run strictly after the reviewer finished, and it is a
+// double-digit share of review latency; splitting it into batches that run at
+// the same time turns a serial 2N-candidate call into one N-candidate call's
+// worth of wall clock. Measured on the production prompt, a single 48-candidate
+// call takes 47s and fails; two concurrent 24-candidate batches take about 40s
+// and succeed.
+func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewContext, candidates []Finding) judgeBatchOutcome {
+	if len(candidates) == 0 {
+		return judgeBatchOutcome{}
+	}
+	var batches [][]Finding
+	for start := 0; start < len(candidates); start += judgeBatchSize {
+		end := start + judgeBatchSize
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+		batches = append(batches, candidates[start:end])
+	}
+	type batchResult struct {
+		results []judgeResult
+		err     error
+	}
+	out := make([]batchResult, len(batches))
+	var wg sync.WaitGroup
+	for i, batch := range batches {
+		i, batch := i, batch
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results, err := judge.Judge(ctx, buildJudgeRequest(reviewContext, batch))
+			out[i] = batchResult{results: results, err: err}
+		}()
+	}
+	wg.Wait()
+
+	outcome := judgeBatchOutcome{Batches: len(batches)}
+	for i, batch := range batches {
+		if out[i].err != nil {
+			outcome.BatchesFailed++
+			if outcome.Err == nil {
+				outcome.Err = out[i].err
+			}
+			outcome.Unjudged = append(outcome.Unjudged, batch...)
+			continue
+		}
+		outcome.Judged = append(outcome.Judged, applyJudgeResults(batch, out[i].results)...)
+	}
+	return outcome
 }
 
 func capAdvisoryFindings(findings []Finding) []Finding {

@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/satoricorp/gx/internal/cloud"
 )
 
 func TestParseAIReviewOutputIncludesFileLineOverviewAndSources(t *testing.T) {
@@ -65,6 +62,58 @@ func TestParseAIReviewOutputEmptyRecommendationsIsValid(t *testing.T) {
 	}
 	if len(output.Findings) != 0 {
 		t.Fatalf("Findings = %#v, want empty", output.Findings)
+	}
+}
+
+// TestParseAIReviewOutputToleratesFencedAndPrefixedJSON pins the reviewer's
+// half of the JSON-shape guarantee that disappeared with the OpenAI reviewer.
+//
+// That path pinned the shape with response_format:json_object. Bedrock has no
+// equivalent, so a leg may answer with a ```json fence or a sentence of preamble
+// whenever it likes. This is not hypothetical: the first live cloud review after
+// the Bedrock cutover failed on both legs at once with "invalid character '`'
+// looking for beginning of value" and returned zero findings.
+func TestParseAIReviewOutputToleratesFencedAndPrefixedJSON(t *testing.T) {
+	body := `{"overview":"Adds a rate limiter.","recommendations":[{` +
+		`"title":"Unsynchronized state",` +
+		`"summary":"Allow mutates count without holding mu.",` +
+		`"benefit":"Removes a data race under concurrent callers.",` +
+		`"recommendation":"Lock mu for the whole read-modify-write.",` +
+		`"file":"a.go","line":12}]}`
+	for name, content := range map[string]string{
+		"fenced with language": "```json\n" + body + "\n```",
+		"fenced bare":          "```\n" + body + "\n```",
+		"prose preamble":       "Here is the review:\n\n" + body,
+		"trailing prose":       body + "\n\nLet me know if you want more detail.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			output, err := parseAIReviewOutput(content, ReviewBrief{})
+			if err != nil {
+				t.Fatalf("parseAIReviewOutput() error = %v", err)
+			}
+			if output.Overview != "Adds a rate limiter." {
+				t.Fatalf("Overview = %q, want the decoded overview", output.Overview)
+			}
+			if len(output.Findings) != 1 {
+				t.Fatalf("Findings = %d, want 1", len(output.Findings))
+			}
+		})
+	}
+}
+
+// TestParseAIReviewOutputStillRejectsNonJSON keeps the fallback from turning a
+// genuine failure into a silent empty review: a model that answers with prose
+// and no object at all must still be an error, not zero findings.
+func TestParseAIReviewOutputStillRejectsNonJSON(t *testing.T) {
+	for name, content := range map[string]string{
+		"prose only": "I could not review this change.",
+		"empty":      "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseAIReviewOutput(content, ReviewBrief{}); err == nil {
+				t.Fatalf("parseAIReviewOutput(%q) error = nil, want an error", content)
+			}
+		})
 	}
 }
 
@@ -156,29 +205,16 @@ func TestPatchFocusedReviewIgnoresNotableChanges(t *testing.T) {
 	}
 }
 
-func TestResponsesAIReviewerReviewForSummaryParsesNotableChanges(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"output_text":"{\"overview\":\"Overview.\",\"notable_changes\":[{\"file\":\"main.go\",\"line\":\"3\",\"note\":\"Changed entry point.\"}],\"recommendations\":[]}"}`))
-	}))
-	defer server.Close()
-
-	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
-	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
-	if err != nil {
-		t.Fatalf("ReviewForSummary() error = %v", err)
-	}
-	if summary.Overview != "Overview." || len(summary.NotableChanges) != 1 || summary.NotableChanges[0].Line != 3 {
-		t.Fatalf("summary = %#v", summary)
-	}
-}
-
 func TestBedrockAnthropicReviewerReviewForSummaryParsesNotableChanges(t *testing.T) {
 	reviewer := &bedrockAnthropicReviewer{
-		region: "us-east-1", model: "test-model", accessKey: "key", secretKey: "secret",
-		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-			body := strings.NewReader(`{"content":[{"type":"text","text":"{\"overview\":\"Overview text\",\"notable_changes\":[{\"file\":\"main.go\",\"line\":3,\"note\":\"Changed entry point.\"}],\"recommendations\":[]}"}]}`)
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
-		})},
+		model: "test-model",
+		transport: &directBedrockTransport{
+			region: "us-east-1", accessKey: "key", secretKey: "secret",
+			client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				body := strings.NewReader(`{"content":[{"type":"text","text":"{\"overview\":\"Overview text\",\"notable_changes\":[{\"file\":\"main.go\",\"line\":3,\"note\":\"Changed entry point.\"}],\"recommendations\":[]}"}]}`)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
+			})},
+		},
 	}
 	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
 	if err != nil {
@@ -189,13 +225,40 @@ func TestBedrockAnthropicReviewerReviewForSummaryParsesNotableChanges(t *testing
 	}
 }
 
-func TestResponsesAIReviewerParsesCannedResponse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"output_text":"{\"recommendations\":[{\"title\":\"T\",\"summary\":\"S\",\"benefit\":\"B\",\"recommendation\":\"R\",\"file\":\"main.go\",\"line\":3,\"source_labels\":[\"L1\"]}]}"}`))
-	}))
-	defer server.Close()
+func TestBedrockAnthropicReviewerParsesCannedResponse(t *testing.T) {
+	reviewer := &bedrockAnthropicReviewer{
+		model: "test-model",
+		transport: &directBedrockTransport{
+			region: "us-east-1", accessKey: "key", secretKey: "secret",
+			client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				body := strings.NewReader(`{"content":[{"type":"text","text":"{\"overview\":\"Overview text\",\"recommendations\":[]}"}]}`)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
+			})},
+		},
+	}
+	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
+	if err != nil {
+		t.Fatalf("ReviewForSummary() error = %v", err)
+	}
+	if summary.Overview != "Overview text" || len(summary.Findings) != 0 {
+		t.Fatalf("overview=%q findings=%#v", summary.Overview, summary.Findings)
+	}
+}
 
-	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
+// TestBedrockAnthropicReviewerResolvesFileLineAndSources ports the anchoring
+// coverage that used to sit on the deleted OpenAI reviewer: a leg must still
+// resolve file, line, and source labels from a canned model response.
+func TestBedrockAnthropicReviewerResolvesFileLineAndSources(t *testing.T) {
+	reviewer := &bedrockAnthropicReviewer{
+		model: "us.anthropic.claude-test",
+		transport: &directBedrockTransport{
+			region: "us-west-2", accessKey: "key", secretKey: "secret",
+			client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				body := strings.NewReader(`{"content":[{"type":"text","text":"{\"recommendations\":[{\"title\":\"T\",\"summary\":\"S\",\"benefit\":\"B\",\"recommendation\":\"R\",\"file\":\"main.go\",\"line\":3,\"source_labels\":[\"L1\"]}]}"}]}`)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
+			})},
+		},
+	}
 	brief := ReviewBrief{
 		SourceRefs: []SourceRef{{ID: "L1", Kind: "local", File: "main.go", StartLine: 3, Publisher: "local"}},
 	}
@@ -206,46 +269,8 @@ func TestResponsesAIReviewerParsesCannedResponse(t *testing.T) {
 	if len(findings) != 1 || findings[0].File != "main.go" || findings[0].Line != 3 {
 		t.Fatalf("findings = %#v", findings)
 	}
-}
-
-func TestResponsesAIReviewerPaymentRequiredIsFriendly(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusPaymentRequired)
-		_, _ = w.Write([]byte(`{"error":"payment_required","message":"GX free trial has ended for this org. Upgrade to keep using GX Cloud AI, or set your own model key with ` + "`gx set key`" + `.","upgrade_url":"https://gx.run/upgrade?org=x"}`))
-	}))
-	defer server.Close()
-
-	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
-	_, err := reviewer.Review(context.Background(), ReviewBrief{})
-	if err == nil {
-		t.Fatal("Review() expected payment-required error")
-	}
-	if !cloud.IsPaymentRequired(err) {
-		t.Fatalf("error type = %T (%v), want PaymentRequiredError", err, err)
-	}
-	message := err.Error()
-	if !strings.Contains(message, "gx set key") || !strings.Contains(message, "https://gx.run/upgrade?org=x") {
-		t.Fatalf("error = %q, want upgrade guidance", message)
-	}
-	if strings.Contains(message, "status 402") {
-		t.Fatalf("error = %q, want raw status hidden", message)
-	}
-}
-
-func TestBedrockAnthropicReviewerParsesCannedResponse(t *testing.T) {
-	reviewer := &bedrockAnthropicReviewer{
-		region: "us-east-1", model: "test-model", accessKey: "key", secretKey: "secret",
-		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-			body := strings.NewReader(`{"content":[{"type":"text","text":"{\"overview\":\"Overview text\",\"recommendations\":[]}"}]}`)
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
-		})},
-	}
-	summary, err := reviewer.ReviewForSummary(context.Background(), ReviewBrief{})
-	if err != nil {
-		t.Fatalf("ReviewForSummary() error = %v", err)
-	}
-	if summary.Overview != "Overview text" || len(summary.Findings) != 0 {
-		t.Fatalf("overview=%q findings=%#v", summary.Overview, summary.Findings)
+	if len(findings[0].ResolvedSources) != 1 {
+		t.Fatalf("ResolvedSources = %#v, want the local label resolved", findings[0].ResolvedSources)
 	}
 }
 
@@ -257,7 +282,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestMultiAIReviewerEmptyParseableResponseSucceeds(t *testing.T) {
 	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{{
-		name: "openai", label: "OpenAI", reviewer: cannedAIReviewer{payload: `{"recommendations":[]}`},
+		name: "bedrock-a", label: "Bedrock A", reviewer: cannedAIReviewer{payload: `{"recommendations":[]}`},
 	}}}
 	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
 	if err != nil {
@@ -270,46 +295,30 @@ func TestMultiAIReviewerEmptyParseableResponseSucceeds(t *testing.T) {
 
 func TestMultiAIReviewerErrorsWhenAllProvidersFail(t *testing.T) {
 	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
-		{name: "openai", label: "OpenAI", reviewer: failingAIReviewer{err: errTestParseFail}},
-		{name: "anthropic", label: "Anthropic", reviewer: failingAIReviewer{err: errTestParseFail}},
+		{name: "bedrock-a", label: "Bedrock A", reviewer: failingAIReviewer{err: errTestParseFail}},
+		{name: "bedrock-b", label: "Bedrock B", reviewer: failingAIReviewer{err: errTestParseFail}},
 	}}
 	if _, err := reviewer.Review(context.Background(), ReviewBrief{}); err == nil {
 		t.Fatal("Review() succeeded, want error")
 	}
 }
 
-func TestFallbackAIReviewerDoesNotFallbackOnEmptyFindings(t *testing.T) {
-	var fallbackCalls int
-	reviewer := fallbackAIReviewer{
-		primary: cannedAIReviewer{payload: `{"recommendations":[]}`},
-		fallback: callbackAIReviewer{fn: func(context.Context, ReviewBrief) ([]Finding, error) {
-			fallbackCalls++
-			return []Finding{{ID: "fallback", Title: "Fallback", Summary: "S", Benefit: "B", Recommendation: "R"}}, nil
-		}},
-	}
-	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
-	if err != nil {
-		t.Fatalf("Review() error = %v", err)
-	}
-	if fallbackCalls != 0 {
-		t.Fatalf("fallbackCalls = %d, want 0", fallbackCalls)
-	}
-	if len(findings) != 0 {
-		t.Fatalf("findings = %#v, want empty", findings)
-	}
-}
-
-func TestFallbackAIReviewerFallsBackOnPrimaryError(t *testing.T) {
-	reviewer := fallbackAIReviewer{
-		primary:  failingAIReviewer{err: errTestParseFail},
-		fallback: cannedAIReviewer{payload: `{"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]}`},
-	}
+// TestMultiAIReviewerSurvivesOneFailedLeg is the property the two-leg panel
+// exists for: one model failing must not lose the other model's findings.
+func TestMultiAIReviewerSurvivesOneFailedLeg(t *testing.T) {
+	reviewer := multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "bedrock-a", label: "Bedrock A", reviewer: failingAIReviewer{err: errTestParseFail}},
+		{name: "bedrock-b", label: "Bedrock B", reviewer: cannedAIReviewer{payload: `{"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]}`}},
+	}}
 	findings, err := reviewer.Review(context.Background(), ReviewBrief{})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
 	if len(findings) != 1 {
-		t.Fatalf("findings = %#v", findings)
+		t.Fatalf("findings = %#v, want the surviving leg's finding", findings)
+	}
+	if !strings.Contains(evidenceText(findings[0].Evidence), "Bedrock B") {
+		t.Fatalf("Evidence = %#v, want the finding attributed to its leg", findings[0].Evidence)
 	}
 }
 
@@ -347,14 +356,6 @@ func (f failingAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, erro
 	return nil, f.err
 }
 
-type callbackAIReviewer struct {
-	fn func(context.Context, ReviewBrief) ([]Finding, error)
-}
-
-func (c callbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	return c.fn(ctx, brief)
-}
-
 func TestCompactBriefKeepsDiffSnippetsBeyondTheContextBudget(t *testing.T) {
 	// Diff snippets are the primary evidence for what changed, so they must not
 	// be throttled by the retrieved-context budget. A PR summary runs shallow
@@ -379,8 +380,11 @@ func TestCompactBriefKeepsDiffSnippetsBeyondTheContextBudget(t *testing.T) {
 	if got := len(compacted.Static.DiffSnippets); got != maxAIDiffSnippets {
 		t.Fatalf("diff snippets = %d, want %d", got, maxAIDiffSnippets)
 	}
-	if got := len(compacted.Static.DiffSnippets); got <= maxAIContextSnippets {
-		t.Fatalf("diff snippets = %d, still bounded by the context budget %d", got, maxAIContextSnippets)
+	// The two budgets must stay independent, and the diff budget must never be
+	// the smaller of the two: the diff is the primary evidence for what changed,
+	// so retrieved context must not be able to squeeze it out.
+	if maxAIDiffSnippets < maxAIContextSnippets {
+		t.Fatalf("diff budget %d is below the retrieved-context budget %d; a wide diff would be hidden from the model", maxAIDiffSnippets, maxAIContextSnippets)
 	}
 	if got := len(compacted.Context); got != maxAIContextSnippets {
 		t.Fatalf("context snippets = %d, want %d", got, maxAIContextSnippets)

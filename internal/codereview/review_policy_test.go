@@ -88,8 +88,14 @@ func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) 
 	if !policy.Present {
 		t.Fatalf("policy = %#v, want present", policy)
 	}
-	if policy.OpenAIModelHint() != "gpt-4o" {
-		t.Fatalf("OpenAIModelHint() = %q, want gpt-4o", policy.OpenAIModelHint())
+	// The openai line still parses into ModelHints — REVIEW.md files in the
+	// wild contain them — it simply no longer steers a reviewer leg, and must
+	// not be mistaken for one when the legs are mapped by order.
+	if policy.ModelHints[0].Provider != "openai" || policy.ModelHints[0].Model != "gpt-4o" {
+		t.Fatalf("ModelHints = %#v, want the openai hint parsed and kept", policy.ModelHints)
+	}
+	if hints := policy.AnthropicModelHints(); len(hints) != 1 {
+		t.Fatalf("AnthropicModelHints() = %#v, want only the anthropic hint to steer a leg", hints)
 	}
 	if policy.AnthropicModelHint() != "anthropic.claude-sonnet-4-5" {
 		t.Fatalf("AnthropicModelHint() = %q", policy.AnthropicModelHint())
@@ -221,12 +227,20 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 	}
 }
 
-func TestReviewerFromPolicyUsesOpenAIAndAnthropicModels(t *testing.T) {
+// TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent covers the REVIEW.md
+// contract across the change from one Anthropic reviewer to two: a file that
+// names one Anthropic model still pins the model it always pinned (leg A), the
+// OpenAI hint no longer produces a peer reviewer, and leg B keeps its default
+// so a single hint cannot collapse the panel into one model reviewed twice.
+func TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "")
+	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "aws-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
 	t.Setenv("AWS_REGION", "us-west-2")
@@ -240,15 +254,54 @@ func TestReviewerFromPolicyUsesOpenAIAndAnthropicModels(t *testing.T) {
 		t.Fatalf("reviewer = %T, want multiAIReviewer", reviewer)
 	}
 	if len(multi.reviewers) != 2 {
-		t.Fatalf("reviewers = %#v, want OpenAI and Anthropic", multi.reviewers)
+		t.Fatalf("reviewers = %#v, want two Bedrock legs", multi.reviewers)
 	}
-	openai, ok := multi.reviewers[0].reviewer.(*responsesAIReviewer)
-	if !ok || openai.model != "gpt-4o" {
-		t.Fatalf("OpenAI reviewer = %#v, want gpt-4o", multi.reviewers[0].reviewer)
+	legA, ok := multi.reviewers[0].reviewer.(*bedrockAnthropicReviewer)
+	if !ok || legA.model != "us.anthropic.claude-sonnet-4-5" {
+		t.Fatalf("leg A = %#v, want the policy hint as an inference profile", multi.reviewers[0].reviewer)
 	}
-	anthropic, ok := multi.reviewers[1].reviewer.(*bedrockAnthropicReviewer)
-	if !ok || anthropic.model != "anthropic.claude-sonnet-4-5" {
-		t.Fatalf("Anthropic reviewer = %#v", multi.reviewers[1].reviewer)
+	legB, ok := multi.reviewers[1].reviewer.(*bedrockAnthropicReviewer)
+	if !ok || legB.model != defaultBedrockReviewModelB {
+		t.Fatalf("leg B = %#v, want the default second model", multi.reviewers[1].reviewer)
+	}
+	for _, leg := range []*bedrockAnthropicReviewer{legA, legB} {
+		direct, ok := leg.transport.(*directBedrockTransport)
+		if !ok {
+			t.Fatalf("leg %q transport = %T, want the direct transport when AWS credentials are set", leg.model, leg.transport)
+		}
+		if direct.region != "us-west-2" {
+			t.Fatalf("leg %q region = %q, want us-west-2", leg.model, direct.region)
+		}
+	}
+	for _, item := range multi.reviewers {
+		if _, isBedrock := item.reviewer.(*bedrockAnthropicReviewer); !isBedrock {
+			t.Fatalf("reviewers include a non-Bedrock leg %T: %#v", item.reviewer, multi.reviewers)
+		}
+	}
+}
+
+// TestReviewerFromPolicyPinsBothLegsFromTwoHints pins the ordinal mapping that
+// lets a REVIEW.md express the whole panel.
+func TestReviewerFromPolicyPinsBothLegsFromTwoHints(t *testing.T) {
+	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
+	t.Setenv("AWS_ACCESS_KEY_ID", "aws-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+
+	reviewer := reviewerFromEnvWithPolicy(&ReviewPolicy{ModelHints: []ReviewModelHint{
+		{Provider: "anthropic", Model: "claude-first"},
+		{Provider: "anthropic", Model: "claude-second"},
+		{Provider: "anthropic", Model: "claude-judge", Role: reviewModelRoleJudge},
+	}})
+	multi := reviewer.(multiAIReviewer)
+	legA := multi.reviewers[0].reviewer.(*bedrockAnthropicReviewer)
+	legB := multi.reviewers[1].reviewer.(*bedrockAnthropicReviewer)
+	if legA.model != "us.anthropic.claude-first" {
+		t.Fatalf("leg A = %q, want the first hint to win over the env override", legA.model)
+	}
+	if legB.model != "us.anthropic.claude-second" {
+		t.Fatalf("leg B = %q, want the second hint to win over the env override", legB.model)
 	}
 }
 

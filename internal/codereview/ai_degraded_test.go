@@ -2,10 +2,7 @@ package codereview
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -39,7 +36,7 @@ func TestReviewRecordsAIReviewerFailureWithEngine(t *testing.T) {
 	gitCommit(t, root)
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\nfunc Stop() {}\n")
 
-	engine := NewEngineWithReviewer(LocalScanner{}, StaticCatalog{}, defaultRules(), fakeRetriever{}, failingReviewer{err: errors.New("AI reviewers failed: OpenAI: connection refused")})
+	engine := NewEngineWithReviewer(LocalScanner{}, StaticCatalog{}, defaultRules(), fakeRetriever{}, failingReviewer{err: errors.New("AI reviewers failed: Bedrock A: connection refused")})
 	report, err := engine.Review(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
@@ -56,14 +53,16 @@ func TestReviewRecordsAIReviewerFailureWithEngine(t *testing.T) {
 	}
 }
 
+// TestReviewRecordsMissingAIConfiguration pins requirement 5c: with Bedrock as
+// the only review provider, missing AWS credentials means nothing reviewed the
+// change. The report used to say "AI reviewer not configured", which named
+// neither the provider nor the fix and left a deterministic-only report looking
+// like a completed review.
 func TestReviewRecordsMissingAIConfiguration(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_REVIEW_JUDGE", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GX_OPENAI_API_KEY", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
@@ -78,31 +77,16 @@ func TestReviewRecordsMissingAIConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if len(report.DegradedReasons) != 1 || report.DegradedReasons[0] != "AI reviewer not configured" {
-		t.Fatalf("DegradedReasons = %#v, want missing configuration warning", report.DegradedReasons)
+	if len(report.DegradedReasons) != 1 {
+		t.Fatalf("DegradedReasons = %#v, want one warning", report.DegradedReasons)
 	}
-}
-
-func TestCompleteJSONRequestIncludesJSONKeyword(t *testing.T) {
-	var body map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request: %v", err)
+	reason := report.DegradedReasons[0]
+	for _, want := range []string{"AWS credentials", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"} {
+		if !strings.Contains(reason, want) {
+			t.Fatalf("DegradedReasons[0] = %q, want it to name %s", reason, want)
 		}
-		_, _ = w.Write([]byte(`{"output_text":"{\"recommendations\":[]}"}`))
-	}))
-	defer server.Close()
-
-	reviewer := &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}
-	if _, err := reviewer.completeJSON(context.Background(), "Review the patch.", map[string]string{"changed_files": "a.go"}, 100); err != nil {
-		t.Fatalf("completeJSON() error = %v", err)
 	}
-	instructions, _ := body["instructions"].(string)
-	input, _ := body["input"].(string)
-	if !strings.Contains(strings.ToLower(instructions), "json") {
-		t.Fatalf("instructions = %q, want json keyword", instructions)
-	}
-	if !strings.Contains(strings.ToLower(input), "json") {
-		t.Fatalf("input = %q, want json keyword", input)
+	if !strings.Contains(RenderMarkdown(report), "> Warning: AI review unavailable") {
+		t.Fatalf("RenderMarkdown() missing warning:\n%s", RenderMarkdown(report))
 	}
 }
