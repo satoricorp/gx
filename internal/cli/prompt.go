@@ -57,50 +57,6 @@ func promptModifySelection(in io.Reader, out io.Writer, candidates []authoring.C
 	return "", fmt.Errorf("unknown selection %q", choice)
 }
 
-func promptSwitchSelection(in io.Reader, out io.Writer, stack authoring.StackSummary) (string, error) {
-	stacks := orderedStacks(stack)
-	if len(stacks) == 0 {
-		return "", fmt.Errorf("no GX stacks available to switch")
-	}
-
-	fmt.Fprintf(out, "%s  %s  %s  %s\n",
-		labelToken("repo", repoLabel(stack.Repo)),
-		labelToken("stacks", fmt.Sprintf("%d", len(stacks))),
-		labelToken("current", firstNonEmptyString(currentStackName(stack), "(none)")),
-		muted("j/k move stack - enter switch"),
-	)
-	for i, entry := range stacks {
-		prefix := "  "
-		if stack.Stack != nil && entry.BookmarkName == stack.Stack.BookmarkName {
-			prefix = accent(">") + " "
-		}
-		fmt.Fprintf(out, "%s%s  %s\n", prefix, valueText(entry.Name), muted(stackMeta(stack, entry)))
-		if i == 0 && stack.Stack != nil && entry.BookmarkName == stack.Stack.BookmarkName && len(stack.Revisions) > 0 {
-			fmt.Fprintf(out, "    %s\n", muted(fmt.Sprintf("%d revisions hidden in summary", len(stack.Revisions))))
-		}
-	}
-	fmt.Fprintf(out, "\n%s ", muted("Enter stack [alias, name, q]:"))
-
-	reader := bufio.NewReader(in)
-	raw, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-	choice := strings.TrimSpace(raw)
-	if choice == "" {
-		return stacks[0].Alias, nil
-	}
-	if choice == "q" || choice == "quit" || choice == "exit" {
-		return "", context.Canceled
-	}
-	for _, entry := range stacks {
-		if entry.Alias == choice || entry.Name == choice || entry.BookmarkName == choice {
-			return firstNonEmptyString(entry.Alias, entry.BookmarkName), nil
-		}
-	}
-	return "", fmt.Errorf("unknown selection %q", choice)
-}
-
 func promptContinueGenerate(in io.Reader, out io.Writer) bool {
 	fmt.Fprintf(out, "%s ", muted("Should we continue working to resolve these issues? [y/N]"))
 	reader := bufio.NewReader(in)

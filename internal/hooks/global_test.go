@@ -85,6 +85,7 @@ func TestInstallGlobalWritesChainingScripts(t *testing.T) {
 				"# gx lifecycle hooks",
 				"# gx global lifecycle hooks",
 				"__hooks prepare-commit-msg",
+				"command -v gx",
 				"gx_resolve_local_hook prepare-commit-msg",
 				`exec "$gx_local_hook" "$@"`,
 			},
@@ -111,6 +112,7 @@ func TestInstallGlobalWritesChainingScripts(t *testing.T) {
 			name: "pre-push",
 			want: []string{
 				"capture push",
+				"command -v gx",
 				`cat > "$gx_stdin"`,
 				`done < "$gx_stdin"`,
 				"gx_resolve_local_hook pre-push",
@@ -363,6 +365,61 @@ exit 9
 	// GX consumed stdin first; the repo hook must still receive every ref.
 	if !strings.Contains(repoStdin, "refs/heads/main aaaa111 refs/heads/main bbbb222") {
 		t.Fatalf("repo pre-push hook did not receive replayed stdin:\n%s", repoStdin)
+	}
+}
+
+// TestGlobalPrePushChainsWhenGXIsMissing pins the failure mode that matters
+// most under core.hooksPath: when gx cannot be resolved at all, the global
+// script must skip GX work silently but still replay stdin to the
+// repository's own hook — exiting early would disable every repo hook on the
+// machine.
+func TestGlobalPrePushChainsWhenGXIsMissing(t *testing.T) {
+	isolateGlobalGitConfig(t)
+	work := t.TempDir()
+	hooksDir := filepath.Join(work, "hooks")
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{
+		HooksDir: hooksDir,
+		GXPath:   filepath.Join(work, "missing", "gx"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	runGitInRepo(t, repo, "init")
+	repoLog := filepath.Join(work, "repo-pre-push.log")
+	writeExecutable(t, filepath.Join(repo, ".git", "hooks", "pre-push"), `#!/bin/sh
+{ echo "args: $*"; cat; } >> "`+repoLog+`"
+exit 7
+`)
+
+	// PATH holds git and the shell utilities the script needs, but no gx.
+	pathDir := filepath.Join(work, "pathbin")
+	for _, tool := range []string{"git", "mktemp", "cat", "rm", "grep"} {
+		resolved, err := exec.LookPath(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(pathDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(resolved, filepath.Join(pathDir, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stdin := "refs/heads/main aaaa111 refs/heads/main bbbb222\n"
+	cmd := exec.Command(filepath.Join(hooksDir, "pre-push"), "origin", "git@example.com:acme/app.git")
+	cmd.Dir = repo
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Env = append(os.Environ(), "PATH="+pathDir)
+	out, err := cmd.CombinedOutput()
+	if exitCode(t, err) != 7 {
+		t.Fatalf("exit = %v (want repo hook's 7), output:\n%s", err, out)
+	}
+	repoStdin := readFile(t, repoLog)
+	if !strings.Contains(repoStdin, "refs/heads/main aaaa111 refs/heads/main bbbb222") {
+		t.Fatalf("repo pre-push hook did not receive replayed stdin:\n%s", repoStdin)
+	}
+	if strings.Contains(string(out), "gx") {
+		t.Fatalf("missing gx must be silent, got:\n%s", out)
 	}
 }
 

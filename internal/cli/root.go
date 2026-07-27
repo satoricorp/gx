@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,20 +20,15 @@ import (
 	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
-	"github.com/satoricorp/gx/internal/daemon"
 	"github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/inference"
-	"github.com/satoricorp/gx/internal/launcher"
 	"github.com/satoricorp/gx/internal/postlist"
 	"github.com/satoricorp/gx/internal/publication"
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
-
-var publishRevisionOutputLine = regexp.MustCompile(`(?m)^(\s{2})([0-9a-f]{4,})(\s+)(.*)$`)
 
 func NewRoot(ctx context.Context) *cobra.Command {
 	engine := authoring.NewEngine()
@@ -65,13 +59,10 @@ func NewRoot(ctx context.Context) *cobra.Command {
 	root.AddGroup(
 		&cobra.Group{ID: groupSetup, Title: "Setup:"},
 		&cobra.Group{ID: groupWork, Title: "Work:"},
-		&cobra.Group{ID: groupShip, Title: "Ship:"},
 		&cobra.Group{ID: groupHelp, Title: "Help:"},
-		&cobra.Group{ID: groupAdvanced, Title: "Advanced:"},
 	)
 
 	root.AddCommand(
-		newInternalDaemonCommand(ctx),
 		newInternalHooksCommand(ctx),
 		newVersionCommand(),
 		newDoctorCommand(ctx),
@@ -80,11 +71,9 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newInitCommand(ctx, engine),
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
-		newDemoCommand(),
-		newReportCommand(ctx, engine),
-		newReviewCommand(ctx, engine),
-		newSyncCommand(ctx, engine),
-		newOpsCommand(ctx),
+		newReportCommand(ctx),
+		newReviewCommand(ctx),
+		newIndexCommand(ctx),
 	)
 	assignCommandGroups(root)
 	rootRef := root
@@ -107,16 +96,12 @@ func NewRoot(ctx context.Context) *cobra.Command {
 func assignCommandGroups(root *cobra.Command) {
 	for _, cmd := range root.Commands() {
 		switch cmd.Name() {
-		case "init", "auth", "set", "demo":
+		case "init", "auth", "set":
 			cmd.GroupID = groupSetup
 		case "review":
 			cmd.GroupID = groupWork
-		case "sync":
-			cmd.GroupID = groupShip
-		case "doctor", "report", "version":
+		case "doctor", "version":
 			cmd.GroupID = groupHelp
-		case "ops":
-			cmd.GroupID = groupAdvanced
 		}
 	}
 }
@@ -133,36 +118,6 @@ func printInitNoteIfNeeded(cmd *cobra.Command) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, danger("Run `gx init` first."))
 	fmt.Fprintln(out)
-}
-
-func ShouldLaunch(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	if args[0] == "help" {
-		return false
-	}
-	if len(args) == 1 {
-		switch args[0] {
-		case "-h", "--help":
-			return false
-		}
-	}
-	return launcher.IsWrappedTool(args[0])
-}
-
-func newInternalDaemonCommand(ctx context.Context) *cobra.Command {
-	var ambient bool
-	cmd := &cobra.Command{
-		Use:    "__gx-daemon",
-		Short:  "Run the internal gx background service",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return daemon.Run(ctx, daemon.Options{Ambient: ambient})
-		},
-	}
-	cmd.Flags().BoolVar(&ambient, "ambient", false, "run stable ambient proxy")
-	return cmd
 }
 
 func newVersionCommand() *cobra.Command {
@@ -193,6 +148,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 		Use:   "init",
 		Short: "Set up gx in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cleanupLegacyAmbientCaptureFromInit(ctx, cmd, yes)
 			if global {
 				if !yes {
 					fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init --global", true))
@@ -255,16 +211,6 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Claude hooks", err.Error()))
 				}
 			}
-			if err := gxconfig.EnsureCaptureRetention(); err != nil {
-				if !yes {
-					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Retention", err.Error()))
-				}
-			} else {
-				cfg, _ := gxconfig.Load()
-				if !yes {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Session retention", fmt.Sprintf("%d days", cfg.Capture.CleanupPeriodDays)))
-				}
-			}
 			if err := initSetupFromCommand(cmd, result.Repo.RootPath, yes); err != nil {
 				return err
 			}
@@ -314,10 +260,11 @@ const (
 	reviewNothingToReviewExitCode = 4
 )
 
-func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+func newReviewCommand(ctx context.Context) *cobra.Command {
 	var scope string
 	var focus string
 	var base string
+	var wholeRepo bool
 	var deep bool
 	var verbose bool
 	var jsonOut bool
@@ -333,7 +280,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			var runErr error
 			defer func() {
 				if runErr != nil {
-					autoReportFailure(ctx, engine, runErr, "gx review")
+					autoReportFailure(ctx, runErr, "gx review")
 				}
 			}()
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
@@ -355,7 +302,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
 				runErr = err
-				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
+				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 				return runErr
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
@@ -364,6 +311,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 					Deep:           deep,
 					Focus:          focus,
 					Base:           base,
+					WholeRepo:      wholeRepo,
 					Prompt:         prompt,
 					Verbose:        verbose,
 					ProgressWriter: progress,
@@ -378,7 +326,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			} else {
 				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
-			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, verbose, time.Since(startedAt))
+			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
 				runErr = err
 				return runErr
@@ -395,7 +343,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 			// comment with a no-op, and there is no review to record.
 			if !noPublish && report.Reviewed {
 				postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
-				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, cmd.ErrOrStderr())
+				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}
 			runErr = reviewGateError(report, failOnLevel)
 			return runErr
@@ -404,6 +352,7 @@ func newReviewCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
 	cmd.Flags().StringVar(&focus, "focus", "", "limit review to files under this path prefix")
 	cmd.Flags().StringVar(&base, "base", "", "review the commit range <ref>...HEAD instead of the working tree, e.g. --base origin/main")
+	cmd.Flags().BoolVar(&wholeRepo, "repo", false, "review the whole repository rather than just the current change; uncommitted work stays in focus, and this wins over --base")
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
@@ -441,19 +390,12 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx review: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
-func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, verbose bool, duration time.Duration) {
+func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
 	status := "success"
 	if runErr != nil {
 		status = "error"
 	}
-	mode := "patch"
-	if deep {
-		mode = "deep"
-	} else if strings.TrimSpace(prompt) != "" {
-		mode = "prompt"
-	} else if scopeExplicit {
-		mode = "scope"
-	}
+	mode := reviewRunMode(prompt, scopeExplicit, deep, wholeRepo)
 	effectiveScope := strings.TrimSpace(report.Scope)
 	if effectiveScope == "" {
 		effectiveScope = strings.TrimSpace(reviewScope)
@@ -469,6 +411,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 		"has_focus":             strings.TrimSpace(focus) != "",
 		"has_prompt":            strings.TrimSpace(prompt) != "",
 		"deep":                  deep,
+		"whole_repo":            wholeRepo,
 		"verbose":               verbose,
 		"duration_ms":           duration.Milliseconds(),
 		"finding_count":         len(report.Findings),
@@ -479,6 +422,17 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	}
 	if strings.TrimSpace(report.Reviewer) != "" {
 		props["reviewer"] = report.Reviewer
+	}
+	// Which wire the review ran over, so a fleet-wide latency or failure spike
+	// can be attributed to the GX Cloud hop or to direct AWS calls instead of
+	// being averaged across both. The models go with it: the panel is two
+	// competing legs plus a judge, and "review got slower" is a different
+	// investigation depending on which of them changed.
+	if strings.TrimSpace(report.ReviewTransport) != "" {
+		props["review_transport"] = report.ReviewTransport
+	}
+	if len(report.ReviewModels) > 0 {
+		props["review_models"] = strings.Join(report.ReviewModels, ",")
 	}
 	if strings.TrimSpace(report.ReviewMode) != "" {
 		// What the review actually read, so a fleet-wide "nothing to review"
@@ -594,7 +548,30 @@ func renderInlineReviewComment(finding codereview.Finding) string {
 	return strings.TrimSpace(b.String())
 }
 
-func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, prompt string, scopeExplicit bool, deep bool, stderr io.Writer) {
+// reviewRunMode labels a review run for GX Cloud history and telemetry. Both
+// call it so the two records of the same run cannot disagree.
+//
+// WholeRepo comes first because it names the subject: a run recorded as
+// "patch" whose summary text reads "Reviewed the repository" is a row that
+// contradicts itself, and anything downstream that filters or ranks on the
+// mode would treat a whole-repo review as a patch review. Depth and scope
+// travel alongside as their own fields, so nothing is lost by this ordering.
+func reviewRunMode(prompt string, scopeExplicit bool, deep bool, wholeRepo bool) string {
+	switch {
+	case wholeRepo:
+		return "repo"
+	case deep:
+		return "deep"
+	case strings.TrimSpace(prompt) != "":
+		return "prompt"
+	case scopeExplicit:
+		return "scope"
+	default:
+		return "patch"
+	}
+}
+
+func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, prompt string, scopeExplicit bool, deep bool, wholeRepo bool, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)
 	repoFullName := cloud.RepoFullNameFromRemoteURL(remoteURL)
 	if strings.TrimSpace(repoFullName) == "" {
@@ -609,14 +586,6 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		// users, not something a read-only review depends on.
 		return
 	}
-	mode := "patch"
-	if deep {
-		mode = "deep"
-	} else if strings.TrimSpace(prompt) != "" {
-		mode = "prompt"
-	} else if scopeExplicit {
-		mode = "scope"
-	}
 	req := cloud.CodeReviewHistoryRecordRequest{
 		RepoRootPath: report.RepoRoot,
 		RepoFullName: repoFullName,
@@ -625,7 +594,7 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		SourceKind:   "session_intent",
 		Prompt:       prompt,
 		Scope:        firstNonEmptyString(report.Scope, codereview.DefaultScope),
-		Mode:         mode,
+		Mode:         reviewRunMode(prompt, scopeExplicit, deep, wholeRepo),
 		Reviewer:     report.Reviewer,
 		SummaryKind:  "pr",
 		SummaryText:  codereview.RenderMarkdown(report),
@@ -633,7 +602,12 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		Payload: map[string]any{
 			"changed_files":  len(report.ChangedFiles),
 			"deep":           deep,
+			"whole_repo":     wholeRepo,
 			"scope_explicit": scopeExplicit,
+			// What the run actually read, so the row can be reconciled with
+			// its own summary text rather than inferred from the flags.
+			"review_mode": report.ReviewMode,
+			"reviewed":    report.Reviewed,
 		},
 	}
 	if _, err := client.RecordCodeReviewHistory(ctx, req); err != nil {
@@ -821,267 +795,11 @@ func githubRemoteTarget(remoteURL string) (host, owner, repo string, ok bool) {
 	return "", "", "", false
 }
 
-type currentStatus struct {
-	Repo           authoring.RepoInfo      `json:"repo"`
-	Stack          *authoring.StackInfo    `json:"stack,omitempty"`
-	Refs           currentStatusRefs       `json:"refs"`
-	Current        authoring.ChangeInfo    `json:"current"`
-	Parent         authoring.ChangeInfo    `json:"parent"`
-	PublishUploads publication.QueueStatus `json:"publish_uploads"`
-	NeedsMessage   bool                    `json:"needs_message"`
-	Recorded       bool                    `json:"recorded"`
-	Files          []string                `json:"files"`
-}
-
-type currentStatusRefs struct {
-	GXBaseRef       string `json:"gx_base_ref"`
-	GXStackRef      string `json:"gx_stack_ref,omitempty"`
-	GitCheckoutRef  string `json:"git_checkout_ref,omitempty"`
-	GitPublishedRef string `json:"git_published_ref,omitempty"`
-}
-
-func currentStatusForEngine(ctx context.Context, engine *authoring.Engine) (currentStatus, error) {
-	stack, err := engine.Status(ctx)
-	if err != nil {
-		return currentStatus{}, err
-	}
-	current, err := engine.CurrentChange(ctx, stack.Repo.RootPath, "@")
-	if err != nil {
-		return currentStatus{}, err
-	}
-	parent, _ := engine.CurrentChange(ctx, stack.Repo.RootPath, "@-")
-	recorded := false
-	for _, revision := range stack.Revisions {
-		if revision.ChangeID == current.ChangeID {
-			recorded = true
-			break
-		}
-	}
-	needsMessage := strings.TrimSpace(current.Description) == "" || strings.TrimSpace(current.Description) == "(no description set)"
-	gitCheckoutRef := pointerString(stack.Repo.BranchName)
-	refs := currentStatusRefs{
-		GXBaseRef:      currentStatusBaseStack(currentStatus{Repo: stack.Repo, Stack: stack.Stack}),
-		GitCheckoutRef: gitCheckoutRef,
-	}
-	if stack.Stack != nil {
-		refs.GXStackRef = stack.Stack.BookmarkName
-		refs.GitPublishedRef = pointerString(stack.Stack.RemoteRef)
-	}
-	publishUploads, _ := publication.QueuedUploadStatus()
-	return currentStatus{
-		Repo:           stack.Repo,
-		Stack:          stack.Stack,
-		Refs:           refs,
-		Current:        current,
-		Parent:         parent,
-		PublishUploads: publishUploads,
-		NeedsMessage:   needsMessage,
-		Recorded:       recorded,
-		Files:          current.Files,
-	}, nil
-}
-
-func currentStatusBaseStack(status currentStatus) string {
-	if status.Repo.AuthoringBase != nil && strings.TrimSpace(*status.Repo.AuthoringBase) != "" {
-		base := strings.TrimSpace(*status.Repo.AuthoringBase)
-		if strings.HasPrefix(base, "gx/") {
-			name := strings.TrimPrefix(strings.TrimPrefix(base, "gx/draft/"), "gx/")
-			if name != "" {
-				return "feature/" + name
-			}
-		} else {
-			return base
-		}
-	}
-	if status.Repo.DefaultBranch != nil && strings.TrimSpace(*status.Repo.DefaultBranch) != "" {
-		return strings.TrimSpace(*status.Repo.DefaultBranch)
-	}
-	return "main"
-}
-
-func stackMeta(summary authoring.StackSummary, entry authoring.StackInfo) string {
-	parts := []string{}
-	if entry.Alias != "" {
-		parts = append(parts, "alias "+entry.Alias)
-	}
-	if entry.BookmarkName != "" {
-		parts = append(parts, "ref "+entry.BookmarkName)
-	}
-	if entry.BaseRef != "" {
-		parts = append(parts, "base "+entry.BaseRef)
-	}
-	changeTotal, publishedTotal := stackEntryRevisionCounts(summary, entry)
-	if summary.Stack != nil && entry.BookmarkName == summary.Stack.BookmarkName {
-		parts = append(parts, "current")
-	}
-	if status := stackDisplayStatus(entry.Status, changeTotal, publishedTotal); status != "" {
-		parts = append(parts, "state "+status)
-	}
-	if changeTotal > 0 {
-		parts = append(parts, fmt.Sprintf("%d changes", changeTotal))
-		parts = append(parts, fmt.Sprintf("%d/%d published", publishedTotal, changeTotal))
-	}
-	if sync := stackSync(entry); sync != "" {
-		parts = append(parts, "sync "+sync)
-	}
-	return strings.Join(parts, " · ")
-}
-
-func stackDisplayStatus(status string, revisions, published int) string {
-	status = strings.TrimSpace(status)
-	if isTerminalStackStatus(status) {
-		return status
-	}
-	if revisions <= 0 {
-		return status
-	}
-	if published >= revisions {
-		return "published"
-	}
-	return "draft"
-}
-
-func stackSync(stack authoring.StackInfo) string {
-	parts := []string{"local"}
-	if stack.RemoteName != nil && strings.TrimSpace(*stack.RemoteName) != "" {
-		parts = append(parts, strings.TrimSpace(*stack.RemoteName))
-	} else if stack.RemoteRef != nil && strings.TrimSpace(*stack.RemoteRef) != "" {
-		parts = append(parts, "origin")
-	}
-	return strings.Join(parts, ",")
-}
-
-func orderedStacks(stack authoring.StackSummary) []authoring.StackInfo {
-	stacks := make([]authoring.StackInfo, 0, len(stack.Stacks)+1)
-	seen := map[string]bool{}
-	if stack.Stack != nil {
-		current := *stack.Stack
-		for _, entry := range stack.Stacks {
-			if entry.BookmarkName == current.BookmarkName {
-				if current.Alias == "" {
-					current.Alias = entry.Alias
-				}
-				if current.Name == "" {
-					current.Name = entry.Name
-				}
-				current.Status = entry.Status
-				current.RevisionCount = entry.RevisionCount
-				current.PublishedCount = entry.PublishedCount
-				current.Revisions = entry.Revisions
-				break
-			}
-		}
-		stacks = append(stacks, current)
-		seen[current.BookmarkName] = true
-	}
-	for _, entry := range stack.Stacks {
-		if seen[entry.BookmarkName] {
-			continue
-		}
-		stacks = append(stacks, entry)
-	}
-	return orderStacksForDisplay(stacks)
-}
-
-func stackEntryRevisions(summary authoring.StackSummary, entry authoring.StackInfo) []authoring.RevisionSummary {
-	if summary.Stack != nil && entry.BookmarkName == summary.Stack.BookmarkName && len(summary.Revisions) > 0 {
-		return summary.Revisions
-	}
-	return entry.Revisions
-}
-
-func stackEntryRevisionCounts(summary authoring.StackSummary, entry authoring.StackInfo) (int, int) {
-	revisions := stackEntryRevisions(summary, entry)
-	if len(revisions) == 0 {
-		return entry.RevisionCount, entry.PublishedCount
-	}
-	published := 0
-	for _, revision := range revisions {
-		if revision.Published {
-			published++
-		}
-	}
-	return len(revisions), published
-}
-
-func orderStacksForDisplay(stacks []authoring.StackInfo) []authoring.StackInfo {
-	if len(stacks) <= 1 {
-		return stacks
-	}
-	ordered := make([]authoring.StackInfo, 0, len(stacks))
-	for bucket := 0; bucket <= 2; bucket++ {
-		for _, entry := range stacks {
-			if stackDisplayBucket(entry) == bucket {
-				ordered = append(ordered, entry)
-			}
-		}
-	}
-	return ordered
-}
-
 func pointerString(value *string) string {
 	if value == nil {
 		return ""
 	}
 	return strings.TrimSpace(*value)
-}
-
-func currentStackName(stack authoring.StackSummary) string {
-	if stack.Stack == nil {
-		return ""
-	}
-	return firstNonEmptyString(stack.Stack.Name, stack.Stack.BookmarkName)
-}
-
-func repoLabel(repo authoring.RepoInfo) string {
-	if repo.RemoteURL != nil {
-		raw := strings.TrimSpace(*repo.RemoteURL)
-		if raw != "" {
-			raw = strings.TrimSuffix(raw, ".git")
-			if idx := strings.LastIndex(raw, ":"); idx >= 0 && !strings.Contains(raw, "://") {
-				return raw[idx+1:]
-			}
-			parts := strings.Split(raw, "/")
-			if len(parts) >= 2 {
-				return parts[len(parts)-2] + "/" + parts[len(parts)-1]
-			}
-		}
-	}
-	if repo.RootPath == "" {
-		return "unknown"
-	}
-	return filepath.Base(repo.RootPath)
-}
-
-func isTerminalStackStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "merged", "closed":
-		return true
-	default:
-		return false
-	}
-}
-
-func stackDisplayBucket(stack authoring.StackInfo) int {
-	switch strings.ToLower(strings.TrimSpace(stack.Status)) {
-	case "published":
-		return 1
-	case "merged":
-		return 2
-	default:
-		return 0
-	}
-}
-
-func labelToken(label, value string) string {
-	return muted(label) + " " + valueText(value)
-}
-
-func valueText(raw string) string {
-	if raw == "" {
-		return muted("(none)")
-	}
-	return value(raw)
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -1091,70 +809,6 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func newSyncCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "sync [remote]",
-		Short: "Sync remote with local",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, commandLine("gx sync", true))
-			fmt.Fprintln(out)
-			remote := ""
-			if len(args) == 1 {
-				remote = args[0]
-			}
-			result, err := engine.Sync(ctx, remote)
-			if err != nil {
-				return err
-			}
-			if strings.TrimSpace(result.Output) != "" {
-				fmt.Fprintln(out, strings.TrimSpace(result.Output))
-			}
-			fmt.Fprintln(out, labelValue("Synced", result.RemoteName))
-
-			if summary, err := syncCloudMetadata(ctx, engine, result.Repo, out); err != nil {
-				return err
-			} else if summary != nil {
-				telemetry.EmitProductEvent(ctx, telemetry.EventCLISyncRun, map[string]any{
-					"remote":        result.RemoteName,
-					"listed":        summary.Listed,
-					"updated":       summary.Updated,
-					"caught_up":     summary.CaughtUp,
-					"merged_pruned": summary.Removed,
-				})
-				fmt.Fprintln(out, labelValue("Remote bookmarks", fmt.Sprintf("%d listed", summary.Listed)))
-				if summary.Updated > 0 {
-					fmt.Fprintln(out, labelValue("Remote revisions", fmt.Sprintf("%d updated", summary.Updated)))
-				}
-				if summary.CaughtUp > 0 {
-					fmt.Fprintln(out, labelValue("Remote catch-up", fmt.Sprintf("%d bookmark(s) fetched from remote", summary.CaughtUp)))
-				}
-				if summary.Removed > 0 {
-					fmt.Fprintln(out, labelValue("Remote merged", fmt.Sprintf("%d bookmark(s) removed from remote", summary.Removed)))
-				}
-			}
-			if summary, err := engine.PruneTerminalGitHubPullRequestStacks(ctx, result.Repo); err != nil {
-				fmt.Fprintln(out, labelWarningValue("GitHub PR sync", err.Error()))
-			} else if summary.Removed > 0 {
-				fmt.Fprintln(out, labelValue("GitHub PRs closed", fmt.Sprintf("%d stack(s) removed from local db", summary.Removed)))
-			}
-			if status, err := publication.QueuedUploadStatus(); err == nil && (status.Pending > 0 || status.Failed > 0) {
-				if err := drainPublishUploadOutbox(ctx, out, false, 20); err != nil {
-					fmt.Fprintln(out, labelWarningValue("GX Cloud uploads", err.Error()))
-				}
-			}
-			if !cloud.CloudConfigured() {
-				telemetry.EmitProductEvent(ctx, telemetry.EventCLISyncRun, map[string]any{
-					"remote": result.RemoteName,
-				})
-			}
-			return nil
-		},
-	}
-	return cmd
 }
 
 func newPublishUploadCommand(ctx context.Context) *cobra.Command {
@@ -1189,124 +843,12 @@ func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, li
 	return nil
 }
 
-func startPublishUploadWorker(out io.Writer) {
-	exe, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(out, labelWarningValue("GX Cloud upload", "queued; could not find gx executable, run `gx sync` to upload"))
-		return
-	}
-	cmd := exec.Command(exe, "__gx-upload-outbox", "--quiet")
-	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
-		defer devNull.Close()
-		cmd.Stdin = devNull
-	}
-	if logFile, err := publishUploadLogFile(); err == nil {
-		defer logFile.Close()
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
-	}
-	cmd.Env = os.Environ()
-	configureDetachedCommand(cmd)
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(out, labelWarningValue("GX Cloud upload", "queued; run `gx sync` to upload"))
-		return
-	}
-	if cmd.Process != nil {
-		_ = cmd.Process.Release()
-	}
-	fmt.Fprintln(out, labelValue("GX Cloud upload", "background upload started"))
-}
-
-func publishUploadLogFile() (*os.File, error) {
-	dir, err := storage.DefaultDir()
-	if err != nil {
-		return nil, err
-	}
-	logDir := filepath.Join(dir, "logs")
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(filepath.Join(logDir, "publish-upload.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-}
-
-func newOpsCommand(ctx context.Context) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "ops",
-		Short:  "Advanced commands for capture, diagnostics, and ingest",
-		Hidden: true,
-		Run: func(cmd *cobra.Command, args []string) {
-			printOpsSummary(cmd.OutOrStdout())
-		},
-	}
-	cmd.AddCommand(
-		newOpsCaptureCommand(ctx),
-		newOpsDiagCommand(ctx),
-		newOpsIngestCommand(ctx),
-	)
-	return cmd
-}
-
-func printOpsSummary(out io.Writer) {
-	fmt.Fprintln(out, commandLine("gx ops", true))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Advanced commands for capture, diagnostics, and ingest")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, opsMenuRow("capture", "Record a gx session for replay"))
-	fmt.Fprintln(out, opsMenuRow("diagnose", "Inspect local gx state and config"))
-	fmt.Fprintln(out, opsMenuRow("ingest", "Import external change metadata"))
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, muted(`Use "gx ops [command] --help" for details.`))
-}
-
-func opsMenuRow(name, description string) string {
-	return "  " + logoText(padRight(name, 11)) + " " + muted(description)
-}
-
-func newOpsCaptureCommand(ctx context.Context) *cobra.Command {
-	cmd := newServiceCommand(ctx)
-	cmd.Use = "capture"
-	cmd.Short = "Record a gx session for replay"
-	cmd.Aliases = []string{"service"}
-	return cmd
-}
-
-func newOpsDiagCommand(ctx context.Context) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "diagnose",
-		Aliases: []string{"diag"},
-		Short:   "Inspect local gx state and config",
-	}
-	doctor := newDoctorCommand(ctx)
-	doctor.Use = "doctor"
-	repair := newRepairCommand(ctx)
-	repair.Use = "repair"
-	cmd.AddCommand(doctor, repair)
-	return cmd
-}
-
-func newOpsIngestCommand(ctx context.Context) *cobra.Command {
-	cmd := newIngestCommand(ctx)
-	cmd.Use = "ingest"
-	cmd.Short = "Import external change metadata"
-	return cmd
-}
-
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
 	case "gxr":
 		args = append([]string{"review"}, args...)
 	}
-	if ShouldLaunch(args) {
-		if err := launcher.Run(ctx, args); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				fmt.Fprintln(os.Stderr, err)
-			}
-			return err
-		}
-		return nil
-	}
-
 	root := NewRoot(ctx)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
@@ -1327,21 +869,6 @@ func ExitCode(err error) int {
 		return coded.Code
 	}
 	return 0
-}
-
-func githubRepoFullNameFromRemote(remoteURL string) string {
-	remoteURL = strings.TrimSpace(remoteURL)
-	if idx := strings.Index(remoteURL, "github.com"); idx >= 0 {
-		suffix := remoteURL[idx+len("github.com"):]
-		suffix = strings.TrimPrefix(suffix, ":")
-		suffix = strings.TrimPrefix(suffix, "/")
-		suffix = strings.TrimSuffix(suffix, ".git")
-		parts := strings.Split(suffix, "/")
-		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
-			return parts[0] + "/" + parts[1]
-		}
-	}
-	return ""
 }
 
 func shortID(value string, max int) string {

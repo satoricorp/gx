@@ -1,9 +1,9 @@
 ---
-title: "GX: stacked PR review for agentic coding sessions"
-description: "Capture agent coding sessions as reviewable revisions, organize them into local stacks, and push stacked pull requests with rich review context."
+title: "GX: Git for agents — session-aware code review"
+description: "Capture agent coding sessions as reviewable revisions on ordinary Git branches, and open pull requests with rich review context."
 ---
 
-GX captures coding sessions and attaches that context to reviewable revisions, then uses those revisions to push stacked PRs and generate better review artifacts.
+GX captures coding sessions and attaches that context to reviewable revisions — ordinary Git commits on ordinary branches — then uses those revisions to generate better review artifacts for your pull requests.
 
 ## Download
 
@@ -45,11 +45,11 @@ $ git commit -m "add retry helper with attempt limit"
 Behind that ordinary commit, GX's `prepare-commit-msg` and `post-commit` hooks record a
 GX **revision** — a Git commit plus the review context that explains how it was produced:
 which captured session made it, and where it sits among your branches. Inspect state with
-plain Git; a stack is just the Git branch your revisions sit on:
+plain Git; there is no separate GX model to learn:
 
 ```bash
 git status              # working-tree state
-git log --oneline -10   # the revisions on this stack (branch)
+git log --oneline -10   # the revisions on this branch
 ```
 
 Plain `git push` publishes the branch; the GX pre-push hook captures the session, matches
@@ -85,7 +85,7 @@ there is no GX save verb, and there is no `gx commit` / `gx status` / `gx push`.
 Save changes with Git:
 - `git add <files>` to choose the scope of one logical change.
 - `git commit -m "..."` — a GX hook records the commit as a reviewable revision.
-- Start a new stack with `git checkout -b <branch>` before committing.
+- Start a new line of work with `git checkout -b <branch>` before committing.
 
 To amend the latest revision, use `git commit --amend`; the post-rewrite hook follows it.
 
@@ -114,11 +114,11 @@ with `git push` while the pre-push hook is installed.
 
 ## Product Model
 
-GX centers the reviewable revision rather than the branch:
+GX centers the reviewable revision:
 
 - **Session**: captured context from agent prompts, responses, commands, tests, and files touched.
 - **Revision**: one logical change — a Git commit plus the captured context that explains how it was produced.
-- **Stack**: an ordered line of revisions reviewed together, exported as a single Git branch and PR.
+- **Branch**: the ordered line of revisions reviewed together — a plain Git branch, opened as one PR.
 
-These map onto ordinary Git: a revision is a Git commit, and a stack is the Git branch it
-sits on — GX records the review context around them, so you never leave Git.
+These are ordinary Git objects: a revision is a Git commit, and the branch is the Git
+branch it sits on — GX records the review context around them, so you never leave Git.

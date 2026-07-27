@@ -2,23 +2,21 @@ package hooks
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os/exec"
 	"strings"
 
 	"github.com/satoricorp/gx/internal/publication"
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
 // AdoptPushOptions configures auto-adopt publication for a raw git push.
 type AdoptPushOptions struct {
-	RepoRoot    string
-	Remote      string
-	LocalRef    string
-	HeadSHA     string
-	RevisionIDs []string
+	RepoRoot string
+	Remote   string
+	LocalRef string
+	HeadSHA  string
+	RefRange string
 }
 
 // EnqueueAdoptedPublication queues a PR-summary artifact for a plain git push.
@@ -89,90 +87,12 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 		HeadCommitID: headSHA,
 		RemoteName:   remotePtr,
 	}
-	revisionIDs := uniqueStrings(opts.RevisionIDs)
-	if len(revisionIDs) == 0 {
-		return result, nil
-	}
-	changes, err := lookupAdoptedChanges(ctx, repoRoot, revisionIDs)
+	commits, err := vcs.PushedCommitsInGitRange(ctx, repoRoot, opts.RefRange)
 	if err != nil {
 		return result, err
 	}
-	if len(changes) == 0 {
-		return result, nil
-	}
-	result.CurrentChange = &changes[len(changes)-1]
-	result.Published = make([]vcs.PushedChange, 0, len(changes))
-	for _, change := range changes {
-		entry := vcs.PushedChange{Change: change}
-		if branch != "" {
-			entry.BranchName = branch
-		}
-		result.Published = append(result.Published, entry)
-	}
+	result.Commits = commits
 	return result, nil
-}
-
-func lookupAdoptedChanges(ctx context.Context, repoRoot string, revisionIDs []string) ([]vcs.ChangeInfo, error) {
-	db, err := storage.Open(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	defer store.Close()
-	repo, err := vcs.NewService().ResolveGXRepoAtPath(ctx, repoRoot)
-	if err != nil {
-		return lookupAdoptedChangesByRoot(ctx, db, repoRoot, revisionIDs)
-	}
-	repoRow, err := store.FindRepoByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
-	if err != nil {
-		return nil, err
-	}
-	if repoRow == nil {
-		return lookupAdoptedChangesByRoot(ctx, db, repoRoot, revisionIDs)
-	}
-	return lookupAdoptedChangesForRepo(ctx, db, repoRow.ID, revisionIDs)
-}
-
-func lookupAdoptedChangesByRoot(ctx context.Context, db *sql.DB, repoRoot string, revisionIDs []string) ([]vcs.ChangeInfo, error) {
-	var repoID int64
-	err := db.QueryRowContext(ctx, `SELECT id FROM repos WHERE root_path = ?`, repoRoot).Scan(&repoID)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return lookupAdoptedChangesForRepo(ctx, db, repoID, revisionIDs)
-}
-
-func lookupAdoptedChangesForRepo(ctx context.Context, db *sql.DB, repoID int64, revisionIDs []string) ([]vcs.ChangeInfo, error) {
-	var out []vcs.ChangeInfo
-	for _, revisionID := range revisionIDs {
-		var change vcs.ChangeInfo
-		var parent sql.NullString
-		err := db.QueryRowContext(ctx, `
-			SELECT c.jj_change_id, c.current_commit_id, c.description, c.parent_change_id
-			FROM changes c
-			WHERE c.repo_id = ? AND c.jj_change_id = ?
-			ORDER BY c.updated_at DESC
-			LIMIT 1
-		`, repoID, revisionID).Scan(&change.ChangeID, &change.CommitID, &change.Description, &parent)
-		if err == sql.ErrNoRows {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("lookup revision %s: %w", revisionID, err)
-		}
-		if parent.Valid {
-			change.ParentChangeID = &parent.String
-		}
-		out = append(out, change)
-	}
-	return out, nil
 }
 
 func branchNameFromRef(localRef string) string {
@@ -227,21 +147,4 @@ func gitSymbolicRef(ctx context.Context, repoRoot, ref string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-func uniqueStrings(values []string) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
 }

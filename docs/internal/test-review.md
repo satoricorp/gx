@@ -1,7 +1,7 @@
 # GX Test Review
 
 This is a design- and architecture-oriented review of the current test suite.
-The suite spans CLI, authoring, daemon, cloud, storage, VCS, review bundle,
+The suite spans CLI, authoring, cloud, storage, VCS, review bundle,
 provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## Findings
@@ -19,10 +19,6 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 - **The MCP layer now has focused tool tests, but coverage is still thin.**
   Current tests cover compose, review, and publish command envelopes. Broader
   coverage is still needed for repair-loop output and error formatting.
-- **The daemon is covered at primitive level, not product-flow level.** Session
-  registry, resolver reuse, redaction, and WebSocket summary extraction are
-  tested, but there is no end-to-end "captured session becomes revision
-  provenance through daemon lookup" test that exercises the daemon boundary.
 - **Multi-channel demux is not covered.** Current tests assume one current
   proposed revision / current stack. There are no tests for demux graph
   components, parallel branches, fan-out, SCCs, textual separability, or
@@ -35,7 +31,6 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ### `cmd/gx`
 
-- `TestShouldLaunch`: verifies command-line agent launcher detection.
 - `TestRootExposesAuthCommand`: ensures `gx auth` is visible from the root.
 - `TestRootExposesShortcutCommands`: ensures shortcut aliases such as status/add
   shortcuts are registered.
@@ -153,15 +148,6 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 - `TestSaveLoadClearCloudCredentials`: round-trips stored cloud credentials.
 - `TestCloudAPITokenRequiresGitHubToken`: requires GitHub auth for cloud API calls.
 
-### `internal/daemon`
-
-- `TestMemorySessionRegistry`: registers and resolves session ids by process id.
-- `TestRedactHeaders`: redacts sensitive headers before persistence/logging.
-- `TestAmbientResolverReusesExistingSession`: reuses ambient sessions for the
-  same resolved context.
-- `TestExtractSummaryFromWebSocketFrames`: extracts useful summary content from
-  WebSocket frame traffic.
-
 ### `internal/ingest/cursor`
 
 - `TestSyncFromPathIngestsComposersAndBubbles`: ingests Cursor composer/bubble
@@ -172,14 +158,8 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 - `TestIsMeaningfulFolder`: filters Cursor folders to meaningful repo paths.
 - `TestParseBubbleKey`: parses Cursor bubble keys into stable identifiers.
 
-### `internal/launcher`, `service`, `prompt`, `providers`, `postlist`
+### `internal/prompt`, `providers`, `postlist`
 
-- `TestCodexCommandArgs`: verifies wrapped Codex launch args.
-- `TestClaudeCommandArgsUnchanged`: ensures Claude args are passed through.
-- Codex config tests: update/find TOML string values and repair provider config
-  in the scoped Codex config format.
-- Service manager tests: launchd plist uses ambient daemon, shell block uses
-  stable proxy URLs, and shell block insertion is idempotent.
 - Prompt tests: legacy/plain prompt behavior for modify selection, identity, and
   required default values.
 - Provider tests: assemble Anthropic/OpenAI request/response data and summarize
@@ -277,12 +257,10 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 ## UX/Test Recommendations
 
 1. Add CLI snapshot tests for the final public design of `gx status`, `gx commit`,
-   `gx demux`, `gx demux apply`, `gx pr`, and daemon/capture status.
+   `gx demux`, `gx demux apply`, `gx pr`, and capture status.
 2. Add MCP tool tests for argument construction and repair-loop behavior.
-3. Add a daemon-to-authoring integration test proving active session lookup can
-   attach provenance without env variables.
-4. Add demux graph tests before multi-channel design: SCC grouping,
+3. Add demux graph tests before multi-channel design: SCC grouping,
    weak-component fan-out, topological ordering, textual overlap edges, and
    separability failure.
-5. Add review-surface bundle tests for the UX states: ready, needs repair,
+4. Add review-surface bundle tests for the UX states: ready, needs repair,
    blocked, accepted-with-warnings, and demux evidence display.

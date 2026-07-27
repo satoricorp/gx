@@ -183,6 +183,79 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 	}
 }
 
+// A repository with no commits and no files: nothing to review is still the
+// honest answer, and an explicit gate still refuses to pass on it. --repo is
+// included on purpose — a flag that could turn the one non-passing outcome
+// into a pass by asking for a bigger subject would be a gate with a bypass.
+func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
+	for _, flags := range [][]string{nil, {"--repo"}} {
+		name := "plain"
+		if len(flags) > 0 {
+			name = strings.Join(flags, " ")
+		}
+		t.Run(name, func(t *testing.T) {
+			root := initGitRepo(t)
+			runGitTest(t, root, "config", "user.name", "Test User")
+			runGitTest(t, root, "config", "user.email", "test@example.com")
+			t.Chdir(root)
+			setReviewGateEnv(t)
+
+			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--json", "--no-publish")...)
+			if err != nil {
+				t.Fatalf("gx review error = %v\n%s", err, out)
+			}
+			var report codereview.Report
+			if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
+				t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, out)
+			}
+			if report.Reviewed || report.ReviewMode != codereview.ReviewModeNone {
+				t.Fatalf("reviewed/review_mode = %v/%q, want false/%q:\n%s", report.Reviewed, report.ReviewMode, codereview.ReviewModeNone, out)
+			}
+
+			gateOut, gateErr := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "any", "--no-publish")...)
+			if gateErr == nil {
+				t.Fatalf("gx review --fail-on any passed on an empty repo:\n%s", gateOut)
+			}
+			if code := ExitCode(gateErr); code != reviewNothingToReviewExitCode {
+				t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, gateErr)
+			}
+		})
+	}
+}
+
+// The GX Cloud history row and the PostHog event both label the run, and they
+// derive that label from the same place so they cannot disagree with each
+// other — or, more importantly, with the summary text stored beside them. A
+// run whose summary says "Reviewed the repository" must not be filed as a
+// patch review.
+func TestReviewRunModeNamesTheSubjectItReviewed(t *testing.T) {
+	cases := []struct {
+		name          string
+		prompt        string
+		scopeExplicit bool
+		deep          bool
+		wholeRepo     bool
+		want          string
+	}{
+		{name: "default", want: "patch"},
+		{name: "scope", scopeExplicit: true, want: "scope"},
+		{name: "prompt", prompt: "why is auth slow?", want: "prompt"},
+		{name: "deep", deep: true, want: "deep"},
+		{name: "whole repo", wholeRepo: true, want: "repo"},
+		// The subject wins over the depth and the lens: those are recorded as
+		// their own fields, the mode is the one label.
+		{name: "whole repo and deep", wholeRepo: true, deep: true, want: "repo"},
+		{name: "whole repo and prompt", wholeRepo: true, prompt: "is there a race?", want: "repo"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reviewRunMode(tc.prompt, tc.scopeExplicit, tc.deep, tc.wholeRepo); got != tc.want {
+				t.Fatalf("reviewRunMode() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReviewBaseFlagSelectsTheRange(t *testing.T) {
 	root := newReviewGateRepo(t)
 	commitOnBranch(t, root)
@@ -204,6 +277,122 @@ func TestReviewBaseFlagSelectsTheRange(t *testing.T) {
 	}
 	if len(report.ChangedFiles) != 1 || report.ChangedFiles[0] != "internal/app/feature.go" {
 		t.Fatalf("changed_files = %#v, want the range files only", report.ChangedFiles)
+	}
+}
+
+// The reported case, end to end through the CLI: uncommitted work used to make
+// the diff the only reachable subject, so there was no way to ask for a review
+// of the codebase. --repo is that way.
+func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
+	root := newReviewGateRepo(t)
+	writeTestFile(t, root, "internal/app/app.go", "package app\n\nfunc Run() { println(1) }\n")
+	t.Chdir(root)
+	setReviewGateEnv(t)
+
+	out, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review --repo error = %v\n%s", err, out)
+	}
+	var report codereview.Report
+	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
+		t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, out)
+	}
+	if !report.Reviewed || report.ReviewMode != codereview.ReviewModeRepo {
+		t.Fatalf("reviewed/review_mode = %v/%q, want true/%q:\n%s", report.Reviewed, report.ReviewMode, codereview.ReviewModeRepo, out)
+	}
+	if !strings.Contains(report.ReviewTarget, "the repository") {
+		t.Fatalf("review_target = %q, want it to name the repository", report.ReviewTarget)
+	}
+	// The uncommitted work stays in focus rather than being discarded.
+	if len(report.ChangedFiles) != 1 || report.ChangedFiles[0] != "internal/app/app.go" {
+		t.Fatalf("changed_files = %#v, want the uncommitted file", report.ChangedFiles)
+	}
+
+	// Without the flag the same tree is a working-tree review, unchanged.
+	plain, err := runReviewCommand(t, "--json", "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review error = %v\n%s", err, plain)
+	}
+	var plainReport codereview.Report
+	if decodeErr := json.Unmarshal([]byte(plain), &plainReport); decodeErr != nil {
+		t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, plain)
+	}
+	if plainReport.ReviewMode != codereview.ReviewModeWorkingTree {
+		t.Fatalf("review_mode = %q, want %q for a plain review of a dirty tree", plainReport.ReviewMode, codereview.ReviewModeWorkingTree)
+	}
+}
+
+// --repo works on a clean repo too, where a plain review has nothing to read.
+func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
+	root := newReviewGateRepo(t)
+	t.Chdir(root)
+	setReviewGateEnv(t)
+
+	out, err := runReviewCommand(t, "--repo", "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review --repo error = %v\n%s", err, out)
+	}
+	if strings.Contains(out, "Nothing to review") {
+		t.Fatalf("gx review --repo reported nothing to review:\n%s", out)
+	}
+	if !strings.Contains(out, "Reviewed the repository") {
+		t.Fatalf("gx review --repo does not say what it reviewed:\n%s", out)
+	}
+
+	// Saying it reviewed the repository is only honest if it read the
+	// repository, so the report has to show context it could only have got
+	// from there: this repo has no diff of any kind.
+	jsonOut, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review --repo --json error = %v\n%s", err, jsonOut)
+	}
+	var report codereview.Report
+	if decodeErr := json.Unmarshal([]byte(jsonOut), &report); decodeErr != nil {
+		t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, jsonOut)
+	}
+	if len(report.ChangedFiles) != 0 {
+		t.Fatalf("changed_files = %#v, want none for a clean repo", report.ChangedFiles)
+	}
+	if report.ContextSnippets == 0 {
+		t.Fatalf("context_snippets = 0: --repo claimed to review the repository without reading it:\n%s", jsonOut)
+	}
+
+	// The same repo without the flag is still honest about reading nothing.
+	plain, err := runReviewCommand(t, "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review error = %v\n%s", err, plain)
+	}
+	if !strings.Contains(plain, "Nothing to review") {
+		t.Fatalf("gx review lost the nothing-to-review outcome:\n%s", plain)
+	}
+}
+
+// --repo names the subject; --base still picks the diff. The report says which
+// instruction did what instead of silently dropping one of them.
+func TestReviewRepoFlagWinsOverBaseAndSaysSo(t *testing.T) {
+	root := newReviewGateRepo(t)
+	commitOnBranch(t, root)
+	t.Chdir(root)
+	setReviewGateEnv(t)
+
+	out, err := runReviewCommand(t, "--repo", "--base", "main", "--json", "--no-publish")
+	if err != nil {
+		t.Fatalf("gx review --repo --base error = %v\n%s", err, out)
+	}
+	var report codereview.Report
+	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
+		t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, out)
+	}
+	if report.ReviewMode != codereview.ReviewModeRepo {
+		t.Fatalf("review_mode = %q, want %q: --repo sets the subject", report.ReviewMode, codereview.ReviewModeRepo)
+	}
+	if report.ReviewBase != "main" || report.ReviewRange != "main...HEAD" {
+		t.Fatalf("review_base/review_range = %q/%q, want main/main...HEAD kept in focus", report.ReviewBase, report.ReviewRange)
+	}
+	for _, want := range []string{"the repository", "--base", "main...HEAD"} {
+		if !strings.Contains(report.ReviewTarget, want) {
+			t.Fatalf("review_target = %q, want it to mention %q", report.ReviewTarget, want)
+		}
 	}
 }
 

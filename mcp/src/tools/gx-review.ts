@@ -18,6 +18,12 @@ export const schema = {
   scope: reviewScope.optional().describe("Optional focused review scope. Omit for gx review's patch-focused default."),
   focus: z.string().optional().describe("Limit review to files under this path prefix."),
   prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional gx review prompt."),
+  repo: z
+    .boolean()
+    .optional()
+    .describe(
+      "Review the whole repository instead of just the current change. Use this to ask about the codebase itself, or when uncommitted work would otherwise narrow the review to the diff.",
+    ),
   deep: z.boolean().optional().describe("Run full-spectrum review with more local and indexed context."),
   verbose: z.boolean().optional().describe("Include repo facts, docs, and changed files."),
 };
@@ -25,7 +31,7 @@ export const schema = {
 export const metadata: ToolMetadata = {
   name: "gx_review",
   description:
-    "Run gx review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Pass deep=true for full-spectrum review. MCP forces GX_REVIEW_AI=1 for this command.",
+    "Run gx review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Defaults to reviewing the current change; pass repo=true to review the whole repository instead, which is what questions about the codebase need when the working tree is dirty. Pass deep=true for full-spectrum review. MCP forces GX_REVIEW_AI=1 for this command.",
   annotations: {
     title: "GX Review",
     readOnlyHint: true,
@@ -41,6 +47,9 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
   }
   if (params.focus) {
     args.push("--focus", params.focus);
+  }
+  if (params.repo) {
+    args.push("--repo");
   }
   if (params.deep) {
     args.push("--deep");

@@ -15,48 +15,35 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
 
 const reportLogByteLimit = 32 * 1024
 
-func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Command {
+// newReportCommand keeps `gx report` resolvable for one release after the
+// behavior moved to `gx doctor --report`. Hidden and ungrouped: existing muscle
+// memory and doc links keep working, but the public surface has one spelling.
+func newReportCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
-		Use:   "report",
-		Short: "Send logs to support",
-		Args:  cobra.NoArgs,
+		Use:    "report",
+		Short:  "Send logs to support (alias for gx doctor --report)",
+		Args:   cobra.NoArgs,
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			report := buildReportLogRequest(ctx, engine, "")
-			client := cloud.NewClient()
-			if client == nil {
-				return fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
-			}
-			result, err := client.ReportLogs(ctx, report)
+			result, err := sendSupportReport(ctx, nil)
 			if err != nil {
 				return err
 			}
-			telemetry.EmitProductEvent(ctx, telemetry.EventCLIReportSent, map[string]any{
-				"log_count":      len(report.Logs),
-				"has_report_id":  strings.TrimSpace(result.ID) != "",
-				"has_user_id":    strings.TrimSpace(report.UserID) != "",
-				"has_machine_id": strings.TrimSpace(report.MachineID) != "",
-			})
 			if jsonOut {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, success("Report sent"))
-			if strings.TrimSpace(result.ID) != "" {
-				fmt.Fprintln(out, labelValue("Report ID", result.ID))
-			}
-			if strings.TrimSpace(result.URL) != "" {
-				fmt.Fprintln(out, labelValue("Report", result.URL))
-			}
+			printSupportReportResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}
@@ -64,7 +51,59 @@ func newReportCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comm
 	return cmd
 }
 
-func autoReportFailure(ctx context.Context, engine *authoring.Engine, err error, commandName string) {
+// sendSupportReport packages the local support bundle — recent gx logs, cloud
+// identity, and the publish-outbox error — and posts it to GX Cloud. Callers
+// pass anything they gathered first as attachments; `gx doctor --report` sends
+// its diagnosis that way, so both entry points share this one implementation.
+func sendSupportReport(ctx context.Context, attachments []cloud.ReportLogFile) (cloud.ReportLogResult, error) {
+	client := cloud.NewClient()
+	if client == nil {
+		return cloud.ReportLogResult{}, fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
+	}
+	report := buildReportLogRequest(ctx, "")
+	report.Logs = append(report.Logs, attachments...)
+	result, err := client.ReportLogs(ctx, report)
+	if err != nil {
+		return cloud.ReportLogResult{}, err
+	}
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReportSent, map[string]any{
+		"log_count":        len(report.Logs),
+		"has_report_id":    strings.TrimSpace(result.ID) != "",
+		"has_user_id":      strings.TrimSpace(report.UserID) != "",
+		"has_machine_id":   strings.TrimSpace(report.MachineID) != "",
+		"attachment_count": len(attachments),
+	})
+	return result, nil
+}
+
+func printSupportReportResult(out io.Writer, result cloud.ReportLogResult) {
+	fmt.Fprintln(out, success("Report sent"))
+	if strings.TrimSpace(result.ID) != "" {
+		fmt.Fprintln(out, labelValue("Report ID", result.ID))
+	}
+	if strings.TrimSpace(result.URL) != "" {
+		fmt.Fprintln(out, labelValue("Report", result.URL))
+	}
+}
+
+// supportAttachment turns text a command already produced into a report log
+// file: ANSI stripped so support reads plain text, secrets redacted the same
+// way real log tails are.
+func supportAttachment(path, content string) []cloud.ReportLogFile {
+	content = strings.TrimSpace(stripANSI(content))
+	if content == "" {
+		return nil
+	}
+	return []cloud.ReportLogFile{{Path: path, Content: redactSensitive(content)}}
+}
+
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(text string) string {
+	return ansiEscapePattern.ReplaceAllString(text, "")
+}
+
+func autoReportFailure(ctx context.Context, err error, commandName string) {
 	if !shouldAutoReportFailure(err) {
 		return
 	}
@@ -72,7 +111,7 @@ func autoReportFailure(ctx context.Context, engine *authoring.Engine, err error,
 	if client == nil {
 		return
 	}
-	report := buildReportLogRequest(ctx, engine, fmt.Sprintf("%s: %s", strings.TrimSpace(commandName), redactSensitive(err.Error())))
+	report := buildReportLogRequest(ctx, fmt.Sprintf("%s: %s", strings.TrimSpace(commandName), redactSensitive(err.Error())))
 	if _, reportErr := client.ReportLogs(ctx, report); reportErr != nil {
 		fmt.Fprintln(os.Stderr, labelWarningValue("Warning", fmt.Sprintf("Could not report %s failure: %v", strings.TrimSpace(commandName), reportErr)))
 	}
@@ -100,7 +139,7 @@ func shouldAutoReportFailure(err error) bool {
 	}
 }
 
-func buildReportLogRequest(ctx context.Context, engine *authoring.Engine, overrideError string) cloud.ReportLogRequest {
+func buildReportLogRequest(ctx context.Context, overrideError string) cloud.ReportLogRequest {
 	report := cloud.ReportLogRequest{
 		GXVersion: version.Current(),
 		OS:        runtime.GOOS,
@@ -118,7 +157,10 @@ func buildReportLogRequest(ctx context.Context, engine *authoring.Engine, overri
 			report.MachineID = strings.TrimSpace(machineID)
 		}
 	}
-	status, err := currentStatusForEngine(ctx, engine)
+	if status, err := publication.QueuedUploadStatus(); err == nil {
+		report.Error = redactSensitive(status.LastError)
+	}
+	repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 	if err != nil {
 		report.StatusError = redactSensitive(err.Error())
 		if strings.TrimSpace(overrideError) != "" {
@@ -126,9 +168,8 @@ func buildReportLogRequest(ctx context.Context, engine *authoring.Engine, overri
 		}
 		return report
 	}
-	report.RepoRoot = status.Repo.RootPath
-	report.RepoFullName = cloud.RepoFullNameFromRemoteURL(pointerString(status.Repo.RemoteURL))
-	report.Error = redactSensitive(status.PublishUploads.LastError)
+	report.RepoRoot = repo.RootPath
+	report.RepoFullName = cloud.RepoFullNameFromRemoteURL(pointerString(repo.RemoteURL))
 	if strings.TrimSpace(overrideError) != "" {
 		report.Error = redactSensitive(overrideError)
 	}

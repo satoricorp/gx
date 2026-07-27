@@ -20,7 +20,7 @@ func TestResolveIgnoresMissingEnvSessionIDs(t *testing.T) {
 	t.Setenv("GX_SESSION_ID", "missing-session")
 	t.Setenv("GX_SESSION_IDS", "")
 	store := newTestStore(t)
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "cursor-session",
 		CreatedAt: 1,
 		Command:   "cursor",
@@ -28,7 +28,7 @@ func TestResolveIgnoresMissingEnvSessionIDs(t *testing.T) {
 		GXVersion: "test",
 		RepoRoot:  strPtr("/repo"),
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 
 	got, err := Resolve(context.Background(), store, "/repo")
@@ -42,7 +42,7 @@ func TestResolveIgnoresMissingEnvSessionIDs(t *testing.T) {
 
 func TestAttachPreferredFallsBackToRepoLocal(t *testing.T) {
 	store := newTestStore(t)
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "cursor-session",
 		CreatedAt: 1,
 		Command:   "cursor",
@@ -50,7 +50,7 @@ func TestAttachPreferredFallsBackToRepoLocal(t *testing.T) {
 		GXVersion: "test",
 		RepoRoot:  strPtr("/repo"),
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	repoID, err := store.UpsertRepo(context.Background(), storage.Repo{
 		RootPath:  "/repo",
@@ -120,14 +120,14 @@ func TestResolvePrefersExplicitSessionIDs(t *testing.T) {
 	t.Setenv("GX_SESSION_ID", "explicit-one")
 	t.Setenv("GX_SESSION_IDS", "")
 	store := newTestStore(t)
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "explicit-one",
 		CreatedAt: 1,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 
 	got, err := Resolve(context.Background(), store, "/repo")
@@ -143,7 +143,7 @@ func TestResolveReturnsRepoLocalSessionWhenNoExplicitEnv(t *testing.T) {
 	t.Setenv("GX_SESSION_ID", "")
 	t.Setenv("GX_SESSION_IDS", "")
 	store := newTestStore(t)
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "cursor-session",
 		CreatedAt: 1,
 		Command:   "cursor",
@@ -151,7 +151,7 @@ func TestResolveReturnsRepoLocalSessionWhenNoExplicitEnv(t *testing.T) {
 		GXVersion: "test",
 		RepoRoot:  strPtr("/repo"),
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 
 	got, err := Resolve(context.Background(), store, "/repo")
@@ -166,23 +166,23 @@ func TestResolveReturnsRepoLocalSessionWhenNoExplicitEnv(t *testing.T) {
 func TestAttachWritesResolvedSessions(t *testing.T) {
 	t.Setenv("GX_SESSION_IDS", "session-one,session-two")
 	store := newTestStore(t)
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "session-one",
 		CreatedAt: 1,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession(session-one) error = %v", err)
+		t.Fatalf("UpsertObservedSession(session-one) error = %v", err)
 	}
-	if err := store.WriteSession(context.Background(), storage.Session{
+	if err := store.UpsertObservedSession(context.Background(), storage.Session{
 		ID:        "session-two",
 		CreatedAt: 2,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession(session-two) error = %v", err)
+		t.Fatalf("UpsertObservedSession(session-two) error = %v", err)
 	}
 	repoID, err := store.UpsertRepo(context.Background(), storage.Repo{
 		RootPath:  "/repo",
@@ -233,6 +233,12 @@ func TestWithExplicitSessionEnvRestoresPreviousEnvironment(t *testing.T) {
 	}
 }
 
+// Sessions in this file are seeded with store.UpsertObservedSession, the writer
+// vcs.AttachSessionsFromHunkLinks calls on the push path. store.WriteSession —
+// what these tests used to call — has no production callers at all, so seeding
+// through it proved provenance behaviour against `sessions` rows that no gx
+// install could actually contain. See TestSeedersAreProductionWriters in
+// internal/storage/storagetest for the rule and its ratchet.
 func newTestStore(t *testing.T) *storage.Store {
 	t.Helper()
 	t.Setenv("GX_HOME", t.TempDir())

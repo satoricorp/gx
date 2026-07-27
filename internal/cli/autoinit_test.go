@@ -125,7 +125,6 @@ func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 		"gx version":                 true,
 		"gx auth status":             true,
 		"gx set inference-key dummy": true,
-		"gx demo":                    true,
 		"gx review":                  true,
 		"gx doctor":                  false,
 	}

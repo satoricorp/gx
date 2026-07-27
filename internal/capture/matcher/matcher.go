@@ -14,9 +14,9 @@ const (
 
 // Config controls matcher thresholds.
 type Config struct {
-	FuzzyThreshold  float64
-	TemporalWindow  time.Duration
-	NgramSize       int
+	FuzzyThreshold float64
+	TemporalWindow time.Duration
+	NgramSize      int
 }
 
 // DefaultConfig returns WP-0 default matcher settings.
@@ -51,7 +51,12 @@ type Result struct {
 	Tier2HunkIndexes map[int]struct{}
 	Tier3Pairs       int
 	MatchedEvents    map[int]int // event index -> best tier (1 or 2)
-	Outcomes         []MatchOutcome
+	// RelevantEvents records every event whose content matched some hunk
+	// (tier 1 or 2), before hunk-claim dedup. MatchedEvents only keeps the
+	// single claiming event per hunk, which under-reports a session whose
+	// edits landed on hunks another session's event claimed first.
+	RelevantEvents map[int]int // event index -> best tier (1 or 2)
+	Outcomes       []MatchOutcome
 }
 
 // AuthorshipHunkCount returns hunks matched by Tier 1 or 2 only.
@@ -75,6 +80,7 @@ func Match(events []capture.SessionEvent, hunks []HunkRef, cfg Config) Result {
 		Tier1HunkIndexes: map[int]struct{}{},
 		Tier2HunkIndexes: map[int]struct{}{},
 		MatchedEvents:    map[int]int{},
+		RelevantEvents:   map[int]int{},
 	}
 
 	claimed := map[int]int{} // hunk index -> tier (lower wins)
@@ -109,6 +115,7 @@ func Match(events []capture.SessionEvent, hunks []HunkRef, cfg Config) Result {
 		}
 
 		if bestTier == TierExact || bestTier == TierFuzzy {
+			result.RelevantEvents[ai] = bestTier
 			if prev, ok := claimed[bestHunk]; !ok || bestTier < prev {
 				claimed[bestHunk] = bestTier
 				result.MatchedEvents[ai] = bestTier

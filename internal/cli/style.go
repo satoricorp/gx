@@ -25,7 +25,6 @@ func success(text string) string { return termstyle.Success(text) }
 func section(text string) string { return termstyle.Section(text) }
 func command(text string) string { return termstyle.Command(text) }
 func muted(text string) string   { return termstyle.Muted(text) }
-func accent(text string) string  { return termstyle.Accent(text) }
 func hint(text string) string    { return termstyle.Hint(text) }
 func mint(text string) string    { return termstyle.Mint(text) }
 func value(text string) string   { return termstyle.Value(text) }
@@ -35,9 +34,6 @@ func labelWarningValue(label, value string) string {
 }
 func labelMintValue(label, value string) string { return termstyle.LabelMint(label, value) }
 func labelStatus(label, value string) string    { return termstyle.LabelStatus(label, value) }
-func progressBar(percent float64) string {
-	return termstyle.ProgressBar(percent)
-}
 func commandLine(invocation string, accentCommand bool) string {
 	return termstyle.CommandLine(invocation, accentCommand)
 }
@@ -47,11 +43,9 @@ func hyperlink(url, text string) string {
 }
 
 const (
-	groupSetup    = "setup"
-	groupWork     = "work"
-	groupShip     = "ship"
-	groupHelp     = "help"
-	groupAdvanced = "advanced"
+	groupSetup = "setup"
+	groupWork  = "work"
+	groupHelp  = "help"
 )
 
 func installHelpStyling(root *cobra.Command) {
@@ -288,10 +282,8 @@ func rootHelpCommandOrder(groupID string) []string {
 		return []string{"init", "auth"}
 	case groupWork:
 		return []string{"review"}
-	case groupShip:
-		return []string{"push", "sync"}
 	case groupHelp:
-		return []string{"doctor", "report", "version", "help"}
+		return []string{"doctor", "version", "help"}
 	default:
 		return nil
 	}

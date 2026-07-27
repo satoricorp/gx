@@ -1,6 +1,12 @@
 # Plan: Git-native capture — bound staging, reference sessions, drop stack metadata
 
-> Status: planned, not started. Written 2026-07-26 from a session that shipped the
+> Status: **Workstream A implemented** on `gx-review-and-plain-git` (2026-07-26);
+> B and C remain. The open reference-vs-blob question below was decided in A's
+> favor of references: staged rows store a source pointer plus fingerprint
+> (sha256 + size + mtime), staging happens only after match, one row per source
+> file replaces in place, and the upload path streams the current bytes from
+> disk (cloud retains raw transcripts). raw_blob is legacy-read-only.
+> Originally written 2026-07-26 from a session that shipped the
 > capture-discovery fixes and hit the staging regression described below.
 > Branch context: `gx-review-and-plain-git` (PR satoricorp/gx#110).
 

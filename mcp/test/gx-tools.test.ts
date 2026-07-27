@@ -13,6 +13,7 @@ describe("gx_review metadata and schema", () => {
     expect(reviewSchema.scope.parse("architecture")).toBe("architecture");
     expect(reviewSchema.prompt.parse("review auth rollback risk")).toBe("review auth rollback risk");
     expect(reviewSchema.deep.parse(true)).toBe(true);
+    expect(reviewSchema.repo.parse(true)).toBe(true);
   });
 });
 
@@ -120,6 +121,18 @@ exit 1
     const calls = await readFile(callLog, "utf8");
     expect(calls).toContain("gx|");
     expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
+  });
+
+  test("gx_review can ask for a whole-repo review", async () => {
+    // Without this, a dirty working tree makes the diff the review subject, so
+    // an agent asking about the codebase gets an answer scoped to the diff.
+    const output = await gxReview({ cwd: repoRoot, repo: true });
+    const parsed = JSON.parse(output);
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "review", "--repo"]);
+
+    // Omitting it keeps the patch-focused default.
+    const plain = JSON.parse(await gxReview({ cwd: repoRoot }));
+    expect(plain.command).toEqual([process.env.GX_BINARY, "review"]);
   });
 
   test("gx_review never initializes the repo it reviews", async () => {

@@ -56,6 +56,9 @@ func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, tel
 		}
 		row.PayloadJSON = payload
 		row.BadLines = badLines
+		// The stored blob was only needed for parsing; the upsert keeps the
+		// existing raw_blob column, and blobs are never written anymore.
+		row.RawBlob = nil
 		if err := stager.StageSession(ctx, row); err != nil {
 			result.Errors++
 			continue

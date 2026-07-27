@@ -16,7 +16,6 @@ const (
 	EventCLIGenerateRun    = "cli.generate.run"
 	EventCLIGeneratePrompt = "cli.generate.prompt"
 	EventCLIPushRun        = "cli.push.run"
-	EventCLISyncRun        = "cli.sync.run"
 	EventCLIReportSent     = "cli.report.sent"
 	EventCLIReviewRun      = "cli.review.run"
 	EventCLIAuthLogin      = "cli.auth.login"

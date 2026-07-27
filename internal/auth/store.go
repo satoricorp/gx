@@ -10,9 +10,6 @@ import (
 
 const uploadFileName = "upload.json"
 
-// MinCleanupPeriodDays is the minimum session retention for gx init.
-const MinCleanupPeriodDays = 30
-
 // UploadCredentials hold CLI upload auth for the GX capture server.
 type UploadCredentials struct {
 	APIURL string `json:"api_url"`

@@ -15,20 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/authoring"
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
 var errTestComposeRepair = errors.New("compose repair unavailable")
-
-func TestColorizeDiffLeavesAnsiColoredOutputUntouched(t *testing.T) {
-	diff := "\x1b[38;5;3mModified regular file main.go:\x1b[39m\n"
-	if got := colorizeDiff(diff); got != diff {
-		t.Fatalf("colorizeDiff() changed ANSI-colored diff:\n%q\nwant:\n%q", got, diff)
-	}
-}
 
 func TestVersionCommandPrintsLabeledVersion(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
@@ -190,43 +182,104 @@ func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	}
 }
 
-func TestOpsCommandPrintsCompactMenu(t *testing.T) {
+func TestDemoAndOpsCommandsAreRemoved(t *testing.T) {
+	root := NewRoot(context.Background())
+	for _, args := range [][]string{{"demo"}, {"ops"}, {"ops", "diagnose", "doctor"}, {"ops", "diag", "doctor"}} {
+		cmd, _, err := root.Find(args)
+		if err == nil && cmd != nil && cmd != root {
+			t.Fatalf("Find(%v) resolved removed command %q", args, cmd.Name())
+		}
+	}
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "demo" || cmd.Name() == "ops" {
+			t.Fatalf("root still registers removed command %q", cmd.Name())
+		}
+	}
+	for _, group := range root.Groups() {
+		if group.Title == "Advanced:" {
+			t.Fatalf("root still declares the now-empty %q group", group.Title)
+		}
+	}
+}
+
+func TestDoctorAcceptsReportFlag(t *testing.T) {
+	root := NewRoot(context.Background())
+	doctor, _, err := root.Find([]string{"doctor"})
+	if err != nil || doctor == nil || doctor.Name() != "doctor" {
+		t.Fatalf("Find(doctor) = cmd=%v err=%v, want doctor", doctor, err)
+	}
+	flag := doctor.Flags().Lookup("report")
+	if flag == nil {
+		t.Fatal("gx doctor is missing the --report flag")
+	}
+	if flag.Value.Type() != "bool" {
+		t.Fatalf("gx doctor --report type = %q, want bool", flag.Value.Type())
+	}
+}
+
+func TestReportCommandStaysResolvableAsHiddenAlias(t *testing.T) {
+	root := NewRoot(context.Background())
+	report, _, err := root.Find([]string{"report"})
+	if err != nil || report == nil || report.Name() != "report" {
+		t.Fatalf("Find(report) = cmd=%v err=%v, want report", report, err)
+	}
+	if !report.Hidden {
+		t.Fatal("gx report should be hidden now that gx doctor --report is the public spelling")
+	}
+	if report.GroupID != "" {
+		t.Fatalf("gx report GroupID = %q, want no group", report.GroupID)
+	}
+}
+
+func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
+	repoRoot := initGitRepo(t)
+	t.Chdir(repoRoot)
 	t.Setenv("NO_COLOR", "1")
-	t.Chdir(t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
+	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveCloudCredentials() error = %v", err)
+	}
+	var got cloud.ReportLogRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/reported-logs" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode report body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":"report-9","url":"https://gx.run/reports/report-9"}`))
+	}))
+	defer server.Close()
+	t.Setenv("GX_CLOUD_URL", server.URL)
+
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"ops"})
+	root.SetArgs([]string{"doctor", "--report"})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("root.Execute() error = %v", err)
+		t.Fatalf("gx doctor --report error = %v\n%s", err, out.String())
 	}
 
+	var diagnosis string
+	for _, log := range got.Logs {
+		if log.Path == "gx-doctor.txt" {
+			diagnosis = log.Content
+		}
+	}
+	if diagnosis == "" {
+		t.Fatalf("report logs missing the doctor diagnosis: %#v", got.Logs)
+	}
+	if !strings.Contains(diagnosis, "Publish outbox") {
+		t.Fatalf("doctor diagnosis attachment = %q, want the printed doctor output", diagnosis)
+	}
 	text := out.String()
-	for _, want := range []string{
-		"Advanced commands for capture, diagnostics, and ingest",
-		"  capture     Record a gx session for replay",
-		"  diagnose    Inspect local gx state and config",
-		"  ingest      Import external change metadata",
-		`Use "gx ops [command] --help" for details.`,
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("gx ops output missing %q in:\n%s", want, text)
-		}
+	if !strings.Contains(text, "Publish outbox") {
+		t.Fatalf("gx doctor --report stopped printing the diagnosis:\n%s", text)
 	}
-	if strings.Contains(text, "Usage:") {
-		t.Fatalf("gx ops output should not render generic help:\n%s", text)
-	}
-}
-
-func TestOpsDiagnoseAliasStillWorks(t *testing.T) {
-	root := NewRoot(context.Background())
-	for _, args := range [][]string{{"ops", "diagnose", "doctor"}, {"ops", "diag", "doctor"}} {
-		cmd, _, err := root.Find(args)
-		if err != nil || cmd == nil || cmd.Name() != "doctor" {
-			t.Fatalf("Find(%v) = cmd=%v err=%v, want doctor", args, cmd, err)
-		}
+	if !strings.Contains(text, "Report sent") || !strings.Contains(text, "report-9") {
+		t.Fatalf("gx doctor --report missing send confirmation:\n%s", text)
 	}
 }
 
@@ -557,7 +610,7 @@ func TestAutoReportFailurePostsCommandError(t *testing.T) {
 	defer server.Close()
 	t.Setenv("GX_CLOUD_URL", server.URL)
 
-	autoReportFailure(context.Background(), authoring.NewEngine(), fmt.Errorf("push exploded"), "gx push")
+	autoReportFailure(context.Background(), fmt.Errorf("push exploded"), "gx push")
 	if !strings.Contains(gotReport.Error, "gx push: push exploded") {
 		t.Fatalf("report error = %q, want command error", gotReport.Error)
 	}

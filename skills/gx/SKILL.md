@@ -108,10 +108,18 @@ pre-push hook is the only publish path.
 ```bash
 gx review                                    # patch-focused default
 gx review "did we break the retry contract?" # steer with a prompt
+gx review --repo                             # review the codebase, not just the current change
 gx review --scope security                   # architecture, security, performance, etc.
 gx review --focus src/auth --deep            # deep pass limited to a path prefix
 gx review --verbose                          # include repo facts, docs, changed files
 ```
+
+Without `--repo`, a dirty working tree is the review subject: gx reviews the diff. Use
+`--repo` to review the repository itself — the reviewer is given an inventory of the
+repository and its source files, in any language, and findings are no longer filtered
+down to changed lines. The uncommitted work stays in focus, so the review still sees
+what you just edited, and static checks run over the repository when there is no diff.
+`--repo` also wins over `--base`.
 
 The `gxr` alias runs `gx review`. The `gx_review` MCP tool is the same review from an
 agent client.
@@ -122,9 +130,13 @@ agent client.
   `git status`, `git push`, and `git commit --amend`; GX's hooks record revisions for you.
 - `gx capture push` or any manual capture/attach step — the pre-push hook captures and
   publishes on `git push`, and provenance is inferred automatically.
-- Hidden utilities such as `gx base` or `gx generate` — removed; use plain Git
-  (`git pull --rebase`, `git checkout -b`) instead. (`gx sync` still exists, but it
-  retries queued uploads; it is not part of the save flow.)
+- Hidden utilities such as `gx base`, `gx generate`, or `gx sync` — removed; use plain
+  Git (`git pull --rebase`, `git checkout -b`) instead. Queued uploads retry on the next
+  `git push`, and `gx doctor` shows and drains the upload outbox.
+- `gx demo` and `gx ops` — removed. There is no walkthrough, and `gx ops diagnose doctor`
+  was only ever `gx doctor` under another name; run `gx doctor`.
+- `gx report` — folded into `gx doctor --report`, which diagnoses first and then sends
+  that diagnosis with recent logs to support.
 - Declaring provenance by hand (self-reports, task summaries) — there is no such channel;
   sessions are matched to changed hunks automatically.
 
@@ -139,3 +151,4 @@ agent client.
 | `git push` rejected (remote moved) | `git pull --rebase`, then retry `git push` |
 | No PR summary on the PR | Confirm the branch was pushed with `git push` while hooks are installed; run `gx doctor` |
 | Repo not initialized errors | `gx init -y`, then retry |
+| Something is broken and the user wants support to see it | `gx doctor --report` sends the diagnosis plus recent gx logs |

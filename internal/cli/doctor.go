@@ -1,12 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,178 +14,15 @@ import (
 	"github.com/spf13/cobra"
 
 	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
-	gxservice "github.com/satoricorp/gx/internal/service"
+	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
-func newServiceCommand(ctx context.Context) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "service",
-		Short: "Manage the gx background capture service",
-	}
-	cmd.AddCommand(
-		newServiceInstallCommand(ctx),
-		newServiceUninstallCommand(ctx),
-		newServiceStartCommand(ctx),
-		newServiceStopCommand(ctx),
-		newServiceStatusCommand(ctx),
-		newServiceEnvCommand(ctx),
-	)
-	return cmd
-}
-
-func newServiceInstallCommand(ctx context.Context) *cobra.Command {
-	var gxPath string
-	return &cobra.Command{
-		Use:   "install",
-		Short: "Install and start the gx LaunchAgent with ambient capture env",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if gxPath == "" {
-				exe, err := os.Executable()
-				if err != nil {
-					return err
-				}
-				gxPath = exe
-			}
-			if err := gxservice.NewManager().Install(ctx, gxPath); err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Installed", gxservice.Label))
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Proxy", gxservice.AnthropicBaseURL()))
-			fmt.Fprintln(cmd.OutOrStdout(), muted("Open a new terminal window for environment changes to apply."))
-			return nil
-		},
-	}
-}
-
-func newServiceUninstallCommand(ctx context.Context) *cobra.Command {
-	return &cobra.Command{
-		Use:   "uninstall",
-		Short: "Stop gx and remove LaunchAgent/env integration",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := gxservice.NewManager().Uninstall(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Removed", gxservice.Label))
-			return nil
-		},
-	}
-}
-
-func newServiceStartCommand(ctx context.Context) *cobra.Command {
-	return &cobra.Command{
-		Use:   "start",
-		Short: "Start or restart the gx capture service",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := gxservice.NewManager().Start(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Started", gxservice.Label))
-			return nil
-		},
-	}
-}
-
-func newServiceStopCommand(ctx context.Context) *cobra.Command {
-	return &cobra.Command{
-		Use:   "stop",
-		Short: "Stop the gx capture service",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := gxservice.NewManager().Stop(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Stopped", gxservice.Label))
-			return nil
-		},
-	}
-}
-
-func newServiceStatusCommand(ctx context.Context) *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Print launchd status for the gx capture service",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if jsonOut {
-				status := serviceStatusJSON(ctx)
-				return writeJSON(cmd, status)
-			}
-			text, err := gxservice.NewManager().Status(ctx)
-			if text != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), text)
-			}
-			return err
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	return cmd
-}
-
-func newServiceEnvCommand(ctx context.Context) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "env",
-		Short: "Manage gx ambient capture environment variables",
-	}
-	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "apply",
-			Short: "Set gx base URLs with launchctl and managed shell blocks",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				mgr := gxservice.NewManager()
-				if err := mgr.ApplyEnv(ctx); err != nil {
-					return err
-				}
-				if err := gxservice.InstallShellBlocks(); err != nil {
-					return err
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), envSummary())
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:   "clear",
-			Short: "Clear gx launchctl env and managed shell blocks",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				mgr := gxservice.NewManager()
-				if err := mgr.ClearEnv(ctx); err != nil {
-					return err
-				}
-				if err := gxservice.RemoveShellBlocks(); err != nil {
-					return err
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), success("Cleared gx ambient capture env."))
-				return nil
-			},
-		},
-		func() *cobra.Command {
-			var jsonOut bool
-			statusCmd := &cobra.Command{
-				Use:   "status",
-				Short: "Print expected gx ambient capture environment values",
-				RunE: func(cmd *cobra.Command, args []string) error {
-					values, err := gxservice.NewManager().EnvStatus(ctx)
-					if err != nil {
-						return err
-					}
-					if jsonOut {
-						return writeJSON(cmd, envStatusJSON(values))
-					}
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue(gxservice.EnvAnthropic, compareEnv(values[gxservice.EnvAnthropic], gxservice.AnthropicBaseURL())))
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue(gxservice.EnvOpenAI, compareEnv(values[gxservice.EnvOpenAI], gxservice.OpenAIBaseURL())))
-					return nil
-				},
-			}
-			statusCmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-			return statusCmd
-		}(),
-	)
-	return cmd
-}
-
 func newDoctorCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	var fix bool
+	var sendReport bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Fix current gx state",
@@ -197,14 +33,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			var staleRepairErr error
 			var missingBaseRepair vcs.RebaseOntoDefaultResult
 			var missingBaseErr error
-			codex := gxservice.CheckCodexConfig()
-			var codexRepairErr error
-			codexRepaired := false
 			if fix {
-				if !codex.Correct {
-					codex, codexRepairErr = gxservice.RepairCodexConfig(ctx, gxservice.ExecRunner{})
-					codexRepaired = codexRepairErr == nil && codex.Correct
-				}
 				staleRepair, staleRepairErr = vcs.NewService().CleanupStaleStacks(ctx)
 				if staleRepairErr != nil {
 					return staleRepairErr
@@ -216,14 +45,8 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			missingBase, missingDetectErr := doctorMissingStackBaseRefs(ctx, fix, missingBaseRepair)
 			if jsonOut {
 				payload := map[string]any{"doctor": doctorStatusJSON(ctx)}
-				payload["codex"] = codexDoctorJSON{
-					ConfigPath: codex.ConfigPath,
-					Found:      codex.Found,
-					Correct:    codex.Correct,
-					BaseURL:    codex.Value,
-					Expected:   gxservice.OpenAIBaseURL(),
-					Repaired:   codexRepaired,
-					Error:      errorString(codexRepairErr),
+				if outboxStatus, err := publication.QueuedUploadStatus(); err == nil {
+					payload["publish_uploads"] = outboxStatus
 				}
 				if missingBaseErr == nil && (len(missingBaseRepair.Fixed) > 0 || len(missingBaseRepair.Actions) > 0) {
 					payload["missing_base_refs"] = missingBaseRepair
@@ -240,31 +63,59 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 						payload["missing_base_repair"] = missingBaseRepair
 					}
 				}
-				return writeJSON(cmd, payload)
+				if !sendReport {
+					return writeJSON(cmd, payload)
+				}
+				// Send the diagnosis that was just produced, then fold the
+				// outcome into the same document so stdout stays one JSON value.
+				result, reportErr := sendSupportReport(ctx, supportAttachment("gx-doctor.json", marshalDoctorDiagnosis(payload)))
+				if reportErr != nil {
+					payload["report_error"] = reportErr.Error()
+				} else {
+					payload["report"] = result
+				}
+				if err := writeJSON(cmd, payload); err != nil {
+					return err
+				}
+				return reportErr
+			}
+			// With --report the printed diagnosis is also the thing we send, so
+			// tee it into a buffer while it renders.
+			out := cmd.OutOrStdout()
+			var diagnosis bytes.Buffer
+			if sendReport {
+				out = io.MultiWriter(out, &diagnosis)
 			}
 			capture := captureDoctorStatus(ctx, "")
-			printCaptureDoctor(cmd.OutOrStdout(), capture)
-			printDoctorCodexRouting(cmd.OutOrStdout(), codex, fix, codexRepaired, codexRepairErr)
-			printDoctorMissingBaseRefRepair(cmd.OutOrStdout(), missingBaseRepair, missingBaseErr)
-			printDoctorStaleStacks(cmd.OutOrStdout(), fix, stale, staleErr)
-			printDoctorMissingStackBaseRefs(cmd.OutOrStdout(), fix, missingBase, missingDetectErr, missingBaseRepair, missingBaseErr)
+			printCaptureDoctor(out, capture)
+			reportAndDrainPublishOutbox(ctx, out)
+			printDoctorMissingBaseRefRepair(out, missingBaseRepair, missingBaseErr)
+			printDoctorStaleStacks(out, fix, stale, staleErr)
+			printDoctorMissingStackBaseRefs(out, fix, missingBase, missingDetectErr, missingBaseRepair, missingBaseErr)
 			if fix {
 				if len(repair.Actions) == 0 {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Workflow repair", success("ok")+": no changes needed"))
+					fmt.Fprintln(out, labelValue("Workflow repair", success("ok")+": no changes needed"))
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), section("Workflow repair"))
+					fmt.Fprintln(out, section("Workflow repair"))
 					for _, action := range repair.Actions {
-						fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", action)
+						fmt.Fprintf(out, "  %s\n", action)
 					}
 				}
 				for _, warning := range repair.Warnings {
 					if strings.TrimSpace(warning) != "" {
-						fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Warning", strings.TrimSpace(warning)))
+						fmt.Fprintln(out, labelWarningValue("Warning", strings.TrimSpace(warning)))
 					}
 				}
 				if repairErr != nil {
-					fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Workflow repair", "repair failed: "+repairErr.Error()))
+					fmt.Fprintln(out, labelWarningValue("Workflow repair", "repair failed: "+repairErr.Error()))
 				}
+			}
+			if sendReport {
+				result, reportErr := sendSupportReport(ctx, supportAttachment("gx-doctor.txt", diagnosis.String()))
+				if reportErr != nil {
+					return reportErr
+				}
+				printSupportReportResult(cmd.OutOrStdout(), result)
 			}
 			if staleErr != nil {
 				return staleErr
@@ -283,52 +134,42 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe gx workflow state issues")
+	cmd.Flags().BoolVar(&sendReport, "report", false, "send this diagnosis and recent gx logs to support")
 	return cmd
 }
 
-func printDoctorCodexRouting(w io.Writer, status gxservice.CodexStatus, fixed, repaired bool, repairErr error) {
-	fixHint := " (run `gx doctor --fix`)"
-	if fixed {
-		fixHint = ""
-	}
-	switch {
-	case repairErr != nil:
-		fmt.Fprintln(w, labelWarningValue("Codex capture", "repair failed: "+repairErr.Error()))
-		return
-	case repaired:
-		fmt.Fprintln(w, labelValue("Codex capture", "updated: routed through "+gxservice.OpenAIBaseURL()))
-	case status.Correct:
-		fmt.Fprintln(w, labelValue("Codex capture", success("ok")+": "+gxservice.OpenAIBaseURL()))
-	case !status.Found:
-		fmt.Fprintln(w, labelWarningValue("Codex capture", "config not found: "+status.ConfigPath+fixHint))
-		return
-	default:
-		current := status.Value
-		if current == "" {
-			current = "unset"
-		}
-		fmt.Fprintln(w, labelWarningValue("Codex capture", "not routed through gx proxy: "+current+fixHint))
-		return
-	}
-	if !ambientProxyReachable() {
-		fmt.Fprintln(w, labelWarningValue("Codex capture", "gx capture service is not listening on "+gxservice.ProxyAddress()+" — codex calls will fail (run `gx ops capture start`)"))
-	}
-}
-
-func ambientProxyReachable() bool {
-	conn, err := net.DialTimeout("tcp", gxservice.ProxyAddress(), 500*time.Millisecond)
+// marshalDoctorDiagnosis renders the JSON-mode payload for the support
+// attachment, so `--json --report` sends the same diagnosis it printed.
+func marshalDoctorDiagnosis(payload map[string]any) string {
+	raw, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
-}
-
-func errorString(err error) string {
-	if err == nil {
 		return ""
 	}
-	return err.Error()
+	return string(raw)
+}
+
+// reportAndDrainPublishOutbox surfaces the publish-outbox backlog and, when
+// anything is pending or failed, retries the uploads right here. With `gx sync`
+// retired, doctor is the manual retry path; the pre-push hook is the automatic
+// one.
+func reportAndDrainPublishOutbox(ctx context.Context, w io.Writer) {
+	status, err := publication.QueuedUploadStatus()
+	if err != nil {
+		fmt.Fprintln(w, labelWarningValue("Publish outbox", "check skipped: "+err.Error()))
+		return
+	}
+	if status.Pending == 0 && status.Failed == 0 {
+		fmt.Fprintln(w, labelValue("Publish outbox", success("ok")+": empty"))
+		return
+	}
+	detail := fmt.Sprintf("%d pending, %d failed", status.Pending, status.Failed)
+	if strings.TrimSpace(status.LastError) != "" {
+		detail += "; last error: " + strings.TrimSpace(status.LastError)
+	}
+	fmt.Fprintln(w, labelWarningValue("Publish outbox", detail))
+	if err := drainPublishUploadOutbox(ctx, w, false, 20); err != nil {
+		fmt.Fprintln(w, labelWarningValue("Publish outbox", "retry failed: "+err.Error()))
+	}
 }
 
 func printDoctorMissingBaseRefRepair(w io.Writer, result vcs.RebaseOntoDefaultResult, err error) {
@@ -422,128 +263,6 @@ func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanu
 	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
-func newRepairCommand(ctx context.Context) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "repair",
-		Short: "Repair gx ambient capture integrations",
-	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "codex",
-		Short: "Set Codex openai_base_url to the gx proxy",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			status, err := gxservice.RepairCodexConfig(ctx, gxservice.ExecRunner{})
-			if err != nil {
-				return err
-			}
-			state := "updated"
-			if status.Correct {
-				state = "ok"
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Codex config", state))
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("Path", status.ConfigPath))
-			fmt.Fprintln(cmd.OutOrStdout(), labelValue("openai_base_url", gxservice.OpenAIBaseURL()))
-			return nil
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "usage",
-		Short: "Backfill token usage from captured response bodies",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			db, err := storage.Open(ctx)
-			if err != nil {
-				return err
-			}
-			store, err := storage.NewStore(ctx, db)
-			if err != nil {
-				_ = db.Close()
-				return err
-			}
-			defer store.Close()
-			result, err := store.BackfillUsage(ctx)
-			if err != nil {
-				return err
-			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, labelValue("Responses scanned", fmt.Sprintf("%d", result.ResponsesScanned)))
-			fmt.Fprintln(out, labelValue("Responses updated", fmt.Sprintf("%d", result.ResponsesUpdated)))
-			fmt.Fprintln(out, labelValue("Sessions refreshed", fmt.Sprintf("%d", result.SessionsRefreshed)))
-			return nil
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "workflow",
-		Short: "Repair safe gx workflow ref state",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := vcs.NewService().RepairWorkflow(ctx)
-			if err != nil {
-				return err
-			}
-			if len(result.Actions) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), labelValue("Workflow repair", success("ok")+": no changes needed"))
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), section("Workflow repair"))
-				for _, action := range result.Actions {
-					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", action)
-				}
-			}
-			for _, warning := range result.Warnings {
-				if strings.TrimSpace(warning) != "" {
-					fmt.Fprintln(cmd.OutOrStdout(), labelWarningValue("Warning", strings.TrimSpace(warning)))
-				}
-			}
-			return nil
-		},
-	})
-	return cmd
-}
-
-func envSummary() string {
-	return strings.Join([]string{
-		labelValue(gxservice.EnvAnthropic, gxservice.AnthropicBaseURL()),
-		labelValue(gxservice.EnvOpenAI, gxservice.OpenAIBaseURL()),
-	}, "\n")
-}
-
-func quoteOrEmpty(value string) string {
-	if value == "" {
-		return "(unset)"
-	}
-	return value
-}
-
-func compareEnv(got, want string) string {
-	if got == want {
-		return success("ok") + ": " + got
-	}
-	if got == "" {
-		return danger("warn") + ": unset, want " + want
-	}
-	return danger("warn") + ": " + got + ", want " + want
-}
-
-type envVarStatus struct {
-	Name     string `json:"name"`
-	Current  string `json:"current"`
-	Expected string `json:"expected"`
-	OK       bool   `json:"ok"`
-}
-
-type launchAgentStatusJSON struct {
-	Label string `json:"label"`
-	Path  string `json:"path"`
-	OK    bool   `json:"ok"`
-}
-
-type codexDoctorJSON struct {
-	ConfigPath string `json:"config_path"`
-	Found      bool   `json:"found"`
-	Correct    bool   `json:"correct"`
-	BaseURL    string `json:"base_url"`
-	Expected   string `json:"expected"`
-	Repaired   bool   `json:"repaired,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
 type doctorJSON struct {
 	Cursor   cursorStatusJSON  `json:"cursor"`
 	Capture  captureDoctorJSON `json:"capture"`
@@ -571,7 +290,6 @@ type diagnoseJSON struct {
 
 type statsJSON struct {
 	ApprovedStacksWaitingForPublish int              `json:"approvedStacksWaitingForPublish"`
-	PublishedStacksWaitingForReview int              `json:"publishedStacksWaitingForReview"`
 	Agents                          []agentStatsJSON `json:"agents"`
 	DiskUsedBytes                   int64            `json:"diskUsedBytes"`
 }
@@ -598,15 +316,6 @@ type mcpStatusJSON struct {
 	URL       string `json:"url,omitempty"`
 	Port      int    `json:"port,omitempty"`
 	Message   string `json:"message,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
-
-type serviceJSON struct {
-	Label     string `json:"label"`
-	Installed bool   `json:"installed"`
-	Running   bool   `json:"running"`
-	Path      string `json:"path"`
-	Output    string `json:"output,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -692,16 +401,31 @@ func fallbackLedgerRows(status doctorJSON) []ledgerRowJSON {
 	}
 }
 
+// syncLedgerRow reports the real state of the upload queue.
+//
+// It used to return the literals "waiting" and "0" no matter what, so the one
+// screen a user checks to ask whether capture is reaching the cloud claimed a
+// healthy idle queue while every row in it was failing on every push.
 func syncLedgerRow(status doctorJSON) ledgerRowJSON {
-	return ledgerRowJSON{
+	captureStatus := status.Capture
+	pending := captureStatus.PendingExtracts + captureStatus.PendingSessions
+	row := ledgerRowJSON{
 		Agent:    "sync",
 		Filepath: "review upload queue",
 		Status:   "waiting",
-		Calls:    "0",
+		Calls:    formatLedgerCount(pending),
 		Tokens:   "—",
 		Files:    "—",
 		Last:     "push",
 	}
+	switch {
+	case captureStatus.FailedUploads > 0:
+		row.Status = "failing"
+		row.Files = formatLedgerCount(captureStatus.FailedUploads)
+	case pending > 0:
+		row.Status = "queued"
+	}
+	return row
 }
 
 func agentLedgerStatus(agent string, status doctorJSON, calls int) string {
@@ -804,7 +528,6 @@ func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
 			continue
 		}
 		stats.ApprovedStacksWaitingForPublish += repoStats.ApprovedStacksWaitingForPublish
-		stats.PublishedStacksWaitingForReview += repoStats.PublishedStacksWaitingForReview
 	}
 	return stats
 }
@@ -832,10 +555,6 @@ func doctorStatsRepos(ctx context.Context, store *storage.Store, repoRoot string
 
 func doctorRepoStackStats(ctx context.Context, store *storage.Store, repoID int64) (statsJSON, error) {
 	var stats statsJSON
-	openCloudBookmarks, err := store.CountOpenCloudBookmarksByRepoID(ctx, repoID)
-	if err == nil {
-		stats.PublishedStacksWaitingForReview = openCloudBookmarks
-	}
 	stacks, err := store.ListStacksByRepoID(ctx, repoID)
 	if err != nil {
 		return stats, err
@@ -1031,80 +750,6 @@ func mcpStatus(context.Context) mcpStatusJSON {
 		Transport: "stdio",
 		Message:   "MCP is stdio-only; MCP clients launch the bundled server directly.",
 	}
-}
-
-func daemonControlURL() (string, error) {
-	return gxservice.ControlURL(), nil
-}
-
-func daemonHealthy(controlURL string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, controlURL+"/healthz", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
-
-func serviceStatusJSON(ctx context.Context) serviceJSON {
-	launchAgent := launchAgentStatus()
-	text, err := gxservice.NewManager().Status(ctx)
-	status := serviceJSON{
-		Label:     gxservice.Label,
-		Installed: launchAgent.OK,
-		Path:      launchAgent.Path,
-		Output:    text,
-	}
-	if err != nil {
-		status.Error = err.Error()
-		return status
-	}
-	status.Running = true
-	return status
-}
-
-func launchAgentStatus() launchAgentStatusJSON {
-	status := launchAgentStatusJSON{Label: gxservice.Label}
-	path, err := gxservice.LaunchAgentPath()
-	if err != nil {
-		return status
-	}
-	status.Path = path
-	_, statErr := os.Stat(path)
-	status.OK = statErr == nil
-	return status
-}
-
-func envStatusJSON(values map[string]string) []envVarStatus {
-	return []envVarStatus{
-		{
-			Name:     gxservice.EnvAnthropic,
-			Current:  values[gxservice.EnvAnthropic],
-			Expected: gxservice.AnthropicBaseURL(),
-			OK:       values[gxservice.EnvAnthropic] == gxservice.AnthropicBaseURL(),
-		},
-		{
-			Name:     gxservice.EnvOpenAI,
-			Current:  values[gxservice.EnvOpenAI],
-			Expected: gxservice.OpenAIBaseURL(),
-			OK:       values[gxservice.EnvOpenAI] == gxservice.OpenAIBaseURL(),
-		},
-	}
-}
-
-func envOK(values []envVarStatus) bool {
-	for _, value := range values {
-		if !value.OK {
-			return false
-		}
-	}
-	return true
 }
 
 func writeJSON(cmd *cobra.Command, value any) error {

@@ -132,11 +132,10 @@ func TestEnqueueAdoptedPublicationIsIdempotent(t *testing.T) {
 	repo := t.TempDir()
 	head := "abc123"
 	opts := hooks.AdoptPushOptions{
-		RepoRoot:    repo,
-		Remote:      "origin",
-		LocalRef:    "refs/heads/feature/demo",
-		HeadSHA:     head,
-		RevisionIDs: []string{"rev1"},
+		RepoRoot: repo,
+		Remote:   "origin",
+		LocalRef: "refs/heads/feature/demo",
+		HeadSHA:  head,
 	}
 	first, err := hooks.EnqueueAdoptedPublication(context.Background(), opts)
 	if err != nil {
@@ -158,6 +157,53 @@ func TestEnqueueAdoptedPublicationIsIdempotent(t *testing.T) {
 	}
 	if status.Pending != 1 {
 		t.Fatalf("pending uploads = %d, want 1", status.Pending)
+	}
+}
+
+func TestEnqueueAdoptedPublicationBuildsV2Revisions(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	repo := initPushHookRepo(t)
+	base := gitRev(t, repo, "HEAD~1")
+	head := gitRev(t, repo, "HEAD")
+
+	result, err := hooks.EnqueueAdoptedPublication(context.Background(), hooks.AdoptPushOptions{
+		RepoRoot: repo,
+		Remote:   "origin",
+		LocalRef: "refs/heads/main",
+		HeadSHA:  head,
+		RefRange: base + ".." + head,
+	})
+	if err != nil {
+		t.Fatalf("EnqueueAdoptedPublication() error = %v", err)
+	}
+	if !result.Queued {
+		t.Fatal("queued = false, want true")
+	}
+	artifact := result.Artifact
+	if artifact.SchemaVersion != 2 {
+		t.Fatalf("schema version = %d, want 2", artifact.SchemaVersion)
+	}
+	if len(artifact.Revisions) != 1 {
+		t.Fatalf("revisions = %#v, want the one pushed commit", artifact.Revisions)
+	}
+	revision := artifact.Revisions[0]
+	if revision.RevisionID != "revpushaaaaa" {
+		t.Fatalf("revision id = %q, want trailer id revpushaaaaa", revision.RevisionID)
+	}
+	if revision.CommitID != head {
+		t.Fatalf("commit id = %q, want %q", revision.CommitID, head)
+	}
+	if !strings.Contains(revision.Description, "feature") {
+		t.Fatalf("description = %q, want commit message", revision.Description)
+	}
+	if !strings.Contains(revision.Patch, "feature.txt") {
+		t.Fatalf("patch = %q, want per-commit diff", revision.Patch)
+	}
+	if len(revision.Files) != 1 || revision.Files[0] != "feature.txt" {
+		t.Fatalf("files = %#v, want [feature.txt]", revision.Files)
+	}
+	if revision.BranchName != "main" {
+		t.Fatalf("branch name = %q, want main", revision.BranchName)
 	}
 }
 
