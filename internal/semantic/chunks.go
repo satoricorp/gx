@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/satoricorp/gx/internal/reviewbundle"
 )
@@ -23,11 +24,11 @@ func BuildSessionChunks(bundle reviewbundle.Bundle, maxBytes int) []Chunk {
 	var chunks []Chunk
 	seen := map[string]struct{}{}
 	for _, target := range reviewTargets(bundle) {
-		if target.Change.ReviewContext == nil {
+		if target.ReviewContext == nil {
 			continue
 		}
-		for _, source := range target.Change.ReviewContext.TranscriptSources {
-			key := transcriptChunkKey(target.Change.JJChangeID, source)
+		for _, source := range target.ReviewContext.TranscriptSources {
+			key := transcriptChunkKey(target.revisionKey(), source)
 			if _, ok := seen[key]; ok {
 				continue
 			}
@@ -42,26 +43,30 @@ func BuildSessionChunks(bundle reviewbundle.Bundle, maxBytes int) []Chunk {
 }
 
 type reviewTarget struct {
-	Change     reviewbundle.ChangePayload
-	BranchName string
+	RevisionID    string
+	CommitID      string
+	Description   string
+	BranchName    string
+	ReviewContext *reviewbundle.ReviewContextPayload
+}
+
+// revisionKey identifies a target even when a commit carries no GX trailer.
+func (t reviewTarget) revisionKey() string {
+	if strings.TrimSpace(t.RevisionID) != "" {
+		return t.RevisionID
+	}
+	return t.CommitID
 }
 
 func reviewTargets(bundle reviewbundle.Bundle) []reviewTarget {
-	var targets []reviewTarget
-	for _, entry := range bundle.Stack {
+	targets := make([]reviewTarget, 0, len(bundle.Revisions))
+	for _, revision := range bundle.Revisions {
 		targets = append(targets, reviewTarget{
-			Change:     entry.Change,
-			BranchName: entry.BranchName,
-		})
-	}
-	if len(targets) == 0 && bundle.Change != nil {
-		branchName := ""
-		if bundle.Repo.BranchName != nil {
-			branchName = *bundle.Repo.BranchName
-		}
-		targets = append(targets, reviewTarget{
-			Change:     *bundle.Change,
-			BranchName: branchName,
+			RevisionID:    revision.RevisionID,
+			CommitID:      revision.CommitID,
+			Description:   revision.Description,
+			BranchName:    revision.BranchName,
+			ReviewContext: revision.ReviewContext,
 		})
 	}
 	return targets
@@ -86,15 +91,15 @@ func buildTranscriptChunk(bundle reviewbundle.Bundle, target reviewTarget, sourc
 	}
 	text := renderTranscriptChunk(bundle, target, session, request, response)
 	text = limitBytes(text, maxBytes)
-	agent := agentProvenanceForSession(target.Change.ReviewContext, source.SessionID, source.Provider, stringValue(source.Model))
-	sourceID := transcriptChunkKey(target.Change.JJChangeID, source)
+	agent := agentProvenanceForSession(target.ReviewContext, source.SessionID, source.Provider, stringValue(source.Model))
+	sourceID := transcriptChunkKey(target.revisionKey(), source)
 	metadata := TranscriptMetadata{
 		SourceID:         sourceID,
 		RepoRoot:         bundle.Repo.RootPath,
 		BranchName:       target.BranchName,
-		JJChangeID:       target.Change.JJChangeID,
-		CommitID:         target.Change.CurrentCommitID,
-		RevisionTitle:    target.Change.Description,
+		RevisionID:       target.revisionKey(),
+		CommitID:         target.CommitID,
+		RevisionTitle:    target.Description,
 		SessionID:        source.SessionID,
 		RequestID:        source.RequestID,
 		ResponseID:       stringValue(source.ResponseID),
@@ -155,13 +160,12 @@ func renderTranscriptChunk(bundle reviewbundle.Bundle, target reviewTarget, sess
 	var b strings.Builder
 	fmt.Fprintf(&b, "GX session transcript for review.\n")
 	fmt.Fprintf(&b, "Repo: %s\n", bundle.Repo.RootPath)
-	fmt.Fprintf(&b, "Revision: %s\n", target.Change.Description)
-	fmt.Fprintf(&b, "JJ change: %s\n", target.Change.JJChangeID)
+	fmt.Fprintf(&b, "Revision: %s\n", target.Description)
+	fmt.Fprintf(&b, "GX revision: %s\n", target.revisionKey())
 	if target.BranchName != "" {
 		fmt.Fprintf(&b, "Branch: %s\n", target.BranchName)
 	}
 	fmt.Fprintf(&b, "Session: %s\n", session.ID)
-	fmt.Fprintf(&b, "Command: %s\n", session.Command)
 	fmt.Fprintf(&b, "Request: %s %s %s\n", request.Provider, request.Method, request.Endpoint)
 	if request.Model != nil && *request.Model != "" {
 		fmt.Fprintf(&b, "Model: %s\n", *request.Model)
@@ -194,14 +198,32 @@ func stableChunkID(key string) string {
 	return "gx-" + hex.EncodeToString(sum[:])[:40]
 }
 
+// limitBytes truncates on a rune boundary. Source files are UTF-8 and a naive
+// byte slice can cut a multi-byte rune in half, which the JSON encoder then
+// rewrites as U+FFFD — corrupting the indexed text silently rather than
+// failing.
 func limitBytes(text string, maxBytes int) string {
 	if len(text) <= maxBytes {
 		return text
 	}
-	if maxBytes <= len("\n[truncated]\n") {
-		return text[:maxBytes]
+	const marker = "\n[truncated]\n"
+	if maxBytes <= len(marker) {
+		return truncateAtRuneBoundary(text, maxBytes)
 	}
-	return text[:maxBytes-len("\n[truncated]\n")] + "\n[truncated]\n"
+	return truncateAtRuneBoundary(text, maxBytes-len(marker)) + marker
+}
+
+func truncateAtRuneBoundary(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if limit >= len(text) {
+		return text
+	}
+	for limit > 0 && !utf8.RuneStart(text[limit]) {
+		limit--
+	}
+	return text[:limit]
 }
 
 func stringValue(value *string) string {

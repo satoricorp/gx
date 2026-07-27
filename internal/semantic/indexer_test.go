@@ -12,8 +12,8 @@ func TestIndexerIndexesBundleChunks(t *testing.T) {
 	responseID := "response-one"
 	bundle := reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: "/repo"},
-		Change: &reviewbundle.ChangePayload{
-			JJChangeID:  "change-one",
+		Revisions: []reviewbundle.RevisionPayload{{
+			RevisionID:  "change-one",
 			Description: "feat alpha",
 			ReviewContext: &reviewbundle.ReviewContextPayload{
 				TranscriptSources: []reviewbundle.ReviewTranscriptSource{{
@@ -24,10 +24,9 @@ func TestIndexerIndexesBundleChunks(t *testing.T) {
 					Status:     "explicit",
 				}},
 			},
-		},
+		}},
 		Sessions: []reviewbundle.SessionPayload{{
-			ID:      "session-one",
-			Command: "codex",
+			ID: "session-one",
 			Requests: []reviewbundle.RequestPayload{{
 				ID:             "request-one",
 				Provider:       "openai",
@@ -63,6 +62,10 @@ func TestIndexerIndexesBundleChunks(t *testing.T) {
 	if !reflect.DeepEqual(store.rows[0].Vector, []float32{0.1, 0.2}) {
 		t.Fatalf("vector = %#v", store.rows[0].Vector)
 	}
+	if store.rows[0].Attributes["revision_id"] != "change-one" {
+		t.Fatalf("attributes = %#v", store.rows[0].Attributes)
+	}
+	// Dual-written legacy attribute until a full reindex retires it.
 	if store.rows[0].Attributes["jj_change_id"] != "change-one" {
 		t.Fatalf("attributes = %#v", store.rows[0].Attributes)
 	}
