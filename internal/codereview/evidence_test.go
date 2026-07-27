@@ -192,3 +192,83 @@ func TestRenderMarkdownListsEveryEvidenceSourceWhenVerbose(t *testing.T) {
 		}
 	}
 }
+
+// TestEmptyNamespaceDoesNotSuppressAFailedOne is a regression test for the
+// probe-wide suppression rule. A source is judged whole so that a namespace that
+// answered stops the review claiming it was blind — but "answered with nothing"
+// is not evidence that the namespace which 503'd would also have had nothing,
+// and the review contributed no code-index material at all here.
+func TestEmptyNamespaceDoesNotSuppressAFailedOne(t *testing.T) {
+	warnings := EvidenceWarnings([]EvidenceStatus{
+		{Source: "code index", Namespace: "aaa", State: EvidenceEmpty},
+		{Source: "code index", Namespace: "zzz", State: EvidenceUnavailable, Detail: "turbopuffer 503 — the query failed"},
+	})
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want the 503 reported", warnings)
+	}
+	if !strings.Contains(warnings[0], "turbopuffer 503") {
+		t.Fatalf("warning = %q, want the failure detail", warnings[0])
+	}
+}
+
+// TestOneAnsweringNamespaceStillReportsAFailedSibling keeps the partial case
+// honest in both directions: it must not say the review was blind, and it must
+// not say nothing at all.
+func TestOneAnsweringNamespaceStillReportsAFailedSibling(t *testing.T) {
+	warnings := EvidenceWarnings([]EvidenceStatus{
+		{Source: "code index", Namespace: "aaa", State: EvidenceOK, Snippets: 96},
+		{Source: "code index", Namespace: "zzz", State: EvidenceUnavailable, Detail: "turbopuffer 503"},
+	})
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want the partial read reported once", warnings)
+	}
+	if !strings.Contains(warnings[0], "read in part") || !strings.Contains(warnings[0], "turbopuffer 503") {
+		t.Fatalf("warning = %q, want a partial-read warning naming the failure", warnings[0])
+	}
+}
+
+// TestMissingNamespacesAreExpectedWhenAnotherAnswered is the case the
+// judged-whole rule exists for: probing candidate names and finding some absent
+// is what probing is, and it must not print a scary banner over a review whose
+// index answered.
+func TestMissingNamespacesAreExpectedWhenAnotherAnswered(t *testing.T) {
+	if warnings := EvidenceWarnings([]EvidenceStatus{
+		{Source: "code index", Namespace: "gx-local-yeet-8d86-v2", State: EvidenceOK, Snippets: 86},
+		{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing, Detail: "GX Cloud has never indexed this repository"},
+	}); len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none: the code index answered", warnings)
+	}
+	if warnings := EvidenceWarnings([]EvidenceStatus{
+		{Source: "code index", Namespace: "gx-local-yeet-8d86-v2", State: EvidenceEmpty},
+		{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing},
+	}); len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none: the index was found and had nothing", warnings)
+	}
+}
+
+// TestTotalFailureReportsEverySearchedNamespaceBySeverity pins the other half of
+// the same defect: with nothing answering, the banner used to keep whichever
+// status sorted first — alphabetically by namespace — so "the query failed"
+// could be replaced by "never indexed", and the parenthesised namespace read as
+// if it were the only one tried.
+func TestTotalFailureReportsEverySearchedNamespaceBySeverity(t *testing.T) {
+	warnings := EvidenceWarnings([]EvidenceStatus{
+		{Source: "code index", Namespace: "aaa", State: EvidenceMissing, Detail: "never indexed"},
+		{Source: "code index", Namespace: "zzz", State: EvidenceUnavailable, Detail: "turbopuffer 503 — the query failed"},
+	})
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one line for the source", warnings)
+	}
+	if !strings.Contains(warnings[0], "turbopuffer 503") {
+		t.Fatalf("warning = %q dropped the real failure", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "never indexed") {
+		t.Fatalf("warning = %q dropped a namespace that was searched", warnings[0])
+	}
+	if strings.Index(warnings[0], "zzz") > strings.Index(warnings[0], "aaa") {
+		t.Fatalf("warning = %q orders by namespace, not by severity", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "none of 2") {
+		t.Fatalf("warning = %q does not say how many namespaces were searched", warnings[0])
+	}
+}

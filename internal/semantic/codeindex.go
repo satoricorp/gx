@@ -208,10 +208,12 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 		return RepoIndexResult{}, err
 	}
 
-	fullName := strings.TrimSpace(opts.RepoFullName)
-	if fullName == "" {
-		fullName = repoFullNameFromRemoteURL(gitOutput(absRoot, "remote", "get-url", "origin"))
-	}
+	// Identity comes from the shared resolver, never from a local git call.
+	// This is the write side of the namespace that review reads; the two used
+	// to derive it separately and did not agree. See
+	// internal/semantic/repoidentity.go.
+	identity := ResolveRepoIdentity(ctx, absRoot, opts.OrgID, opts.RepoFullName)
+	fullName := identity.RepoFullName
 	commitID := strings.TrimSpace(opts.CommitID)
 	if commitID == "" {
 		commitID = gitOutput(absRoot, "rev-parse", "HEAD")
@@ -226,7 +228,7 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 	}
 	namespace := strings.TrimSpace(opts.Namespace)
 	if namespace == "" {
-		namespace = NamespaceForRepo(opts.OrgID, fullName, absRoot)
+		namespace = identity.Namespace
 	}
 
 	store := opts.Store

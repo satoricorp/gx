@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/semantic"
 )
 
@@ -196,10 +195,15 @@ func sessionNamespaceTargets(repoRoot, repoFullName string) []codeIndexTarget {
 		}
 		return out
 	}
-	orgID := ""
-	if creds, ok := auth.LoadUpload(); ok {
-		orgID = strings.TrimSpace(creds.OrgID)
+	// Same resolver as the code index and as `gx index`: publish artifacts,
+	// session context and code chunks all live in the per-org-per-repo
+	// namespace, so they must all name it the same way.
+	identity := semantic.RepoIdentity{
+		RepoRoot:     repoRoot,
+		RepoFullName: repoFullName,
+		OrgID:        reviewOrgID(),
 	}
+	identity.Namespace = semantic.NamespaceForRepo(identity.OrgID, identity.RepoFullName, identity.RepoRoot)
 	var out []codeIndexTarget
 	seen := map[string]struct{}{}
 	add := func(namespace, origin string) {
@@ -213,7 +217,7 @@ func sessionNamespaceTargets(repoRoot, repoFullName string) []codeIndexTarget {
 		seen[namespace] = struct{}{}
 		out = append(out, codeIndexTarget{Namespace: namespace, Origin: origin})
 	}
-	add(semantic.NamespaceForRepo(orgID, repoFullName, repoRoot), "org session namespace")
+	add(identity.Namespace, "org session namespace")
 	add(legacySessionNamespace, "legacy session namespace")
 	return out
 }

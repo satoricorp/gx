@@ -225,6 +225,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			if coverage.ShardsFailed > 0 && coverage.ShardsFailed < coverage.Shards && aiConfigured {
 				degradedReasons = append(degradedReasons, fmt.Sprintf("%d of %d parallel reviews failed", coverage.ShardsFailed, coverage.Shards))
 			}
+			// A reviewer leg that failed while the other answered produces a
+			// complete-looking review from half the panel. Say so: it changes
+			// how much the result is worth, and it is the only way a signing or
+			// model-access fault on one leg ever becomes visible.
+			for _, reason := range PartialReviewerFailures(reviewer) {
+				degradedReasons = append(degradedReasons, "one reviewer did not run — "+reason)
+			}
 		}
 	}
 	findings = validateFindingAnchors(reviewContext, findings)
@@ -234,9 +241,25 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if judge == nil {
 		judge = judgeFromEnvWithPolicy(&policy)
 	}
+	// The panel's own adjudicator, not a second one built from the environment:
+	// the same "one plan, one wire" rule the reviewer legs and the judge follow.
+	// It is nil whenever no AI panel ran, which is also when there are no
+	// cross-reviewer duplicates to collapse.
+	deduped := prepareFindingsForJudge(ctx, reviewerDuplicateAdjudicator(reviewer), advisory)
+	advisory = deduped.Findings
+	// Duplicates that could not be adjudicated are shipped, so say so. A review
+	// that merged nothing because it could not ask must not look like a review
+	// that found nothing to merge.
+	if unresolved := deduped.Unresolved(); unresolved > 0 && reviewerLabel == "heuristic+ai" {
+		reason := fmt.Sprintf("%d candidate duplicate pair(s) were not adjudicated, so near-duplicate findings may remain", unresolved)
+		if deduped.Err != nil {
+			reason += fmt.Sprintf(": %v", deduped.Err)
+		}
+		degradedReasons = append(degradedReasons, reason)
+	}
 	if !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisory) > 0 {
 		reviewProgress(opts, "Verifying review findings")
-		candidates := prepareFindingsForJudge(reviewContext, advisory)
+		candidates := advisory
 		// Verification runs in concurrent batches so that a large finding set
 		// neither overruns the judge's output budget nor pays for each batch in
 		// series. See judgeBatchSize for the measurements behind the size.
@@ -259,7 +282,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				outcome.BatchesFailed, outcome.Batches, outcome.Err))
 		}
 	} else {
-		advisory = capAdvisoryFindings(prepareFindingsForJudge(reviewContext, advisory))
+		advisory = capAdvisoryFindings(advisory)
 	}
 	findings = append(blocking, advisory...)
 

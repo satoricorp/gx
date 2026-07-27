@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 type ReviewHistoryRetriever struct {
@@ -62,18 +62,15 @@ func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, in RetrieveInput) 
 	return reviewHistorySnippets(result, limit), nil
 }
 
+// reviewHistoryRepoFullName is the repository's "owner/name".
+//
+// It delegates to the same resolver the index writes through. It used to have
+// its own copy — `git config --get remote.origin.url` then `remote.upstream.url`,
+// parsed by cloud.RepoFullNameFromRemoteURL — while indexing used
+// `git remote get-url origin` parsed by a different function. Two copies of a
+// derivation are two answers waiting to differ, and they did.
 func reviewHistoryRepoFullName(ctx context.Context, repoRoot string) string {
-	for _, name := range []string{"remote.origin.url", "remote.upstream.url"} {
-		cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "config", "--get", name)
-		out, err := cmd.Output()
-		if err != nil {
-			continue
-		}
-		if full := cloud.RepoFullNameFromRemoteURL(strings.TrimSpace(string(out))); full != "" {
-			return full
-		}
-	}
-	return ""
+	return semantic.RepoFullNameForRoot(ctx, repoRoot)
 }
 
 func reviewHistoryQuery(opts Options, facts RepoFacts, hints []ReviewHint) string {

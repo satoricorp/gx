@@ -111,15 +111,99 @@ func (l *EvidenceLog) Statuses() []EvidenceStatus {
 // checkout. A source that is simply not configured is a constant of the
 // environment; it is still reported, in the verbose evidence listing and in the
 // JSON report, but it is not news about this review.
+//
+// A source is judged whole rather than per namespace, because a retriever probes
+// several namespaces without knowing in advance which one holds the repository.
+// Reporting each probe separately produced the review's most misleading line:
+// "review evidence unavailable — code index (repo-satoricorp-yeet): GX Cloud has
+// never indexed this repository. Findings are based on the change and the
+// checkout only" — printed at the top of a review whose code index had just
+// answered with 96 snippets from a different namespace.
+//
+// Whole does not mean lossy, and the two failure states are not interchangeable:
+//
+//   - Missing is the expected outcome of probing a name that does not exist. It
+//     is suppressed once any namespace of that source answered at all, including
+//     answering empty — the source was found, it simply had nothing to say.
+//   - Unavailable means a namespace that does exist could not be read. No amount
+//     of emptiness elsewhere makes that untrue, and a namespace that answered
+//     with nothing is not evidence that the failed one would have. It is
+//     suppressed only when another namespace of the same source actually
+//     returned material, and even then it is still reported — as a partial read,
+//     which is what it is.
+//
+// The old code counted empty as answered for both, so a source with one empty
+// namespace and one 503 warned about nothing at all while contributing no
+// evidence whatsoever. It also kept whichever failed status sorted first, which
+// is alphabetical by namespace, so "the query failed" could be replaced in the
+// banner by "never indexed".
 func EvidenceWarnings(statuses []EvidenceStatus) []string {
-	var out []string
+	answered := map[string]bool{}
+	returnedMaterial := map[string]bool{}
+	for _, status := range statuses {
+		switch status.State {
+		case EvidenceOK:
+			answered[status.Source] = true
+			returnedMaterial[status.Source] = true
+		case EvidenceEmpty:
+			answered[status.Source] = true
+		}
+	}
+	bySource := map[string][]EvidenceStatus{}
+	var order []string
 	for _, status := range statuses {
 		if !status.Degraded() {
 			continue
 		}
-		out = append(out, status.warning())
+		if status.State == EvidenceMissing && answered[status.Source] {
+			continue
+		}
+		if _, ok := bySource[status.Source]; !ok {
+			order = append(order, status.Source)
+		}
+		bySource[status.Source] = append(bySource[status.Source], status)
+	}
+	var out []string
+	for _, source := range order {
+		failed := bySource[source]
+		// Severity order, not namespace order: a source that both failed to be
+		// read somewhere and was absent somewhere else leads with the failure.
+		sort.SliceStable(failed, func(i, j int) bool {
+			return evidenceFailureRank(failed[i].State) > evidenceFailureRank(failed[j].State)
+		})
+		out = append(out, evidenceSourceWarning(source, failed, returnedMaterial[source]))
 	}
 	return out
+}
+
+func evidenceFailureRank(state string) int {
+	if state == EvidenceUnavailable {
+		return 1
+	}
+	return 0
+}
+
+// evidenceSourceWarning states what happened to one source without pretending
+// only one namespace was tried. The single-namespace phrasing is kept for the
+// single-namespace case, which is most of them.
+func evidenceSourceWarning(source string, failed []EvidenceStatus, partial bool) string {
+	if len(failed) == 1 && !partial {
+		return failed[0].warning()
+	}
+	details := make([]string, 0, len(failed))
+	for _, status := range failed {
+		namespace := strings.TrimSpace(status.Namespace)
+		if namespace == "" {
+			namespace = status.State
+		}
+		details = append(details, namespace+": "+evidenceStatusDetail(status))
+	}
+	if partial {
+		return fmt.Sprintf("%s: read in part — %d namespace(s) could not be read (%s)",
+			source, len(failed), strings.Join(details, "; "))
+	}
+	return fmt.Sprintf("%s: none of %d namespace(s) could be read (%s)",
+		source, len(failed), strings.Join(details, "; "))
 }
 
 func (s EvidenceStatus) warning() string {
@@ -127,18 +211,21 @@ func (s EvidenceStatus) warning() string {
 	if namespace := strings.TrimSpace(s.Namespace); namespace != "" {
 		label += " (" + namespace + ")"
 	}
-	detail := strings.TrimSpace(s.Detail)
-	if detail == "" {
-		switch s.State {
-		case EvidenceMissing:
-			detail = "not indexed"
-		case EvidenceUnavailable:
-			detail = "query failed"
-		default:
-			detail = s.State
-		}
+	return label + ": " + evidenceStatusDetail(s)
+}
+
+func evidenceStatusDetail(s EvidenceStatus) string {
+	if detail := strings.TrimSpace(s.Detail); detail != "" {
+		return detail
 	}
-	return label + ": " + detail
+	switch s.State {
+	case EvidenceMissing:
+		return "not indexed"
+	case EvidenceUnavailable:
+		return "query failed"
+	default:
+		return s.State
+	}
 }
 
 // EvidenceSummaryLine is the one-line evidence listing for the verbose report.

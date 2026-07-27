@@ -124,11 +124,29 @@ func ValidateOptions(opts Options) error {
 	return nil
 }
 
+// aiFindingsLanded reports whether any AI reviewer's findings reached this
+// report. The engine sets Reviewer to "heuristic+ai" exactly when they did, so
+// this reads the one flag that already answers the question rather than
+// inferring it from the finding list, which cannot distinguish a model finding
+// from a rule finding.
+func (r Report) aiFindingsLanded() bool {
+	return strings.Contains(r.Reviewer, "ai")
+}
+
 func RenderMarkdown(report Report) string {
 	var b strings.Builder
+	// Degradation is not one condition. "No model reviewed this" and "one of two
+	// models reviewed this" are different reviews, and printing "results are
+	// from deterministic checks only" over four model-written findings — which
+	// is what a partial reviewer failure used to produce — is a false statement
+	// about the very thing the reader is deciding how much to trust.
 	if len(report.DegradedReasons) > 0 {
 		reason := strings.Join(report.DegradedReasons, "; ")
-		fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
+		if report.aiFindingsLanded() {
+			fmt.Fprintf(&b, "> Warning: the AI review ran degraded (%s); the findings below are real but this review saw less than a healthy one would.\n\n", reason)
+		} else {
+			fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
+		}
 	}
 	// Evidence that could not be read is stated unconditionally, not behind
 	// --verbose. A review that never reached the code index looks exactly like
@@ -182,6 +200,26 @@ func RenderMarkdown(report Report) string {
 			}
 			fmt.Fprintln(&b)
 			fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Do next:**"), finding.Recommendation)
+			// Corroboration is stated unconditionally, not behind --verbose.
+			// "Both reviewers found this independently" is the strongest
+			// confidence signal a two-model panel produces, and a reader who
+			// cannot see it has no way to tell a corroborated finding from one
+			// model's guess.
+			if note := renderCorroboration(finding); note != "" {
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Agreement:**"), note)
+			}
+			// The versions de-duplication folded away, unconditionally. The
+			// copy a merge keeps is chosen on strength and specificity, but the
+			// other reviewer's fix is often the one a reader wants, and a merge
+			// that silently deletes it is a review withholding what it found.
+			if alternates := renderMergedFindings(finding); len(alternates) > 0 {
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "%s\n", reviewLabel(report, "**Also reported as:**"))
+				for _, alternate := range alternates {
+					fmt.Fprintf(&b, "- %s\n", alternate)
+				}
+			}
 			if attributions := renderFindingAttributions(report, finding); len(attributions) > 0 {
 				fmt.Fprintln(&b)
 				fmt.Fprintf(&b, "%s %s\n", reviewLabel(report, "**Informed by:**"), strings.Join(attributions, " · "))
@@ -280,6 +318,43 @@ func NothingToReviewMessage(report Report) string {
 		target = "the working tree"
 	}
 	return fmt.Sprintf("Nothing to review: no changes found in %s. No code was inspected, so this is not a clean review.", target)
+}
+
+// renderCorroboration phrases cross-reviewer agreement, or "" when only one
+// reviewer raised the finding. The single-reviewer case is deliberately silent
+// rather than saying "flagged by one reviewer": that is the normal case, and
+// annotating it would bury the signal in noise.
+func renderCorroboration(finding Finding) string {
+	if len(finding.Corroboration) < 2 {
+		return ""
+	}
+	if len(finding.Corroboration) == 2 {
+		return "Flagged by both reviewers independently — " + strings.Join(finding.Corroboration, " and ") + "."
+	}
+	return fmt.Sprintf("Flagged by both reviewers independently — %d reviewers: %s.",
+		len(finding.Corroboration), strings.Join(finding.Corroboration, ", "))
+}
+
+// renderMergedFindings lists the folded-away versions of a finding, each with
+// the fix its author proposed. Titles alone would not do: the title is what the
+// merge decided was redundant, and the recommendation is what it must not lose.
+func renderMergedFindings(finding Finding) []string {
+	var out []string
+	for _, merged := range finding.MergedFindings {
+		title := strings.TrimSpace(merged.Title)
+		if title == "" {
+			continue
+		}
+		line := "“" + title + "”"
+		if reviewer := strings.TrimSpace(merged.Reviewer); reviewer != "" {
+			line += " (" + reviewer + ")"
+		}
+		if recommendation := strings.TrimSpace(merged.Recommendation); recommendation != "" {
+			line += " — do next: " + recommendation
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {

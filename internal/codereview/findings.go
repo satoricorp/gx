@@ -25,6 +25,29 @@ type Finding struct {
 	File     string          `json:"file,omitempty"`
 	Line     int             `json:"line,omitempty"`
 
+	// Corroboration names the independent reviewer legs that each raised this
+	// finding on their own. Two flagship models converging on the same problem
+	// is the strongest quality signal a multi-model panel produces, and it used
+	// to be thrown away: near-duplicates were merged (when they were merged at
+	// all) into an evidence footnote nobody sees without --verbose. It is a
+	// first-class field so the renderer, the JSON report, the ranking, and the
+	// recorded review history can all tell a corroborated finding from a
+	// single-reviewer one.
+	//
+	// One entry means one reviewer raised it. len > 1 means genuine
+	// cross-reviewer agreement.
+	Corroboration []string `json:"corroboration,omitempty"`
+
+	// MergedFindings are the other reviewers' versions of this same finding,
+	// kept verbatim. Merging picks one copy for the reader to meet, and the
+	// copies it does not pick often carry the more concrete fix — one leg wrote
+	// "restrict egress" where the other wrote "call krun_set_port_map with an
+	// explicit allowlist and add a test asserting an outbound connection to an
+	// unlisted host fails". Dropping that was de-duplication deleting the most
+	// actionable sentence in the review, so it is recorded here, rendered under
+	// the survivor, and serialised in the JSON report.
+	MergedFindings []MergedFinding `json:"merged_findings,omitempty"`
+
 	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
 	Recommendation  string           `json:"recommendation,omitempty"`
 	// Strength is the severity vocabulary gates read: "Blocking", "Strong",
@@ -37,6 +60,16 @@ type Finding struct {
 type FindingAnchor struct {
 	File string `json:"file"`
 	Line int    `json:"line"`
+}
+
+// MergedFinding is one reviewer's version of a finding that de-duplication
+// folded into another. It exists so a merge never costs the reader a fix.
+type MergedFinding struct {
+	ID             string `json:"id,omitempty"`
+	Reviewer       string `json:"reviewer,omitempty"`
+	Title          string `json:"title,omitempty"`
+	Summary        string `json:"summary,omitempty"`
+	Recommendation string `json:"recommendation,omitempty"`
 }
 
 type Evidence struct {

@@ -313,11 +313,11 @@ func TestEvalConfigOnlyLockfileCI(t *testing.T) {
 
 	root := initRepo(t)
 	evalCommitChange(t, root, map[string]string{
-		"package.json":              "{\n  \"name\": \"example\"\n}\n",
-		"package-lock.json":         "{\n  \"name\": \"example\",\n  \"lockfileVersion\": 2\n}\n",
+		"package.json":             "{\n  \"name\": \"example\"\n}\n",
+		"package-lock.json":        "{\n  \"name\": \"example\",\n  \"lockfileVersion\": 2\n}\n",
 		".github/workflows/ci.yml": "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n",
 	}, map[string]string{
-		"package-lock.json":         "{\n  \"name\": \"example\",\n  \"lockfileVersion\": 3\n}\n",
+		"package-lock.json":        "{\n  \"name\": \"example\",\n  \"lockfileVersion\": 3\n}\n",
 		".github/workflows/ci.yml": "name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n",
 	})
 
@@ -355,16 +355,45 @@ func TestEvalCapEnforcementWithBlockingToolFinding(t *testing.T) {
 	advisories := make([]Finding, 0, 6)
 	judgeResults := make([]judgeResult, 0, 5)
 	topics := []string{"authorization", "rollback", "observability", "idempotency", "validation", "serialization"}
+	// Six genuinely different problems in one file. They used to be six copies
+	// of one sentence with the topic word swapped, which semantic
+	// de-duplication correctly reads as a single finding — leaving this cap test
+	// with nothing to cap. The subject of the test is the cap, so the fixtures
+	// now look like what a reviewer would actually return.
+	titles := map[string]string{
+		"authorization": "Handler acts on another tenant's records without a permission check",
+		"rollback":      "Commit happens before the downstream write is confirmed",
+		"observability": "Failures on the Stop path leave no log line or metric",
+		"idempotency":   "Retrying a request repeats the side effect instead of replaying it",
+		"validation":    "Request body reaches storage with no bounds or type checking",
+		"serialization": "Two encoders disagree about field order, so cache round-trips differ",
+	}
+	bodies := map[string]string{
+		"authorization": "Any signed-in account can reach `internal/app/app.go` Run() and mutate records belonging to a different tenant, because nothing between the router and the store asserts ownership.",
+		"rollback":      "In `internal/app/app.go` the database transaction commits before the downstream write is acknowledged, so a half-applied change survives with no way to undo it.",
+		"observability": "The new Stop() in `internal/app/app.go` emits nothing at all, so a production hang is invisible until a customer notices and reports it.",
+		"idempotency":   "`internal/app/app.go` treats a retried request as a fresh one, repeating the side effect and double-charging whenever the network is flaky.",
+		"validation":    "`internal/app/app.go` passes request fields straight through to storage without checking length, range, or type first.",
+		"serialization": "`internal/app/app.go` encodes with one field order and the cache decodes expecting another, so a round-trip returns different bytes.",
+	}
+	fixes := map[string]string{
+		"authorization": "Assert tenant ownership in Run() before touching the store, and add a cross-tenant denial test.",
+		"rollback":      "Move the commit after the downstream acknowledgement, or make the downstream write part of the same unit of work.",
+		"observability": "Emit a structured log line and a duration metric around Stop(), and alert on the metric going silent.",
+		"idempotency":   "Key each request and return the stored result for a repeat key rather than executing again.",
+		"validation":    "Parse the request into a typed struct with explicit bounds, and reject anything outside them at the edge.",
+		"serialization": "Pin one encoding for both writer and reader, and cover the round-trip with a byte-equality test.",
+	}
 	for i := 1; i <= 6; i++ {
 		id := fmt.Sprintf("ai.review.%d", i)
 		topic := topics[i-1]
 		advisories = append(advisories, Finding{
 			ID:             id,
 			Scopes:         []string{"security", "maintainability"},
-			Title:          "Advisory " + topic,
-			Summary:        fmt.Sprintf("The change in `internal/app/app.go` needs focused %s review.", topic),
+			Title:          titles[topic],
+			Summary:        bodies[topic],
 			Benefit:        "Improves safety.",
-			Recommendation: fmt.Sprintf("Address %s in internal/app/app.go.", topic),
+			Recommendation: fixes[topic],
 			Strength:       "Worth exploring",
 		})
 		if i <= 5 {
@@ -545,6 +574,7 @@ func TestEvalNearDuplicateMerging(t *testing.T) {
 			Benefit:        "Prevents regressions.",
 			Recommendation: "Add a rollback test in `internal/auth/session_test.go`.",
 			Strength:       "Strong",
+			Corroboration:  []string{"OpenAI"},
 		},
 		{
 			ID:             "anthropic.ai.review.1",
@@ -554,6 +584,7 @@ func TestEvalNearDuplicateMerging(t *testing.T) {
 			Benefit:        "Prevents regressions.",
 			Recommendation: "Add the missing rollback coverage.",
 			Strength:       "Worth exploring",
+			Corroboration:  []string{"Anthropic"},
 		},
 	}
 
@@ -573,7 +604,15 @@ func TestEvalNearDuplicateMerging(t *testing.T) {
 	if len(report.Findings) != 1 {
 		t.Fatalf("Findings = %#v, want one merged finding", report.Findings)
 	}
-	if !strings.Contains(evidenceText(report.Findings[0].Evidence), "Similar findings merged") {
-		t.Fatalf("Evidence = %#v, want near-duplicate agreement metadata", report.Findings[0].Evidence)
+	// Two reviewers, one problem: the merged finding must carry both names, and
+	// the review must say so where a reader will see it.
+	if got := report.Findings[0].Corroboration; len(got) != 2 {
+		t.Fatalf("Corroboration = %#v, want both reviewers", got)
+	}
+	if !strings.Contains(evidenceText(report.Findings[0].Evidence), "Raised independently by 2 reviewers") {
+		t.Fatalf("Evidence = %#v, want cross-reviewer corroboration metadata", report.Findings[0].Evidence)
+	}
+	if !strings.Contains(RenderMarkdown(report), "Flagged by both reviewers") {
+		t.Fatalf("RenderMarkdown() does not surface corroboration:\n%s", RenderMarkdown(report))
 	}
 }

@@ -234,8 +234,13 @@ func judgeDeveloperPrompt() string {
 	}, "\n")
 }
 
-func prepareFindingsForJudge(ctx ReviewContext, findings []Finding) []Finding {
-	return mergeNearDuplicateFindings(findings)
+// prepareFindingsForJudge collapses duplicates before verification.
+//
+// This runs in addition to the per-shard merge inside multiAIReviewer, and it
+// is the one that catches cross-shard copies: a file that appears in two shards
+// gets reviewed twice, and neither shard can see the other's findings.
+func prepareFindingsForJudge(ctx context.Context, adjudicator duplicateAdjudicator, findings []Finding) dedupeOutcome {
+	return dedupeFindings(ctx, adjudicator, findings)
 }
 
 func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
@@ -302,6 +307,15 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 	sort.SliceStable(kept, func(i, j int) bool {
 		if ri, rj := impactRank(kept[i].result.Impact), impactRank(kept[j].result.Impact); ri != rj {
 			return ri > rj
+		}
+		// Corroboration outranks the judge's own confidence, within an impact
+		// class. Two independently prompted flagship models arriving at the
+		// same problem from different context is stronger evidence that the
+		// problem is real than one model's self-reported certainty about it,
+		// and the judge — which sees candidates one at a time — has no way to
+		// know the agreement happened.
+		if li, lj := len(kept[i].finding.Corroboration), len(kept[j].finding.Corroboration); li != lj {
+			return li > lj
 		}
 		if kept[i].result.Confidence != kept[j].result.Confidence {
 			return kept[i].result.Confidence > kept[j].result.Confidence
@@ -417,6 +431,12 @@ func capAdvisoryFindings(findings []Finding) []Finding {
 		right := strengthRank(out[j].Strength)
 		if left != right {
 			return left < right
+		}
+		// This path throws findings away, so corroboration matters more here
+		// than anywhere else: with no judge verdict to rank by, "both reviewers
+		// found it" is the best evidence available for which three survive.
+		if li, lj := len(out[i].Corroboration), len(out[j].Corroboration); li != lj {
+			return li > lj
 		}
 		return out[i].ID < out[j].ID
 	})
@@ -609,158 +629,6 @@ func judgeFileContentSnippets(repoRoot string, files []string) []judgeContentSni
 		remaining -= len(text)
 		out = append(out, judgeContentSnippet{File: file, Text: text})
 	}
-	return out
-}
-
-func mergeNearDuplicateFindings(findings []Finding) []Finding {
-	type groupedFinding struct {
-		finding   Finding
-		tokens    map[string]struct{}
-		providers map[string]struct{}
-		count     int
-	}
-	var groups []groupedFinding
-	for _, finding := range findings {
-		tokens := duplicateTokens(finding)
-		provider := findingProvider(finding)
-		merged := false
-		for i := range groups {
-			if nearDuplicateTokens(tokens, groups[i].tokens) {
-				groups[i].finding = mergeFindingMetadata(groups[i].finding, finding)
-				groups[i].providers[provider] = struct{}{}
-				groups[i].count++
-				merged = true
-				break
-			}
-		}
-		if !merged {
-			groups = append(groups, groupedFinding{
-				finding:   finding,
-				tokens:    tokens,
-				providers: map[string]struct{}{provider: {}},
-				count:     1,
-			})
-		}
-	}
-	out := make([]Finding, 0, len(groups))
-	for _, group := range groups {
-		finding := group.finding
-		if group.count > 1 {
-			finding.Evidence = append(finding.Evidence, Evidence{
-				Label: "Agreement",
-				Value: fmt.Sprintf("Similar findings merged from %d providers/sources: %s", group.count, strings.Join(sortedSet(group.providers), ", ")),
-			})
-		}
-		out = append(out, finding)
-	}
-	return out
-}
-
-func mergeResolvedSources(left, right []ResolvedSource) []ResolvedSource {
-	seen := map[string]struct{}{}
-	var out []ResolvedSource
-	for _, src := range append(append([]ResolvedSource{}, left...), right...) {
-		key := strings.TrimSpace(src.ID) + "|" + strings.TrimSpace(ResolvedSourceLabel(src))
-		if key == "|" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, src)
-	}
-	return out
-}
-
-func mergeFindingMetadata(left Finding, right Finding) Finding {
-	left.Evidence = append(left.Evidence, right.Evidence...)
-	left.SourceIDs = uniqueStrings(append(left.SourceIDs, right.SourceIDs...))
-	left.SourcePublishers = uniqueStrings(append(left.SourcePublishers, right.SourcePublishers...))
-	left.ResolvedSources = mergeResolvedSources(left.ResolvedSources, right.ResolvedSources)
-	if strengthRank(right.Strength) < strengthRank(left.Strength) {
-		left.Strength = right.Strength
-	}
-	return left
-}
-
-func duplicateTokens(finding Finding) map[string]struct{} {
-	text := normalizeDuplicateText(finding.Title + " " + firstSentence(finding.Summary))
-	out := map[string]struct{}{}
-	for _, token := range strings.Fields(text) {
-		if len(token) < 3 || duplicateStopWords[token] {
-			continue
-		}
-		out[token] = struct{}{}
-	}
-	return out
-}
-
-var duplicateStopWords = map[string]bool{
-	"the": true, "and": true, "for": true, "with": true, "that": true, "this": true, "from": true, "into": true,
-	"can": true, "are": true, "was": true, "were": true, "has": true, "have": true, "but": true, "not": true,
-}
-
-func normalizeDuplicateText(text string) string {
-	text = strings.ToLower(text)
-	var b strings.Builder
-	for _, r := range text {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '/' || r == '_' || r == '-' {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte(' ')
-	}
-	return b.String()
-}
-
-func firstSentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	for _, sep := range []string{".", "\n"} {
-		if index := strings.Index(text, sep); index >= 0 {
-			return strings.TrimSpace(text[:index])
-		}
-	}
-	return text
-}
-
-func nearDuplicateTokens(left, right map[string]struct{}) bool {
-	if len(left) == 0 || len(right) == 0 {
-		return false
-	}
-	overlap := 0
-	for token := range left {
-		if _, ok := right[token]; ok {
-			overlap++
-		}
-	}
-	smaller := len(left)
-	if len(right) < smaller {
-		smaller = len(right)
-	}
-	return float64(overlap)/float64(smaller) >= 0.85
-}
-
-func findingProvider(finding Finding) string {
-	id := strings.TrimSpace(finding.ID)
-	if id == "" {
-		return "unknown"
-	}
-	if index := strings.Index(id, "."); index > 0 {
-		return id[:index]
-	}
-	return id
-}
-
-func sortedSet(values map[string]struct{}) []string {
-	out := make([]string, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Strings(out)
 	return out
 }
 

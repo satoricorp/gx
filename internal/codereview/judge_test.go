@@ -217,26 +217,32 @@ func TestJudgeDisabledStillCapsAdvisoryFindingsAtThree(t *testing.T) {
 	}
 }
 
+// TestNearDupeProviderFindingsMerge covers the one merge the deterministic side
+// still makes on its own: two legs that returned the same finding almost word
+// for word. It passes a nil adjudicator on purpose — near-verbatim copies must
+// collapse with no model reachable at all.
 func TestNearDupeProviderFindingsMerge(t *testing.T) {
-	findings := mergeNearDuplicateFindings([]Finding{
+	findings := mergeNearDuplicateFindings(context.Background(), nil, []Finding{
 		{
 			ID:             "openai.ai.review.1",
 			Title:          "Preserve auth rollback test coverage",
 			Summary:        "`internal/auth/session.go` changes rollback behavior without a focused test.",
 			Recommendation: "Add a rollback test in `internal/auth/session_test.go`.",
+			Corroboration:  []string{"OpenAI"},
 		},
 		{
 			ID:             "anthropic.ai.review.1",
 			Title:          "Preserve auth rollback test coverage",
 			Summary:        "`internal/auth/session.go` changes rollback behavior without focused coverage.",
 			Recommendation: "Add the missing rollback coverage.",
+			Corroboration:  []string{"Anthropic"},
 		},
 	})
 	if len(findings) != 1 {
 		t.Fatalf("mergeNearDuplicateFindings() len = %d, want 1", len(findings))
 	}
-	if !strings.Contains(evidenceText(findings[0].Evidence), "Similar findings merged") {
-		t.Fatalf("Evidence = %#v, want agreement metadata", findings[0].Evidence)
+	if !strings.Contains(evidenceText(findings[0].Evidence), "Raised independently by 2 reviewers") {
+		t.Fatalf("Evidence = %#v, want cross-reviewer corroboration metadata", findings[0].Evidence)
 	}
 }
 
@@ -284,8 +290,17 @@ func judgeTestFinding(id string, file string) Finding {
 	}
 }
 
+// judgeTestFindingWithStrength builds a distinct advisory finding.
+//
+// "Distinct" has to mean it, and it has to mean it on the one file these tests
+// are about. The fixtures used to differ from each other by a single word in an
+// otherwise identical sentence, which no honest de-duplication can be expected
+// to keep apart; an earlier attempt at fixing that gave each fixture its own
+// file, which kept them apart only by defeating the locality gate — a fixture
+// arranged so the merge rule never runs proves nothing about the merge rule.
+// They now share `internal/app/app.go`, as a cap test about one changed file
+// should, and are five genuinely different problems in it.
 func judgeTestFindingWithStrength(id string, strength string) Finding {
-	finding := judgeTestFinding(id, "internal/app/app.go")
 	topic := map[string]string{
 		"advice.1": "authorization",
 		"advice.2": "rollback",
@@ -296,11 +311,44 @@ func judgeTestFindingWithStrength(id string, strength string) Finding {
 	if topic == "" {
 		topic = strings.ReplaceAll(id, ".", "-")
 	}
-	finding.Title = "Advisory " + topic
-	finding.Summary = "The change in `internal/app/app.go` needs focused " + topic + " review."
-	finding.Recommendation = "Update `internal/app/app.go` for " + topic + " and verify it with a focused test."
-	finding.Strength = strength
-	return finding
+	title := map[string]string{
+		"authorization": "Handler acts on another tenant's records without a permission check",
+		"rollback":      "Commit happens before the downstream write is confirmed",
+		"observability": "Failures on the Stop path leave no log line or metric",
+		"idempotency":   "Retrying a request repeats the side effect instead of replaying it",
+		"validation":    "Request body reaches storage with no bounds or type checking",
+	}[topic]
+	if title == "" {
+		title = "Advisory " + topic
+	}
+	body := map[string]string{
+		"authorization": "Any signed-in account can reach Run() and mutate records belonging to a different tenant, because nothing between the router and the store asserts ownership.",
+		"rollback":      "The database transaction commits before the downstream write is acknowledged, so a half-applied change survives with no way to undo it.",
+		"observability": "Stop() emits nothing at all, so a production hang is invisible until a customer notices and reports it.",
+		"idempotency":   "A retried request is treated as a fresh one, repeating the side effect and double-charging whenever the network is flaky.",
+		"validation":    "Input is trusted straight from the request body and reaches storage with no bounds or type checking.",
+	}[topic]
+	if body == "" {
+		body = "This path behaves differently from the rest of the package for reasons nothing records."
+	}
+	fix := map[string]string{
+		"authorization": "Assert tenant ownership in Run() before touching the store.",
+		"rollback":      "Move the commit after the downstream acknowledgement, or make the downstream write part of the same transaction.",
+		"observability": "Emit a structured log line and a counter on the Stop() failure path.",
+		"idempotency":   "Key the side effect on a request ID and replay the stored result on retry.",
+		"validation":    "Parse and bound-check the request body before it reaches storage.",
+	}[topic]
+	if fix == "" {
+		fix = "Bring this path in line with the rest of the package."
+	}
+	return Finding{
+		ID:             id,
+		Scopes:         []string{"architecture", "testing", "maintainability"},
+		Title:          title,
+		Summary:        body + " See `internal/app/app.go`.",
+		Recommendation: fix,
+		Strength:       strength,
+	}
 }
 
 func findingIDs(findings []Finding) string {
@@ -348,4 +396,72 @@ func (r findingRule) Scopes() []string {
 
 func (r findingRule) Evaluate(ReviewContext) []Finding {
 	return r.findings
+}
+
+// constantAdjudicator answers every question the same way. It exists to show
+// that a fixture reaches the merge machinery at all, which is the thing a
+// fixture can quietly stop doing.
+type constantAdjudicator bool
+
+func (a constantAdjudicator) AdjudicateDuplicates(_ context.Context, pairs []duplicatePairInput) ([]duplicateVerdict, error) {
+	out := make([]duplicateVerdict, 0, len(pairs))
+	for _, pair := range pairs {
+		out = append(out, duplicateVerdict{PairID: pair.PairID, Same: bool(a)})
+	}
+	return out, nil
+}
+
+// TestAdvisoryCapFixturesAreDistinctOnTheSameFile guards the fixtures, not the
+// product.
+//
+// These five advisories exist to be capped, so they must survive
+// de-duplication — but they must survive it for the right reason. An earlier
+// revision gave each of them its own file, which made them survive by defeating
+// the locality gate: no pair could ever be considered, and the cap test would
+// have gone on passing however badly the merge behaved. They share the one file
+// the test is about again, and they survive because they describe five
+// different problems.
+//
+// The last assertion is the one that keeps this honest: a near-verbatim sixth
+// copy still collapses, so de-duplication is demonstrably live on exactly this
+// fixture set rather than inert.
+func TestAdvisoryCapFixturesAreDistinctOnTheSameFile(t *testing.T) {
+	var findings []Finding
+	for _, id := range []string{"advice.1", "advice.2", "advice.3", "advice.4", "advice.5"} {
+		findings = append(findings, judgeTestFindingWithStrength(id, "Worth exploring"))
+	}
+	for _, finding := range findings {
+		files := findingFiles(finding)
+		if _, ok := files["internal/app/app.go"]; !ok {
+			t.Fatalf("%q names %v, not the one file this test is about", finding.Title, sortedSet(files))
+		}
+	}
+	worst := 0.0
+	for i := range findings {
+		for j := i + 1; j < len(findings); j++ {
+			if score := pairScore(findings[i], findings[j]); score > worst {
+				worst = score
+			}
+		}
+	}
+	t.Logf("most similar pair of the five scores %.4f (gate %.2f)", worst, dedupeGateThreshold)
+
+	for name, adjudicator := range map[string]duplicateAdjudicator{
+		"no adjudicator":     nil,
+		"honest adjudicator": constantAdjudicator(false),
+	} {
+		if kept := mergeNearDuplicateFindings(context.Background(), adjudicator, findings); len(kept) != 5 {
+			t.Fatalf("%s: kept %d of 5 distinct advisories:\n%s", name, len(kept), findingIDs(kept))
+		}
+	}
+
+	duplicated := append(append([]Finding(nil), findings...), func() Finding {
+		copied := findings[0]
+		copied.ID = "advice.6"
+		return copied
+	}())
+	if kept := mergeNearDuplicateFindings(context.Background(), nil, duplicated); len(kept) != 5 {
+		t.Fatalf("a verbatim sixth copy did not collapse (%d kept), so de-duplication is inert on this fixture set:\n%s",
+			len(kept), findingIDs(kept))
+	}
 }

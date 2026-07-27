@@ -298,15 +298,11 @@ func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
 	if !cfg.Enabled || cfg.OpenAIAPIKey == "" || cfg.TurboPufferAPIKey == "" {
 		return
 	}
-	orgID := ""
-	if creds, ok := auth.LoadUpload(); ok {
-		orgID = strings.TrimSpace(creds.OrgID)
-	}
 	refreshCtx, cancel := context.WithTimeout(ctx, codeIndexRefreshTimeout)
 	defer cancel()
 	result, err := semantic.EnsureRepositoryIndex(refreshCtx, semantic.RepoIndexOptions{
 		RepoRoot: repoRoot,
-		OrgID:    orgID,
+		OrgID:    reviewOrgID(),
 		Reason:   "review",
 	})
 	if err != nil {
@@ -332,11 +328,18 @@ func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
 // codeIndexTargets resolves the namespaces that may hold this repository's
 // source, most specific first.
 //
-// Two writers produce code chunks today and they do not agree on a name. The
-// gx CLI writes gx-<org>-<slug>-v<schema> (semantic.NamespaceForRepo); the
-// console/Convex indexer writes repo-<owner>-<repo>, keyed only on the GitHub
-// remote. Both are queried, and results are fused, because a given repository
-// may be in either, both, or neither.
+// The names come from semantic.ResolveRepoIdentity — the same function
+// `gx index` writes through — so the reader and the writer cannot address
+// different namespaces. They used to derive the name separately and did not
+// agree; see the comment at the top of internal/semantic/repoidentity.go for
+// what that cost.
+//
+// Several namespaces are probed rather than one because a repository's identity
+// is derived from mutable git config and from a second, independent indexer:
+// the index may have been written before the checkout had a remote, and the
+// console/Convex indexer writes repo-<owner>-<repo> keyed only on the GitHub
+// remote. Results from every namespace that answers are fused, and the evidence
+// line names which ones did.
 func codeIndexTargets(ctx context.Context, repoRoot string) []codeIndexTarget {
 	if override := strings.TrimSpace(os.Getenv("GX_REVIEW_CODE_INDEX_NAMESPACE")); override != "" {
 		var out []codeIndexTarget
@@ -347,47 +350,31 @@ func codeIndexTargets(ctx context.Context, repoRoot string) []codeIndexTarget {
 		}
 		return out
 	}
-	repoFullName := reviewHistoryRepoFullName(ctx, repoRoot)
-	orgID := ""
-	if creds, ok := auth.LoadUpload(); ok {
-		orgID = strings.TrimSpace(creds.OrgID)
-	}
+	identity := semantic.ResolveRepoIdentity(ctx, repoRoot, reviewOrgID(), "")
 	var out []codeIndexTarget
-	seen := map[string]struct{}{}
-	add := func(namespace, origin string) {
-		namespace = strings.TrimSpace(namespace)
-		if namespace == "" {
-			return
-		}
-		if _, ok := seen[namespace]; ok {
-			return
-		}
-		seen[namespace] = struct{}{}
-		out = append(out, codeIndexTarget{Namespace: namespace, Origin: origin})
-	}
-	add(semantic.NamespaceForRepo(orgID, repoFullName, repoRoot), "gx code index")
-	if namespace := consoleCodeIndexNamespace(repoFullName); namespace != "" {
-		add(namespace, "GX Cloud code index")
+	for _, candidate := range identity.Candidates() {
+		out = append(out, codeIndexTarget{Namespace: candidate.Namespace, Origin: candidate.Origin})
 	}
 	return out
 }
 
-// consoleCodeIndexNamespace is the console/Convex code index name for a repo.
-// It mirrors namespaceForRepo in convex/lib/turbopuffer/utils.ts, which does a
-// plain slash-to-dash substitution and does not case-fold.
-func consoleCodeIndexNamespace(repoFullName string) string {
-	repoFullName = strings.Trim(strings.TrimSpace(repoFullName), "/")
-	if repoFullName == "" || !strings.Contains(repoFullName, "/") {
-		return ""
+// reviewOrgID is the signed-in GX org, or "" when this machine has never
+// logged in. Read in one place so the review's namespaces and the index refresh
+// it triggers cannot disagree about which org they belong to.
+func reviewOrgID() string {
+	if creds, ok := auth.LoadUpload(); ok {
+		return strings.TrimSpace(creds.OrgID)
 	}
-	return "repo-" + strings.ReplaceAll(repoFullName, "/", "-")
+	return ""
 }
 
 func codeIndexMissingDetail(target codeIndexTarget) string {
 	switch target.Origin {
-	case "gx code index":
+	case semantic.NamespaceOriginPrimary:
 		return "this repository has not been indexed; run `gx index`"
-	case "GX Cloud code index":
+	case semantic.NamespaceOriginPreRemote:
+		return "no index under this repository's pre-remote name"
+	case semantic.NamespaceOriginConsole:
 		return "GX Cloud has never indexed this repository"
 	default:
 		return "namespace does not exist"

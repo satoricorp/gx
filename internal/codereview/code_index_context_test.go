@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 // fakeIndexStore serves probes and query rows from memory so retrieval, fusion
@@ -192,12 +194,66 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 	if len(snippets) != 0 {
 		t.Fatalf("snippets = %#v, want none", snippets)
 	}
+	// One warning for the source, not one per candidate namespace: the reader
+	// needs to know the code index could not be read, and how many names were
+	// tried on the way to finding that out is detail for the verbose listing.
 	warnings := EvidenceWarnings(in.Evidence.Statuses())
-	if len(warnings) != 2 {
-		t.Fatalf("warnings = %v, want one per missing namespace", warnings)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one warning for the code index as a whole", warnings)
 	}
 	if !strings.Contains(strings.Join(warnings, " "), "gx index") {
 		t.Fatalf("warnings = %v, want the missing gx index to say how to build it", warnings)
+	}
+	if len(in.Evidence.Statuses()) != 2 {
+		t.Fatalf("statuses = %#v, want one per namespace so the verbose listing still names each", in.Evidence.Statuses())
+	}
+}
+
+// TestCodeIndexAnsweredByOneNamespaceIsNotDegraded is the regression test for
+// the review's most misleading line. Probing several candidate namespaces means
+// most of them miss by design; a review whose index answered must never open
+// with "review evidence unavailable … findings are based on the change and the
+// checkout only".
+func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
+	store := &fakeIndexStore{
+		probes: map[string]indexProbe{
+			"gx-local-satoricorp-yeet-v2": {Exists: true, Dimensions: 1536, BodyField: "text", SymbolField: "symbol"},
+		},
+		rows: map[string][]indexRow{
+			"gx-local-satoricorp-yeet-v2": {
+				{"file_path": "src/bridge.ts", "start_line": 1.0, "end_line": 20.0, "text": "chunk", "symbol_name": "Bridge"},
+			},
+		},
+	}
+	in := codeIndexTestInput()
+	retriever := CodeIndexRetriever{
+		Store: store,
+		Namespaces: []codeIndexTarget{
+			{Namespace: "gx-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
+			{Namespace: "gx-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
+			{Namespace: "repo-satoricorp-yeet", Origin: semantic.NamespaceOriginConsole},
+		},
+		Limit:       10,
+		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
+	}
+	snippets, err := retriever.Retrieve(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if len(snippets) == 0 {
+		t.Fatal("no snippets from the namespace that exists")
+	}
+	if warnings := EvidenceWarnings(in.Evidence.Statuses()); len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none when the code index answered", warnings)
+	}
+	// The namespaces that missed are still on the record, named, so the verbose
+	// evidence line says truthfully what was searched.
+	var namespaces []string
+	for _, status := range in.Evidence.Statuses() {
+		namespaces = append(namespaces, status.Namespace)
+	}
+	if len(namespaces) != 3 {
+		t.Fatalf("statuses = %v, want every searched namespace reported", namespaces)
 	}
 }
 
@@ -322,14 +378,14 @@ func TestCodeIndexRetrieverReportsStaleIndex(t *testing.T) {
 }
 
 func TestConsoleCodeIndexNamespace(t *testing.T) {
-	if got := consoleCodeIndexNamespace("satoricorp/gx"); got != "repo-satoricorp-gx" {
-		t.Fatalf("consoleCodeIndexNamespace = %q", got)
+	if got := semantic.ConsoleNamespaceForRepo("satoricorp/gx"); got != "repo-satoricorp-gx" {
+		t.Fatalf("ConsoleNamespaceForRepo = %q", got)
 	}
-	if got := consoleCodeIndexNamespace(""); got != "" {
-		t.Fatalf("consoleCodeIndexNamespace(empty) = %q, want empty", got)
+	if got := semantic.ConsoleNamespaceForRepo(""); got != "" {
+		t.Fatalf("ConsoleNamespaceForRepo(empty) = %q, want empty", got)
 	}
-	if got := consoleCodeIndexNamespace("nosllash"); got != "" {
-		t.Fatalf("consoleCodeIndexNamespace(no owner) = %q, want empty", got)
+	if got := semantic.ConsoleNamespaceForRepo("nosllash"); got != "" {
+		t.Fatalf("ConsoleNamespaceForRepo(no owner) = %q, want empty", got)
 	}
 }
 

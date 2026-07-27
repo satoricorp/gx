@@ -235,11 +235,9 @@ func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model str
 		return nil, fmt.Errorf("Bedrock request has no model")
 	}
 	host := "bedrock-runtime." + t.region + ".amazonaws.com"
-	// The escaped path is used verbatim in both the request line and the
-	// canonical request. Inference profile IDs contain ':' and '.', and a
-	// canonical URI that disagrees with the request line by one character
-	// fails the signature with an error that names neither.
-	rawPath := "/model/" + awsEscapePathSegment(model) + "/invoke"
+	// The request line carries the path escaped once; the canonical request
+	// carries it escaped twice. See bedrockCanonicalPath for why they differ.
+	rawPath := bedrockRequestPath(model)
 	endpoint := &url.URL{
 		Scheme:  "https",
 		Host:    host,
@@ -252,10 +250,41 @@ func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model str
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if err := t.signV4(req, host, rawPath, body, time.Now().UTC()); err != nil {
+	if err := t.signV4(req, host, bedrockCanonicalPath(model), body, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	return req, nil
+}
+
+// bedrockRequestPath is the path that goes on the wire: each path segment
+// percent-encoded once, which is what an HTTP request line requires.
+func bedrockRequestPath(model string) string {
+	return "/model/" + awsEscapePathSegment(model) + "/invoke"
+}
+
+// bedrockCanonicalPath is the path that goes into the SigV4 canonical request,
+// which is the wire path percent-encoded a SECOND time.
+//
+// This is not symmetry-breaking for its own sake, it is the SigV4 rule: every
+// service except S3 requires each path segment to be URI-encoded twice when
+// building the canonical request, while the request line is encoded once. For
+// most model IDs the two are identical, because nothing in them needs escaping —
+// which is exactly why signing both the same way looked correct. The A leg's
+// ID is one of those. The B leg's inference profile ID ends in ":0", so its wire
+// path carries "%3A" and its canonical path must carry "%253A"; signing the wire
+// path made every single B call fail with SignatureDoesNotMatch.
+//
+// Measured, not inferred: instrumenting multiAIReviewer across a three-shard
+// live review showed bedrock-a returning 5 findings per shard and bedrock-b
+// returning 0 with this error on all three. The panel was one model wearing two
+// names, and it was silent because ReviewForSummary discards a leg's error
+// whenever the other leg answers — see legFailureLog in ai.go for that half.
+//
+// AWS itself supplied the expected canonical string in that error response, and
+// TestBedrockCanonicalRequestMatchesAWSExpectation pins this function's output
+// against it verbatim.
+func bedrockCanonicalPath(model string) string {
+	return "/model/" + awsEscapePathSegment(awsEscapePathSegment(model)) + "/invoke"
 }
 
 // signV4 applies AWS Signature Version 4 to a bedrock-runtime request.
@@ -286,23 +315,8 @@ func (t *directBedrockTransport) signV4(req *http.Request, host, canonicalURI st
 		values["x-amz-security-token"] = token
 	}
 
-	var canonicalHeaders strings.Builder
-	for _, name := range signed {
-		canonicalHeaders.WriteString(name)
-		canonicalHeaders.WriteString(":")
-		canonicalHeaders.WriteString(strings.TrimSpace(values[name]))
-		canonicalHeaders.WriteString("\n")
-	}
 	signedHeaders := strings.Join(signed, ";")
-
-	canonicalRequest := strings.Join([]string{
-		req.Method,
-		canonicalURI,
-		"", // no query string
-		canonicalHeaders.String(),
-		signedHeaders,
-		payloadHash,
-	}, "\n")
+	canonicalRequest := bedrockCanonicalRequest(req.Method, canonicalURI, signed, values, payloadHash)
 
 	scope := strings.Join([]string{dateStamp, t.region, service, "aws4_request"}, "/")
 	stringToSign := strings.Join([]string{
@@ -323,6 +337,30 @@ func (t *directBedrockTransport) signV4(req *http.Request, host, canonicalURI st
 		t.accessKey, scope, signedHeaders, signature,
 	))
 	return nil
+}
+
+// bedrockCanonicalRequest assembles SigV4's "task 1" string.
+//
+// It is a separate function only so a test can compare it, character for
+// character, with the canonical string AWS reports back in a
+// SignatureDoesNotMatch body. That comparison is the only external oracle this
+// hand-rolled signer has.
+func bedrockCanonicalRequest(method, canonicalURI string, signedHeaders []string, values map[string]string, payloadHash string) string {
+	var canonicalHeaders strings.Builder
+	for _, name := range signedHeaders {
+		canonicalHeaders.WriteString(name)
+		canonicalHeaders.WriteString(":")
+		canonicalHeaders.WriteString(strings.TrimSpace(values[name]))
+		canonicalHeaders.WriteString("\n")
+	}
+	return strings.Join([]string{
+		method,
+		canonicalURI,
+		"", // no query string
+		canonicalHeaders.String(),
+		strings.Join(signedHeaders, ";"),
+		payloadHash,
+	}, "\n")
 }
 
 // awsEscapePathSegment percent-encodes everything outside RFC 3986's unreserved

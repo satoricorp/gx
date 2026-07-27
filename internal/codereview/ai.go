@@ -142,6 +142,67 @@ type namedAIReviewer struct {
 
 type multiAIReviewer struct {
 	reviewers []namedAIReviewer
+	// legFailures records legs that failed while at least one other leg
+	// answered. That case used to be silent, and the silence was expensive:
+	// the B leg's inference profile ID contains a colon, the SigV4 canonical
+	// path was not double-encoded, and every single B call failed with
+	// SignatureDoesNotMatch — for as long as the two-model panel has existed.
+	// Because leg A answered, ReviewForSummary returned success and the review
+	// reported two models in its own "AI models" line while running one.
+	//
+	// A pointer with its own lock because one multiAIReviewer value is shared
+	// across every shard's goroutine.
+	legFailures *legFailureLog
+	// adjudicator decides which of the two legs' findings are the same finding.
+	// Nil is a supported state: nothing semantic is merged, only near-verbatim
+	// copies, and the caller reports that it could not do better.
+	adjudicator duplicateAdjudicator
+}
+
+// legFailureLog collects distinct reviewer-leg failures across concurrent shards.
+type legFailureLog struct {
+	mu       sync.Mutex
+	seen     map[string]struct{}
+	messages []string
+}
+
+func newLegFailureLog() *legFailureLog {
+	return &legFailureLog{seen: map[string]struct{}{}}
+}
+
+func (l *legFailureLog) record(label string, err error) {
+	if l == nil || err == nil {
+		return
+	}
+	message := label + ": " + err.Error()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, ok := l.seen[message]; ok {
+		return
+	}
+	l.seen[message] = struct{}{}
+	l.messages = append(l.messages, message)
+}
+
+func (l *legFailureLog) reasons() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.messages...)
+}
+
+// PartialReviewerFailures is why a review ran with fewer models than it was
+// configured for, or nil when every leg answered. The engine reports these as
+// degraded reasons: "two flagship models reviewed this" and "one did, twice as
+// cheaply as you think" are different reviews and must not print the same.
+func PartialReviewerFailures(reviewer AIReviewer) []string {
+	multi, ok := reviewer.(multiAIReviewer)
+	if !ok {
+		return nil
+	}
+	return multi.legFailures.reasons()
 }
 
 type unavailableAIReviewer struct {
@@ -275,16 +336,37 @@ func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 	if err != nil {
 		// Both legs carry the same actionable reason, so whichever one a caller
 		// inspects says what to fix.
-		return multiAIReviewer{reviewers: []namedAIReviewer{
-			{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{reason: err.Error()}},
-			{name: "bedrock-b", label: "Bedrock B", reviewer: unavailableAIReviewer{reason: err.Error()}},
-		}}
+		return multiAIReviewer{
+			reviewers: []namedAIReviewer{
+				{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{reason: err.Error()}},
+				{name: "bedrock-b", label: "Bedrock B", reviewer: unavailableAIReviewer{reason: err.Error()}},
+			},
+			legFailures: newLegFailureLog(),
+		}
 	}
 	modelA, modelB := resolveBedrockReviewModels(policy)
-	return multiAIReviewer{reviewers: []namedAIReviewer{
-		{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)},
-		{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)},
-	}}
+	return multiAIReviewer{
+		reviewers: []namedAIReviewer{
+			{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)},
+			{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)},
+		},
+		legFailures: newLegFailureLog(),
+		// Built here rather than passed in because this is the only place that
+		// knows a panel of two legs exists at all, and a panel is what produces
+		// the duplicates.
+		adjudicator: duplicateAdjudicatorFromEnvWithPolicy(policy),
+	}
+}
+
+// reviewerDuplicateAdjudicator hands back the panel's own adjudicator so the
+// engine's cross-shard de-duplication asks the same model, over the same wire,
+// as the per-shard one. A reviewer that is not a panel has no duplicates to
+// adjudicate and returns nil.
+func reviewerDuplicateAdjudicator(reviewer AIReviewer) duplicateAdjudicator {
+	if multi, ok := reviewer.(multiAIReviewer); ok {
+		return multi.adjudicator
+	}
+	return nil
 }
 
 func newBedrockReviewer(transport bedrockTransport, model string) *bedrockAnthropicReviewer {
@@ -552,6 +634,7 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		item := result.item
 		if result.err != nil {
 			errors = append(errors, item.label+": "+result.err.Error())
+			m.legFailures.record(item.label, result.err)
 			continue
 		}
 		parsed = true
@@ -567,10 +650,14 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		for _, finding := range result.summary.Findings {
 			finding.ID = item.name + "." + finding.ID
 			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
+			// The leg that raised it, recorded structurally rather than only in
+			// an evidence footnote, so that a merge downstream can tell "two
+			// models agree" from "one model said it twice".
+			finding.Corroboration = []string{item.label}
 			out = append(out, finding)
 		}
 	}
-	out = mergeNearDuplicateFindings(out)
+	out = mergeNearDuplicateFindings(ctx, m.adjudicator, out)
 	if parsed {
 		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Findings: out}, nil
 	}
