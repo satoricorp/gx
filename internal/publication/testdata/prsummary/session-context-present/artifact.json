@@ -1,7 +1,7 @@
 {
   "index_status": "pending",
   "event": "gx.pr",
-  "schema_version": 1,
+  "schema_version": 2,
   "repo": {
     "root_path": "/repo"
   },
@@ -9,43 +9,43 @@
     "head_commit_id": "cache001",
     "github_pull_request_url": "https://github.com/satoricorp/gx/pull/30"
   },
-  "stack": [
+  "revisions": [
     {
+      "revision_id": "",
+      "commit_id": "cache001",
+      "description": "switch cache eviction to TTL buckets",
+      "files": [
+        "internal/cache/store.go",
+        "internal/cache/policy.go"
+      ],
       "branch_name": "feature/cache-ttl",
+      "base_branch_name": "",
       "patch": "diff --git a/internal/cache/store.go b/internal/cache/store.go\n--- a/internal/cache/store.go\n+++ b/internal/cache/store.go\n@@ -10,3 +10,4 @@\n func Get(key string) (string, bool) {\n \treturn \"\", false\n }\n+func EvictExpired() {}\n diff --git a/internal/cache/policy.go b/internal/cache/policy.go\n--- a/internal/cache/policy.go\n+++ b/internal/cache/policy.go\n@@ -1,2 +1,3 @@\n package cache\n+const DefaultTTL = 300\n",
-      "change": {
-        "current_commit_id": "cache001",
-        "description": "switch cache eviction to TTL buckets",
-        "files": [
-          "internal/cache/store.go",
-          "internal/cache/policy.go"
+      "github_pull_request_url": "https://github.com/satoricorp/gx/pull/30",
+      "review_context": {
+        "provenance_status": "explicit",
+        "linked_session_count": 1,
+        "provenance_sources": [
+          {
+            "session_id": "sess-cache-1",
+            "status": "explicit",
+            "source": "change_sessions"
+          }
         ],
-        "review_context": {
-          "provenance_status": "explicit",
-          "linked_session_count": 1,
-          "provenance_sources": [
-            {
-              "session_id": "sess-cache-1",
-              "status": "explicit",
-              "source": "change_sessions"
-            }
-          ],
-          "transcript_sources": [
-            {
-              "session_id": "sess-cache-1",
-              "request_id": "req-cache-1",
-              "response_id": "resp-cache-1",
-              "provider": "anthropic",
-              "model": "claude-sonnet-4",
-              "created_at": 1750000000,
-              "status": "explicit",
-              "source": "change_sessions"
-            }
-          ],
-          "risk": {}
-        }
-      },
-      "github_pull_request_url": "https://github.com/satoricorp/gx/pull/30"
+        "transcript_sources": [
+          {
+            "session_id": "sess-cache-1",
+            "request_id": "req-cache-1",
+            "response_id": "resp-cache-1",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4",
+            "created_at": 1750000000,
+            "status": "explicit",
+            "source": "change_sessions"
+          }
+        ],
+        "risk": {}
+      }
     }
   ],
   "sessions": [

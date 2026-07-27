@@ -124,16 +124,8 @@ func gatherReachSymbols(artifact reviewbundle.Artifact, catalog prBodyCatalog) [
 		seen[name] = struct{}{}
 		symbols = append(symbols, name)
 	}
-	for _, entry := range artifact.Stack {
-		if entry.Change.ReviewContext == nil {
-			continue
-		}
-		for _, sym := range entry.Change.ReviewContext.ChangedSymbols {
-			add(sym.Symbol)
-		}
-	}
-	if artifact.Change != nil && artifact.Change.ReviewContext != nil {
-		for _, sym := range artifact.Change.ReviewContext.ChangedSymbols {
+	for _, context := range artifactReviewContexts(artifact) {
+		for _, sym := range context.ChangedSymbols {
 			add(sym.Symbol)
 		}
 	}

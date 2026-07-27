@@ -79,9 +79,9 @@ func (c *Client) UploadReviewArtifact(ctx context.Context, artifact reviewbundle
 		if os.IsTimeout(err) {
 			timeout := c.http.Timeout
 			if timeout <= 0 {
-				return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out; the server may still persist it, verify with `gx sync` or cloud bookmark readback: %w", err)
+				return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out; the server may still persist it, and the queued item retries on your next push (or `gx doctor`): %w", err)
 			}
-			return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out after %s; the server may still persist it, verify with `gx sync` or cloud bookmark readback: %w", timeout, err)
+			return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out after %s; the server may still persist it, and the queued item retries on your next push (or `gx doctor`): %w", timeout, err)
 		}
 		return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: %w", err)
 	}

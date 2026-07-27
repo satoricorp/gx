@@ -24,7 +24,7 @@ func TestComputeLexicalReachCountsExternalReference(t *testing.T) {
 			HeadCommitID:         headSHA,
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/lib.go b/lib.go",
 				"--- a/lib.go",
@@ -35,15 +35,13 @@ func TestComputeLexicalReachCountsExternalReference(t *testing.T) {
 				"-func HelloWorld() {}",
 				"+func HelloWorld() { /* changed */ }",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				CurrentCommitID: headSHA,
-				Description:     "change HelloWorld",
-				Files:           []string{"lib.go"},
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{
-						File: "lib.go", Symbol: "HelloWorld", Kind: "func",
-					}},
-				},
+			CommitID:    headSHA,
+			Description: "change HelloWorld",
+			Files:       []string{"lib.go"},
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{
+					File: "lib.go", Symbol: "HelloWorld", Kind: "func",
+				}},
 			},
 			GitHubPullRequestURL: &prURL,
 		}},
@@ -89,13 +87,11 @@ func TestComputeLexicalReachSkipsShortSymbol(t *testing.T) {
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: root},
 		Push: reviewbundle.PushPayload{HeadCommitID: headSHA},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: "diff --git a/lib.go b/lib.go\n--- a/lib.go\n+++ b/lib.go\n@@ -1 +1,2 @@\n+func Run() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"lib.go"},
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "Run", File: "lib.go"}},
-				},
+			Files: []string{"lib.go"},
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "Run", File: "lib.go"}},
 			},
 		}},
 	})
@@ -170,11 +166,9 @@ func TestLexicalReachContextSnippetsInReviewBrief(t *testing.T) {
 
 func TestBodyStatsSizeAloneCapsAtMedium(t *testing.T) {
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Repeat("+\n", 450),
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"a.go", "b.go", "c.go", "d.go", "e.go", "f.go", "g.go", "h.go", "i.go"},
-			},
+			Files: []string{"a.go", "b.go", "c.go", "d.go", "e.go", "f.go", "g.go", "h.go", "i.go"},
 		}},
 	})
 	stats := bodyStats(artifact, revisionSummaries(artifact), nil)
@@ -200,13 +194,11 @@ func TestComputeLexicalReachTruncatedForCommonSymbol(t *testing.T) {
 	runReachGit(t, root, "commit", "-m", "bulk")
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: root},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: "diff --git a/changed.go b/changed.go\n--- a/changed.go\n+++ b/changed.go\n@@ -1 +1,2 @@\n package main\n+func CommonName() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"changed.go"},
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "CommonName", File: "changed.go"}},
-				},
+			Files: []string{"changed.go"},
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "CommonName", File: "changed.go"}},
 			},
 		}},
 	})
@@ -233,12 +225,10 @@ func TestRenderBlastRadiusCriticalPathLine(t *testing.T) {
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: reviewRoot},
 		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/billing/charge.go b/internal/billing/charge.go\n--- a/internal/billing/charge.go\n+++ b/internal/billing/charge.go\n@@ -1 +1,2 @@\n package billing\n+func Charge() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Description: "add billing charge helper",
-				Files:       []string{"internal/billing/charge.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:       "diff --git a/internal/billing/charge.go b/internal/billing/charge.go\n--- a/internal/billing/charge.go\n+++ b/internal/billing/charge.go\n@@ -1 +1,2 @@\n package billing\n+func Charge() {}\n",
+			Description: "add billing charge helper",
+			Files:       []string{"internal/billing/charge.go"},
 		}},
 	})
 	catalog := buildPRBodyCatalog(artifact)
@@ -259,12 +249,10 @@ func TestRenderBlastRadiusLeadOnlyForCodeChange(t *testing.T) {
 	prURL := "https://github.com/example/acme/pull/1"
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Description: "add handler",
-				Files:       []string{"internal/foo/handler.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:       "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Description: "add handler",
+			Files:       []string{"internal/foo/handler.go"},
 		}},
 	})
 	catalog := buildPRBodyCatalog(artifact)
@@ -291,12 +279,10 @@ func TestRenderBlastRadiusNarrativeFromAI(t *testing.T) {
 	prURL := "https://github.com/example/acme/pull/1"
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Description: "add handler",
-				Files:       []string{"internal/foo/handler.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:       "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Description: "add handler",
+			Files:       []string{"internal/foo/handler.go"},
 		}},
 	})
 	catalog := buildPRBodyCatalog(artifact)
@@ -314,12 +300,10 @@ func TestRenderBlastRadiusHeuristicNarrativeWhenAIAbsent(t *testing.T) {
 	prURL := "https://github.com/example/acme/pull/1"
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
 		Push: reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Description: "add handler",
-				Files:       []string{"internal/foo/handler.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:       "diff --git a/internal/foo/handler.go b/internal/foo/handler.go\n--- a/internal/foo/handler.go\n+++ b/internal/foo/handler.go\n@@ -1 +1,2 @@\n package foo\n+func Handle() {}\n",
+			Description: "add handler",
+			Files:       []string{"internal/foo/handler.go"},
 		}},
 	})
 	catalog := buildPRBodyCatalog(artifact)
@@ -387,14 +371,12 @@ func reachTestArtifact(root, headSHA string) reviewbundle.Artifact {
 			HeadCommitID:         headSHA,
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/lib.go b/lib.go\n--- a/lib.go\n+++ b/lib.go\n@@ -1,3 +1,3 @@\n package main\n \n-func HelloWorld() {}\n+func HelloWorld() { /* changed */ }\n",
-			Change: reviewbundle.ChangePayload{
-				CurrentCommitID: headSHA,
-				Files:           []string{"lib.go"},
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "HelloWorld", File: "lib.go"}},
-				},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:    "diff --git a/lib.go b/lib.go\n--- a/lib.go\n+++ b/lib.go\n@@ -1,3 +1,3 @@\n package main\n \n-func HelloWorld() {}\n+func HelloWorld() { /* changed */ }\n",
+			CommitID: headSHA,
+			Files:    []string{"lib.go"},
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				ChangedSymbols: []reviewbundle.ReviewChangedSymbol{{Symbol: "HelloWorld", File: "lib.go"}},
 			},
 			GitHubPullRequestURL: &prURL,
 		}},

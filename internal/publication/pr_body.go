@@ -229,13 +229,10 @@ func sessionContextInformedSummary(artifact reviewbundle.Artifact, summaryContex
 
 func artifactReviewContexts(artifact reviewbundle.Artifact) []*reviewbundle.ReviewContextPayload {
 	var out []*reviewbundle.ReviewContextPayload
-	for _, entry := range artifact.Bundle.Stack {
-		if entry.Change.ReviewContext != nil {
-			out = append(out, entry.Change.ReviewContext)
+	for _, revision := range artifact.Bundle.Revisions {
+		if revision.ReviewContext != nil {
+			out = append(out, revision.ReviewContext)
 		}
-	}
-	if artifact.Bundle.Change != nil && artifact.Bundle.Change.ReviewContext != nil {
-		out = append(out, artifact.Bundle.Change.ReviewContext)
 	}
 	return out
 }
@@ -734,76 +731,26 @@ func hunkMatchesRiskPath(file string, policy codereview.ReviewPolicy) bool {
 	return false
 }
 
+// hunkImpact scores one changed hunk. The path half of the answer now lives in
+// codereview.FileImpact, because the review command needs the same ranking and
+// two implementations of "which file matters most" is one too many. Only the
+// clause that needs the PR catalog — hunk size against the stack's risk level —
+// stays here, since a catalog is the one thing codereview does not have.
 func hunkImpact(catalog prBodyCatalog, hunk prHunkSummary, policy codereview.ReviewPolicy) (int, string, string) {
 	file := strings.TrimSpace(hunk.File)
 	if file == "" {
 		return 0, "", ""
 	}
-	base := path.Base(file)
-	lowerFile := strings.ToLower(file + " " + base)
-
-	for _, riskPath := range policy.RiskPaths {
-		if !codereview.MatchRiskPathGlob(riskPath.Glob, file) {
-			continue
-		}
-		title := riskPathTitle(riskPath.Message, base)
-		detail := fmt.Sprintf("%s (matched `%s` in %s).", strings.TrimSpace(riskPath.Message), riskPath.Glob, file)
-		return 700, title, trimSentence(detail, 240)
-	}
-
-	if containsAny(lowerFile, []string{"auth", "token", "secret", "credential"}) {
-		pattern := "auth|token|secret|credential"
-		title := fmt.Sprintf("Verify auth handling in %s", base)
-		detail := fmt.Sprintf("Path or filename matches generic pattern %q in %s; auth changes can leak, drop, or misuse credentials.", pattern, file)
-		return 650, title, trimSentence(detail, 240)
-	}
-	if containsAny(lowerFile, []string{"migration", "schema"}) {
-		pattern := "migration|schema"
-		title := fmt.Sprintf("Verify schema change in %s", base)
-		detail := fmt.Sprintf("Path matches generic pattern %q in %s; schema changes can break persistence or migrations.", pattern, file)
-		return 670, title, trimSentence(detail, 240)
-	}
-	if strings.Contains(lowerFile, "dockerfile") || strings.Contains(lowerFile, ".github/workflows") || strings.Contains(lowerFile, "deploy") {
-		pattern := "Dockerfile|.github/workflows|deploy"
-		title := fmt.Sprintf("Verify deployment change in %s", base)
-		detail := fmt.Sprintf("Path matches generic pattern %q in %s; deployment changes can alter runtime or CI behavior.", pattern, file)
-		return 660, title, trimSentence(detail, 240)
-	}
-	if isGenericLockfilePath(lowerFile) {
-		pattern := "lockfiles"
-		title := fmt.Sprintf("Verify lockfile change in %s", base)
-		detail := fmt.Sprintf("Filename matches generic pattern %q in %s; dependency lockfile changes can alter build or runtime versions.", pattern, file)
-		return 640, title, trimSentence(detail, 240)
+	if impact := codereview.FileImpact(file, policy); impact.Matched() {
+		return impact.Score, impact.Title, impact.Detail
 	}
 	if catalog.Stats.MaxRiskLevel == "high" && hunk.NewLines+hunk.OldLines >= 40 {
+		base := path.Base(file)
 		title := fmt.Sprintf("Review large high-risk hunk in %s", base)
 		detail := fmt.Sprintf("%s is one of the larger hunks in a high-risk stack and may hide cross-cutting behavior.", file)
 		return 500, title, trimSentence(detail, 240)
 	}
 	return 0, "", ""
-}
-
-func riskPathTitle(message, base string) string {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return fmt.Sprintf("Verify change in %s", base)
-	}
-	if idx := strings.IndexAny(message, ".;"); idx > 0 {
-		clause := strings.TrimSpace(message[:idx])
-		if clause != "" {
-			return "Verify " + clause
-		}
-	}
-	return fmt.Sprintf("Verify change in %s", base)
-}
-
-func isGenericLockfilePath(file string) bool {
-	switch strings.ToLower(path.Base(file)) {
-	case "go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "cargo.lock", "gemfile.lock", "poetry.lock", "composer.lock":
-		return true
-	default:
-		return false
-	}
 }
 
 func highRiskCatalog(catalog prBodyCatalog) bool {
@@ -1044,12 +991,16 @@ func indexedPRContextSnippets(ctx context.Context, artifact reviewbundle.Artifac
 }
 
 func queryPRTurboPuffer(ctx context.Context, cfg semantic.Config, namespace string, vector []float32, text string, textAttribute string, filters any, limit int) []map[string]any {
+	// include_attributes is `true`, not a list. TurboPuffer rejects the whole
+	// query with HTTP 400 when the list names an attribute the namespace does
+	// not declare, and this list did for every namespace it was pointed at:
+	// gx-review-knowledge has no file_path/symbol/start_line/end_line, and the
+	// org publish namespace has no body/title/category/tier. Both legs of the
+	// PR summary's indexed context were therefore returning nothing at all.
 	vectorQuery := map[string]any{
-		"rank_by": []any{"vector", "ANN", vector},
-		"limit":   map[string]any{"total": limit},
-		"include_attributes": []string{
-			"body", "text", "source_kind", "source_id", "file_path", "symbol", "start_line", "end_line", "title", "url", "source_url", "category", "tier",
-		},
+		"rank_by":            []any{"vector", "ANN", vector},
+		"limit":              map[string]any{"total": limit},
+		"include_attributes": true,
 	}
 	if filters != nil {
 		vectorQuery["filters"] = filters
@@ -1212,39 +1163,51 @@ func gitOutput(repoRoot string, args ...string) string {
 }
 
 func revisionSummaries(artifact reviewbundle.Artifact) []prRevisionSummary {
-	if len(artifact.Stack) > 0 {
-		out := make([]prRevisionSummary, 0, len(artifact.Stack))
-		for _, entry := range artifact.Stack {
-			out = append(out, revisionSummaryFromChange(entry.Change, entry.BranchName, entry.Patch))
-		}
-		return out
+	out := make([]prRevisionSummary, 0, len(artifact.Revisions))
+	for _, revision := range artifact.Revisions {
+		out = append(out, revisionSummaryFromRevision(revision))
 	}
-	if artifact.Change != nil {
-		return []prRevisionSummary{revisionSummaryFromChange(*artifact.Change, pointerString(artifact.Push.BranchName), "")}
+	if len(out) == 0 {
+		return nil
 	}
-	return nil
+	return out
 }
 
-func revisionSummaryFromChange(change reviewbundle.ChangePayload, branchName, patchText string) prRevisionSummary {
-	files := append([]string(nil), change.Files...)
+func revisionSummaryFromRevision(revision reviewbundle.RevisionPayload) prRevisionSummary {
+	files := append([]string(nil), revision.Files...)
 	if len(files) == 0 {
-		files = filesFromPatch(patchText)
+		files = filesFromPatch(revision.Patch)
 	}
-	summary := prRevisionSummary{Description: change.Description, CommitID: change.CurrentCommitID, BranchName: branchName, Files: sortedUnique(files)}
-	if change.ReviewContext != nil {
-		summary.RiskLevel = change.ReviewContext.Risk.Level
-		summary.RiskScore = change.ReviewContext.Risk.Score
-		summary.RiskSignals = append([]string(nil), change.ReviewContext.Risk.Signals...)
+	summary := prRevisionSummary{
+		Description: revisionSubject(revision.Description),
+		CommitID:    revision.CommitID,
+		BranchName:  revision.BranchName,
+		Files:       sortedUnique(files),
+	}
+	if revision.ReviewContext != nil {
+		summary.RiskLevel = revision.ReviewContext.Risk.Level
+		summary.RiskScore = revision.ReviewContext.Risk.Score
+		summary.RiskSignals = append([]string(nil), revision.ReviewContext.Risk.Signals...)
 	}
 	return summary
+}
+
+// revisionSubject reduces a full commit message to its subject line for
+// display; the bundle carries subject plus body.
+func revisionSubject(message string) string {
+	message = strings.TrimSpace(message)
+	if idx := strings.IndexByte(message, '\n'); idx >= 0 {
+		return strings.TrimSpace(message[:idx])
+	}
+	return message
 }
 
 func pullRequestHunks(artifact reviewbundle.Artifact) []prHunkSummary {
 	prURL := pullRequestURL(artifact)
 	var hunks []prHunkSummary
-	for revisionIndex, entry := range artifact.Stack {
-		revisionLabel := firstNonEmpty(strings.TrimSpace(entry.Change.Description), fmt.Sprintf("revision %d", revisionIndex+1))
-		hunks = append(hunks, parsePatchHunks(entry.Patch, revisionLabel, prURL, len(hunks))...)
+	for revisionIndex, revision := range artifact.Revisions {
+		revisionLabel := firstNonEmpty(revisionSubject(revision.Description), fmt.Sprintf("revision %d", revisionIndex+1))
+		hunks = append(hunks, parsePatchHunks(revision.Patch, revisionLabel, prURL, len(hunks))...)
 	}
 	return hunks
 }
@@ -1532,13 +1495,8 @@ func warningQualityHints(artifact reviewbundle.Artifact) []codereview.CodeQualit
 
 func reviewWarnings(artifact reviewbundle.Artifact) []reviewbundle.ReviewFeasibilityWarning {
 	var warnings []reviewbundle.ReviewFeasibilityWarning
-	for _, entry := range artifact.Stack {
-		if entry.Change.ReviewContext != nil {
-			warnings = append(warnings, entry.Change.ReviewContext.FeasibilityWarnings...)
-		}
-	}
-	if artifact.Change != nil && artifact.Change.ReviewContext != nil {
-		warnings = append(warnings, artifact.Change.ReviewContext.FeasibilityWarnings...)
+	for _, context := range artifactReviewContexts(artifact) {
+		warnings = append(warnings, context.FeasibilityWarnings...)
 	}
 	return warnings
 }
@@ -1548,17 +1506,14 @@ func bodyStats(artifact reviewbundle.Artifact, revisions []prRevisionSummary, ex
 	files := map[string]struct{}{}
 	areas := map[string]struct{}{}
 	riskSignals := map[string]struct{}{}
-	for _, entry := range artifact.Stack {
-		stats.AddedLines += addedLines(entry.Patch)
-		stats.DeletedLines += deletedLines(entry.Patch)
-		accumulateContext(&stats, entry.Change.ReviewContext, riskSignals)
+	for _, revision := range artifact.Revisions {
+		stats.AddedLines += addedLines(revision.Patch)
+		stats.DeletedLines += deletedLines(revision.Patch)
+		accumulateContext(&stats, revision.ReviewContext, riskSignals)
 	}
 	for _, patch := range extraPatches {
 		stats.AddedLines += addedLines(patch)
 		stats.DeletedLines += deletedLines(patch)
-	}
-	if len(artifact.Stack) == 0 && artifact.Change != nil {
-		accumulateContext(&stats, artifact.Change.ReviewContext, riskSignals)
 	}
 	for _, revision := range revisions {
 		for _, file := range revision.Files {
@@ -1666,17 +1621,17 @@ func pullRequestURL(artifact reviewbundle.Artifact) string {
 	if artifact.Push.GitHubPullRequestURL != nil && strings.TrimSpace(*artifact.Push.GitHubPullRequestURL) != "" {
 		return strings.TrimSpace(*artifact.Push.GitHubPullRequestURL)
 	}
-	for _, entry := range artifact.Stack {
-		if entry.GitHubPullRequestURL != nil && strings.TrimSpace(*entry.GitHubPullRequestURL) != "" {
-			return strings.TrimSpace(*entry.GitHubPullRequestURL)
+	for _, revision := range artifact.Revisions {
+		if revision.GitHubPullRequestURL != nil && strings.TrimSpace(*revision.GitHubPullRequestURL) != "" {
+			return strings.TrimSpace(*revision.GitHubPullRequestURL)
 		}
 	}
 	return ""
 }
 
 func stackName(artifact reviewbundle.Artifact) string {
-	if len(artifact.Stack) > 0 && strings.TrimSpace(artifact.Stack[0].BranchName) != "" {
-		return strings.TrimSpace(artifact.Stack[0].BranchName)
+	if len(artifact.Revisions) > 0 && strings.TrimSpace(artifact.Revisions[0].BranchName) != "" {
+		return strings.TrimSpace(artifact.Revisions[0].BranchName)
 	}
 	return pointerString(artifact.Push.BranchName)
 }

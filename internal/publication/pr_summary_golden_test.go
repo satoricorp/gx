@@ -85,8 +85,8 @@ func runPRSummaryGoldenCase(t *testing.T, dir string) {
 		artifact.Bundle.Repo.RootPath = reachRoot
 		if headSHA != "" {
 			artifact.Bundle.Push.HeadCommitID = headSHA
-			for i := range artifact.Bundle.Stack {
-				artifact.Bundle.Stack[i].Change.CurrentCommitID = headSHA
+			for i := range artifact.Bundle.Revisions {
+				artifact.Bundle.Revisions[i].CommitID = headSHA
 			}
 		}
 	} else if setup.ReviewMD {

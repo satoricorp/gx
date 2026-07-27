@@ -1,20 +1,26 @@
 {
   "index_status": "pending",
   "event": "gx.pr",
-  "schema_version": 1,
-  "repo": {"root_path": "/repo"},
+  "schema_version": 2,
+  "repo": {
+    "root_path": "/repo"
+  },
   "push": {
     "head_commit_id": "def456",
     "github_pull_request_url": "https://github.com/satoricorp/gx/pull/15"
   },
-  "stack": [{
-    "branch_name": "test/more-coverage",
-    "patch": "diff --git a/internal/app/app_test.go b/internal/app/app_test.go\n--- a/internal/app/app_test.go\n+++ b/internal/app/app_test.go\n@@ -1 +1,2 @@\n package app\n+func TestMore() {}\n",
-    "change": {
-      "current_commit_id": "def456",
+  "revisions": [
+    {
+      "revision_id": "",
+      "commit_id": "def456",
       "description": "extend app tests",
-      "files": ["internal/app/app_test.go"]
-    },
-    "github_pull_request_url": "https://github.com/satoricorp/gx/pull/15"
-  }]
+      "files": [
+        "internal/app/app_test.go"
+      ],
+      "branch_name": "test/more-coverage",
+      "base_branch_name": "",
+      "patch": "diff --git a/internal/app/app_test.go b/internal/app/app_test.go\n--- a/internal/app/app_test.go\n+++ b/internal/app/app_test.go\n@@ -1 +1,2 @@\n package app\n+func TestMore() {}\n",
+      "github_pull_request_url": "https://github.com/satoricorp/gx/pull/15"
+    }
+  ]
 }

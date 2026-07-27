@@ -15,7 +15,7 @@ import (
 	"github.com/satoricorp/gx/internal/version"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type Bundle struct {
 	Event         string            `json:"event"`
@@ -24,8 +24,7 @@ type Bundle struct {
 	GXVersion     string            `json:"gx_version"`
 	Repo          RepoPayload       `json:"repo"`
 	Push          PushPayload       `json:"push"`
-	Change        *ChangePayload    `json:"change,omitempty"`
-	Stack         []StackPayload    `json:"stack,omitempty"`
+	Revisions     []RevisionPayload `json:"revisions"`
 	Sessions      []SessionPayload  `json:"sessions"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
 }
@@ -60,18 +59,23 @@ type PushPayload struct {
 	GitHubPullRequestURL *string `json:"github_pull_request_url,omitempty"`
 }
 
-type ChangePayload struct {
-	ID              int64                  `json:"id"`
-	JJChangeID      string                 `json:"jj_change_id"`
-	CurrentCommitID string                 `json:"current_commit_id"`
-	Description     string                 `json:"description"`
-	ParentChangeID  *string                `json:"parent_change_id,omitempty"`
-	Status          string                 `json:"status"`
-	Files           []string               `json:"files"`
-	DemuxEvidence   []DemuxEvidencePayload `json:"demux_evidence,omitempty"`
-	ReviewContext   *ReviewContextPayload  `json:"review_context,omitempty"`
+// RevisionPayload describes one pushed commit, oldest first in
+// Bundle.Revisions. RevisionID is the GX trailer ID from the commit message
+// and is empty for commits without a trailer.
+type RevisionPayload struct {
+	RevisionID           string                `json:"revision_id"`
+	CommitID             string                `json:"commit_id"`
+	Description          string                `json:"description"`
+	Files                []string              `json:"files"`
+	BranchName           string                `json:"branch_name"`
+	BaseBranchName       string                `json:"base_branch_name"`
+	Patch                string                `json:"patch"`
+	GitHubPullRequestURL *string               `json:"github_pull_request_url,omitempty"`
+	ReviewContext        *ReviewContextPayload `json:"review_context,omitempty"`
 }
 
+// DemuxEvidencePayload never leaves the machine anymore: it feeds the
+// review-context builder from local demux rows and stays off the wire.
 type DemuxEvidencePayload struct {
 	ID                 int64           `json:"id"`
 	DemuxProposalID    string          `json:"demux_proposal_id"`
@@ -178,26 +182,17 @@ type RiskPayload struct {
 	Signals []string `json:"signals,omitempty"`
 }
 
-type StackPayload struct {
-	Change               ChangePayload `json:"change"`
-	BranchName           string        `json:"branch_name"`
-	BaseBranchName       string        `json:"base_branch_name"`
-	Patch                string        `json:"patch"`
-	GitHubPullRequestURL *string       `json:"github_pull_request_url,omitempty"`
-}
-
 type SessionPayload struct {
-	ID               string           `json:"id"`
-	CreatedAt        int64            `json:"created_at"`
-	EndedAt          *int64           `json:"ended_at,omitempty"`
+	ID        string `json:"id"`
+	CreatedAt int64  `json:"created_at"`
+	EndedAt   *int64 `json:"ended_at,omitempty"`
+	// Command is the agent that produced the transcript ("claude", "codex",
+	// "cursor"). The console renders session.command and only falls back to
+	// session.source, so dropping it rendered every session as `command=?`.
 	Command          string           `json:"command"`
 	Cwd              string           `json:"cwd"`
-	ClientPID        *int             `json:"client_pid,omitempty"`
-	ExitCode         *int             `json:"exit_code,omitempty"`
 	GXVersion        string           `json:"gx_version"`
 	Source           *string          `json:"source,omitempty"`
-	ProcessName      *string          `json:"process_name,omitempty"`
-	ParentPID        *int             `json:"parent_pid,omitempty"`
 	LastSeenAt       *int64           `json:"last_seen_at,omitempty"`
 	EndReason        *string          `json:"end_reason,omitempty"`
 	RepoRoot         *string          `json:"repo_root,omitempty"`
@@ -254,8 +249,11 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 		CreatedAt:     time.Now().UnixMilli(),
 		GXVersion:     version.Current(),
 		Repo: RepoPayload{
-			RootPath:      push.Repo.RootPath,
-			Backend:       push.Repo.Backend,
+			RootPath: push.Repo.RootPath,
+			// Pinned rather than copied: stored repo rows can still carry a
+			// stale pre-Git backend value, and this bundle always describes a
+			// git push.
+			Backend:       "git",
 			DefaultRemote: push.Repo.DefaultRemote,
 			DefaultBranch: push.Repo.DefaultBranch,
 			RemoteURL:     push.Repo.RemoteURL,
@@ -269,34 +267,69 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 		},
 	}
 
-	change, err := findPushedChange(ctx, db, push)
+	// Resolve the repos row once, by the same identity rule the write side
+	// uses. Doing this per-commit by root_path alone was how a push could
+	// write its change_sessions rows correctly and still publish sessions: [].
+	repoID, repoFound, err := findRepoID(ctx, db, push.Repo.GitCommonDir, push.Repo.RootPath)
 	if err != nil {
 		return Bundle{}, err
 	}
-	if change != nil {
-		bundle.Change = change
-		sessions, err := listChangeSessions(ctx, db, change.ID)
-		if err != nil {
-			return Bundle{}, err
+
+	branchName := pointerValue(bundle.Push.BranchName)
+	baseBranchName := pointerValue(push.Repo.DefaultBranch)
+	bundle.Revisions = make([]RevisionPayload, 0, len(push.Commits))
+	seenSessions := map[string]bool{}
+	for _, commit := range push.Commits {
+		revision := RevisionPayload{
+			RevisionID:           commit.RevisionID,
+			CommitID:             commit.CommitID,
+			Description:          commit.Message,
+			Files:                commit.Files,
+			BranchName:           branchName,
+			BaseBranchName:       baseBranchName,
+			Patch:                commit.Patch,
+			GitHubPullRequestURL: push.GitHubPullRequestURL,
 		}
-		bundle.Sessions = sessions
-	}
-	if len(push.Published) > 0 {
-		stack, err := listPushedStack(ctx, db, push)
-		if err != nil {
-			return Bundle{}, err
+		if commit.RevisionID != "" && repoFound {
+			row, err := findRevisionRow(ctx, db, repoID, commit.RevisionID)
+			if err != nil {
+				return Bundle{}, err
+			}
+			if row != nil {
+				if len(revision.Files) == 0 {
+					revision.Files = row.files
+				}
+				revision.ReviewContext = row.reviewContext
+				sessions, err := listChangeSessions(ctx, db, row.changeRowID)
+				if err != nil {
+					return Bundle{}, err
+				}
+				for _, session := range sessions {
+					if seenSessions[session.ID] {
+						continue
+					}
+					seenSessions[session.ID] = true
+					bundle.Sessions = append(bundle.Sessions, session)
+				}
+			}
 		}
-		bundle.Stack = stack
-		bundle.Sessions, err = listStackSessions(ctx, db, stack)
-		if err != nil {
-			return Bundle{}, err
+		if revision.Files == nil {
+			revision.Files = []string{}
 		}
+		bundle.Revisions = append(bundle.Revisions, revision)
 	}
 	if bundle.Sessions == nil {
 		bundle.Sessions = []SessionPayload{}
 	}
 	bundle.Sessions = capSessionPayloads(bundle.Sessions)
 	return bundle, nil
+}
+
+func pointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 const (
@@ -333,71 +366,90 @@ func capCapturedBody(body []byte, budget int) ([]byte, int) {
 	return body, budget - len(body)
 }
 
-func listPushedStack(ctx context.Context, db *sql.DB, push vcs.PushResult) ([]StackPayload, error) {
-	stack := make([]StackPayload, 0, len(push.Published))
-	for _, entry := range push.Published {
-		change, err := findChangeByJJID(ctx, db, push.Repo.RootPath, entry.Change.ChangeID)
-		if err != nil {
-			return nil, err
-		}
-		if change == nil {
-			continue
-		}
-		stack = append(stack, StackPayload{
-			Change:               *change,
-			BranchName:           entry.BranchName,
-			BaseBranchName:       entry.BaseBranchName,
-			Patch:                entry.Patch,
-			GitHubPullRequestURL: entry.GitHubPullRequestURL,
-		})
-	}
-	return stack, nil
+// revisionRow is the local change row for a GX revision ID: the DB id that
+// links sessions, the recorded files, and the assembled review context. The
+// local `changes` table keeps its historical column names; none of them reach
+// the wire.
+type revisionRow struct {
+	changeRowID   int64
+	files         []string
+	reviewContext *ReviewContextPayload
 }
 
-func findPushedChange(ctx context.Context, db *sql.DB, push vcs.PushResult) (*ChangePayload, error) {
-	if push.CurrentChange == nil {
-		return nil, nil
+// findRepoID resolves the repos row for a push exactly the way the write side
+// does — storage.Store.UpsertRepo (internal/storage/writer.go) matches on
+// git_common_dir first and falls back to root_path.
+//
+// Repository identity is the git common dir, not the worktree path: linked
+// worktrees of one repository deliberately share a single repos row (see
+// vcs.RepoIdentityKey), and UpsertRepo's existing-row UPDATE never rewrites
+// root_path. So the stored root_path is whatever worktree happened to register
+// the row first, and matching on it alone reads a different row than the one
+// the change and its sessions were just written under — or no row at all. That
+// silently published `sessions: []` for every push from a linked worktree and
+// for any repository whose stored root_path had drifted.
+func findRepoID(ctx context.Context, db *sql.DB, gitCommonDir, rootPath string) (int64, bool, error) {
+	commonDir := strings.TrimSpace(gitCommonDir)
+	root := strings.TrimSpace(rootPath)
+	if commonDir == "" {
+		commonDir = root
 	}
-	return findChangeByJJID(ctx, db, push.Repo.RootPath, push.CurrentChange.ChangeID)
+	if commonDir == "" {
+		return 0, false, nil
+	}
+	// A repos row can carry an empty root_path, so an absent root must never be
+	// spelled as "" here or it would match that row by accident.
+	rootMatch := root
+	if rootMatch == "" {
+		rootMatch = commonDir
+	}
+	var id int64
+	err := db.QueryRowContext(ctx, `
+		SELECT id
+		FROM repos
+		WHERE git_common_dir = ? OR root_path = ?
+		ORDER BY CASE WHEN git_common_dir = ? THEN 0 ELSE 1 END, updated_at DESC
+		LIMIT 1
+	`, commonDir, rootMatch, commonDir).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("resolve pushed repo: %w", err)
+	}
+	return id, true, nil
 }
 
-func findChangeByJJID(ctx context.Context, db *sql.DB, repoRoot, jjChangeID string) (*ChangePayload, error) {
+func findRevisionRow(ctx context.Context, db *sql.DB, repoID int64, revisionID string) (*revisionRow, error) {
 	row := db.QueryRowContext(ctx, `
-		SELECT c.id, c.jj_change_id, c.current_commit_id, c.description, c.parent_change_id, c.status,
-			COALESCE(cr.changed_files_json, '[]')
-		FROM repos r
-		JOIN changes c ON c.repo_id = r.id
+		SELECT c.id, COALESCE(cr.changed_files_json, '[]')
+		FROM changes c
 		LEFT JOIN change_revisions cr ON cr.change_id = c.id
-		WHERE r.root_path = ? AND c.jj_change_id = ?
+		WHERE c.repo_id = ? AND c.jj_change_id = ?
 		ORDER BY cr.created_at DESC, cr.id DESC
 		LIMIT 1
-	`, repoRoot, jjChangeID)
+	`, repoID, revisionID)
 
-	var change ChangePayload
-	var parent sql.NullString
+	var result revisionRow
 	var filesJSON string
-	if err := row.Scan(&change.ID, &change.JJChangeID, &change.CurrentCommitID, &change.Description, &parent, &change.Status, &filesJSON); err != nil {
+	if err := row.Scan(&result.changeRowID, &filesJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("find pushed change: %w", err)
+		return nil, fmt.Errorf("find pushed revision: %w", err)
 	}
-	if parent.Valid {
-		change.ParentChangeID = &parent.String
+	if err := json.Unmarshal([]byte(filesJSON), &result.files); err != nil {
+		result.files = nil
 	}
-	if err := json.Unmarshal([]byte(filesJSON), &change.Files); err != nil {
-		change.Files = nil
-	}
-	evidence, err := listChangeDemuxEvidence(ctx, db, change.ID)
+	evidence, err := listChangeDemuxEvidence(ctx, db, result.changeRowID)
 	if err != nil {
 		return nil, err
 	}
-	change.DemuxEvidence = evidence
-	linkedSessionIDs, err := listChangeSessionIDs(ctx, db, change.ID)
+	linkedSessionIDs, err := listChangeSessionIDs(ctx, db, result.changeRowID)
 	if err != nil {
 		return nil, err
 	}
-	agentProvenance, err := listChangeAgentProvenance(ctx, db, change.ID)
+	agentProvenance, err := listChangeAgentProvenance(ctx, db, result.changeRowID)
 	if err != nil {
 		return nil, err
 	}
@@ -405,8 +457,8 @@ func findChangeByJJID(ctx context.Context, db *sql.DB, repoRoot, jjChangeID stri
 	if err != nil {
 		return nil, err
 	}
-	change.ReviewContext = buildReviewContext(change.Files, evidence, reviewsource.BuildGraph(evidenceStatuses(evidence), linkedSessionIDs, transcriptSources), agentProvenance)
-	return &change, nil
+	result.reviewContext = buildReviewContext(result.files, evidence, reviewsource.BuildGraph(evidenceStatuses(evidence), linkedSessionIDs, transcriptSources), agentProvenance)
+	return &result, nil
 }
 
 func listChangeSessionIDs(ctx context.Context, db *sql.DB, changeID int64) ([]string, error) {
@@ -846,29 +898,10 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func listStackSessions(ctx context.Context, db *sql.DB, stack []StackPayload) ([]SessionPayload, error) {
-	seen := map[string]bool{}
-	var sessions []SessionPayload
-	for _, entry := range stack {
-		changeSessions, err := listChangeSessions(ctx, db, entry.Change.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, session := range changeSessions {
-			if seen[session.ID] {
-				continue
-			}
-			seen[session.ID] = true
-			sessions = append(sessions, session)
-		}
-	}
-	return sessions, nil
-}
-
 func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]SessionPayload, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.client_pid, s.exit_code, s.gx_version,
-			s.source, s.process_name, s.parent_pid, s.last_seen_at, s.end_reason, s.repo_root,
+		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.gx_version,
+			s.source, s.last_seen_at, s.end_reason, s.repo_root,
 			s.models_json, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens
 		FROM change_sessions cs
 		JOIN sessions s ON s.id = cs.session_id
@@ -885,8 +918,8 @@ func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]Sess
 		var s SessionPayload
 		var modelsJSON string
 		if err := rows.Scan(
-			&s.ID, &s.CreatedAt, &s.EndedAt, &s.Command, &s.Cwd, &s.ClientPID, &s.ExitCode, &s.GXVersion,
-			&s.Source, &s.ProcessName, &s.ParentPID, &s.LastSeenAt, &s.EndReason, &s.RepoRoot,
+			&s.ID, &s.CreatedAt, &s.EndedAt, &s.Command, &s.Cwd, &s.GXVersion,
+			&s.Source, &s.LastSeenAt, &s.EndReason, &s.RepoRoot,
 			&modelsJSON, &s.InputTokens, &s.OutputTokens, &s.CacheReadTokens, &s.CacheWriteTokens,
 		); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)

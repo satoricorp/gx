@@ -220,7 +220,7 @@ func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
 			HeadCommitID:         "commit-head",
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			BranchName:     "feature/github-pr-summary",
 			BaseBranchName: "main",
 			Patch: strings.Join([]string{
@@ -234,21 +234,19 @@ func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
 				" \treturn p.PublishArtifact(ctx, artifact)",
 				"",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				JJChangeID:      "change-one",
-				CurrentCommitID: "abcdef123456",
-				Description:     "adopt GitHub PR summaries",
-				Files: []string{
-					"internal/publication/publication.go",
-					"internal/publication/github_pr.go",
-					"internal/publication/pr_body.go",
-				},
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					Risk: reviewbundle.RiskPayload{
-						Level:   "high",
-						Score:   80,
-						Signals: []string{"structural_dependencies", "warning:publication_order"},
-					},
+			RevisionID:  "change-one",
+			CommitID:    "abcdef123456",
+			Description: "adopt GitHub PR summaries",
+			Files: []string{
+				"internal/publication/publication.go",
+				"internal/publication/github_pr.go",
+				"internal/publication/pr_body.go",
+			},
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				Risk: reviewbundle.RiskPayload{
+					Level:   "high",
+					Score:   80,
+					Signals: []string{"structural_dependencies", "warning:publication_order"},
 				},
 			},
 			GitHubPullRequestURL: &prURL,

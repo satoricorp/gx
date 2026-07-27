@@ -47,7 +47,7 @@ func TestPublishBundleUploadsAndIndexes(t *testing.T) {
 	if len(uploader.uploaded) != 1 || uploader.uploaded[0].ReviewID != "" || uploader.uploaded[0].ReviewURL != "" {
 		t.Fatalf("uploaded artifact = %#v, want pre-cloud canonical artifact", uploader.uploaded)
 	}
-	if uploader.uploaded[0].SchemaVersion != reviewbundle.SchemaVersion || uploader.uploaded[0].Change == nil || uploader.uploaded[0].Change.ReviewContext == nil {
+	if uploader.uploaded[0].SchemaVersion != reviewbundle.SchemaVersion || len(uploader.uploaded[0].Revisions) == 0 || uploader.uploaded[0].Revisions[0].ReviewContext == nil {
 		t.Fatalf("uploaded artifact missing review data: %#v", uploader.uploaded[0])
 	}
 	if !result.SemanticIndexed || result.SemanticChunks != 1 || result.SemanticIndexError != "" {
@@ -382,8 +382,8 @@ func bundleWithTranscriptSource() reviewbundle.Bundle {
 		Event:         "gx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
-		Change: &reviewbundle.ChangePayload{
-			JJChangeID:  "change-one",
+		Revisions: []reviewbundle.RevisionPayload{{
+			RevisionID:  "change-one",
 			Description: "feat alpha",
 			ReviewContext: &reviewbundle.ReviewContextPayload{
 				TranscriptSources: []reviewbundle.ReviewTranscriptSource{{
@@ -394,10 +394,9 @@ func bundleWithTranscriptSource() reviewbundle.Bundle {
 					Status:     "explicit",
 				}},
 			},
-		},
+		}},
 		Sessions: []reviewbundle.SessionPayload{{
-			ID:      "session-one",
-			Command: "codex",
+			ID: "session-one",
 			Requests: []reviewbundle.RequestPayload{{
 				ID:             "request-one",
 				Provider:       "openai",
