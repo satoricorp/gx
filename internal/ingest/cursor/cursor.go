@@ -182,7 +182,9 @@ type composerMeta struct {
 }
 
 func loadComposers(ctx context.Context, db *sql.DB) (map[string]composerMeta, error) {
-	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'`)
+	// Key-range predicates use the UNIQUE index; LIKE would full-scan the
+	// table (default LIKE is case-insensitive, which defeats the index).
+	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'`)
 	if err != nil {
 		return nil, fmt.Errorf("query composers: %w", err)
 	}
@@ -226,7 +228,7 @@ type bubble struct {
 }
 
 func loadBubbles(ctx context.Context, db *sql.DB) (map[string][]bubble, error) {
-	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'`)
+	rows, err := db.QueryContext(ctx, `SELECT key, value FROM cursorDiskKV WHERE key >= 'bubbleId:' AND key < 'bubbleId;'`)
 	if err != nil {
 		return nil, fmt.Errorf("query bubbles: %w", err)
 	}
