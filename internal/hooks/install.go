@@ -109,50 +109,59 @@ func hookRepoArg() string {
 	return `repo="$(git rev-parse --show-toplevel)"`
 }
 
-func prepareCommitMsgScript(gxPath string) string {
+// hookResolveGX emits shell that resolves the gx binary at run time: the
+// pinned install-time path when it is still an executable file, else gx from
+// PATH. Pinned paths go stale — reinstalls move the binary, and a gx run from
+// a temporary location pins that location — and a hook that cannot find gx
+// must skip GX work silently rather than break every commit and push.
+func hookResolveGX(gxPath string) string {
 	if gxPath == "" {
 		gxPath = "gx"
 	}
+	return fmt.Sprintf(`gx_bin=%q
+case "$gx_bin" in /*) ;; *) gx_bin="" ;; esac
+if [ ! -f "$gx_bin" ] || [ ! -x "$gx_bin" ]; then
+  gx_bin="$(command -v gx 2>/dev/null)" || gx_bin=""
+fi
+[ -n "$gx_bin" ] || exit 0`, gxPath)
+}
+
+func prepareCommitMsgScript(gxPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
-%q __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
-`, hookMarker, hookRepoArg(), gxPath)
+%s
+"$gx_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
+`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
 }
 
 func postCommitScript(gxPath string) string {
-	if gxPath == "" {
-		gxPath = "gx"
-	}
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
-%q __hooks post-commit --repo "$repo" || {
+%s
+"$gx_bin" __hooks post-commit --repo "$repo" || {
   echo "gx post-commit metadata recording failed" >&2
   exit 0
 }
-`, hookMarker, hookRepoArg(), gxPath)
+`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
 }
 
 func postRewriteScript(gxPath string) string {
-	if gxPath == "" {
-		gxPath = "gx"
-	}
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
-%q __hooks post-rewrite --repo "$repo" || {
+%s
+"$gx_bin" __hooks post-rewrite --repo "$repo" || {
   echo "gx post-rewrite metadata update failed" >&2
   exit 0
 }
-`, hookMarker, hookRepoArg(), gxPath)
+`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
 }
 
 func prePushScript(gxPath string) string {
-	if gxPath == "" {
-		gxPath = "gx"
-	}
 	return fmt.Sprintf(`#!/bin/sh
+%s
 %s
 remote="$1"
 url="$2"
@@ -166,8 +175,8 @@ do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  %q capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
+  "$gx_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
 done
 exit 0
-`, hookMarker, gxPath)
+`, hookMarker, hookResolveGX(gxPath))
 }

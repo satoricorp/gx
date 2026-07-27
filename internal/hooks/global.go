@@ -386,19 +386,33 @@ gx_resolve_local_hook() {
 `, hookMarker, globalHookMarker, RepoEnabledConfigKey, quotedDir, hooksPathConfigKey)
 }
 
-// globalHookScript renders one global hook script.
-func globalHookScript(spec globalHookSpec, gxPath, hooksDir string) string {
+// globalGXResolver emits shell that resolves gx at run time: the pinned
+// install-time path when it is still an executable file, else gx from PATH.
+// Unlike the per-repo hooks, a global script must never exit when gx is
+// missing — it still has to chain to the repository's own hook — so gx_bin is
+// left empty and the GX work is skipped instead.
+func globalGXResolver(gxPath string) string {
 	if strings.TrimSpace(gxPath) == "" {
 		gxPath = "gx"
 	}
+	return fmt.Sprintf(`gx_bin=%s
+case "$gx_bin" in /*) ;; *) gx_bin="" ;; esac
+if [ ! -f "$gx_bin" ] || [ ! -x "$gx_bin" ]; then
+  gx_bin="$(command -v gx 2>/dev/null)" || gx_bin=""
+fi`, shellSingleQuote(gxPath))
+}
+
+// globalHookScript renders one global hook script.
+func globalHookScript(spec globalHookSpec, gxPath, hooksDir string) string {
 	preamble := globalHookPreamble(hooksDir)
-	gx := shellSingleQuote(gxPath)
+	resolver := globalGXResolver(gxPath)
 	switch spec.gx {
 	case "prepare-commit-msg":
 		return preamble + fmt.Sprintf(`
+%s
 gx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$gx_repo" ]; then
-  %s __hooks prepare-commit-msg --repo "$gx_repo" --message-path "$1" || {
+if [ -n "$gx_bin" ] && [ -n "$gx_repo" ]; then
+  "$gx_bin" __hooks prepare-commit-msg --repo "$gx_repo" --message-path "$1" || {
     echo "gx prepare-commit-msg failed; commit continues without a GX trailer" >&2
   }
 fi
@@ -407,12 +421,13 @@ if [ -n "$gx_local_hook" ]; then
   exec "$gx_local_hook" "$@"
 fi
 exit 0
-`, gx)
+`, resolver)
 	case "post-commit":
 		return preamble + fmt.Sprintf(`
+%s
 gx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$gx_repo" ]; then
-  %s __hooks post-commit --repo "$gx_repo" || {
+if [ -n "$gx_bin" ] && [ -n "$gx_repo" ]; then
+  "$gx_bin" __hooks post-commit --repo "$gx_repo" || {
     echo "gx post-commit metadata recording failed" >&2
   }
 fi
@@ -421,17 +436,18 @@ if [ -n "$gx_local_hook" ]; then
   exec "$gx_local_hook" "$@"
 fi
 exit 0
-`, gx)
+`, resolver)
 	case "post-rewrite":
 		return preamble + fmt.Sprintf(`
+%s
 gx_stdin="$(mktemp "${TMPDIR:-/tmp}/gx-post-rewrite.XXXXXX" 2>/dev/null)" || gx_stdin=""
 if [ -n "$gx_stdin" ]; then
   trap 'rm -f "$gx_stdin"' EXIT
   cat > "$gx_stdin"
 fi
 gx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$gx_repo" ] && [ -n "$gx_stdin" ]; then
-  %s __hooks post-rewrite --repo "$gx_repo" < "$gx_stdin" || {
+if [ -n "$gx_bin" ] && [ -n "$gx_repo" ] && [ -n "$gx_stdin" ]; then
+  "$gx_bin" __hooks post-rewrite --repo "$gx_repo" < "$gx_stdin" || {
     echo "gx post-rewrite metadata update failed" >&2
   }
 fi
@@ -445,9 +461,10 @@ if [ -n "$gx_local_hook" ]; then
   exit $?
 fi
 exit 0
-`, gx)
+`, resolver)
 	case "pre-push":
 		return preamble + fmt.Sprintf(`
+%s
 gx_remote="$1"
 gx_url="$2"
 gx_stdin="$(mktemp "${TMPDIR:-/tmp}/gx-pre-push.XXXXXX" 2>/dev/null)" || gx_stdin=""
@@ -459,7 +476,7 @@ else
   cat > /dev/null
 fi
 gx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$gx_repo" ] && [ -n "$gx_stdin" ]; then
+if [ -n "$gx_bin" ] && [ -n "$gx_repo" ] && [ -n "$gx_stdin" ]; then
   while read gx_local_ref gx_local_sha gx_remote_ref gx_remote_sha
   do
     if [ "$gx_local_sha" = "0000000000000000000000000000000000000000" ]; then
@@ -470,7 +487,7 @@ if [ -n "$gx_repo" ] && [ -n "$gx_stdin" ]; then
     else
       gx_range="${gx_remote_sha}..${gx_local_sha}"
     fi
-    %s capture push --remote "$gx_remote" --ref-range "$gx_range" --local-ref "$gx_local_ref" --head-sha "$gx_local_sha" --repo "$gx_repo" || true
+    "$gx_bin" capture push --remote "$gx_remote" --ref-range "$gx_range" --local-ref "$gx_local_ref" --head-sha "$gx_local_sha" --repo "$gx_repo" || true
   done < "$gx_stdin"
 fi
 gx_resolve_local_hook pre-push
@@ -483,7 +500,7 @@ if [ -n "$gx_local_hook" ]; then
   exit $?
 fi
 exit 0
-`, gx)
+`, resolver)
 	}
 
 	drain := ""

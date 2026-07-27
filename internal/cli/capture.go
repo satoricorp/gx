@@ -75,6 +75,11 @@ func runCaptureSync(ctx context.Context, out interface{ Write([]byte) (int, erro
 	return nil
 }
 
+// runPushHook is a seam for tests: the real hook runner needs a git repo and a
+// live staging database, neither of which is the subject of the command's own
+// error reporting.
+var runPushHook = hooks.RunPush
+
 func newCapturePushCommand(ctx context.Context) *cobra.Command {
 	var (
 		repoRoot string
@@ -91,7 +96,7 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 		Short: "Run capture pipeline for a pushed ref range",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			toolList := splitCaptureTools(tools)
-			outcome, err := hooks.RunPush(ctx, hooks.PushOptions{
+			outcome, err := runPushHook(ctx, hooks.PushOptions{
 				RepoRoot: repoRoot,
 				Remote:   remote,
 				RefRange: refRange,
@@ -101,26 +106,59 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 				HeadSHA:  headSHA,
 				Tools:    toolList,
 			})
+			// The command still exits 0 — it runs inside a git hook and must
+			// never block a push — but a failure is printed rather than
+			// discarded. Swallowing it left an empty `extract=` as the only
+			// evidence that anything went wrong, which reads exactly like a
+			// clean run that found nothing.
 			if err != nil {
-				return nil
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture push failed: %v\n", err)
 			}
 			result := outcome.Result
-			fmt.Fprintf(cmd.OutOrStdout(), "capture staged extract=%s sessions=%d coverage=%.1f%% ref=%s shareable=%d/%d\n",
-				result.StagedExtractID,
-				result.StagedSessions,
-				result.HunkCoverage*100,
-				result.RefRange,
-				outcome.ShareableExtract,
-				outcome.ShareableSession,
-			)
+			// A run that deliberately did nothing says so. Printing the
+			// staging line here would emit the byte-for-byte signature of a
+			// failed run (`extract=` empty) for a paused capture or a repo
+			// that opted out, which is how one line came to mean four things.
+			if outcome.SkipReason != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "capture skipped: %s\n", outcome.SkipReason)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "capture staged extract=%s sessions=%d coverage=%.1f%% ref=%s shareable=%d/%d\n",
+					result.StagedExtractID,
+					result.StagedSessions,
+					result.HunkCoverage*100,
+					result.RefRange,
+					outcome.ShareableExtract,
+					outcome.ShareableSession,
+				)
+			}
 			if outcome.Publication.Queued {
 				fmt.Fprintf(cmd.OutOrStdout(), "publication queued id=%s\n", outcome.Publication.QueueID)
 			}
 			if outcome.CaptureError != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture failed, so this push has no session context: %s\n", outcome.CaptureError)
 			}
+			if outcome.ShareableError != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture rows staged but not marked uploadable: %s\n", outcome.ShareableError)
+			}
 			if outcome.RecoveryError != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: repair GX revision metadata: %s\n", outcome.RecoveryError)
+			}
+			if outcome.AttachError != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push's review artifact will list no sessions: %s\n", outcome.AttachError)
+			}
+			if outcome.PublicationError != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push queued no GX review artifact: %s\n", outcome.PublicationError)
+			}
+			// Uploads happen in a detached process whose output goes nowhere,
+			// so this is the only place a failing upload can reach a human.
+			if failures := outcome.UploadFailures; failures.Total() > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %d capture upload(s) failed (%d gave up after %d attempts): %s\n",
+					failures.Total(), failures.ExhaustedRows, storage.MaxUploadAttempts, failures.LastError)
+			}
+			// One tool being unavailable is survivable but never silent: it
+			// means this push carries less session context than it could.
+			for _, problem := range result.DiscoveryProblems {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture skipped a tool: %s\n", problem)
 			}
 			return nil
 		},
