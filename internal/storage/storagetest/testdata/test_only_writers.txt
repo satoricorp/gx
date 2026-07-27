@@ -1,0 +1,56 @@
+# Storage methods that only tests call.
+#
+# Each line is one exported method on storage.Store or storage.CaptureStage that
+# has zero production callers and at least one test caller. Seeding or asserting
+# through such a method proves a state a real gx install cannot reach: that is
+# precisely how the session bug survived a green suite for 174 published
+# bundles, seeded by store.WriteSession, which no production code ever called.
+#
+# THIS LIST IS A RATCHET. Entries may be removed, never added.
+# TestSeedersAreProductionWriters fails both ways: on an unlisted offender, and
+# on a listed name that is no longer one. Removing an entry means either wiring
+# the method into production, rewriting the test to seed through the writer
+# production uses, or deleting the method.
+#
+# Already removed:
+#   WriteSession — deleted outright. Its fourteen test call sites now use
+#   UpsertObservedSession (the push path's writer, called by
+#   vcs.AttachSessionsFromHunkLinks) or UpsertCursorSession (the ingest path,
+#   the only production writer of process_name and last_seen_at).
+
+# --- Session rows nothing in production writes any more --------------------
+# The daemon that wrote these is deleted. Rewriting the tests means deciding
+# whether sessions still need client_pid/exit_code/end_reason at all.
+UpsertSession           no production caller; UpsertObservedSession replaced it on the push path
+UpsertSessionContext    no production caller; session_contexts is empty on real machines
+SessionContext          read side of the above
+
+# --- Proxy-era request/response rows ---------------------------------------
+# `requests` and `responses` are both empty on a real machine, yet the bundle's
+# session payload assertions are built on them. Nothing writes them since the
+# proxy was removed.
+WriteRequest            no production caller; requests table is empty on real installs
+WriteResponse           no production caller; responses table is empty on real installs
+
+# --- Demux proposals -------------------------------------------------------
+# reviewbundle reads change_demux_evidence to build revision.ReviewContext, but
+# nothing in production ever writes it, so that whole branch is validated only
+# against data a real machine cannot produce. Removing these entries forces the
+# decision: wire demux back up, or stop reading a table nothing fills.
+UpsertDemuxProposal                 no production writer of demux_proposals
+FindDemuxProposal                   read side of the above
+FindLatestDemuxProposal             read side of the above
+ListDemuxProposals                  read side of the above
+UpdateDemuxProposalStatus           read/write side of the above
+DeletePendingDemuxProposalsForRepo  read/write side of the above
+WriteChangeDemuxEvidence            no production writer of change_demux_evidence
+ListChangeDemuxEvidenceByProposal   read side of the above
+
+# --- Capture staging queries that differ from the ones production runs ------
+# PendingSessions is `WHERE uploaded_at IS NULL`; production uploads through
+# ShareableSessions, which also requires `shareable_at IS NOT NULL` and bounded
+# attempts. On the author's database the two differ by 121 rows / 9.7 MB, every
+# one of them invisible to production and visible to every test asserting
+# through PendingSessions. Same divergence for extracts.
+PendingSessions         production uploads through ShareableSessions, not this
+PendingExtracts         production uploads through ShareableExtracts, not this

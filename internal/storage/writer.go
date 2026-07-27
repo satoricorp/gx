@@ -12,16 +12,8 @@ import (
 	"github.com/satoricorp/gx/internal/agentprovenance"
 )
 
-type StorageWriter interface {
-	WriteSession(ctx context.Context, s Session) error
-	WriteRequest(ctx context.Context, r Request) error
-	WriteResponse(ctx context.Context, resp Response) error
-}
-
 type Store struct {
 	db          *sql.DB
-	sessionStmt *sql.Stmt
-	endStmt     *sql.Stmt
 	requestStmt *sql.Stmt
 	respStmt    *sql.Stmt
 }
@@ -34,24 +26,6 @@ type sqlExecutor interface {
 var ftsQueryTokenPattern = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 func NewStore(ctx context.Context, db *sql.DB) (*Store, error) {
-	sessionStmt, err := db.PrepareContext(ctx, `
-		INSERT INTO sessions (
-			id, created_at, ended_at, command, cwd, client_pid, exit_code, gx_version,
-			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("prepare session insert: %w", err)
-	}
-	endStmt, err := db.PrepareContext(ctx, `
-		UPDATE sessions
-		SET ended_at = ?, exit_code = ?
-		WHERE id = ?
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("prepare session end: %w", err)
-	}
 	requestStmt, err := db.PrepareContext(ctx, `
 		INSERT INTO requests (id, session_id, created_at, provider, endpoint, method, model, request_body, request_headers)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -73,8 +47,6 @@ func NewStore(ctx context.Context, db *sql.DB) (*Store, error) {
 
 	return &Store{
 		db:          db,
-		sessionStmt: sessionStmt,
-		endStmt:     endStmt,
 		requestStmt: requestStmt,
 		respStmt:    respStmt,
 	}, nil
@@ -82,7 +54,7 @@ func NewStore(ctx context.Context, db *sql.DB) (*Store, error) {
 
 func (s *Store) Close() error {
 	var firstErr error
-	for _, stmt := range []*sql.Stmt{s.sessionStmt, s.endStmt, s.requestStmt, s.respStmt} {
+	for _, stmt := range []*sql.Stmt{s.requestStmt, s.respStmt} {
 		if stmt == nil {
 			continue
 		}
@@ -96,29 +68,19 @@ func (s *Store) Close() error {
 	return firstErr
 }
 
-func (s *Store) WriteSession(ctx context.Context, session Session) error {
-	_, err := s.sessionStmt.ExecContext(
-		ctx,
-		session.ID,
-		session.CreatedAt,
-		session.EndedAt,
-		session.Command,
-		session.Cwd,
-		session.ClientPID,
-		session.ExitCode,
-		session.GXVersion,
-		session.Source,
-		session.ProcessName,
-		session.ParentPID,
-		session.LastSeenAt,
-		session.EndReason,
-		session.RepoRoot,
-	)
-	if err != nil {
-		return fmt.Errorf("insert session: %w", err)
-	}
-	return nil
-}
+// WriteSession is deliberately absent.
+//
+// It was a bare INSERT into `sessions` with no production callers and fourteen
+// test call sites, and it is how the session bug survived a green suite: every
+// session test seeded rows through it while UpsertObservedSession — the only
+// writer of that table production actually runs — could never bootstrap its
+// first row. Tests now seed through UpsertObservedSession (transcript
+// observations, the push path) or UpsertCursorSession (the ingest path, the
+// only writer of process_name and last_seen_at).
+//
+// TestSeedersAreProductionWriters in internal/storage/storagetest fails on any
+// exported storage method that has test callers and no production ones, so
+// reintroducing this shape is a test failure rather than a silent regression.
 
 func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `
@@ -158,6 +120,44 @@ func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 	)
 	if err != nil {
 		return fmt.Errorf("upsert session: %w", err)
+	}
+	return nil
+}
+
+// UpsertObservedSession records a session that was observed as a transcript on
+// disk, filling in blanks on an existing row but never overwriting what is
+// already there.
+//
+// UpsertSession is the wrong writer for this. Its ON CONFLICT clause lets a
+// non-empty incoming value win, and a transcript observation only knows the
+// tool name. Session IDs derived from a transcript path can collide with IDs
+// minted by a richer ingest: Cursor's state.vscdb leg keeps the parser-minted
+// "cursor-<composerID>", byte-identical to what internal/ingest/cursor writes,
+// so an UpsertSession here would replace the ingested composer title
+// ("cursor: Refactor the auth middleware") with a bare "cursor". That loss is
+// permanent — the ingest writer is INSERT OR IGNORE and never rewrites command
+// on a later pass.
+func (s *Store) UpsertObservedSession(ctx context.Context, session Session) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, created_at, command, cwd, gx_version, source, repo_root)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			command = CASE WHEN TRIM(COALESCE(sessions.command, '')) = '' THEN excluded.command ELSE sessions.command END,
+			cwd = CASE WHEN TRIM(COALESCE(sessions.cwd, '')) = '' THEN excluded.cwd ELSE sessions.cwd END,
+			gx_version = CASE WHEN TRIM(COALESCE(sessions.gx_version, '')) = '' THEN excluded.gx_version ELSE sessions.gx_version END,
+			source = CASE WHEN TRIM(COALESCE(sessions.source, '')) = '' THEN excluded.source ELSE sessions.source END,
+			repo_root = CASE WHEN TRIM(COALESCE(sessions.repo_root, '')) = '' THEN excluded.repo_root ELSE sessions.repo_root END
+	`,
+		session.ID,
+		session.CreatedAt,
+		session.Command,
+		session.Cwd,
+		session.GXVersion,
+		session.Source,
+		session.RepoRoot,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert observed session: %w", err)
 	}
 	return nil
 }
@@ -219,14 +219,6 @@ func (s *Store) TouchSession(ctx context.Context, sessionID string, lastSeenAt i
 	`, lastSeenAt, sessionID)
 	if err != nil {
 		return fmt.Errorf("touch session: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt int64, exitCode int) error {
-	_, err := s.endStmt.ExecContext(ctx, endedAt, exitCode, sessionID)
-	if err != nil {
-		return fmt.Errorf("end session: %w", err)
 	}
 	return nil
 }
@@ -820,54 +812,16 @@ func (s *Store) SessionContext(ctx context.Context, sessionID string) (*SessionC
 	return &context, nil
 }
 
-func (s *Store) WriteSessionEventAttributions(ctx context.Context, attributions []SessionEventAttribution) error {
-	for _, attr := range attributions {
-		if attr.RepoID == 0 || attr.ChangeID == 0 || attr.Tool == "" || attr.SessionID == "" || attr.EventFingerprint == "" || attr.AttributedVia == "" {
-			continue
-		}
-		if attr.CreatedAt == 0 {
-			attr.CreatedAt = time.Now().UnixMilli()
-		}
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO session_event_attributions (
-				repo_id, tool, session_id, event_fingerprint, change_id, stack_bookmark,
-				attributed_via, confidence, created_at
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, attr.RepoID, attr.Tool, attr.SessionID, attr.EventFingerprint, attr.ChangeID, attr.StackBookmark, attr.AttributedVia, attr.Confidence, attr.CreatedAt); err != nil {
-			return fmt.Errorf("insert session event attribution: %w", err)
-		}
-	}
-	return nil
-}
-
-func (s *Store) AttributedSessionEventKeys(ctx context.Context, repoID int64) (map[string]struct{}, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT tool, session_id, event_fingerprint
-		FROM session_event_attributions
-		WHERE repo_id = ?
-	`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("list session event attributions: %w", err)
-	}
-	defer rows.Close()
-	keys := map[string]struct{}{}
-	for rows.Next() {
-		var tool, sessionID, fingerprint string
-		if err := rows.Scan(&tool, &sessionID, &fingerprint); err != nil {
-			return nil, fmt.Errorf("scan session event attribution: %w", err)
-		}
-		keys[SessionEventAttributionKey(tool, sessionID, fingerprint)] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate session event attributions: %w", err)
-	}
-	return keys, nil
-}
-
-func SessionEventAttributionKey(tool, sessionID, fingerprint string) string {
-	return tool + "\x00" + sessionID + "\x00" + fingerprint
-}
+// The session_event_attributions ledger has no Go API any more. It existed only
+// so the commit-time matcher would not credit the same transcript event to two
+// changes: that matcher scored events by recency, so nothing else stopped a
+// second commit from re-consuming an event the first had already claimed. The
+// push-time writer (vcs.AttachSessionsFromHunkLinks) derives links from hunk
+// content instead, so a session lands on exactly the changes whose hunks it
+// authored — and change_sessions' UNIQUE(change_id, session_id) makes repeat
+// pushes idempotent without a ledger. The table and its migration stay so
+// existing databases keep opening and the session-deletion cleanups in db.go
+// keep working.
 
 func (s *Store) WriteChangeDemuxEvidence(ctx context.Context, evidence ChangeDemuxEvidence) error {
 	if err := writeChangeDemuxEvidence(ctx, s.db, evidence); err != nil {

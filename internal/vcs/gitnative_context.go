@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/satoricorp/gx/internal/storage"
 )
 
 const pendingCommitContextName = "gx-pending-commit.json"
@@ -14,11 +12,9 @@ const pendingCommitContextName = "gx-pending-commit.json"
 // PendingCommitContext carries commit metadata consumed by lifecycle hooks.
 // The post-commit hook tolerates a missing file and falls back to a zero value.
 type PendingCommitContext struct {
-	WorktreeRoot        string                   `json:"worktree_root"`
-	GitCommonDir        string                   `json:"git_common_dir"`
-	Branch              string                   `json:"branch,omitempty"`
-	PreferredSessionIDs []string                 `json:"preferred_session_ids,omitempty"`
-	SessionContexts     []storage.SessionContext `json:"session_contexts,omitempty"`
+	WorktreeRoot string `json:"worktree_root"`
+	GitCommonDir string `json:"git_common_dir"`
+	Branch       string `json:"branch,omitempty"`
 }
 
 func pendingCommitContextPath(gitDir string) string {

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +15,7 @@ import (
 	"strings"
 	"time"
 
-	githubapi "github.com/satoricorp/gx/internal/github"
 	"github.com/satoricorp/gx/internal/gxconfig"
-	"github.com/satoricorp/gx/internal/provenance"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -165,15 +162,11 @@ type ChangeInfo struct {
 }
 
 type CommitResult struct {
-	Repo                     RepoInfo
-	Change                   ChangeInfo
-	Stack                    *StackInfo
-	OperationID              string
-	PreferredSessionIDs      []string
-	SessionContexts          []storage.SessionContext
-	ProvenanceStatus         string
-	SkipRepoLocalSessions    bool
-	SessionEventAttributions []storage.SessionEventAttribution
+	Repo             RepoInfo
+	Change           ChangeInfo
+	Stack            *StackInfo
+	OperationID      string
+	ProvenanceStatus string
 }
 
 type SplitCommitOptions struct {
@@ -191,8 +184,6 @@ type RevisionOptions struct {
 	Interactive            bool
 	Hunk                   bool
 	PatchFile              string
-	PreferredSessionIDs    []string
-	SessionContexts        []storage.SessionContext
 	BookmarkRecordedCommit bool
 }
 
@@ -240,11 +231,6 @@ type PruneEmptyStacksResult struct {
 	Deleted []DeleteStackResult
 }
 
-type PruneGitHubPullRequestsResult struct {
-	Checked int
-	Removed int
-}
-
 type RepairResult struct {
 	Repo     RepoInfo `json:"repo"`
 	Actions  []string `json:"actions"`
@@ -253,9 +239,8 @@ type RepairResult struct {
 
 type PushResult struct {
 	Repo                 RepoInfo
-	CurrentChange        *ChangeInfo
 	Stack                *StackInfo
-	Published            []PushedChange
+	Commits              []PushedCommit
 	GitExported          bool
 	GitPushStatus        string
 	GitHubPRStatus       string
@@ -270,12 +255,14 @@ type PushResult struct {
 	GitHubPullRequestURL *string
 }
 
-type PushedChange struct {
-	Change               ChangeInfo
-	BranchName           string
-	BaseBranchName       string
-	Patch                string
-	GitHubPullRequestURL *string
+// PushedCommit is one commit in the pushed range, oldest first. RevisionID is
+// the GX trailer ID when the commit carries one, otherwise empty.
+type PushedCommit struct {
+	CommitID   string
+	RevisionID string
+	Message    string
+	Files      []string
+	Patch      string
 }
 
 type StackInfo struct {
@@ -303,12 +290,6 @@ type InitResult struct {
 	IdentityName    string
 	IdentityEmail   string
 	IdentityApplied bool
-}
-
-type SyncResult struct {
-	Repo       RepoInfo
-	RemoteName string
-	Output     string
 }
 
 type RevisionSummary struct {
@@ -400,30 +381,6 @@ func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOpt
 		IdentityName:    name,
 		IdentityEmail:   email,
 		IdentityApplied: applied,
-	}, nil
-}
-
-func (s *Service) Sync(ctx context.Context, remote string) (SyncResult, error) {
-	repo, err := s.ResolveGitRepo(ctx)
-	if err != nil {
-		return SyncResult{}, err
-	}
-	remoteName := strings.TrimSpace(remote)
-	if remoteName == "" {
-		if repo.DefaultRemote != nil && strings.TrimSpace(*repo.DefaultRemote) != "" {
-			remoteName = strings.TrimSpace(*repo.DefaultRemote)
-		} else {
-			remoteName = "origin"
-		}
-	}
-	output, err := s.runner.Run(ctx, repo.RootPath, "git", "fetch", "--prune", remoteName)
-	if err != nil {
-		return SyncResult{}, err
-	}
-	return SyncResult{
-		Repo:       repo,
-		RemoteName: remoteName,
-		Output:     output,
 	}, nil
 }
 
@@ -790,141 +747,8 @@ func recordCommit(ctx context.Context, result CommitResult) error {
 			return err
 		}
 		defer store.Close()
-		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID, result.PreferredSessionIDs, result.SessionContexts, result.SkipRepoLocalSessions, result.SessionEventAttributions)
+		return recordChangeForStack(ctx, store, result.Repo, result.Stack, result.Change, result.OperationID)
 	})
-}
-
-func (s *Service) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
-	publishRef = strings.TrimPrefix(strings.TrimSpace(publishRef), "refs/heads/")
-	if publishRef == "" {
-		return false, nil
-	}
-	var pruned bool
-	err := withBusyRetry(ctx, "prune published stack", func() error {
-		store, err := openStore(ctx)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-
-		repoID, err := upsertRepo(ctx, store, repo)
-		if err != nil {
-			return err
-		}
-		stacks, err := store.ListStacksByRepoID(ctx, repoID)
-		if err != nil {
-			return err
-		}
-		for _, stack := range stacks {
-			info := stackInfoFromStorage(stack)
-			if stackPublishRefMatches(info, publishRef) {
-				if err := store.PrunePublishedStack(ctx, repoID, stack.ID, publishRefForStack(info), time.Now().UnixMilli()); err != nil {
-					return err
-				}
-				pruned = true
-				return nil
-			}
-		}
-		return nil
-	})
-	return pruned, err
-}
-
-func (s *Service) PruneTerminalGitHubPullRequestStacks(ctx context.Context, repo RepoInfo) (PruneGitHubPullRequestsResult, error) {
-	var result PruneGitHubPullRequestsResult
-	err := withBusyRetry(ctx, "prune terminal GitHub pull request stacks", func() error {
-		store, err := openStore(ctx)
-		if err != nil {
-			return err
-		}
-		defer store.Close()
-
-		repoID, err := upsertRepo(ctx, store, repo)
-		if err != nil {
-			return err
-		}
-		stacks, err := store.ListStacksByRepoID(ctx, repoID)
-		if err != nil {
-			return err
-		}
-		clients := map[string]*githubapi.Client{}
-		for _, stack := range stacks {
-			info := stackInfoFromStorage(stack)
-			if IsTerminalStackStatus(info.Status) || info.GitHubPRURL == nil {
-				continue
-			}
-			ref, ok := githubPullRequestRefFromURL(*info.GitHubPRURL)
-			if !ok {
-				continue
-			}
-			client := clients[ref.host]
-			if client == nil {
-				client, err = githubapi.NewClient(ref.host)
-				if err != nil {
-					return err
-				}
-				clients[ref.host] = client
-			}
-			pr, err := client.GetPullRequest(ctx, ref.owner, ref.repo, ref.number)
-			if err != nil {
-				return err
-			}
-			result.Checked++
-			if pr == nil || !terminalGitHubPullRequest(*pr) {
-				continue
-			}
-			if err := store.PrunePublishedStack(ctx, repoID, stack.ID, publishRefForStack(info), time.Now().UnixMilli()); err != nil {
-				return err
-			}
-			result.Removed++
-		}
-		return nil
-	})
-	return result, err
-}
-
-type githubPullRequestRef struct {
-	host   string
-	owner  string
-	repo   string
-	number int
-}
-
-func githubPullRequestRefFromURL(raw string) (githubPullRequestRef, bool) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" {
-		return githubPullRequestRef{}, false
-	}
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(parts) < 4 || parts[0] == "" || parts[1] == "" || parts[2] != "pull" {
-		return githubPullRequestRef{}, false
-	}
-	number, err := strconv.Atoi(parts[3])
-	if err != nil || number <= 0 {
-		return githubPullRequestRef{}, false
-	}
-	return githubPullRequestRef{host: parsed.Host, owner: parts[0], repo: strings.TrimSuffix(parts[1], ".git"), number: number}, true
-}
-
-func terminalGitHubPullRequest(pr githubapi.PullRequest) bool {
-	return pr.Merged || strings.EqualFold(strings.TrimSpace(pr.State), "closed")
-}
-
-func stackPublishRefMatches(stack StackInfo, publishRef string) bool {
-	publishRef = strings.TrimPrefix(strings.TrimSpace(publishRef), "refs/heads/")
-	if publishRef == "" {
-		return false
-	}
-	if publishRefForStack(stack) == publishRef {
-		return true
-	}
-	if strings.TrimSpace(stack.BookmarkName) == publishRef {
-		return true
-	}
-	if stack.RemoteRef != nil && strings.TrimPrefix(strings.TrimSpace(*stack.RemoteRef), "refs/heads/") == publishRef {
-		return true
-	}
-	return false
 }
 
 func withBusyRetry(ctx context.Context, label string, fn func() error) error {
@@ -964,7 +788,12 @@ func isSQLiteBusy(err error) bool {
 	return strings.Contains(value, "sqlite_busy") || strings.Contains(value, "database is locked")
 }
 
-func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string, preferredSessionIDs []string, sessionContexts []storage.SessionContext, skipRepoLocalSessions bool, eventAttributions []storage.SessionEventAttribution) error {
+// recordChangeForStack persists the repo, change, revision and stack rows for
+// one recorded commit. It deliberately writes no `sessions` or
+// `change_sessions` rows: a session row exists because a transcript was
+// observed, not because a commit happened to match one, so the links are
+// written at push time by Service.AttachSessionsFromHunkLinks.
+func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoInfo, stack *StackInfo, change ChangeInfo, opID string) error {
 	repoID, err := upsertRepo(ctx, store, repo)
 	if err != nil {
 		return err
@@ -986,96 +815,6 @@ func recordChangeForStack(ctx context.Context, store *storage.Store, repo RepoIn
 			return err
 		}
 		if err := store.AddChangeToStack(ctx, stackID, changeID, time.Now().UnixMilli()); err != nil {
-			return err
-		}
-	}
-	if skipRepoLocalSessions {
-		if err := attachExplicitSessions(ctx, store, changeID, preferredSessionIDs); err != nil {
-			return err
-		}
-	} else {
-		if err := attachSessions(ctx, store, repo.RootPath, changeID, preferredSessionIDs); err != nil {
-			return err
-		}
-	}
-	if err := writeSessionContexts(ctx, store, repo.RootPath, sessionContexts); err != nil {
-		return err
-	}
-	if len(eventAttributions) > 0 {
-		stackBookmark := ""
-		if stack != nil {
-			stackBookmark = stack.BookmarkName
-		}
-		now := time.Now().UnixMilli()
-		repoRootValue := repo.RootPath
-		for i := range eventAttributions {
-			eventAttributions[i].RepoID = repoID
-			eventAttributions[i].ChangeID = changeID
-			if stackBookmark != "" && eventAttributions[i].StackBookmark == nil {
-				eventAttributions[i].StackBookmark = &stackBookmark
-			}
-			if eventAttributions[i].CreatedAt == 0 {
-				eventAttributions[i].CreatedAt = now
-			}
-			if strings.TrimSpace(eventAttributions[i].SessionID) == "" {
-				continue
-			}
-			createdAt := eventAttributions[i].CreatedAt
-			if createdAt == 0 {
-				createdAt = now
-			}
-			if err := store.UpsertSession(ctx, storage.Session{
-				ID:        eventAttributions[i].SessionID,
-				CreatedAt: createdAt,
-				Command:   eventAttributions[i].Tool,
-				Cwd:       repo.RootPath,
-				RepoRoot:  &repoRootValue,
-			}); err != nil {
-				return err
-			}
-		}
-		if err := store.WriteSessionEventAttributions(ctx, eventAttributions); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func attachExplicitSessions(ctx context.Context, store *storage.Store, changeID int64, preferredSessionIDs []string) error {
-	sessionIDs := append([]string(nil), preferredSessionIDs...)
-	sessionIDs = append(sessionIDs, provenance.ExplicitSessionIDsFromEnv()...)
-	sessionIDs = uniqueStrings(sessionIDs)
-	if len(sessionIDs) == 0 {
-		return nil
-	}
-	filtered, err := store.FilterExistingSessionIDs(ctx, sessionIDs)
-	if err != nil {
-		return err
-	}
-	if len(filtered) == 0 {
-		return nil
-	}
-	return store.WriteChangeSessions(ctx, changeID, filtered, time.Now().UnixMilli())
-}
-
-func writeSessionContexts(ctx context.Context, store *storage.Store, repoRoot string, contexts []storage.SessionContext) error {
-	for _, sessionContext := range contexts {
-		if strings.TrimSpace(sessionContext.SessionID) == "" {
-			continue
-		}
-		createdAt := sessionContext.CapturedAt
-		if createdAt == 0 {
-			createdAt = time.Now().UnixMilli()
-		}
-		repoRootValue := repoRoot
-		session := storage.Session{
-			ID:        sessionContext.SessionID,
-			CreatedAt: createdAt,
-			Command:   sessionContext.Tool,
-			Cwd:       repoRoot,
-			RepoRoot:  &repoRootValue,
-		}
-		if err := store.UpsertSessionContext(ctx, session, sessionContext); err != nil {
 			return err
 		}
 	}
@@ -1160,11 +899,6 @@ func writeRevision(ctx context.Context, store *storage.Store, changeID int64, ch
 		ChangedFiles:  string(filesJSON),
 		CreatedAt:     time.Now().UnixMilli(),
 	})
-}
-
-func attachSessions(ctx context.Context, store *storage.Store, repoRoot string, changeID int64, preferredSessionIDs []string) error {
-	_, err := provenance.AttachPreferred(ctx, store, repoRoot, changeID, time.Now().UnixMilli(), preferredSessionIDs)
-	return err
 }
 
 func openStore(ctx context.Context) (*storage.Store, error) {

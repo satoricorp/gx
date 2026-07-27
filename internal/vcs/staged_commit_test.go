@@ -2,7 +2,6 @@ package vcs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,10 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/gxconfig"
-	"github.com/satoricorp/gx/internal/storage"
 )
 
 func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string) {
@@ -110,23 +106,6 @@ func commitViaHooks(t *testing.T, svc *Service, root, message string) CommitResu
 		t.Fatalf("RecordGitCommit() error = %v", err)
 	}
 	return result
-}
-
-func TestCommitHunksFromGitDiffQuotedPath(t *testing.T) {
-	diff := strings.Join([]string{
-		"diff --git a/path with spaces.txt b/path with spaces.txt",
-		`--- a/path with spaces.txt`,
-		`+++ "b/path with spaces.txt"`,
-		"@@ -0,0 +1 @@",
-		"+hello",
-	}, "\n")
-	hunks := commitHunksFromGitDiff(diff)
-	if len(hunks) != 1 {
-		t.Fatalf("hunks len = %d, want 1", len(hunks))
-	}
-	if hunks[0].FilePath != "path with spaces.txt" {
-		t.Fatalf("file path = %q, want quoted path parsed", hunks[0].FilePath)
-	}
 }
 
 func TestRecordedCommitPreservesUnstagedWork(t *testing.T) {
@@ -262,66 +241,6 @@ func TestRecordedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	}
 	if result.Stack == nil || result.Stack.BookmarkName != "master" {
 		t.Fatalf("stack bookmark = %v, want master", result.Stack)
-	}
-}
-
-func TestAttributionLedgerSurvivesStoreReopen(t *testing.T) {
-	ctx := context.Background()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: "/tmp/repo", Backend: "jj"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	if err := recordChangeForStack(ctx, store, RepoInfo{RootPath: "/tmp/repo", Backend: "jj"}, &StackInfo{
-		Name:         "test",
-		BookmarkName: "feature/test",
-		BaseRef:      "main",
-		BaseCommitID: "commit0",
-		Status:       "draft",
-	}, ChangeInfo{
-		ChangeID:    "change1",
-		CommitID:    "commit1",
-		Description: "test",
-	}, "op1", nil, nil, true, []storage.SessionEventAttribution{{
-		Tool:             "cursor",
-		SessionID:        "session-missing-row",
-		EventFingerprint: "fp-1",
-		AttributedVia:    "commit",
-		CreatedAt:        1000,
-	}}); err != nil {
-		t.Fatalf("recordChangeForStack() error = %v", err)
-	}
-	_ = repoID
-	if err := db.Close(); err != nil {
-		t.Fatalf("db.Close() error = %v", err)
-	}
-
-	db, err = storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() reopen error = %v", err)
-	}
-	defer db.Close()
-	store, err = storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() reopen error = %v", err)
-	}
-	keys, err := store.AttributedSessionEventKeys(ctx, repoID)
-	if err != nil {
-		t.Fatalf("AttributedSessionEventKeys() error = %v", err)
-	}
-	key := storage.SessionEventAttributionKey("cursor", "session-missing-row", "fp-1")
-	if _, ok := keys[key]; !ok {
-		t.Fatalf("attribution key %q missing after store reopen", key)
 	}
 }
 
@@ -468,142 +387,6 @@ func TestRecordedCommitDeleteFidelity(t *testing.T) {
 	}
 }
 
-func TestSessionEventAttributionsExcludeTemporalTier(t *testing.T) {
-	events := []capture.SessionEvent{{
-		Tool: "cursor", SessionID: "sess-1", FilePath: "a.go", NewText: "x",
-	}}
-	outcomes := []matcher.MatchOutcome{{
-		EventIndex: 0,
-		HunkIndex:  0,
-		Tier:       matcher.TierTemporal,
-		Score:      0.5,
-	}}
-	got := sessionEventAttributionsFromOutcomes(events, outcomes, "commit")
-	if len(got) != 0 {
-		t.Fatalf("sessionEventAttributionsFromOutcomes() = %#v, want none for temporal tier", got)
-	}
-}
-
-func TestSessionIDsFromMatchedLinksExcludeTemporalTier(t *testing.T) {
-	links := []matcher.HunkLink{
-		{SessionID: "exact", Tier: matcher.TierExact, Authorship: matcher.AuthorshipAgent},
-		{SessionID: "temporal", Tier: matcher.TierTemporal, Authorship: matcher.AuthorshipAgent},
-	}
-	got := sessionIDsFromMatchedLinks(links)
-	if len(got) != 1 || got[0] != "exact" {
-		t.Fatalf("sessionIDsFromMatchedLinks() = %#v, want [exact]", got)
-	}
-}
-
-func TestFilterUnattributedSessionEventsSkipsAttributed(t *testing.T) {
-	ctx := context.Background()
-	svc, root := setupStagedCommitRepo(t, "main")
-
-	ev := capture.SessionEvent{
-		Tool: "cursor", SessionID: "sess-dedupe", FilePath: "dedupe.go",
-		NewText: "added", Kind: capture.KindEdit,
-	}
-	fingerprint := matcher.EventFingerprint(ev)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoInfo, err := svc.ResolveGXRepoAtPath(ctx, root)
-	if err != nil {
-		t.Fatalf("ResolveGXRepoAtPath() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: root, GitCommonDir: repoInfo.GitCommonDir, Backend: "git"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "dedupe-change", CurrentCommitID: "dedupe-commit", Description: "dedupe",
-		Status: "draft", FirstSeenAt: 1, UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-	if err := store.UpsertSession(ctx, storage.Session{
-		ID: ev.SessionID, CreatedAt: 1000, Command: ev.Tool, Cwd: root, RepoRoot: &root,
-	}); err != nil {
-		t.Fatalf("UpsertSession() error = %v", err)
-	}
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{{
-		RepoID: repoID, ChangeID: changeID, Tool: ev.Tool, SessionID: ev.SessionID,
-		EventFingerprint: fingerprint, AttributedVia: "commit", CreatedAt: 1000,
-	}}); err != nil {
-		t.Fatalf("WriteSessionEventAttributions() error = %v", err)
-	}
-	_ = db.Close()
-
-	filtered := svc.filterUnattributedSessionEvents(ctx, root, []capture.SessionEvent{ev})
-	if len(filtered) != 0 {
-		t.Fatalf("filterUnattributedSessionEvents() = %#v, want attributed event removed", filtered)
-	}
-}
-
-func TestAttributedEventNotWrittenTwiceForSecondCommit(t *testing.T) {
-	ctx := context.Background()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	defer db.Close()
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: "/tmp/ledger", Backend: "jj"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "change-1", CurrentCommitID: "commit-1", Description: "first",
-		Status: "draft", FirstSeenAt: 1, UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-	if err := store.UpsertSession(ctx, storage.Session{
-		ID: "sess-1", CreatedAt: 1000, Command: "cursor",
-	}); err != nil {
-		t.Fatalf("UpsertSession() error = %v", err)
-	}
-	attr := storage.SessionEventAttribution{
-		RepoID: repoID, ChangeID: changeID, Tool: "cursor", SessionID: "sess-1",
-		EventFingerprint: "fp-stable", AttributedVia: "commit", CreatedAt: 1000,
-	}
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{attr}); err != nil {
-		t.Fatalf("first WriteSessionEventAttributions() error = %v", err)
-	}
-	changeID2, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "change-2", CurrentCommitID: "commit-2", Description: "second",
-		Status: "draft", FirstSeenAt: 2, UpdatedAt: 2,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange(2) error = %v", err)
-	}
-	attr.ChangeID = changeID2
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{attr}); err != nil {
-		t.Fatalf("second WriteSessionEventAttributions() error = %v", err)
-	}
-	keys, err := store.AttributedSessionEventKeys(ctx, repoID)
-	if err != nil {
-		t.Fatalf("AttributedSessionEventKeys() error = %v", err)
-	}
-	if len(keys) != 1 {
-		t.Fatalf("attributed keys = %d, want 1 (no duplicate re-attribution)", len(keys))
-	}
-}
-
 func TestRejectProtectedStackBookmarkSecondChokePoint(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	err := svc.rejectProtectedStackBookmark(context.Background(), root, "main")
@@ -637,21 +420,6 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func TestSessionEventAttributionsDedupeSameEvent(t *testing.T) {
-	events := []capture.SessionEvent{{
-		Tool: "cursor", SessionID: "sess-1", FilePath: "a.go", NewText: "x",
-		Raw: map[string]json.RawMessage{"uuid": json.RawMessage(`"event-1"`)},
-	}}
-	outcomes := []matcher.MatchOutcome{
-		{EventIndex: 0, HunkIndex: 0, Tier: matcher.TierExact, Score: 1},
-		{EventIndex: 0, HunkIndex: 1, Tier: matcher.TierFuzzy, Score: 0.9},
-	}
-	got := sessionEventAttributionsFromOutcomes(events, outcomes, "commit")
-	if len(got) != 1 {
-		t.Fatalf("sessionEventAttributionsFromOutcomes() = %d attributions, want 1 deduped", len(got))
-	}
 }
 
 func gitStagedNames(t *testing.T, root string) string {

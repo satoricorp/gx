@@ -563,8 +563,8 @@ func TestFilterExistingSessionIDs(t *testing.T) {
 		{ID: "session-one", CreatedAt: 1, Command: "codex", Cwd: "/repo", GXVersion: "test"},
 		{ID: "session-two", CreatedAt: 2, Command: "cursor", Cwd: "/repo", GXVersion: "test"},
 	} {
-		if err := store.WriteSession(ctx, session); err != nil {
-			t.Fatalf("WriteSession(%s) error = %v", session.ID, err)
+		if err := store.UpsertObservedSession(ctx, session); err != nil {
+			t.Fatalf("UpsertObservedSession(%s) error = %v", session.ID, err)
 		}
 	}
 	got, err := store.FilterExistingSessionIDs(ctx, []string{"session-two", "missing", "session-one", "session-two"})
@@ -761,8 +761,11 @@ func TestFindAttachableSessionsForRepoReturnsUnlinkedRepoSessions(t *testing.T) 
 		{ID: "repo-root", CreatedAt: 25, Command: "cursor", Cwd: ".", GXVersion: "test", LastSeenAt: &lastSeen, RepoRoot: ptrString("/repo")},
 		{ID: "other-repo", CreatedAt: 40, Command: "cursor", Cwd: "/other", GXVersion: "test", RepoRoot: ptrString("/other")},
 	} {
-		if err := store.WriteSession(ctx, session); err != nil {
-			t.Fatalf("WriteSession(%s) error = %v", session.ID, err)
+		// UpsertCursorSession: these rows carry last_seen_at, which only the
+		// Cursor ingest writes in production. UpsertObservedSession, the push
+		// path's writer, cannot express them.
+		if _, err := store.UpsertCursorSession(ctx, session); err != nil {
+			t.Fatalf("UpsertCursorSession(%s) error = %v", session.ID, err)
 		}
 	}
 	if err := store.WriteChangeSessions(ctx, changeID, []string{"linked"}, 1); err != nil {
@@ -815,7 +818,9 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 	}
 	source := "ambient"
 	processName := "codex"
-	if err := store.WriteSession(ctx, Session{
+	// UpsertCursorSession: process_name is an ingest-only column, so this is
+	// the writer a real row carrying it comes from.
+	if _, err := store.UpsertCursorSession(ctx, Session{
 		ID:          "session-one",
 		CreatedAt:   10,
 		Command:     "codex exec",
@@ -824,7 +829,7 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 		Source:      &source,
 		ProcessName: &processName,
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertCursorSession() error = %v", err)
 	}
 	model := "gpt-5.1-code"
 	if err := store.WriteRequest(ctx, Request{
@@ -875,14 +880,14 @@ func TestAgentLedgerSummaryBackfillsTokensFromRawResponseBodies(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.WriteSession(ctx, Session{
+	if err := store.UpsertObservedSession(ctx, Session{
 		ID:        "codex-session",
 		CreatedAt: 10,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	for _, requestID := range []string{"request-raw", "request-indexed"} {
 		if err := store.WriteRequest(ctx, Request{
@@ -947,14 +952,14 @@ func TestSessionUsageAggregatesRequestModelsAndResponseTokens(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.WriteSession(ctx, Session{
+	if err := store.UpsertObservedSession(ctx, Session{
 		ID:        "codex-session",
 		CreatedAt: 10,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	modelOne := "gpt-5.1-code"
 	if err := store.WriteRequest(ctx, Request{
