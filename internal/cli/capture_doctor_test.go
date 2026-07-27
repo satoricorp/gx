@@ -351,30 +351,6 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 	if err := store.AddChangeToStack(ctx, publishedStackID, publishedChangeID, 4); err != nil {
 		t.Fatalf("AddChangeToStack(published) error = %v", err)
 	}
-	if err := store.UpsertCloudBookmark(ctx, storage.CloudBookmarkState{
-		PostgresBookmarkID: "cloud-open",
-		RepoID:             repoID,
-		RepoFullName:       "satoricorp/gx",
-		BranchName:         "gx/published-stack",
-		Revision:           1,
-		MergeStatus:        "open",
-		UpdatedAtMs:        1,
-		SyncedAt:           1,
-	}); err != nil {
-		t.Fatalf("UpsertCloudBookmark(open) error = %v", err)
-	}
-	if err := store.UpsertCloudBookmark(ctx, storage.CloudBookmarkState{
-		PostgresBookmarkID: "cloud-merged",
-		RepoID:             repoID,
-		RepoFullName:       "satoricorp/gx",
-		BranchName:         "gx/merged-stack",
-		Revision:           1,
-		MergeStatus:        "merged",
-		UpdatedAtMs:        1,
-		SyncedAt:           1,
-	}); err != nil {
-		t.Fatalf("UpsertCloudBookmark(merged) error = %v", err)
-	}
 	mergedChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "merged-change")
 	mergedStackID := insertDoctorStatsStack(t, ctx, store, repoID, "merged-stack", "merged")
 	if err := store.AddChangeToStack(ctx, mergedStackID, mergedChangeID, 5); err != nil {
@@ -396,9 +372,6 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 	})
 	if stats.ApprovedStacksWaitingForPublish != 1 {
 		t.Fatalf("approved waiting = %d, want 1", stats.ApprovedStacksWaitingForPublish)
-	}
-	if stats.PublishedStacksWaitingForReview != 1 {
-		t.Fatalf("published waiting = %d, want 1", stats.PublishedStacksWaitingForReview)
 	}
 	if len(stats.Agents) != 3 {
 		t.Fatalf("agents = %d, want 3", len(stats.Agents))

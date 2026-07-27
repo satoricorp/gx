@@ -1,48 +1,109 @@
 package codereview
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/version"
 )
 
 const (
-	defaultReviewModel           = "gpt-5.5"
 	defaultReviewMaxOutputTokens = 6000
-	defaultOpenAIBaseURL         = "https://api.openai.com/v1"
-	maxAIContextSnippetBytes     = 1200
-	maxAIDiffSnippetBytes        = 6000
-	maxAIStaticToolOutputBytes   = 4000
-	maxAIContextSnippets         = 14
-	maxAIDeepContextSnippets     = 40
-	maxAICodeQualityHints        = 20
-	maxAIModuleSummaries         = 12
-	maxAIChangedFiles            = 60
-	bedrockReviewModel           = "anthropic.claude-sonnet-4-6"
+	// maxAIContextSnippetBytes is THE per-snippet budget. It used to be 1200
+	// here while brief.go read 3200 and internal/publication read 1800, so two
+	// thirds of every locally read file was assembled and then thrown away one
+	// layer down. One number now, and brief.go references this one.
+	//
+	// 16000 is measured, not picked: across this repository's 273 non-test
+	// source files the median is 3,758 bytes and p90 is 17,380, so 16 KB shows
+	// 88% of them end to end (96% in the console repo) against 15% at 1200. The
+	// files it still cannot hold whole are the 50–85 KB outliers, and those are
+	// the fan-out reader's job — it splits them across snippets rather than
+	// truncating, because a review that reads the first 1200 bytes of a file has
+	// not read the file.
+	maxAIContextSnippetBytes = 16000
+	// maxAIDiffSnippetBytes was 6000 while brief.go rendered 20000 — the same
+	// defect in the other direction. 32000 holds every per-file diff in this
+	// working tree (largest: 29,780 bytes) so no changed file arrives half-read.
+	maxAIDiffSnippetBytes      = 32000
+	maxAIStaticToolOutputBytes = 4000
+	// maxAIContextSnippets was 14, chosen when retrieval returned little more
+	// than local docs. Now that the code index, the captured sessions and the
+	// review corpus all answer, 14 slots are spent before the first indexed code
+	// chunk is reached — the evidence the review goes out of its way to fetch
+	// was being retrieved and then discarded. The budget is what it costs to
+	// look at the evidence, and looking is the point.
+	//
+	// The count is no longer the real bound: maxShardContextBytes is, and a
+	// brief that exceeds it is split into shards rather than trimmed. These
+	// remain as the guard for callers that hand a brief straight to a reviewer
+	// without planning shards, internal/publication among them.
+	maxAIContextSnippets     = 48
+	maxAIDeepContextSnippets = 96
+	// maxAIWholeRepoContextSnippets is the whole-repo budget. The repository
+	// inventory and its source files are the subject of that review, and the
+	// default budget is small enough that they would be cut before the model
+	// ever saw them.
+	maxAIWholeRepoContextSnippets = 128
+	// maxAIRepoInventoryBytes is the file listing's own budget. A map of the
+	// repository is worth its bytes: at ~45 bytes a path this holds roughly
+	// 4,000 files, which is every file in both repositories gx reviews today.
+	maxAIRepoInventoryBytes = 180000
+	// Diff snippets are the primary evidence for what changed, so they get their
+	// own budget rather than sharing the retrieved-context one. A PR summary
+	// builds a wide diff on purpose; capping it at the context limit silently
+	// hid most of a large change from the model.
+	//
+	// 32 was below the file count of an ordinary branch — this working tree has
+	// 181 changed files — so the review simply did not see most of the change.
+	// Like the context count, this is now a guard rather than the bound: the
+	// shard planner packs every changed file into some shard.
+	maxAIDiffSnippets     = 240
+	maxAIDeepDiffSnippets = 480
+	maxAICodeQualityHints = 20
+	maxAIModuleSummaries  = 12
+	maxAIChangedFiles     = 400
+)
+
+// The review composition: two competing Bedrock reviewers plus an independent
+// Bedrock judge.
+//
+// Two flagship reviewers cost max(A,B) in wall clock, not A+B, because
+// multiAIReviewer already runs its legs concurrently — so the second opinion is
+// close to free in latency and only costs tokens. The pair is deliberately two
+// Opus models from DIFFERENT GENERATIONS rather than one Opus plus a smaller
+// same-generation sibling: a sibling trained alongside its larger cousin tends
+// to miss the same things it does, and correlated misses are exactly what a
+// second reviewer is supposed to catch.
+//
+// The judge is a third model on purpose. It decides which candidate findings
+// survive, and a model grading its own output is not a filter. It also sits on
+// the sequential path after both reviewers return, which is where latency hurts
+// most, so it is the smaller Sonnet rather than a third Opus.
+//
+// Every ID here MUST be the `us.`-prefixed inference profile form. Bare
+// `anthropic.*` model IDs are rejected by bedrock-runtime for on-demand
+// invocation ("Invocation of model ID ... with on-demand throughput isn't
+// supported"), which the previous default silently was — the Anthropic reviewer
+// could never have run. normalizeBedrockModelID enforces this for overrides too,
+// and TestDefaultBedrockModelsAreInferenceProfiles is the regression test.
+const (
+	defaultBedrockReviewModelA = "us.anthropic.claude-opus-4-6-v1"
+	defaultBedrockReviewModelB = "us.anthropic.claude-opus-4-5-20251101-v1:0"
+	defaultBedrockJudgeModel   = "us.anthropic.claude-sonnet-4-6"
+	// defaultBedrockRegion was us-east-1, which is not where these inference
+	// profiles are enabled for this deployment; a model that exists in one
+	// region reports as "The provided model identifier is invalid" in another,
+	// which reads like a bad model name rather than a bad region.
+	defaultBedrockRegion = "us-west-2"
 )
 
 type AIReviewer interface {
 	Review(ctx context.Context, brief ReviewBrief) ([]Finding, error)
-}
-
-type AIReviewerWithOverview interface {
-	AIReviewer
-	ReviewWithOverview(ctx context.Context, brief ReviewBrief) (overview string, findings []Finding, err error)
 }
 
 type NotableChange struct {
@@ -65,13 +126,12 @@ type AIReviewerWithSummary interface {
 
 type ReviewerInfo struct {
 	Models []string
-}
-
-type responsesAIReviewer struct {
-	url    string
-	token  string
-	model  string
-	client *http.Client
+	// Transport is how the panel reached bedrock-runtime, phrased for a human
+	// ("GX Cloud (https://api.gx.run)" / "direct AWS credentials (us-west-2)").
+	// It is reported rather than inferred because the two have different
+	// latency and different failure modes, and a review that does not say which
+	// one ran leaves both questions unanswerable after the fact.
+	Transport string
 }
 
 type namedAIReviewer struct {
@@ -84,59 +144,27 @@ type multiAIReviewer struct {
 	reviewers []namedAIReviewer
 }
 
-type fallbackAIReviewer struct {
-	primary  AIReviewer
-	fallback AIReviewer
-}
-
 type unavailableAIReviewer struct {
 	reason string
 }
 
+// bedrockAnthropicReviewer is one review leg: a model plus the wire it is
+// reached over. It owns prompt construction and response parsing; how the bytes
+// get to bedrock-runtime is bedrockTransport's problem (see
+// bedrock_transport.go), which is what lets the same leg run against local AWS
+// credentials or through gx-cloud without a second implementation.
 type bedrockAnthropicReviewer struct {
-	region    string
 	model     string
-	accessKey string
-	secretKey string
-	client    *http.Client
+	transport bedrockTransport
 }
 
-type responseRequest struct {
-	Model           string             `json:"model"`
-	Instructions    string             `json:"instructions"`
-	Input           any                `json:"input"`
-	Text            responseTextConfig `json:"text,omitempty"`
-	Tools           []responseTool     `json:"tools,omitempty"`
-	PreviousID      string             `json:"previous_response_id,omitempty"`
-	MaxOutputTokens int                `json:"max_output_tokens,omitempty"`
-}
-
-type responseTextConfig struct {
-	Format map[string]string `json:"format,omitempty"`
-}
-
-type responseTool struct {
-	Type        string         `json:"type"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Parameters  map[string]any `json:"parameters,omitempty"`
-}
-
-type responseResult struct {
-	ID         string `json:"id"`
-	Model      string `json:"model"`
-	OutputText string `json:"output_text"`
-	Output     []struct {
-		ID        string `json:"id,omitempty"`
-		Type      string `json:"type"`
-		CallID    string `json:"call_id,omitempty"`
-		Name      string `json:"name,omitempty"`
-		Arguments string `json:"arguments,omitempty"`
-		Content   []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	} `json:"output"`
+// bedrockCredentials is what it takes to sign a bedrock-runtime request, and
+// the one place that decides whether Bedrock is configured at all.
+type bedrockCredentials struct {
+	accessKey    string
+	secretKey    string
+	sessionToken string
+	region       string
 }
 
 type aiReviewResponse struct {
@@ -194,160 +222,213 @@ func reviewerInfoFromReviewer(reviewer AIReviewer) ReviewerInfo {
 				models = append(models, model)
 			}
 		}
-		return ReviewerInfo{Models: models}
+		return ReviewerInfo{Models: models, Transport: ReviewerTransport(multi)}
 	}
 	if model := reviewerModelName(reviewer); model != "" {
-		return ReviewerInfo{Models: []string{model}}
+		return ReviewerInfo{Models: []string{model}, Transport: ReviewerTransport(reviewer)}
 	}
 	return ReviewerInfo{}
 }
 
 func reviewerModelName(reviewer AIReviewer) string {
-	switch r := reviewer.(type) {
-	case *responsesAIReviewer:
-		if r != nil {
-			return strings.TrimSpace(r.model)
-		}
-	case *bedrockAnthropicReviewer:
-		if r != nil {
-			return strings.TrimSpace(r.model)
-		}
-	case fallbackAIReviewer:
-		if model := reviewerModelName(r.primary); model != "" {
-			return model
-		}
-		return reviewerModelName(r.fallback)
-	case *agenticResponsesAIReviewer:
-		if r != nil && r.base != nil {
-			return strings.TrimSpace(r.base.model)
-		}
+	if r, ok := reviewer.(*bedrockAnthropicReviewer); ok && r != nil {
+		return strings.TrimSpace(r.model)
 	}
 	return ""
 }
 
+// ReviewerTransport is the human phrase for how this reviewer reaches Bedrock,
+// or "" when it has no transport (no reviewer, or a test double).
+func ReviewerTransport(reviewer AIReviewer) string {
+	if multi, ok := reviewer.(multiAIReviewer); ok {
+		for _, item := range multi.reviewers {
+			if detail := ReviewerTransport(item.reviewer); detail != "" {
+				return detail
+			}
+		}
+		return ""
+	}
+	if r, ok := reviewer.(*bedrockAnthropicReviewer); ok && r != nil && r.transport != nil {
+		return r.transport.detail()
+	}
+	return ""
+}
+
+// reviewerFromEnvWithPolicy builds the review panel: two competing Bedrock
+// reviewers that run concurrently. There is no other provider.
+//
+// The OpenAI reviewer and its cloud proxy used to live here as a fallback and
+// were deleted rather than left dormant. Bedrock is the only review provider,
+// so a second one would only ever be reached when the first was misconfigured —
+// and a fallback that answers when the configured reviewer cannot is precisely
+// what makes a broken configuration invisible. Missing AWS credentials must read
+// as "no reviewer ran", not as a clean review from a model nobody asked for.
+//
+// Embeddings are unaffected: internal/semantic reads OPENAI_API_KEY directly
+// (see defaultEmbedderFactory in turbopuffer_index.go) and never goes through an
+// AIReviewer, so the code index still embeds on OpenAI.
 func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
 		return nil
 	}
-	var reviewers []namedAIReviewer
-	openAIModel := ""
-	anthropicModel := ""
-	if policy != nil {
-		openAIModel = policy.OpenAIModelHint()
-		anthropicModel = policy.AnthropicModelHint()
+	plan, err := resolveBedrockTransportPlan()
+	if err != nil {
+		// Both legs carry the same actionable reason, so whichever one a caller
+		// inspects says what to fix.
+		return multiAIReviewer{reviewers: []namedAIReviewer{
+			{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{reason: err.Error()}},
+			{name: "bedrock-b", label: "Bedrock B", reviewer: unavailableAIReviewer{reason: err.Error()}},
+		}}
 	}
-	if reviewer := openAIReviewerFromEnvWithModel(openAIModel); reviewer != nil {
-		reviewers = append(reviewers, namedAIReviewer{name: "openai", label: "OpenAI", reviewer: reviewer})
-	} else {
-		reviewers = append(reviewers, namedAIReviewer{name: "openai", label: "OpenAI", reviewer: unavailableAIReviewer{reason: "OpenAI reviewer is not configured"}})
-	}
-	if reviewer := bedrockAnthropicReviewerFromEnvWithModel(anthropicModel); reviewer != nil {
-		reviewers = append(reviewers, namedAIReviewer{name: "anthropic", label: "Anthropic", reviewer: reviewer})
-	} else {
-		reviewers = append(reviewers, namedAIReviewer{name: "anthropic", label: "Anthropic", reviewer: unavailableAIReviewer{reason: "Anthropic reviewer is not configured"}})
-	}
-	return multiAIReviewer{reviewers: reviewers}
+	modelA, modelB := resolveBedrockReviewModels(policy)
+	return multiAIReviewer{reviewers: []namedAIReviewer{
+		{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)},
+		{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)},
+	}}
 }
 
-func openAIReviewerFromEnvWithModel(modelOverride string) AIReviewer {
-	model := strings.TrimSpace(firstNonEmpty(
-		modelOverride,
-		os.Getenv("GX_REVIEW_OPENAI_MODEL"),
-		os.Getenv("GX_REVIEW_MODEL"),
-		os.Getenv("OPENAI_MODEL"),
-		defaultReviewModel,
-	))
-	direct, directErr := directOpenAIReviewerFromEnv(model)
-	cloudReviewer := cloudOpenAIReviewerFromEnv(model)
-	if direct != nil {
-		if cloudReviewer != nil {
-			return maybeAgenticReviewer(fallbackAIReviewer{primary: direct, fallback: cloudReviewer})
-		}
-		return maybeAgenticReviewer(direct)
-	}
-	if directErr != nil {
-		return nil
-	}
-	return maybeAgenticReviewer(cloudReviewer)
+func newBedrockReviewer(transport bedrockTransport, model string) *bedrockAnthropicReviewer {
+	return &bedrockAnthropicReviewer{model: model, transport: transport}
 }
 
-func cloudOpenAIReviewerFromEnv(model string) AIReviewer {
-	if url := strings.TrimSpace(os.Getenv("GX_OPENAI_PROXY_URL")); url != "" {
-		if token, err := cloud.CloudAPIToken(); err == nil {
-			return &responsesAIReviewer{url: url, token: token, model: model, client: &http.Client{Timeout: 120 * time.Second}}
-		}
+// bedrockLegLabel names a leg by its model and its transport so a merged
+// finding's "Reviewer" evidence says which model actually raised it and over
+// which wire. "Bedrock A" alone is a slot, not an attribution; and the same
+// model reached two different ways is two different latency and failure stories.
+func bedrockLegLabel(slot, model, transportKind string) string {
+	short := shortBedrockModelName(model)
+	transport := bedrockTransportShortName(transportKind)
+	switch {
+	case short == "" && transport == "":
+		return slot
+	case short == "":
+		return slot + " (via " + transport + ")"
+	case transport == "":
+		return slot + " (" + short + ")"
+	default:
+		return slot + " (" + short + " via " + transport + ")"
 	}
-	if baseURL := cloud.CloudBaseURL(); baseURL != "" {
-		if token, err := cloud.CloudAPIToken(); err == nil {
-			return &responsesAIReviewer{
-				url:    strings.TrimRight(baseURL, "/") + "/gx/openai/responses",
-				token:  token,
-				model:  model,
-				client: &http.Client{Timeout: 120 * time.Second},
-			}
-		}
-	}
-	return nil
 }
 
-func directOpenAIReviewerFromEnv(model string) (AIReviewer, error) {
-	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	baseURLRaw := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("GX_OPENAI_API_KEY"))
-		baseURLRaw = strings.TrimSpace(firstNonEmpty(os.Getenv("GX_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")))
+func shortBedrockModelName(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" || strings.HasPrefix(model, "arn:") {
+		return model
 	}
-	if apiKey == "" {
-		return nil, nil
+	if index := strings.LastIndex(model, "anthropic."); index >= 0 {
+		model = model[index+len("anthropic."):]
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(firstNonEmpty(baseURLRaw, defaultOpenAIBaseURL)), "/")
-	if !strings.HasSuffix(baseURL, "/v1") {
-		baseURL += "/v1"
+	if index := strings.Index(model, "-v1:"); index > 0 {
+		model = model[:index]
 	}
-	if _, err := url.ParseRequestURI(baseURL); err != nil {
-		return nil, fmt.Errorf("OpenAI base URL is invalid: %w", err)
-	}
-	return &responsesAIReviewer{
-		url:    baseURL + "/responses",
-		token:  apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 120 * time.Second},
-	}, nil
+	return strings.TrimSuffix(model, "-v1")
 }
 
-func bedrockAnthropicReviewerFromEnvWithModel(modelOverride string) AIReviewer {
+// bedrockCredentialsFromEnv resolves AWS credentials and region, or says which
+// of the two is missing. Returning an error rather than nil is the point: "not
+// configured" and "configured wrong" used to be the same message.
+func bedrockCredentialsFromEnv() (bedrockCredentials, error) {
 	accessKey := strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
 	secretKey := strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
 	if accessKey == "" || secretKey == "" {
-		return nil
+		return bedrockCredentials{}, fmt.Errorf("Bedrock reviewer has no AWS credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (plus AWS_SESSION_TOKEN for temporary credentials)")
 	}
-	region := strings.TrimSpace(firstNonEmpty(
+	return bedrockCredentials{
+		accessKey:    accessKey,
+		secretKey:    secretKey,
+		sessionToken: strings.TrimSpace(os.Getenv("AWS_SESSION_TOKEN")),
+		region:       bedrockRegionFromEnv(),
+	}, nil
+}
+
+func bedrockRegionFromEnv() string {
+	return strings.TrimSpace(firstNonEmpty(
 		os.Getenv("AWS_REGION"),
 		os.Getenv("AWS_DEFAULT_REGION"),
-		"us-east-1",
+		defaultBedrockRegion,
 	))
-	return &bedrockAnthropicReviewer{
-		region:    region,
-		model:     firstNonEmpty(modelOverride, os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"), bedrockReviewModel),
-		accessKey: accessKey,
-		secretKey: secretKey,
-		client:    &http.Client{Timeout: 120 * time.Second},
+}
+
+// resolveBedrockReviewModels picks the model for each leg.
+//
+// Precedence per leg is REVIEW.md hint > env > default, which is the order the
+// reviewer legs already used and the reason a repo can pin its own reviewer.
+// (The judge inverts this — see resolveBedrockJudgeModel.) Leg A additionally
+// honours the legacy GX_REVIEW_ANTHROPIC_MODEL so existing setups keep working.
+//
+// REVIEW.md hints map onto the legs by order: the first anthropic-provider hint
+// steers leg A (exactly what AnthropicModelHint() meant before there were two
+// legs) and a second steers leg B. Old single-hint REVIEW.md files therefore
+// behave as they always did, and leg B keeps its default so one pinned model
+// cannot collapse the panel into two copies of itself.
+func resolveBedrockReviewModels(policy *ReviewPolicy) (string, string) {
+	hintA, hintB := policyBedrockModelHints(policy)
+	modelA := normalizeBedrockModelID(firstNonEmpty(
+		hintA,
+		os.Getenv("GX_REVIEW_BEDROCK_MODEL_A"),
+		os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"),
+		defaultBedrockReviewModelA,
+	))
+	modelB := normalizeBedrockModelID(firstNonEmpty(
+		hintB,
+		os.Getenv("GX_REVIEW_BEDROCK_MODEL_B"),
+		defaultBedrockReviewModelB,
+	))
+	return modelA, modelB
+}
+
+func policyBedrockModelHints(policy *ReviewPolicy) (string, string) {
+	if policy == nil {
+		return "", ""
 	}
+	hints := policy.AnthropicModelHints()
+	switch len(hints) {
+	case 0:
+		return "", ""
+	case 1:
+		return hints[0], ""
+	default:
+		return hints[0], hints[1]
+	}
+}
+
+// normalizeBedrockModelID upgrades a bare Anthropic model ID to its `us.`
+// inference profile. bedrock-runtime rejects bare IDs for on-demand invocation,
+// and REVIEW.md hints produce bare IDs by construction (parseReviewModelHints
+// normalizes "claude-x" to "anthropic.claude-x"), so an unnormalized hint is a
+// guaranteed ValidationException rather than a preference.
+//
+// ARNs, already-prefixed profiles (us./eu./apac./global./us-gov.), and anything
+// that is not an Anthropic model ID are left exactly as written — those are
+// deliberate choices a caller made, including provisioned throughput.
+func normalizeBedrockModelID(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" || strings.HasPrefix(model, "arn:") {
+		return model
+	}
+	for _, prefix := range []string{"us.", "eu.", "apac.", "global.", "us-gov."} {
+		if strings.HasPrefix(model, prefix) {
+			return model
+		}
+	}
+	if strings.HasPrefix(model, "anthropic.") {
+		return "us." + model
+	}
+	if strings.HasPrefix(model, "claude") {
+		return "us.anthropic." + model
+	}
+	return model
 }
 
 func (r unavailableAIReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	return nil, fmt.Errorf("%s", r.reason)
 }
 
+func (r unavailableAIReviewer) UnavailableReason() string { return r.reason }
+
 func (r unavailableAIReviewer) Available() bool { return false }
 
-func (r *responsesAIReviewer) Available() bool { return r != nil }
-
-func (r *bedrockAnthropicReviewer) Available() bool { return r != nil }
-
-func (r fallbackAIReviewer) Available() bool {
-	return reviewerAvailable(r.primary) || reviewerAvailable(r.fallback)
-}
+func (r *bedrockAnthropicReviewer) Available() bool { return r != nil && r.transport != nil }
 
 func (m multiAIReviewer) Available() bool {
 	for _, item := range m.reviewers {
@@ -362,6 +443,55 @@ type availabilityReporter interface {
 	Available() bool
 }
 
+type unavailabilityReporter interface {
+	UnavailableReason() string
+}
+
+func reviewerUnavailableReason(item namedAIReviewer) string {
+	if reporter, ok := item.reviewer.(unavailabilityReporter); ok {
+		if reason := strings.TrimSpace(reporter.UnavailableReason()); reason != "" {
+			return reason
+		}
+	}
+	return item.label + " reviewer is not configured"
+}
+
+// ReviewerUnavailableReason is why no AI reviewer can run, or "" if one can.
+//
+// Bedrock is now the only review provider, so an unavailable reviewer means no
+// review happened at all — there is nothing left to fall back to. The engine
+// reported that as "AI reviewer not configured", which named neither the
+// provider nor the fix; the reviewer already carries a sentence that does both,
+// and this is how the engine reaches it.
+func ReviewerUnavailableReason(reviewer AIReviewer) string {
+	if reviewer == nil {
+		return "AI reviewer not configured"
+	}
+	if multi, ok := reviewer.(multiAIReviewer); ok {
+		var reasons []string
+		seen := map[string]struct{}{}
+		for _, item := range multi.reviewers {
+			if reviewerAvailable(item.reviewer) {
+				continue
+			}
+			reason := reviewerUnavailableReason(item)
+			if _, dup := seen[reason]; dup {
+				continue
+			}
+			seen[reason] = struct{}{}
+			reasons = append(reasons, reason)
+		}
+		if len(reasons) == 0 {
+			return ""
+		}
+		return strings.Join(reasons, "; ")
+	}
+	if reviewerAvailable(reviewer) {
+		return ""
+	}
+	return reviewerUnavailableReason(namedAIReviewer{label: "AI", reviewer: reviewer})
+}
+
 func reviewerAvailable(reviewer AIReviewer) bool {
 	if reviewer == nil {
 		return false
@@ -373,9 +503,8 @@ func reviewerAvailable(reviewer AIReviewer) bool {
 }
 
 func (m multiAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	overview, findings, err := m.ReviewWithOverview(ctx, brief)
-	_ = overview
-	return findings, err
+	summary, err := m.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
@@ -390,7 +519,11 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		i, item := i, item
 		results[i] = reviewerResult{item: item}
 		if !reviewerAvailable(item.reviewer) {
-			results[i].err = fmt.Errorf("%s reviewer is not configured", item.label)
+			// Use the reviewer's own reason. This used to be a fixed "%s
+			// reviewer is not configured", which threw away the one string
+			// that said whether the credentials were missing, the model was
+			// denied, or the region was wrong.
+			results[i].err = fmt.Errorf("%s", reviewerUnavailableReason(item))
 			continue
 		}
 		wg.Add(1)
@@ -399,11 +532,6 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 			if withSummary, ok := item.reviewer.(AIReviewerWithSummary); ok {
 				summary, err := withSummary.ReviewForSummary(ctx, brief)
 				results[i] = reviewerResult{item: item, summary: summary, err: err}
-				return
-			}
-			if withOverview, ok := item.reviewer.(AIReviewerWithOverview); ok {
-				overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-				results[i] = reviewerResult{item: item, summary: PRSummaryReview{Overview: overview, Findings: findings}, err: err}
 				return
 			}
 			findings, err := item.reviewer.Review(ctx, brief)
@@ -452,201 +580,16 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	return PRSummaryReview{}, fmt.Errorf("AI reviewers failed")
 }
 
-func (m multiAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := m.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
-}
-
-func (r fallbackAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	overview, findings, err := r.ReviewWithOverview(ctx, brief)
-	_ = overview
-	return findings, err
-}
-
-func (r fallbackAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
-	if withSummary, ok := r.primary.(AIReviewerWithSummary); ok {
-		summary, err := withSummary.ReviewForSummary(ctx, brief)
-		if err == nil {
-			return summary, nil
-		}
-	} else if withOverview, ok := r.primary.(AIReviewerWithOverview); ok {
-		overview, findings, err := withOverview.ReviewWithOverview(ctx, brief)
-		if err == nil {
-			return PRSummaryReview{Overview: overview, Findings: findings}, nil
-		}
-	} else if findings, err := r.primary.Review(ctx, brief); err == nil {
-		return PRSummaryReview{Findings: findings}, nil
-	}
-	if withFallback, ok := r.fallback.(AIReviewerWithSummary); ok {
-		return withFallback.ReviewForSummary(ctx, brief)
-	}
-	if withFallback, ok := r.fallback.(AIReviewerWithOverview); ok {
-		overview, findings, err := withFallback.ReviewWithOverview(ctx, brief)
-		return PRSummaryReview{Overview: overview, Findings: findings}, err
-	}
-	findings, err := r.fallback.Review(ctx, brief)
-	return PRSummaryReview{Findings: findings}, err
-}
-
-func (r fallbackAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
-}
-
-func (r *responsesAIReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	_, findings, err := r.ReviewWithOverview(ctx, brief)
-	return findings, err
-}
-
-func (r *responsesAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
-	brief = compactReviewBriefForAI(brief)
-	content, err := r.completeJSON(ctx, reviewDeveloperPrompt(), mustJSON(brief), defaultReviewMaxOutputTokens)
-	if err != nil {
-		return PRSummaryReview{}, err
-	}
-	output, err := parseAIReviewOutput(content, brief)
-	if err != nil {
-		return PRSummaryReview{}, err
-	}
-	return aiReviewOutputToPRSummaryReview(output), nil
-}
-
-func (r *responsesAIReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
-	}
-	return summary.Overview, summary.Findings, nil
-}
-
-func (r *responsesAIReviewer) completeJSON(ctx context.Context, instructions string, input any, maxOutputTokens int) (string, error) {
-	payload := responseRequest{
-		Model:           r.model,
-		Instructions:    ensureJSONReviewInstructions(instructions),
-		Input:           normalizeJSONReviewInput(input),
-		Text:            responseTextConfig{Format: map[string]string{"type": "json_object"}},
-		MaxOutputTokens: maxOutputTokens,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal review request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("create review request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "gx/"+version.Current())
-
-	client := r.client
-	if client == nil {
-		client = &http.Client{Timeout: 120 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request AI review: %w", err)
-	}
-	defer resp.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode == http.StatusPaymentRequired {
-		return "", cloud.NewPaymentRequiredError(responseBody)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		detail := strings.TrimSpace(string(responseBody))
-		if detail != "" {
-			return "", fmt.Errorf("AI review status %s: %s", resp.Status, detail)
-		}
-		return "", fmt.Errorf("AI review status %s", resp.Status)
-	}
-	var completion responseResult
-	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return "", fmt.Errorf("decode AI review response: %w", err)
-	}
-	content := strings.TrimSpace(completion.OutputText)
-	if content == "" {
-		content = strings.TrimSpace(responseOutputText(completion))
-	}
-	if content == "" {
-		return "", fmt.Errorf("AI review response returned empty output")
-	}
-	return content, nil
-}
-
 func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief) ([]Finding, error) {
-	_, findings, err := r.ReviewWithOverview(ctx, brief)
-	return findings, err
+	summary, err := r.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	body, err := json.Marshal(map[string]any{
-		"anthropic_version": "bedrock-2023-05-31",
-		"max_tokens":        defaultReviewMaxOutputTokens,
-		"system":            reviewDeveloperPrompt(),
-		"messages": []map[string]string{{
-			"role":    "user",
-			"content": mustJSON(brief),
-		}},
-	})
+	text, err := r.completeJSON(ctx, reviewDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
 	if err != nil {
-		return PRSummaryReview{}, fmt.Errorf("marshal Bedrock review request: %w", err)
-	}
-
-	requestPath := "/model/" + url.PathEscape(r.model) + "/invoke"
-	endpoint := "https://bedrock-runtime." + r.region + ".amazonaws.com" + requestPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return PRSummaryReview{}, fmt.Errorf("create Bedrock review request: %w", err)
-	}
-	r.signBedrockRequest(req, body, requestPath)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "gx/"+version.Current())
-
-	client := r.client
-	if client == nil {
-		client = &http.Client{Timeout: 120 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return PRSummaryReview{}, fmt.Errorf("request Bedrock review: %w", err)
-	}
-	defer resp.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		detail := strings.TrimSpace(string(responseBody))
-		if detail != "" {
-			return PRSummaryReview{}, fmt.Errorf("Bedrock review status %s: %s", resp.Status, detail)
-		}
-		return PRSummaryReview{}, fmt.Errorf("Bedrock review status %s", resp.Status)
-	}
-
-	var completion struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return PRSummaryReview{}, fmt.Errorf("decode Bedrock review response: %w", err)
-	}
-	var content strings.Builder
-	for _, part := range completion.Content {
-		if part.Type == "text" {
-			content.WriteString(part.Text)
-		}
-	}
-	text := strings.TrimSpace(content.String())
-	if text == "" {
-		return PRSummaryReview{}, fmt.Errorf("Bedrock review response returned empty output")
+		return PRSummaryReview{}, err
 	}
 	output, err := parseAIReviewOutput(text, brief)
 	if err != nil {
@@ -655,12 +598,52 @@ func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief R
 	return aiReviewOutputToPRSummaryReview(output), nil
 }
 
-func (r *bedrockAnthropicReviewer) ReviewWithOverview(ctx context.Context, brief ReviewBrief) (string, []Finding, error) {
-	summary, err := r.ReviewForSummary(ctx, brief)
-	if err != nil {
-		return "", nil, err
+// completeJSON is the single model call. Both reviewer legs and the judge go
+// through it, so the request shape and the response parsing live in one place;
+// the transport underneath decides whether that request is signed locally or
+// posted to gx-cloud.
+func (r *bedrockAnthropicReviewer) completeJSON(ctx context.Context, system string, input string, maxOutputTokens int) (string, error) {
+	if r == nil || r.transport == nil {
+		return "", fmt.Errorf("Bedrock reviewer has no transport")
 	}
-	return summary.Overview, summary.Findings, nil
+	return r.transport.complete(ctx, r.model, system, input, maxOutputTokens)
+}
+
+// describeBedrockFailure turns a bedrock-runtime error into a message that says
+// what to change.
+//
+// These four failures are indistinguishable in the raw response to anyone who
+// has not read the Bedrock error catalogue — all of them arrive as an exception
+// name plus prose — and previously all four surfaced as some flavor of "not
+// configured". The mapping is from responses observed against bedrock-runtime
+// in us-west-2:
+//
+//	denied model    AccessDeniedException      "<id> is not available for this account"
+//	bare model ID   ValidationException        "with on-demand throughput isn't supported"
+//	wrong region    ValidationException        "The provided model identifier is invalid."
+//	bad credentials UnrecognizedClientException "The security token ... is invalid"
+//
+// Note that a bare model ID is a ValidationException, not an AccessDenied: the
+// account is allowed to use the model, it just cannot be reached that way.
+func describeBedrockFailure(statusCode int, status string, body []byte, model, region string) error {
+	detail := strings.TrimSpace(string(body))
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, "on-demand throughput") || strings.Contains(lower, "inference profile"):
+		return fmt.Errorf("Bedrock model %q cannot be invoked on demand; use the inference profile ID %q instead (set GX_REVIEW_BEDROCK_MODEL_A/_B)", model, normalizeBedrockModelID(model))
+	case strings.Contains(lower, "not available for this account"):
+		return fmt.Errorf("Bedrock model %q is not enabled for this AWS account in %s; request access in the Bedrock console or point GX_REVIEW_BEDROCK_MODEL_A/_B at a model you can call", model, region)
+	case strings.Contains(lower, "model identifier is invalid") || strings.Contains(lower, "could not resolve the model"):
+		return fmt.Errorf("Bedrock model %q does not exist in region %s; set AWS_REGION to a region where it is offered (gx defaults to %s)", model, region, defaultBedrockRegion)
+	case strings.Contains(lower, "security token") || strings.Contains(lower, "signature") || strings.Contains(lower, "unrecognizedclient") || statusCode == http.StatusForbidden || statusCode == http.StatusUnauthorized:
+		return fmt.Errorf("AWS rejected the Bedrock credentials for %s in %s: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN if they are temporary (%s)", model, region, detail)
+	case statusCode == http.StatusTooManyRequests || strings.Contains(lower, "throttl"):
+		return fmt.Errorf("Bedrock throttled %s in %s; retry or lower review concurrency (%s)", model, region, detail)
+	}
+	if detail != "" {
+		return fmt.Errorf("Bedrock model %s in %s returned %s: %s", model, region, status, detail)
+	}
+	return fmt.Errorf("Bedrock model %s in %s returned %s", model, region, status)
 }
 
 func parseAIReviewContent(content string, brief ReviewBrief) ([]Finding, error) {
@@ -687,10 +670,31 @@ func ParsePRSummaryReview(content string, brief ReviewBrief) (PRSummaryReview, e
 	return aiReviewOutputToPRSummaryReview(output), nil
 }
 
+// parseAIReviewOutput tolerates a model that wraps its JSON in prose or a fenced
+// block, exactly as parseJudgeResponse does.
+//
+// This is the reviewer's half of a guarantee that was lost with the OpenAI
+// reviewer. That path could set response_format:json_object and be handed a bare
+// object every time; bedrock-runtime has no equivalent, so a leg is free to
+// answer with ```json ... ``` whenever it feels like it. It is not a rare shape:
+// the first live cloud review run failed on BOTH legs at once with "invalid
+// character '`' looking for beginning of value", which is a review that produces
+// zero findings and reports only a degraded line. The direct-transport run
+// minutes earlier had parsed cleanly, so this is model nondeterminism rather
+// than anything about the wire, and either transport can hit it.
+//
+// The fallback runs only after a strict parse fails, so well-formed responses —
+// including every PR-summary golden — take the original path untouched.
 func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
+		trimmed := extractJSONObject(content)
+		if trimmed == "" {
+			return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
+		}
+		if fallbackErr := json.Unmarshal([]byte(trimmed), &parsed); fallbackErr != nil {
+			return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", fallbackErr)
+		}
 	}
 	return aiReviewOutput{
 		Overview:         strings.TrimSpace(parsed.Overview),
@@ -729,87 +733,21 @@ func aiNotableChangesToNotableChanges(raw []aiNotableChange) []NotableChange {
 	return out
 }
 
-func (r *bedrockAnthropicReviewer) signBedrockRequest(req *http.Request, body []byte, requestPath string) {
-	now := time.Now().UTC()
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-	host := req.URL.Host
-	service := "bedrock"
-	canonicalPath := strings.ReplaceAll(requestPath, "%", "%25")
-	canonicalHeaders := strings.Join([]string{
-		"accept:application/json",
-		"content-type:application/json",
-		"host:" + host,
-		"x-amz-date:" + amzDate,
-		"",
-	}, "\n")
-	signedHeaders := "accept;content-type;host;x-amz-date"
-	canonicalRequest := strings.Join([]string{
-		http.MethodPost,
-		canonicalPath,
-		"",
-		canonicalHeaders,
-		signedHeaders,
-		sha256Hex(body),
-	}, "\n")
-	scope := dateStamp + "/" + r.region + "/" + service + "/aws4_request"
-	stringToSign := strings.Join([]string{
-		"AWS4-HMAC-SHA256",
-		amzDate,
-		scope,
-		sha256Hex([]byte(canonicalRequest)),
-	}, "\n")
-	signature := hex.EncodeToString(hmacSHA256(awsSigningKey(r.secretKey, dateStamp, r.region, service), []byte(stringToSign)))
-	authorization := strings.Join([]string{
-		"AWS4-HMAC-SHA256 Credential=" + r.accessKey + "/" + scope,
-		"SignedHeaders=" + signedHeaders,
-		"Signature=" + signature,
-	}, ", ")
-
-	req.Header.Set("Authorization", authorization)
-	req.Header.Set("X-Amz-Date", amzDate)
-}
-
-func sha256Hex(value []byte) string {
-	sum := sha256.Sum256(value)
-	return hex.EncodeToString(sum[:])
-}
-
-func hmacSHA256(key []byte, value []byte) []byte {
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write(value)
-	return mac.Sum(nil)
-}
-
-func awsSigningKey(secretKey, dateStamp, region, service string) []byte {
-	dateKey := hmacSHA256([]byte("AWS4"+secretKey), []byte(dateStamp))
-	regionKey := hmacSHA256(dateKey, []byte(region))
-	serviceKey := hmacSHA256(regionKey, []byte(service))
-	return hmacSHA256(serviceKey, []byte("aws4_request"))
-}
-
-func responseOutputText(response responseResult) string {
-	var out strings.Builder
-	for _, item := range response.Output {
-		for _, content := range item.Content {
-			if content.Type == "output_text" {
-				out.WriteString(content.Text)
-			}
-		}
-	}
-	return out.String()
-}
-
 func compactReviewBriefForAI(brief ReviewBrief) ReviewBrief {
 	deep := strings.EqualFold(brief.Depth, "deep")
 	contextLimit := maxAIContextSnippets
+	diffLimit := maxAIDiffSnippets
 	if deep {
 		contextLimit = maxAIDeepContextSnippets
+		diffLimit = maxAIDeepDiffSnippets
+	}
+	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo && contextLimit < maxAIWholeRepoContextSnippets {
+		contextLimit = maxAIWholeRepoContextSnippets
 	}
 
 	brief.Static.DependencyFiles = limitStrings(brief.Static.DependencyFiles, maxAIChangedFiles)
 	brief.Static.ChangedFiles = limitStrings(brief.Static.ChangedFiles, maxAIChangedFiles)
-	brief.Static.DiffSnippets = compactDiffSnippets(brief.Static.DiffSnippets, contextLimit)
+	brief.Static.DiffSnippets = compactDiffSnippets(brief.Static.DiffSnippets, diffLimit)
 	brief.Static.Modules = limitModules(brief.Static.Modules, maxAIModuleSummaries)
 	brief.Static.ToolResults = compactStaticToolResults(brief.Static.ToolResults)
 	brief.Static.CodeQuality = limitCodeQualityHints(brief.Static.CodeQuality, maxAICodeQualityHints)
@@ -853,10 +791,22 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 	}
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
-		snippet.Text = truncateReviewText(snippet.Text, maxAIContextSnippetBytes)
+		snippet.Text = truncateReviewText(snippet.Text, contextSnippetByteLimit(snippet))
 		out = append(out, snippet)
 	}
 	return out
+}
+
+// contextSnippetByteLimit is the per-snippet budget for the model. The repo
+// inventory gets its own: it is a map of the repository, and cutting it to the
+// generic budget would show a fraction of the file list and call it the
+// repository. That kind only exists in a whole-repo brief, so no other profile
+// is affected.
+func contextSnippetByteLimit(snippet ContextSnippet) int {
+	if snippet.Kind == "repo_inventory" {
+		return maxAIRepoInventoryBytes
+	}
+	return maxAIContextSnippetBytes
 }
 
 func prioritizeContextSnippets(snippets []ContextSnippet) []ContextSnippet {
@@ -864,34 +814,152 @@ func prioritizeContextSnippets(snippets []ContextSnippet) []ContextSnippet {
 	sort.SliceStable(out, func(i, j int) bool {
 		return contextSnippetPriority(out[i]) < contextSnippetPriority(out[j])
 	})
+	return interleaveRetrievedSnippets(out)
+}
+
+// retrievedSnippetKinds are the kinds that come from a retrieval index rather
+// than from the checkout.
+var retrievedSnippetKinds = map[string]bool{
+	"indexed_code":        true,
+	"indexed_session":     true,
+	"code_review_history": true,
+	"code_review_summary": true,
+	"review_resource":     true,
+}
+
+// interleaveRetrievedSnippets round-robins the retrieved kinds through the slots
+// they already occupy, so the context budget cannot be consumed entirely by
+// whichever source happened to return the most rows.
+//
+// Sorting alone does not give this. Each source has its own top-k, and with a
+// strict order the first source fills the budget and the rest are cut whole —
+// twelve code chunks and no sessions is not a better-informed review than eight
+// code chunks, two sessions and two prior findings, it is a narrower one. Only
+// the retrieved block is reordered; local documents keep their positions.
+func interleaveRetrievedSnippets(snippets []ContextSnippet) []ContextSnippet {
+	var slots []int
+	byKind := map[string][]ContextSnippet{}
+	var kindOrder []string
+	for i, snippet := range snippets {
+		if !retrievedSnippetKinds[snippet.Kind] {
+			continue
+		}
+		slots = append(slots, i)
+		if _, seen := byKind[snippet.Kind]; !seen {
+			kindOrder = append(kindOrder, snippet.Kind)
+		}
+		byKind[snippet.Kind] = append(byKind[snippet.Kind], snippet)
+	}
+	if len(kindOrder) < 2 {
+		return snippets
+	}
+	out := append([]ContextSnippet(nil), snippets...)
+	next := 0
+	for len(slots) > next {
+		placed := false
+		for _, kind := range kindOrder {
+			queue := byKind[kind]
+			if len(queue) == 0 {
+				continue
+			}
+			out[slots[next]] = queue[0]
+			byKind[kind] = queue[1:]
+			next++
+			placed = true
+			if next >= len(slots) {
+				break
+			}
+		}
+		if !placed {
+			break
+		}
+	}
 	return out
 }
+
+// contextSnippetPriority orders the context budget. Lower is kept first.
+//
+// The rule the table now obeys, and did not before: code outranks manifests,
+// and manifests outrank lockfiles. It used to read dependency_manifest=6,
+// module_file=8, repo_source_file=8 — so when the budget bound, the first thing
+// evicted was the repository's own source and the thing that survived was
+// go.sum. A generated dependency lockfile is the least informative file in any
+// repository and it was outranking the code under review.
+//
+// Prior review findings (code_review_history / code_review_summary) had no case
+// at all and fell to the default, which meant every review re-derived what the
+// last one already established.
+const (
+	priorityDomainDoc         = 0
+	priorityReviewPolicy      = 1
+	priorityReviewReference   = 2
+	priorityADR               = 3
+	priorityRepoDoc           = 4
+	priorityRepoInventory     = 4
+	priorityRetrievedEvidence = 5
+	priorityPriorFindings     = 5
+	priorityCheckoutSource    = 6
+	prioritySessionEvidence   = 7
+	priorityQualityFile       = 8
+	priorityDependencyFile    = 9
+	priorityUnknown           = 10
+	priorityLockfile          = 11
+)
 
 func contextSnippetPriority(snippet ContextSnippet) int {
 	switch snippet.Kind {
 	case "domain_doc":
-		return 0
+		return priorityDomainDoc
 	case "review_policy":
-		return 1
+		return priorityReviewPolicy
 	case "review_reference":
-		return 2
+		return priorityReviewReference
 	case "adr":
-		return 3
-	case "repo_doc":
-		return 4
-	case "review_resource":
-		return 5
-	case "dependency_manifest":
-		return 6
+		return priorityADR
+	case "repo_doc", "codebase_doc":
+		return priorityRepoDoc
+	// The repository's own map and code outrank retrieved external guidance
+	// when the repository is what is being reviewed; they are only present at
+	// all in that case.
+	case "repo_inventory":
+		return priorityRepoInventory
+
+	// Retrieved evidence and curated guidance, unchanged from where the
+	// retrieval work put them.
+	case "indexed_code", "review_resource":
+		return priorityRetrievedEvidence
+
+	// What a previous review already found here. Cheaper to be reminded than to
+	// rediscover, and a regression on a known finding is the highest-signal
+	// thing a review can report. These had no case at all and fell to the
+	// default, below the manifests.
+	case "code_review_history", "code_review_summary":
+		return priorityPriorFindings
+
+	// Source code read from the checkout. This is the tier that sat at 8, below
+	// dependency_manifest at 6 — so when the budget bound, the first snippets
+	// evicted were the files under review and the survivor was go.sum.
+	case "repo_source_file", "module_file", "changed_file":
+		return priorityCheckoutSource
+
+	case "indexed_session", "session_transcript", "lexical_reach":
+		return prioritySessionEvidence
 	case "code_quality_file":
-		return 7
-	case "module_file":
-		return 8
+		return priorityQualityFile
+
+	// Declared dependencies: go.mod and package.json say something a reviewer
+	// can act on. Their generated lockfiles do not, and go last of everything —
+	// below even an unrecognized snippet kind, which at least might be code.
+	case "dependency_manifest":
+		return priorityDependencyFile
+	case "dependency_lockfile":
+		return priorityLockfile
+
 	default:
 		if snippet.Source == "indexed" || strings.HasPrefix(snippet.Source, "turbopuffer:") {
-			return 6
+			return priorityRetrievedEvidence
 		}
-		return 9
+		return priorityUnknown
 	}
 }
 
@@ -1027,8 +1095,25 @@ func parseRecommendationLine(raw json.RawMessage) int {
 	return 0
 }
 
-func reviewDeveloperPrompt() string {
-	return strings.Join([]string{
+// reviewDeveloperPrompt is the instruction string sent alongside the brief.
+//
+// It takes the brief because a profile the prompt never defines is worse than
+// no profile at all: the model is told "use review_profile to choose behavior",
+// is handed a token that appears nowhere in its instructions, and is also told
+// to return an empty recommendations array when nothing meets the active
+// profile. Profile-specific instructions are therefore appended for the profile
+// in hand, which also keeps the pr_summary prompt byte-identical as profiles
+// are added.
+func reviewDeveloperPrompt(brief ReviewBrief) string {
+	lines := baseReviewDeveloperPromptLines()
+	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo {
+		lines = append(lines, wholeRepoPromptLines()...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func baseReviewDeveloperPromptLines() []string {
+	return []string{
 		"You are GX Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
@@ -1064,7 +1149,7 @@ func reviewDeveloperPrompt() string {
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
 		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
 		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
-	}, "\n")
+	}
 }
 
 func mustJSON(value any) string {
@@ -1107,28 +1192,4 @@ func formatReviewerDegradation(err error) string {
 		return msg[:157] + "..."
 	}
 	return msg
-}
-
-func ensureJSONReviewInstructions(instructions string) string {
-	if strings.Contains(strings.ToLower(instructions), "json") {
-		return instructions
-	}
-	return instructions + "\nRespond with valid json only."
-}
-
-func normalizeJSONReviewInput(input any) any {
-	switch value := input.(type) {
-	case string:
-		trimmed := strings.TrimSpace(value)
-		if strings.Contains(strings.ToLower(trimmed), "json") {
-			return trimmed
-		}
-		return "Review this patch brief and return findings as json.\n\n" + trimmed
-	default:
-		body := mustJSON(input)
-		if strings.Contains(strings.ToLower(body), "json") {
-			return body
-		}
-		return "Review this patch brief and return findings as json.\n\n" + body
-	}
 }

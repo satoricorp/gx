@@ -15,7 +15,7 @@ const (
 )
 
 var (
-	ErrNoRecordedAdds     = errors.New("no gx commit recorded for this stack")
+	ErrNoRecordedAdds     = errors.New("no commit recorded for this stack")
 	ErrEmptyCommitMessage = errors.New("commit message is required")
 )
 
@@ -102,7 +102,7 @@ func validateRecordedChangeDescription(description string) error {
 func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack StackInfo) error {
 	if stack.ID == 0 {
 		return fmt.Errorf(
-			"%w: stage changes with `git add`, then run `gx commit -m \"describe this revision\"` before `git push`",
+			"%w: stage changes with `git add`, then run `git commit -m \"describe this revision\"` before `git push`",
 			ErrNoRecordedAdds,
 		)
 	}
@@ -118,7 +118,7 @@ func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack Stack
 	}
 	if len(changes) == 0 {
 		return fmt.Errorf(
-			"%w: stage changes with `git add`, then run `gx commit -m \"...\"` to record at least one change before `git push`",
+			"%w: stage changes with `git add`, then run `git commit -m \"...\"` to record at least one change before `git push`",
 			ErrNoRecordedAdds,
 		)
 	}
@@ -128,7 +128,7 @@ func (s *Service) requireRecordedAddsForPublish(ctx context.Context, stack Stack
 		}
 	}
 	return fmt.Errorf(
-		"%w: recorded changes have no description; stage changes with `git add`, then run `gx commit -m \"...\"`",
+		"%w: recorded changes have no description; stage changes with `git add`, then run `git commit -m \"...\"`",
 		ErrNoRecordedAdds,
 	)
 }

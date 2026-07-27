@@ -77,34 +77,52 @@ func TestNormalizeGitCommonDir(t *testing.T) {
 	}
 }
 
-func TestCommitStagedViaGitWorksWithoutHooks(t *testing.T) {
+func TestPostCommitHookRecordsPlainGitCommit(t *testing.T) {
 	repo := initGitNativeTestRepo(t)
 	t.Setenv("GX_HOME", t.TempDir())
-	hooksDir := filepath.Join(repo, ".git", "hooks")
-	if err := os.RemoveAll(hooksDir); err != nil {
+	service := NewService()
+	if _, err := service.InitAtPath(context.Background(), repo, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	writeGitNativeTestFile(t, repo, "feature.txt", "feature\n")
 	runGitNativeTestGit(t, repo, "add", "feature.txt")
-	oldCWD, err := os.Getwd()
+	stamped, err := PrepareCommitMessageHook("add feature")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(oldCWD) }()
+	runGitNativeTestGit(t, repo, "commit", "-m", stamped)
 
-	result, err := NewService().CommitStagedViaGit(context.Background(), StagedRevisionOptions{Message: "add feature"})
+	// The post-commit hook runs without a pending context file; it must fall
+	// back to the repo it was handed and still record the revision.
+	if err := service.RunPostCommitHook(context.Background(), repo); err != nil {
+		t.Fatal(err)
+	}
+
+	message := runGitNativeTestGit(t, repo, "log", "-1", "--format=%B")
+	ids := ParseRevisionIDsFromMessage(message)
+	if len(ids) != 1 || !ValidRevisionID(ids[0]) {
+		t.Fatalf("commit message ids = %v, want exactly one valid revision id", ids)
+	}
+	headOID := strings.TrimSpace(runGitNativeTestGit(t, repo, "rev-parse", "HEAD"))
+	repoInfo, err := service.ResolveGXRepoAtPath(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ValidRevisionID(result.Change.ChangeID) {
-		t.Fatalf("revision id = %q", result.Change.ChangeID)
+	store, err := openStore(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
-	message := runGitNativeTestGit(t, repo, "log", "-1", "--format=%B")
-	if ids := ParseRevisionIDsFromMessage(message); len(ids) != 1 || ids[0] != result.Change.ChangeID {
-		t.Fatalf("commit message ids = %v, want %q", ids, result.Change.ChangeID)
+	defer store.Close()
+	repoRow, err := store.FindRepoByIdentity(context.Background(), repoInfo.GitCommonDir, repoInfo.RootPath)
+	if err != nil || repoRow == nil {
+		t.Fatalf("FindRepoByIdentity() = %+v, %v", repoRow, err)
+	}
+	change, err := store.FindChangeByJJChangeID(context.Background(), repoRow.ID, ids[0])
+	if err != nil || change == nil {
+		t.Fatalf("FindChangeByJJChangeID() = %+v, %v", change, err)
+	}
+	if change.CurrentCommitID != headOID {
+		t.Fatalf("recorded commit = %q, want %q", change.CurrentCommitID, headOID)
 	}
 }
 

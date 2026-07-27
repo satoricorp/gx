@@ -65,8 +65,8 @@ Then:
 ```bash
 git fetch origin
 git log --oneline origin/main -5
-gx sync
-gx status
+gx doctor
+git status
 ```
 
 ### Pass Criteria
@@ -147,8 +147,8 @@ Back in the GX repo:
 
 ```bash
 git fetch origin
-gx sync
-gx status
+gx doctor
+git status
 ```
 
 Then:

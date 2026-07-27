@@ -2,8 +2,6 @@ package vcs
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,58 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/commitcontext"
 	"github.com/satoricorp/gx/internal/gxconfig"
-	"github.com/satoricorp/gx/internal/storage"
 )
-
-type fakeRunner struct {
-	outputs map[string][]string
-}
-
-func runnerKey(dir, name string, args ...string) string {
-	return strings.Join(append([]string{dir, name}, args...), "\x00")
-}
-
-func (r *fakeRunner) run(dir, name string, args ...string) (string, error) {
-	key := runnerKey(dir, name, args...)
-	outputs := r.outputs[key]
-	if len(outputs) == 0 {
-		return "", fmt.Errorf("unexpected command: %s", strings.Join(append([]string{name}, args...), " "))
-	}
-	r.outputs[key] = outputs[1:]
-	return outputs[0], nil
-}
-
-func (r *fakeRunner) Run(_ context.Context, dir, name string, args ...string) (string, error) {
-	return r.run(dir, name, args...)
-}
-
-func (r *fakeRunner) RunStdout(_ context.Context, dir, name string, args ...string) (string, error) {
-	return r.run(dir, name, args...)
-}
-
-func (r *fakeRunner) RunStream(_ context.Context, dir, name string, args ...string) error {
-	_, err := r.run(dir, name, args...)
-	return err
-}
-
-func (r *fakeRunner) RunWithStdin(_ context.Context, dir, name, _ string, args ...string) (string, error) {
-	return r.run(dir, name, args...)
-}
-
-func gitCachedDiff(t *testing.T, root string) []byte {
-	t.Helper()
-	cmd := exec.Command("git", "diff", "--cached", "--binary")
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git diff --cached: %v\n%s", err, out)
-	}
-	return out
-}
 
 func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string) {
 	t.Helper()
@@ -136,55 +84,31 @@ func gitCurrentBranch(t *testing.T, root string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestParseCachedRawDiffIntentToAddAndSubmodule(t *testing.T) {
-	intentRaw := ":000000 100644 0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 A\tnew.txt\n"
-	intent, submodule := parseCachedRawDiff(intentRaw)
-	if !intent || submodule {
-		t.Fatalf("parseCachedRawDiff(intent) = (%v, %v), want (true, false)", intent, submodule)
+// commitViaHooks commits the staged selection with plain git and records it
+// exactly as GX's prepare-commit-msg and post-commit hooks do.
+func commitViaHooks(t *testing.T, svc *Service, root, message string) CommitResult {
+	t.Helper()
+	stamped, err := PrepareCommitMessageHook(message)
+	if err != nil {
+		t.Fatalf("PrepareCommitMessageHook() error = %v", err)
 	}
-	subRaw := ":160000 160000 abc123  def456 M\tsub\n"
-	intent, submodule = parseCachedRawDiff(subRaw)
-	if intent || !submodule {
-		t.Fatalf("parseCachedRawDiff(submodule) = (%v, %v), want (false, true)", intent, submodule)
+	runGit(t, root, "commit", "-m", stamped)
+	ctx := context.Background()
+	repo, err := svc.ResolveGXRepoAtPath(ctx, root)
+	if err != nil {
+		t.Fatalf("ResolveGXRepoAtPath() error = %v", err)
 	}
-	deleteRaw := ":100644 000000 abc123def4567890123456789012345678901234 0000000000000000000000000000000000000000 D\tgone.txt\n"
-	intent, submodule = parseCachedRawDiff(deleteRaw)
-	if intent || submodule {
-		t.Fatalf("parseCachedRawDiff(delete) = (%v, %v), want (false, false)", intent, submodule)
+	result, err := svc.RecordGitCommit(ctx, repo, gitHeadCommit(t, root), PendingCommitContext{
+		WorktreeRoot: repo.RootPath,
+		GitCommonDir: repo.GitCommonDir,
+	})
+	if err != nil {
+		t.Fatalf("RecordGitCommit() error = %v", err)
 	}
+	return result
 }
 
-func TestCommitHunksFromGitDiffQuotedPath(t *testing.T) {
-	diff := strings.Join([]string{
-		"diff --git a/path with spaces.txt b/path with spaces.txt",
-		`--- a/path with spaces.txt`,
-		`+++ "b/path with spaces.txt"`,
-		"@@ -0,0 +1 @@",
-		"+hello",
-	}, "\n")
-	hunks := commitHunksFromGitDiff(diff)
-	if len(hunks) != 1 {
-		t.Fatalf("hunks len = %d, want 1", len(hunks))
-	}
-	if hunks[0].FilePath != "path with spaces.txt" {
-		t.Fatalf("file path = %q, want quoted path parsed", hunks[0].FilePath)
-	}
-}
-
-func TestNoStagedChangesExitCode(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "empty"})
-	if err == nil {
-		t.Fatal("RecordStagedRevision() error = nil, want no staged changes")
-	}
-	var coded *CodedError
-	if !errors.As(err, &coded) || coded.Code != ExitCodeNoStagedChanges {
-		t.Fatalf("error = %v, want CodedError code %d", err, ExitCodeNoStagedChanges)
-	}
-	_ = root
-}
-
-func TestStagedCommitPostconditionPreservesUnstaged(t *testing.T) {
+func TestRecordedCommitPreservesUnstagedWork(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -194,10 +118,7 @@ func TestStagedCommitPostconditionPreservesUnstaged(t *testing.T) {
 	}
 	runGit(t, root, "add", "b.txt")
 
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "add b"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	commitViaHooks(t, svc, root, "add b")
 	status := gitStatusPorcelain(t, root)
 	if strings.Contains(status, "A  b.txt") || strings.Contains(status, "A b.txt") {
 		t.Fatalf("staged file remains after commit:\n%s", status)
@@ -207,17 +128,14 @@ func TestStagedCommitPostconditionPreservesUnstaged(t *testing.T) {
 	}
 }
 
-func TestStagedCommitStampsGXTrailer(t *testing.T) {
+func TestRecordedCommitStampsGXTrailer(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	if err := os.WriteFile(filepath.Join(root, "work.txt"), []byte("work\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "work.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "work change"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "work change")
 	trailer := RevisionTrailerLine(result.Change.ChangeID)
 	if !strings.Contains(result.Change.Description, "work change") {
 		t.Fatalf("description = %q, want subject work change", result.Change.Description)
@@ -269,7 +187,7 @@ func gitInterpretTrailer(t *testing.T, root, message, key string) (string, error
 	return "", fmt.Errorf("trailer %q not found in %q", key, string(out))
 }
 
-func TestStagedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
+func TestRecordedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "joes-work")
 	if err := os.WriteFile(filepath.Join(root, "work.txt"), []byte("work\n"), 0o644); err != nil {
@@ -277,10 +195,7 @@ func TestStagedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
 	}
 	runGit(t, root, "add", "work.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "work change"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "work change")
 	if result.Stack == nil || result.Stack.BookmarkName != "joes-work" {
 		t.Fatalf("stack bookmark = %v, want joes-work", result.Stack)
 	}
@@ -289,7 +204,7 @@ func TestStagedCommitOnUnconventionalBranchUsesBranchStack(t *testing.T) {
 	}
 }
 
-func TestStagedCommitOnBaseStaysOnBase(t *testing.T) {
+func TestRecordedCommitOnBaseStaysOnBase(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	beforeHead := gitHeadCommit(t, root)
 	if err := os.WriteFile(filepath.Join(root, "feature.txt"), []byte("f\n"), 0o644); err != nil {
@@ -297,25 +212,19 @@ func TestStagedCommitOnBaseStaysOnBase(t *testing.T) {
 	}
 	runGit(t, root, "add", "feature.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "auth change"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "auth change")
 	if result.Stack == nil || result.Stack.BookmarkName != "main" {
 		t.Fatalf("stack bookmark = %v, want main (the checked-out branch)", result.Stack)
 	}
-	if result.CreatedBranch {
-		t.Fatal("CreatedBranch = true, want false: gx commit must not mint branches")
-	}
 	if branch := gitCurrentBranch(t, root); branch != "main" {
-		t.Fatalf("current branch = %q, want main: gx commit must not move HEAD", branch)
+		t.Fatalf("current branch = %q, want main: recording must not move HEAD", branch)
 	}
 	if head := gitHeadCommit(t, root); head == beforeHead {
 		t.Fatal("HEAD did not advance; expected the staged commit on main")
 	}
 }
 
-func TestStagedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
+func TestRecordedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "master")
 	beforeHead := gitHeadCommit(t, root)
 	if err := os.WriteFile(filepath.Join(root, "x.txt"), []byte("x\n"), 0o644); err != nil {
@@ -323,10 +232,7 @@ func TestStagedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	}
 	runGit(t, root, "add", "x.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "work on master"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v; committing on the checked-out default branch is git-commit semantics", err)
-	}
+	result := commitViaHooks(t, svc, root, "work on master")
 	if branch := gitCurrentBranch(t, root); branch != "master" {
 		t.Fatalf("current branch = %q, want master", branch)
 	}
@@ -335,79 +241,6 @@ func TestStagedCommitOnProtectedMasterAdvancesBranch(t *testing.T) {
 	}
 	if result.Stack == nil || result.Stack.BookmarkName != "master" {
 		t.Fatalf("stack bookmark = %v, want master", result.Stack)
-	}
-}
-
-func TestAttributionLedgerSurvivesStoreReopen(t *testing.T) {
-	ctx := context.Background()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: "/tmp/repo", Backend: "jj"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	if err := recordChangeForStack(ctx, store, RepoInfo{RootPath: "/tmp/repo", Backend: "jj"}, &StackInfo{
-		Name:         "test",
-		BookmarkName: "feature/test",
-		BaseRef:      "main",
-		BaseCommitID: "commit0",
-		Status:       "draft",
-	}, ChangeInfo{
-		ChangeID:    "change1",
-		CommitID:    "commit1",
-		Description: "test",
-	}, "op1", nil, nil, true, []storage.SessionEventAttribution{{
-		Tool:             "cursor",
-		SessionID:        "session-missing-row",
-		EventFingerprint: "fp-1",
-		AttributedVia:    "commit",
-		CreatedAt:        1000,
-	}}, commitcontext.SelfReport{}); err != nil {
-		t.Fatalf("recordChangeForStack() error = %v", err)
-	}
-	_ = repoID
-	if err := db.Close(); err != nil {
-		t.Fatalf("db.Close() error = %v", err)
-	}
-
-	db, err = storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() reopen error = %v", err)
-	}
-	defer db.Close()
-	store, err = storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() reopen error = %v", err)
-	}
-	keys, err := store.AttributedSessionEventKeys(ctx, repoID)
-	if err != nil {
-		t.Fatalf("AttributedSessionEventKeys() error = %v", err)
-	}
-	key := storage.SessionEventAttributionKey("cursor", "session-missing-row", "fp-1")
-	if _, ok := keys[key]; !ok {
-		t.Fatalf("attribution key %q missing after store reopen", key)
-	}
-}
-
-func TestStagedCommitDetachedHEADRejected(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	runGit(t, root, "checkout", "--detach", "HEAD")
-	if err := os.WriteFile(filepath.Join(root, "d.txt"), []byte("d\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "d.txt")
-	_, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "detached"})
-	if err == nil || !errors.Is(err, ErrDetachedHEAD) {
-		t.Fatalf("RecordStagedRevision() error = %v, want detached HEAD", err)
 	}
 }
 
@@ -442,7 +275,7 @@ func readRepoFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestStagedCommitPartialStagingThreeVersionFidelity(t *testing.T) {
+func TestRecordedCommitPartialStagingThreeVersionFidelity(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "partial-staging")
 	filePath := filepath.Join(root, "a.txt")
@@ -454,9 +287,7 @@ func TestStagedCommitPartialStagingThreeVersionFidelity(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "stage middle only"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	commitViaHooks(t, svc, root, "stage middle only")
 	if got := gitShowPath(t, root, "HEAD", "a.txt"); got != "base\nstaged\n" {
 		t.Fatalf("committed content = %q, want staged middle version", got)
 	}
@@ -469,13 +300,14 @@ func TestStagedCommitPartialStagingThreeVersionFidelity(t *testing.T) {
 	}
 }
 
-func TestStagedCommitRenameFidelity(t *testing.T) {
+func TestRecordedCommitRenameFidelity(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "rename-test")
 	runGit(t, root, "mv", "a.txt", "renamed.txt")
 
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "rename a"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
+	result := commitViaHooks(t, svc, root, "rename a")
+	if !containsString(result.Change.Files, "renamed.txt") {
+		t.Fatalf("recorded files = %#v, want renamed.txt", result.Change.Files)
 	}
 	nameStatus := gitShowNameStatus(t, root, "HEAD")
 	if !strings.Contains(nameStatus, "R") || !strings.Contains(nameStatus, "renamed.txt") {
@@ -489,7 +321,7 @@ func TestStagedCommitRenameFidelity(t *testing.T) {
 	}
 }
 
-func TestStagedCommitModeBitOnlyFidelity(t *testing.T) {
+func TestRecordedCommitModeBitOnlyFidelity(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "mode-bit")
 	scriptPath := filepath.Join(root, "run.sh")
@@ -497,17 +329,13 @@ func TestStagedCommitModeBitOnlyFidelity(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "run.sh")
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "add script"}); err != nil {
-		t.Fatalf("RecordStagedRevision() add error = %v", err)
-	}
+	commitViaHooks(t, svc, root, "add script")
 	if err := os.Chmod(scriptPath, 0o755); err != nil {
 		t.Fatalf("Chmod() error = %v", err)
 	}
 	runGit(t, root, "add", "--chmod=+x", "run.sh")
 
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "chmod script"}); err != nil {
-		t.Fatalf("RecordStagedRevision() chmod error = %v", err)
-	}
+	commitViaHooks(t, svc, root, "chmod script")
 	cmd := exec.Command("git", "show", "--summary", "HEAD")
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
@@ -519,7 +347,7 @@ func TestStagedCommitModeBitOnlyFidelity(t *testing.T) {
 	}
 }
 
-func TestStagedCommitBinaryFileFidelity(t *testing.T) {
+func TestRecordedCommitBinaryFileFidelity(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "binary")
 	binPath := filepath.Join(root, "data.bin")
@@ -529,9 +357,7 @@ func TestStagedCommitBinaryFileFidelity(t *testing.T) {
 	}
 	runGit(t, root, "add", "data.bin")
 
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "add binary"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	commitViaHooks(t, svc, root, "add binary")
 	cmd := exec.Command("git", "show", "HEAD:data.bin")
 	cmd.Dir = root
 	out, err := cmd.Output()
@@ -543,13 +369,14 @@ func TestStagedCommitBinaryFileFidelity(t *testing.T) {
 	}
 }
 
-func TestStagedCommitDeleteFidelity(t *testing.T) {
+func TestRecordedCommitDeleteFidelity(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "delete-test")
 	runGit(t, root, "rm", "a.txt")
 
-	if _, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "delete a"}); err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
+	result := commitViaHooks(t, svc, root, "delete a")
+	if !containsString(result.Change.Files, "a.txt") {
+		t.Fatalf("recorded files = %#v, want deleted a.txt", result.Change.Files)
 	}
 	nameStatus := gitShowNameStatus(t, root, "HEAD")
 	if !strings.Contains(nameStatus, "D") || !strings.Contains(nameStatus, "a.txt") {
@@ -557,142 +384,6 @@ func TestStagedCommitDeleteFidelity(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "a.txt")); !os.IsNotExist(err) {
 		t.Fatalf("a.txt should remain deleted in working tree: %v", err)
-	}
-}
-
-func TestSessionEventAttributionsExcludeTemporalTier(t *testing.T) {
-	events := []capture.SessionEvent{{
-		Tool: "cursor", SessionID: "sess-1", FilePath: "a.go", NewText: "x",
-	}}
-	outcomes := []matcher.MatchOutcome{{
-		EventIndex: 0,
-		HunkIndex:  0,
-		Tier:       matcher.TierTemporal,
-		Score:      0.5,
-	}}
-	got := sessionEventAttributionsFromOutcomes(events, outcomes, "commit")
-	if len(got) != 0 {
-		t.Fatalf("sessionEventAttributionsFromOutcomes() = %#v, want none for temporal tier", got)
-	}
-}
-
-func TestSessionIDsFromMatchedLinksExcludeTemporalTier(t *testing.T) {
-	links := []matcher.HunkLink{
-		{SessionID: "exact", Tier: matcher.TierExact, Authorship: matcher.AuthorshipAgent},
-		{SessionID: "temporal", Tier: matcher.TierTemporal, Authorship: matcher.AuthorshipAgent},
-	}
-	got := sessionIDsFromMatchedLinks(links)
-	if len(got) != 1 || got[0] != "exact" {
-		t.Fatalf("sessionIDsFromMatchedLinks() = %#v, want [exact]", got)
-	}
-}
-
-func TestFilterUnattributedSessionEventsSkipsAttributed(t *testing.T) {
-	ctx := context.Background()
-	svc, root := setupStagedCommitRepo(t, "main")
-
-	ev := capture.SessionEvent{
-		Tool: "cursor", SessionID: "sess-dedupe", FilePath: "dedupe.go",
-		NewText: "added", Kind: capture.KindEdit,
-	}
-	fingerprint := matcher.EventFingerprint(ev)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoInfo, err := svc.ResolveGXRepoAtPath(ctx, root)
-	if err != nil {
-		t.Fatalf("ResolveGXRepoAtPath() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: root, GitCommonDir: repoInfo.GitCommonDir, Backend: "git"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "dedupe-change", CurrentCommitID: "dedupe-commit", Description: "dedupe",
-		Status: "draft", FirstSeenAt: 1, UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-	if err := store.UpsertSession(ctx, storage.Session{
-		ID: ev.SessionID, CreatedAt: 1000, Command: ev.Tool, Cwd: root, RepoRoot: &root,
-	}); err != nil {
-		t.Fatalf("UpsertSession() error = %v", err)
-	}
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{{
-		RepoID: repoID, ChangeID: changeID, Tool: ev.Tool, SessionID: ev.SessionID,
-		EventFingerprint: fingerprint, AttributedVia: "commit", CreatedAt: 1000,
-	}}); err != nil {
-		t.Fatalf("WriteSessionEventAttributions() error = %v", err)
-	}
-	_ = db.Close()
-
-	filtered := svc.filterUnattributedSessionEvents(ctx, root, []capture.SessionEvent{ev})
-	if len(filtered) != 0 {
-		t.Fatalf("filterUnattributedSessionEvents() = %#v, want attributed event removed", filtered)
-	}
-}
-
-func TestAttributedEventNotWrittenTwiceForSecondCommit(t *testing.T) {
-	ctx := context.Background()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-
-	db, err := storage.Open(ctx)
-	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
-	}
-	defer db.Close()
-	store, err := storage.NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("storage.NewStore() error = %v", err)
-	}
-	repoID, err := store.UpsertRepo(ctx, storage.Repo{RootPath: "/tmp/ledger", Backend: "jj"})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "change-1", CurrentCommitID: "commit-1", Description: "first",
-		Status: "draft", FirstSeenAt: 1, UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-	if err := store.UpsertSession(ctx, storage.Session{
-		ID: "sess-1", CreatedAt: 1000, Command: "cursor",
-	}); err != nil {
-		t.Fatalf("UpsertSession() error = %v", err)
-	}
-	attr := storage.SessionEventAttribution{
-		RepoID: repoID, ChangeID: changeID, Tool: "cursor", SessionID: "sess-1",
-		EventFingerprint: "fp-stable", AttributedVia: "commit", CreatedAt: 1000,
-	}
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{attr}); err != nil {
-		t.Fatalf("first WriteSessionEventAttributions() error = %v", err)
-	}
-	changeID2, err := store.UpsertChange(ctx, storage.Change{
-		RepoID: repoID, JJChangeID: "change-2", CurrentCommitID: "commit-2", Description: "second",
-		Status: "draft", FirstSeenAt: 2, UpdatedAt: 2,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange(2) error = %v", err)
-	}
-	attr.ChangeID = changeID2
-	if err := store.WriteSessionEventAttributions(ctx, []storage.SessionEventAttribution{attr}); err != nil {
-		t.Fatalf("second WriteSessionEventAttributions() error = %v", err)
-	}
-	keys, err := store.AttributedSessionEventKeys(ctx, repoID)
-	if err != nil {
-		t.Fatalf("AttributedSessionEventKeys() error = %v", err)
-	}
-	if len(keys) != 1 {
-		t.Fatalf("attributed keys = %d, want 1 (no duplicate re-attribution)", len(keys))
 	}
 }
 
@@ -704,95 +395,7 @@ func TestRejectProtectedStackBookmarkSecondChokePoint(t *testing.T) {
 	}
 }
 
-func setupUnbornStagedCommitRepo(t *testing.T) (*Service, string) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git executable not found")
-	}
-	root := t.TempDir()
-	runGit(t, root, "init", "-b", "main")
-	runGit(t, root, "config", "user.name", "Test User")
-	runGit(t, root, "config", "user.email", "test@example.com")
-
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-	if err := gxconfig.Save(gxconfig.Config{
-		User: gxconfig.User{Name: "Test User", Email: "test@example.com"},
-	}); err != nil {
-		t.Fatalf("gxconfig.Save() error = %v", err)
-	}
-
-	prev, _ := os.Getwd()
-	if err := os.Chdir(root); err != nil {
-		t.Fatalf("Chdir() error = %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
-
-	svc := NewServiceWithRunner(ExecRunner{})
-	if _, err := svc.InitAtPath(context.Background(), root, InitOptions{}); err != nil {
-		t.Fatalf("InitAtPath() error = %v", err)
-	}
-	return svc, root
-}
-
-func TestPreflightStagedIndexRejectsIntentToAddRawDiff(t *testing.T) {
-	repoRoot := t.TempDir()
-	intentRaw := ":000000 100644 0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 A\tnew.txt\n"
-	runner := &fakeRunner{
-		outputs: map[string][]string{
-			runnerKey(repoRoot, "git", "ls-files", "-u"):                           {""},
-			runnerKey(repoRoot, "git", "diff", "--cached", "--raw", "--no-abbrev"): {intentRaw},
-		},
-	}
-	svc := NewServiceWithRunner(runner)
-	err := svc.preflightStagedIndex(context.Background(), repoRoot)
-	if err == nil || !strings.Contains(err.Error(), "intent-to-add") {
-		t.Fatalf("preflightStagedIndex() error = %v, want intent-to-add rejection", err)
-	}
-}
-
-func TestPreflightStagedIndexRejectsSubmoduleRawDiff(t *testing.T) {
-	repoRoot := t.TempDir()
-	subRaw := ":160000 160000 abc1234567890123456789012345678901234567890 def4567890123456789012345678901234567890 M\tsub\n"
-	runner := &fakeRunner{
-		outputs: map[string][]string{
-			runnerKey(repoRoot, "git", "ls-files", "-u"):                           {""},
-			runnerKey(repoRoot, "git", "diff", "--cached", "--raw", "--no-abbrev"): {subRaw},
-		},
-	}
-	svc := NewServiceWithRunner(runner)
-	err := svc.preflightStagedIndex(context.Background(), repoRoot)
-	if err == nil || !strings.Contains(err.Error(), "submodule") {
-		t.Fatalf("preflightStagedIndex() error = %v, want submodule rejection", err)
-	}
-}
-
-func TestStagedCommitSubmoduleRejected(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	subRoot := filepath.Join(root, "subrepo")
-	if err := os.MkdirAll(subRoot, 0o755); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	runGit(t, subRoot, "init", "-b", "main")
-	runGit(t, subRoot, "config", "user.name", "Test User")
-	runGit(t, subRoot, "config", "user.email", "test@example.com")
-	if err := os.WriteFile(filepath.Join(subRoot, "sub.txt"), []byte("sub\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, subRoot, "add", ".")
-	runGit(t, subRoot, "commit", "-m", "sub init")
-	subCommit, err := exec.Command("git", "-C", subRoot, "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatalf("rev-parse subrepo HEAD: %v", err)
-	}
-	runGit(t, root, "update-index", "--add", "--cacheinfo", "160000", strings.TrimSpace(string(subCommit)), "sub")
-	_, err = svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "add sub"})
-	if err == nil || !strings.Contains(err.Error(), "submodule") {
-		t.Fatalf("RecordStagedRevision() error = %v, want submodule rejection", err)
-	}
-}
-
-func TestStagedCommitQuotedPathWithSpaces(t *testing.T) {
+func TestRecordedCommitQuotedPathWithSpaces(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "quoted-path")
 	spaced := filepath.Join(root, "path with spaces.txt")
@@ -801,10 +404,7 @@ func TestStagedCommitQuotedPathWithSpaces(t *testing.T) {
 	}
 	runGit(t, root, "add", "path with spaces.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "spaced path"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "spaced path")
 	if !containsString(result.Change.Files, "path with spaces.txt") {
 		t.Fatalf("recorded files = %#v, want spaced path", result.Change.Files)
 	}
@@ -822,46 +422,6 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func TestStagedCommitExplicitBranchCreatesAndSwitches(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	if err := os.WriteFile(filepath.Join(root, "opt-in.txt"), []byte("b\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	runGit(t, root, "add", "opt-in.txt")
-
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{
-		Message: "opt-in branch work",
-		Branch:  "feature/opt-in",
-	})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision(--branch) error = %v", err)
-	}
-	if !result.CreatedBranch {
-		t.Fatal("CreatedBranch = false, want true for explicit --branch")
-	}
-	if result.Stack == nil || result.Stack.BookmarkName != "feature/opt-in" {
-		t.Fatalf("stack bookmark = %v, want feature/opt-in", result.Stack)
-	}
-	if branch := gitCurrentBranch(t, root); branch != "feature/opt-in" {
-		t.Fatalf("current branch = %q, want feature/opt-in", branch)
-	}
-}
-
-func TestSessionEventAttributionsDedupeSameEvent(t *testing.T) {
-	events := []capture.SessionEvent{{
-		Tool: "cursor", SessionID: "sess-1", FilePath: "a.go", NewText: "x",
-		Raw: map[string]json.RawMessage{"uuid": json.RawMessage(`"event-1"`)},
-	}}
-	outcomes := []matcher.MatchOutcome{
-		{EventIndex: 0, HunkIndex: 0, Tier: matcher.TierExact, Score: 1},
-		{EventIndex: 0, HunkIndex: 1, Tier: matcher.TierFuzzy, Score: 0.9},
-	}
-	got := sessionEventAttributionsFromOutcomes(events, outcomes, "commit")
-	if len(got) != 1 {
-		t.Fatalf("sessionEventAttributionsFromOutcomes() = %d attributions, want 1 deduped", len(got))
-	}
-}
-
 func gitStagedNames(t *testing.T, root string) string {
 	t.Helper()
 	cmd := exec.Command("git", "diff", "--cached", "--name-only")
@@ -873,7 +433,7 @@ func gitStagedNames(t *testing.T, root string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestStagedCommitAfterExternalCheckout(t *testing.T) {
+func TestRecordedCommitAfterExternalCheckout(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "side")
 	if err := os.WriteFile(filepath.Join(root, "s.txt"), []byte("s\n"), 0o644); err != nil {
@@ -881,10 +441,7 @@ func TestStagedCommitAfterExternalCheckout(t *testing.T) {
 	}
 	runGit(t, root, "add", "s.txt")
 
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "side work"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() after external checkout error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "side work")
 	if result.Stack == nil || result.Stack.BookmarkName != "side" {
 		t.Fatalf("stack = %v, want bookmark side", result.Stack)
 	}
@@ -896,7 +453,7 @@ func TestStagedCommitAfterExternalCheckout(t *testing.T) {
 	}
 }
 
-func TestStatusSnapshotPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
+func TestStackPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "topic")
 	if err := os.WriteFile(filepath.Join(root, "p.txt"), []byte("p\n"), 0o644); err != nil {
@@ -904,30 +461,27 @@ func TestStatusSnapshotPreservesStagedIndexAfterExternalCheckout(t *testing.T) {
 	}
 	runGit(t, root, "add", "p.txt")
 
-	if _, err := svc.StatusSnapshot(context.Background()); err != nil {
-		t.Fatalf("StatusSnapshot() error = %v", err)
+	if _, err := svc.Stack(context.Background()); err != nil {
+		t.Fatalf("Stack() error = %v", err)
 	}
 	if staged := gitStagedNames(t, root); staged != "p.txt" {
-		t.Fatalf("staged files after StatusSnapshot = %q, want p.txt", staged)
+		t.Fatalf("staged files after Stack = %q, want p.txt", staged)
 	}
 }
 
-func TestStagedCommitAfterRawGitCommitSyncs(t *testing.T) {
+func TestRecordedCommitAfterUnstampedGitCommitSyncs(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	if err := os.WriteFile(filepath.Join(root, "raw.txt"), []byte("raw\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "raw.txt")
-	runGit(t, root, "commit", "-m", "raw commit outside gx")
+	runGit(t, root, "commit", "-m", "raw commit without a GX trailer")
 
 	if err := os.WriteFile(filepath.Join(root, "next.txt"), []byte("next\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "next.txt")
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "after raw commit"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() after raw git commit error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "after raw commit")
 	if result.Change.CommitID == "" {
 		t.Fatal("recorded change has no commit id")
 	}
@@ -936,7 +490,7 @@ func TestStagedCommitAfterRawGitCommitSyncs(t *testing.T) {
 	}
 }
 
-func TestStagedCommitSelfInitializesPlainGitRepo(t *testing.T) {
+func TestRecordedCommitSelfInitializesPlainGitRepo(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Test User")
@@ -964,11 +518,11 @@ func TestStagedCommitSelfInitializesPlainGitRepo(t *testing.T) {
 	runGit(t, root, "add", "n.txt")
 
 	svc := NewServiceWithRunner(ExecRunner{})
-	result, err := svc.RecordStagedRevision(context.Background(), StagedRevisionOptions{Message: "first ever"})
-	if err != nil {
-		t.Fatalf("RecordStagedRevision() in plain git repo error = %v", err)
-	}
+	result := commitViaHooks(t, svc, root, "first ever")
 	if result.Change.CommitID == "" {
 		t.Fatal("recorded change has no commit id")
+	}
+	if result.Stack == nil || result.Stack.BookmarkName != "main" {
+		t.Fatalf("stack = %v, want the checked-out branch recorded in a fresh repo", result.Stack)
 	}
 }

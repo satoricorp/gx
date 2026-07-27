@@ -16,7 +16,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-func shouldLaunch(args []string) bool {
-	return cli.ShouldLaunch(args)
-}

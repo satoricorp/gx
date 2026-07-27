@@ -91,7 +91,6 @@ mkdir -p "$resources_dir/bin"
 cp "$menubar_dir/bin/gx" "$resources_dir/bin/gx"
 chmod 755 "$resources_dir/bin/gx"
 ln -sf gx "$resources_dir/bin/gxr"
-ln -sf gx "$resources_dir/bin/gxs"
 
 if [[ ! -x "$repo_root/mcp/dist/gx-mcp" ]]; then
   echo "missing MCP stdio binary: $repo_root/mcp/dist/gx-mcp" >&2

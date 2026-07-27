@@ -16,6 +16,11 @@ import (
 	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
+// staleStagedRowAge is how old an unattested staged row has to be before it is
+// treated as stranded rather than in flight. A push attests the rows it staged
+// within the same run, so anything older than a couple of days was missed.
+const staleStagedRowAge = 48 * time.Hour
+
 type captureDoctorJSON struct {
 	HookInstalled        bool                 `json:"hookInstalled"`
 	HookApplicable       bool                 `json:"hookApplicable"`
@@ -25,11 +30,16 @@ type captureDoctorJSON struct {
 	RepoHooksMissing     int                  `json:"repoHooksMissing"`
 	RepoHooksUnreachable int                  `json:"repoHooksUnreachable"`
 	RepoHooksOK          bool                 `json:"repoHooksOK"`
+	GlobalHooks          globalHookDoctorJSON `json:"globalHooks"`
 	UploadAuthed         bool                 `json:"uploadAuthed"`
 	UploadAPI            string               `json:"uploadAPI,omitempty"`
 	UploadAuthError      string               `json:"uploadAuthError,omitempty"`
 	PendingExtracts      int                  `json:"pendingExtracts"`
 	PendingSessions      int                  `json:"pendingSessions"`
+	FailedUploads        int                  `json:"failedUploads"`
+	ExhaustedUploads     int                  `json:"exhaustedUploads"`
+	UploadError          string               `json:"uploadError,omitempty"`
+	StaleStagedRows      int                  `json:"staleStagedRows"`
 	CursorReachable      bool                 `json:"cursorReachable"`
 	CursorPath           string               `json:"cursorPath,omitempty"`
 	DiskFreeGB           int                  `json:"diskFreeGB"`
@@ -45,6 +55,15 @@ type captureIssueJSON struct {
 	Action   string `json:"action"`
 }
 
+type globalHookDoctorJSON struct {
+	Dir            string `json:"dir,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	Installed      bool   `json:"installed"`
+	ConfiguredPath string `json:"configuredPath,omitempty"`
+	Conflict       string `json:"conflict,omitempty"`
+	NeedsRepair    bool   `json:"needsRepair"`
+}
+
 type repoHookDoctorJSON struct {
 	RepoRoot      string `json:"repoRoot"`
 	HookInstalled bool   `json:"hookInstalled"`
@@ -55,6 +74,7 @@ type repoHookDoctorJSON struct {
 func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON {
 	status := captureDoctorJSON{}
 	status.HookInstalled, status.HookApplicable, status.RepoRoot = capturePrimaryHookStatus(ctx, repoRoot)
+	status.GlobalHooks = captureGlobalHookStatus(ctx)
 	status.RepoHooks = captureRegisteredRepoHooks(ctx)
 	status.RepoHooksTotal = len(status.RepoHooks)
 	status.RepoHooksOK = true
@@ -82,6 +102,24 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 		status.PendingExtracts = counts.Extracts
 		status.PendingSessions = counts.Sessions
 	}
+	// Uploads run detached with their output discarded, so upload_error is the
+	// only record they leave. Doctor is where a user goes to ask "is capture
+	// working?", and it used to answer from a hardcoded literal.
+	if failures, err := storage.CaptureUploadFailureCounts(ctx); err == nil {
+		status.FailedUploads = failures.Total()
+		status.ExhaustedUploads = failures.ExhaustedRows
+		status.UploadError = failures.LastError
+	}
+	if stager, err := storage.OpenCaptureStager(ctx); err == nil {
+		// Rows staged long ago that never became shareable are never going to:
+		// the run that could address them by id is over and their revisions are
+		// already pushed. Counting them is what keeps that residue from being
+		// invisible forever.
+		cutoff := time.Now().Add(-staleStagedRowAge).UnixMilli()
+		if count, err := stager.StaleStagedRows(ctx, cutoff); err == nil {
+			status.StaleStagedRows = count
+		}
+	}
 	if path, err := cursoringest.DefaultVSCDBPath(); err == nil {
 		status.CursorPath = path
 		if _, statErr := os.Stat(path); statErr == nil {
@@ -97,16 +135,38 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 	return status
 }
 
+// captureGlobalHookStatus reports the machine-wide `gx init --global` state.
+// It only reads git config; repairs stay behind an explicit `gx init --global`.
+func captureGlobalHookStatus(ctx context.Context) globalHookDoctorJSON {
+	state, err := hooks.GlobalStatus(ctx)
+	if err != nil {
+		return globalHookDoctorJSON{}
+	}
+	return globalHookDoctorJSON{
+		Dir:            state.HooksDir,
+		Enabled:        state.Enabled,
+		Installed:      state.Installed,
+		ConfiguredPath: state.ConfiguredPath,
+		Conflict:       state.Conflict,
+		NeedsRepair:    state.NeedsRepair(),
+	}
+}
+
 func captureDoctorOK(status captureDoctorJSON) bool {
 	return (!status.HookApplicable || status.HookInstalled) &&
+		!status.GlobalHooks.NeedsRepair &&
 		status.RepoHooksOK &&
 		status.UploadAuthed &&
 		status.CursorReachable &&
+		status.FailedUploads == 0 &&
 		!status.DiskWarn
 }
 
 func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	fmt.Fprintln(out, labelValue("Hooks installed", captureHooksDoctorValue(status)))
+	if value := captureGlobalHooksDoctorValue(status.GlobalHooks); value != "" {
+		fmt.Fprintln(out, labelValue("Global hooks", value))
+	}
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload", success("ok")+": "+status.UploadAPI))
 	} else {
@@ -122,6 +182,21 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	} else {
 		fmt.Fprintln(out, labelValue("Staging backlog", fmt.Sprintf("%d pending", backlog)))
 	}
+	if status.StaleStagedRows > 0 {
+		fmt.Fprintln(out, labelValue("Stranded staging rows",
+			fmt.Sprintf("%d row(s) staged over %s ago and never attested; they will not upload",
+				status.StaleStagedRows, staleStagedRowAge)))
+	}
+	if status.FailedUploads > 0 {
+		detail := fmt.Sprintf("%d row(s) failing", status.FailedUploads)
+		if status.ExhaustedUploads > 0 {
+			detail += fmt.Sprintf(", %d gave up after %d attempts", status.ExhaustedUploads, storage.MaxUploadAttempts)
+		}
+		if strings.TrimSpace(status.UploadError) != "" {
+			detail += ": " + status.UploadError
+		}
+		fmt.Fprintln(out, labelValue("Upload errors", danger("warn")+": "+detail))
+	}
 	fmt.Fprintln(out, labelValue("Disk used", formatDiskUsedGB(gxStorageDiskUsedBytes())))
 }
 
@@ -136,6 +211,21 @@ func captureHooksDoctorValue(status captureDoctorJSON) string {
 		return success("ok")
 	}
 	return "not checked: run `gx doctor` inside a git repo"
+}
+
+// captureGlobalHooksDoctorValue renders the machine-wide hook row, or "" when
+// the user never opted into `gx init --global` (nothing worth a line then).
+func captureGlobalHooksDoctorValue(global globalHookDoctorJSON) string {
+	switch {
+	case global.Conflict != "":
+		return danger("warn") + ": core.hooksPath points at " + global.Conflict + "; run `gx init --global` to restore"
+	case global.NeedsRepair:
+		return danger("warn") + ": incomplete; run `gx init --global`"
+	case global.Enabled:
+		return success("ok") + ": " + global.Dir
+	default:
+		return ""
+	}
 }
 
 func formatDiskUsedGB(bytes int64) string {
@@ -288,6 +378,21 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Action:   "run `gx init` in this repo",
 		})
 	}
+	if status.GlobalHooks.Conflict != "" {
+		issues = append(issues, captureIssueJSON{
+			Code:     "global_hooks_overridden",
+			Severity: "fail",
+			Message:  "global core.hooksPath points at " + status.GlobalHooks.Conflict + " instead of GX",
+			Action:   "run `gx init --global` (GX chains to each repo's own hooks)",
+		})
+	} else if status.GlobalHooks.NeedsRepair {
+		issues = append(issues, captureIssueJSON{
+			Code:     "global_hooks_incomplete",
+			Severity: "fail",
+			Message:  "machine-wide GX hooks are incomplete",
+			Action:   "run `gx init --global`",
+		})
+	}
 	if status.RepoHooksUnreachable > 0 {
 		issues = append(issues, captureIssueJSON{
 			Code:     "repo_hooks_unreachable",
@@ -329,6 +434,18 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Code:     "cursor_vscdb_missing",
 			Severity: "fail",
 			Message:  "Cursor state.vscdb missing",
+			Action:   action,
+		})
+	}
+	if status.FailedUploads > 0 {
+		action := "run `gx capture sync` to see the failure"
+		if strings.TrimSpace(status.UploadError) != "" {
+			action = status.UploadError
+		}
+		issues = append(issues, captureIssueJSON{
+			Code:     "capture_upload_failing",
+			Severity: "fail",
+			Message:  fmt.Sprintf("%d staged capture row(s) failed to upload", status.FailedUploads),
 			Action:   action,
 		})
 	}

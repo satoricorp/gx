@@ -4,20 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/parsers"
-	"github.com/satoricorp/gx/internal/capture/parsers/claude"
-	"github.com/satoricorp/gx/internal/capture/parsers/codex"
-	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
-// IngestRawSession stores a raw session blob before parsing and updates parsed payload.
+// sourceFingerprint describes one transcript file's bytes at one instant, so
+// a later reader can tell whether the file grew or was rewritten.
+type sourceFingerprint struct {
+	hash    string
+	bytes   int64
+	mtimeMS int64
+}
+
+func fingerprintBytes(raw []byte, path string) sourceFingerprint {
+	fp := sourceFingerprint{
+		hash:  storage.PayloadContentHash(raw),
+		bytes: int64(len(raw)),
+	}
+	if info, err := os.Stat(path); err == nil {
+		fp.mtimeMS = info.ModTime().UnixMilli()
+	}
+	return fp
+}
+
+// IngestRawSession parses one transcript and stages its pointer row: parsed
+// events plus source path and content fingerprint, never the raw bytes. The
+// upload path re-reads the transcript from disk at upload time.
 func IngestRawSession(
 	ctx context.Context,
 	stager storage.CaptureStager,
@@ -27,116 +44,124 @@ func IngestRawSession(
 	repoRoot string,
 	revisionIDs []string,
 ) (StagedSession, int, error) {
-	sessionID := sessionIDFromPath(tool, sourcePath)
-	if err := stageRawBlob(ctx, stager, tool, sessionID, sourcePath, raw, revisionIDs); err != nil {
-		return StagedSession{}, 0, err
-	}
-
+	sessionID := parsers.SourceSessionID(tool, sourcePath)
 	events, badLines, err := parseRawBytes(tool, sourcePath, raw, repoRoot, nil)
 	if err != nil {
 		return StagedSession{}, badLines, err
+	}
+	// The per-source identity wins over any in-file sessionId: Claude stamps
+	// subagent transcripts with the parent conversation's id.
+	for i := range events {
+		events[i].SessionID = sessionID
 	}
 	session := StagedSession{
 		SessionID: sessionID,
 		Tool:      tool,
 		Events:    redactEvents(events),
 	}
-	if err := stageParsedSession(ctx, stager, session, sourcePath, raw, badLines, revisionIDs); err != nil {
+	if _, err := stageSourceSession(ctx, stager, session, sourcePath, fingerprintBytes(raw, sourcePath), badLines, revisionIDs); err != nil {
 		return session, badLines, err
 	}
 	return session, badLines, nil
 }
 
-// StageDiscoveredRaw stores raw blobs for discovered JSONL sessions before parsing.
-func StageDiscoveredRaw(ctx context.Context, stager storage.CaptureStager, sessions []parsers.DiscoveredSession, revisionIDs []string) error {
-	for _, session := range sessions {
-		if session.Kind != parsers.SessionKindJSONL {
-			continue
-		}
-		raw, err := os.ReadFile(session.Path)
-		if err != nil {
-			continue
-		}
-		if err := stageRawBlob(ctx, stager, session.Tool, session.SessionID, session.Path, raw, revisionIDs); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func stageRawBlob(
+// stageMatchedSource stages the capture_sessions rows for one source whose
+// events matched this push's hunks, and returns the ids of the rows it wrote.
+// JSONL sources get exactly one pointer row. A Cursor vscdb holds many sessions
+// and its bytes are a SQLite database, not a transcript, so it stages one
+// parsed-events row per contained session with no source pointer for the upload
+// path to re-read.
+func stageMatchedSource(
 	ctx context.Context,
 	stager storage.CaptureStager,
-	tool, sessionID, sourcePath string,
-	raw []byte,
+	source parsers.DiscoveredSession,
+	events []capture.SessionEvent,
 	revisionIDs []string,
-) error {
-	ids := revisionIDs
-	if len(ids) == 0 {
-		ids = []string{""}
+) ([]string, error) {
+	if source.Kind == parsers.SessionKindCursorVSCDB {
+		var staged []string
+		for _, session := range groupSessions(events) {
+			id, err := stageSourceSession(ctx, stager, session, "", sourceFingerprint{}, 0, revisionIDs)
+			if err != nil {
+				return staged, err
+			}
+			staged = append(staged, id)
+		}
+		return staged, nil
 	}
-	contentHash := storage.PayloadContentHash(raw)
-	for _, revisionID := range ids {
-		row := storage.StagedSession{
-			SessionID:   sessionID,
-			Tool:        tool,
-			RawBlob:     raw,
-			SourcePath:  sourcePath,
-			RevisionID:  revisionID,
-			ContentHash: contentHash,
-		}
-		row.ID = storage.CaptureRowID(revisionID, contentHash)
-		if row.ID == "" {
-			row.ID = uuid.NewString()
-		}
-		if err := stager.StageSession(ctx, row); err != nil {
-			return err
-		}
+	session := StagedSession{
+		SessionID: source.SessionID,
+		Tool:      source.Tool,
+		Events:    events,
 	}
-	return nil
+	// The fingerprint read is the only time staging touches the transcript
+	// bytes; they are hashed and dropped, not stored. A read failure still
+	// stages the pointer — the upload path reports the missing source.
+	var fp sourceFingerprint
+	if raw, err := os.ReadFile(source.Path); err == nil {
+		fp = fingerprintBytes(raw, source.Path)
+	}
+	id, err := stageSourceSession(ctx, stager, session, source.Path, fp, 0, revisionIDs)
+	if err != nil {
+		return nil, err
+	}
+	return []string{id}, nil
 }
 
-func stageParsedSession(
+// stageSourceSession writes the single capture_sessions row for one staged
+// session. The row is keyed by source identity, so re-staging on a later push
+// updates in place instead of accumulating copies.
+//
+// A push usually spans several revisions and one session usually backs many
+// of them. That many-to-many already lives in the extract's hunk links (each
+// link names its commit), so the session row carries only one revision from
+// the pushed range: RunPush marks rows shareable with the full pushed
+// revision set, and membership of any one revision is enough to be swept in.
+// The old row-per-revision model duplicated multi-megabyte blobs and said
+// nothing the hunk links do not.
+// It returns the row id it wrote so callers can address the row directly,
+// without re-deriving it or matching on revision.
+func stageSourceSession(
 	ctx context.Context,
 	stager storage.CaptureStager,
 	session StagedSession,
 	sourcePath string,
-	raw []byte,
+	fp sourceFingerprint,
 	badLines int,
 	revisionIDs []string,
-) error {
+) (string, error) {
 	payload, err := json.Marshal(session)
 	if err != nil {
-		return err
+		return "", err
 	}
-	ids := revisionIDs
-	if len(ids) == 0 {
-		ids = []string{""}
+	row := storage.StagedSession{
+		SessionID:   session.SessionID,
+		Tool:        session.Tool,
+		PayloadJSON: payload,
+		SourcePath:  sourcePath,
+		SourceBytes: fp.bytes,
+		SourceMTime: fp.mtimeMS,
+		BadLines:    badLines,
+		RevisionID:  firstNonEmpty(revisionIDs),
+		ContentHash: fp.hash,
 	}
-	contentHash := storage.PayloadContentHash(raw)
-	if len(raw) == 0 {
-		contentHash = storage.PayloadContentHash(payload)
+	row.ID = storage.SessionSourceRowID(session.Tool, sourcePath, session.SessionID)
+	if row.ID == "" {
+		row.ID = uuid.NewString()
 	}
-	for _, revisionID := range ids {
-		row := storage.StagedSession{
-			SessionID:   session.SessionID,
-			Tool:        session.Tool,
-			PayloadJSON: payload,
-			RawBlob:     raw,
-			SourcePath:  sourcePath,
-			BadLines:    badLines,
-			RevisionID:  revisionID,
-			ContentHash: contentHash,
+	if err := stager.StageSession(ctx, row); err != nil {
+		return "", err
+	}
+	return row.ID, nil
+}
+
+func firstNonEmpty(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
 		}
-		row.ID = storage.CaptureRowID(revisionID, contentHash)
-		if row.ID == "" {
-			row.ID = uuid.NewString()
-		}
-		if err := stager.StageSession(ctx, row); err != nil {
-			return err
-		}
 	}
-	return nil
+	return ""
 }
 
 func ParseRawBytes(tool, sourcePath string, raw []byte, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
@@ -144,31 +169,5 @@ func ParseRawBytes(tool, sourcePath string, raw []byte, repoRoot string, invento
 }
 
 func parseRawBytes(tool, sourcePath string, raw []byte, repoRoot string, inventory *capture.InventoryCollector) ([]capture.SessionEvent, int, error) {
-	switch tool {
-	case capture.ToolClaude:
-		parser := &claude.Parser{Inventory: inventory}
-		events, err := parser.ParseBytes(raw, sourcePath, repoRoot)
-		return events, parser.LastBadLines, err
-	case capture.ToolCodex:
-		parser := &codex.Parser{Inventory: inventory}
-		return parser.ParseBytes(raw, sourcePath, repoRoot)
-	case capture.ToolCursor:
-		parser := &cursorparser.Parser{Inventory: inventory}
-		return parser.ParseBytes(raw, sourcePath, repoRoot)
-	default:
-		return nil, 0, nil
-	}
-}
-
-func sessionIDFromPath(tool, sourcePath string) string {
-	switch tool {
-	case capture.ToolClaude, capture.ToolCodex:
-		return strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
-	case capture.ToolCursor:
-		stem := strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
-		if stem != "" {
-			return "cursor:" + stem
-		}
-	}
-	return strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
+	return parsers.ParseBytes(tool, sourcePath, raw, repoRoot, inventory)
 }

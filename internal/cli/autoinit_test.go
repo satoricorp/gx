@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestStatusAutoInitializesUnbornGitRepo(t *testing.T) {
+func TestDoctorAutoInitializesUnbornGitRepo(t *testing.T) {
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
@@ -28,27 +28,27 @@ func TestStatusAutoInitializesUnbornGitRepo(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"status"})
+	cmd.SetArgs([]string{"doctor"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx status error = %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
+		t.Fatalf("gx doctor error = %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
 	}
 	combined := out.String() + errOut.String()
 	if strings.Contains(combined, "Revision `main` doesn't exist") {
-		t.Fatalf("gx status leaked jj main error:\n%s", combined)
+		t.Fatalf("gx doctor leaked jj main error:\n%s", combined)
 	}
 	if strings.Contains(combined, "jj log -r mutable()") {
-		t.Fatalf("gx status leaked raw jj command:\n%s", combined)
+		t.Fatalf("gx doctor leaked raw jj command:\n%s", combined)
 	}
 	if !strings.Contains(errOut.String(), "Initializing gx for this repository") {
-		t.Fatalf("gx status missing auto-init notice on stderr:\nstdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
+		t.Fatalf("gx doctor missing auto-init notice on stderr:\nstdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".jj")); !os.IsNotExist(err) {
-		t.Fatalf("gx status unexpectedly created .jj: %v", err)
+		t.Fatalf("gx doctor unexpectedly created .jj: %v", err)
 	}
 }
 
-func TestStatusWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
+func TestDoctorWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
@@ -73,16 +73,16 @@ func TestStatusWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"status"})
+	cmd.SetArgs([]string{"doctor"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx status should remain usable: %v\n%s", err, errOut.String())
+		t.Fatalf("gx doctor should remain usable: %v\n%s", err, errOut.String())
 	}
 	if !strings.Contains(errOut.String(), "warning: GX lifecycle hooks not installed:") {
 		t.Fatalf("missing lifecycle hook warning:\n%s", errOut.String())
 	}
 }
 
-func TestStatusHandlesRegisteredRepoWithoutMain(t *testing.T) {
+func TestDoctorHandlesRegisteredRepoWithoutMain(t *testing.T) {
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
@@ -108,13 +108,13 @@ func TestStatusHandlesRegisteredRepoWithoutMain(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"status"})
+	cmd.SetArgs([]string{"doctor"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx status error = %v\n%s", err, out.String())
+		t.Fatalf("gx doctor error = %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "doesn't exist") {
-		t.Fatalf("gx status reported a missing base revision:\n%s", out.String())
+		t.Fatalf("gx doctor reported a missing base revision:\n%s", out.String())
 	}
 }
 
@@ -125,9 +125,8 @@ func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 		"gx version":                 true,
 		"gx auth status":             true,
 		"gx set inference-key dummy": true,
-		"gx demo":                    true,
-		"gx commit -m test":          false,
-		"gx status":                  false,
+		"gx review":                  true,
+		"gx doctor":                  false,
 	}
 	for path, want := range cases {
 		cmd, _, err := root.Find(strings.Fields(strings.TrimPrefix(path, "gx ")))

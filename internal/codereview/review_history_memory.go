@@ -28,6 +28,9 @@ func reviewHistoryRetrieverFromEnv() ContextRetriever {
 	return ReviewHistoryRetriever{Client: client, Limit: limit}
 }
 
+// EvidenceSource implements evidenceNamer.
+func (ReviewHistoryRetriever) EvidenceSource() string { return "prior review findings" }
+
 func (r ReviewHistoryRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if r.Client == nil {
 		return nil, nil

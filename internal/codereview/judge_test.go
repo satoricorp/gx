@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -13,8 +14,18 @@ func TestReviewerAvailable(t *testing.T) {
 	if reviewerAvailable(multiAIReviewer{reviewers: []namedAIReviewer{{reviewer: unavailableAIReviewer{reason: "missing"}}}}) {
 		t.Fatal("reviewerAvailable(unavailable multi) = true, want false")
 	}
-	if !reviewerAvailable(&responsesAIReviewer{}) {
-		t.Fatal("reviewerAvailable(real OpenAI reviewer) = false, want true")
+	// A leg is available when it has a wire to Bedrock, not merely when it
+	// exists: a reviewer with no transport cannot review, and reporting it as
+	// available is how a review with no reviewer reads as a clean review.
+	if reviewerAvailable(&bedrockAnthropicReviewer{model: defaultBedrockReviewModelA}) {
+		t.Fatal("reviewerAvailable(Bedrock reviewer without a transport) = true, want false")
+	}
+	withTransport := newBedrockReviewer(
+		newDirectBedrockTransport(bedrockCredentials{accessKey: "key", secretKey: "secret", region: "us-west-2"}),
+		defaultBedrockReviewModelA,
+	)
+	if !reviewerAvailable(withTransport) {
+		t.Fatal("reviewerAvailable(real Bedrock reviewer) = false, want true")
 	}
 	if !reviewerAvailable(fakeReviewer{}) {
 		t.Fatal("reviewerAvailable(fake without Available) = false, want true")
@@ -29,6 +40,7 @@ func TestJudgeConfirmsFindingAndItSurvives(t *testing.T) {
 	engine.judge = scriptedJudge{results: []judgeResult{{
 		CandidateID:      "ai.review.1",
 		Verdict:          "confirmed",
+		Impact:           "breaking",
 		Severity:         5,
 		Confidence:       0.91,
 		VerificationNote: "The named file contains the reviewed Module.",
@@ -75,6 +87,63 @@ func TestJudgeUnverifiedFindingDrops(t *testing.T) {
 	}
 	if len(report.Findings) != 0 {
 		t.Fatalf("Findings = %#v, want unverified finding dropped", report.Findings)
+	}
+}
+
+func TestJudgeErrorStillKeepsDedupedFindings(t *testing.T) {
+	t.Setenv("GX_REVIEW_JUDGE", "1")
+	root := t.TempDir()
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
+	engine := judgeTestEngine(root, []Finding{
+		judgeTestFinding("openai.ai.review.1", "internal/app/app.go"),
+		judgeTestFinding("anthropic.ai.review.1", "internal/app/app.go"),
+	})
+	engine.judge = failingJudge{}
+
+	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture"})
+	if err != nil {
+		t.Fatalf("Review() error = %v", err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("Findings = %#v, want near-duplicates deduped even though the judge call failed", report.Findings)
+	}
+}
+
+func TestApplyJudgeResultsPrecisionFilter(t *testing.T) {
+	findings := []Finding{
+		{ID: "f.break1"}, {ID: "f.break2"}, {ID: "f.break3"},
+		{ID: "f.func_hi"}, {ID: "f.func_lo"},
+		{ID: "f.cosmetic"}, {ID: "f.none"}, {ID: "f.wrong"},
+	}
+	results := []judgeResult{
+		{CandidateID: "f.break1", Verdict: "confirmed", Impact: "breaking", Severity: 3, Confidence: 0.7},
+		{CandidateID: "f.break2", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.9},
+		{CandidateID: "f.break3", Verdict: "confirmed", Impact: "breaking", Severity: 2, Confidence: 0.6},
+		{CandidateID: "f.func_hi", Verdict: "confirmed", Impact: "functional", Severity: 4, Confidence: 0.8},
+		{CandidateID: "f.func_lo", Verdict: "confirmed", Impact: "functional", Severity: 4, Confidence: 0.3},
+		{CandidateID: "f.cosmetic", Verdict: "confirmed", Impact: "cosmetic", Severity: 2, Confidence: 0.9},
+		{CandidateID: "f.none", Verdict: "confirmed", Impact: "none", Severity: 1, Confidence: 0.9},
+		{CandidateID: "f.wrong", Verdict: "wrong", Impact: "breaking", Severity: 5, Confidence: 0.9},
+	}
+
+	got := applyJudgeResults(findings, results)
+
+	// Surfaced: 3 breaking + 1 high-confidence functional (proves no cap-to-3).
+	// Dropped: low-confidence functional (noise), cosmetic + none (confidently
+	// benign), and the non-confirmed candidate. Order: breaking by confidence,
+	// then functional.
+	if gotIDs := findingIDs(got); gotIDs != "f.break2,f.break1,f.break3,f.func_hi" {
+		t.Fatalf("applyJudgeResults order = %q, want breaking (by confidence) then functional; benign/low-confidence/non-confirmed dropped", gotIDs)
+	}
+	byID := map[string]Finding{}
+	for _, f := range got {
+		byID[f.ID] = f
+	}
+	if byID["f.break2"].Strength != "Strong" {
+		t.Fatalf("breaking strength = %q, want Strong", byID["f.break2"].Strength)
+	}
+	if byID["f.func_hi"].Strength != "Worth exploring" {
+		t.Fatalf("functional strength = %q, want Worth exploring", byID["f.func_hi"].Strength)
 	}
 }
 
@@ -173,14 +242,20 @@ func TestNearDupeProviderFindingsMerge(t *testing.T) {
 
 func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GX_OPENAI_API_KEY", "")
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
+	// An OPENAI_API_KEY must no longer produce a judge: the OpenAI judge is
+	// gone, and embeddings keep that variable set on most developer machines.
+	t.Setenv("OPENAI_API_KEY", "sk-embeddings-only")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
 	judge := judgeFromEnvWithPolicy(nil)
 	if judgeAvailable(judge) {
-		t.Fatalf("judgeAvailable(%T) = true, want false without credentials", judge)
+		t.Fatalf("judgeAvailable(%T) = true, want false without AWS credentials", judge)
+	}
+	reason, ok := judge.(unavailableReviewJudge)
+	if !ok || !strings.Contains(reason.reason, "AWS_ACCESS_KEY_ID") {
+		t.Fatalf("judge = %#v, want an unavailable judge naming the missing AWS credentials", judge)
 	}
 }
 
@@ -234,6 +309,16 @@ func findingIDs(findings []Finding) string {
 		ids = append(ids, finding.ID)
 	}
 	return strings.Join(ids, ",")
+}
+
+type failingJudge struct{}
+
+func (failingJudge) Available() bool {
+	return true
+}
+
+func (failingJudge) Judge(context.Context, judgeRequest) ([]judgeResult, error) {
+	return nil, errors.New("judge request failed")
 }
 
 type scriptedJudge struct {

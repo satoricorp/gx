@@ -45,18 +45,27 @@ type RunOptions struct {
 }
 
 // Result summarizes one orchestrator run.
+//
+// StagedExtractIDs and StagedSessionIDs are the primary keys of the rows this
+// run actually wrote. They are how a caller marks exactly what it staged
+// shareable, with no dependence on revision resolution returning a non-empty
+// set for the pushed range. Both are populated as rows are written, so they
+// still describe a run that failed partway.
 type Result struct {
-	RefRange        string             `json:"refRange"`
-	EligibleHunks   int                `json:"eligibleHunks"`
-	EligibleEvents  int                `json:"eligibleEvents"`
-	HunkCoverage    float64            `json:"hunkCoverage"`
-	Tier1Hunks      int                `json:"tier1Hunks"`
-	Tier2Hunks      int                `json:"tier2Hunks"`
-	HunkLinks       []matcher.HunkLink `json:"hunkLinks"`
-	StagedExtractID string             `json:"stagedExtractID,omitempty"`
-	StagedSessions  int                `json:"stagedSessions"`
-	Tools           []string           `json:"tools"`
-	UploadError     string             `json:"uploadError,omitempty"`
+	RefRange          string             `json:"refRange"`
+	EligibleHunks     int                `json:"eligibleHunks"`
+	EligibleEvents    int                `json:"eligibleEvents"`
+	HunkCoverage      float64            `json:"hunkCoverage"`
+	Tier1Hunks        int                `json:"tier1Hunks"`
+	Tier2Hunks        int                `json:"tier2Hunks"`
+	HunkLinks         []matcher.HunkLink `json:"hunkLinks"`
+	StagedExtractID   string             `json:"stagedExtractID,omitempty"`
+	StagedExtractIDs  []string           `json:"stagedExtractIDs,omitempty"`
+	StagedSessionIDs  []string           `json:"stagedSessionIDs,omitempty"`
+	StagedSessions    int                `json:"stagedSessions"`
+	Tools             []string           `json:"tools"`
+	DiscoveryProblems []string           `json:"discoveryProblems,omitempty"`
+	UploadError       string             `json:"uploadError,omitempty"`
 }
 
 // StagedExtract is the redacted extract payload written to SQLite.
@@ -144,7 +153,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	since := time.UnixMilli(firstTS).Add(-timeSlack)
 	until := time.UnixMilli(lastTS).Add(timeSlack)
 
-	discovered, err := parsers.DiscoverSessions(parsers.DiscoverOptions{
+	discovery, err := parsers.Discover(parsers.DiscoverOptions{
 		HomeDir:     home,
 		RepoRoot:    repoRoot,
 		Since:       since,
@@ -157,6 +166,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("discover sessions: %w", err)
 	}
+	discovered := discovery.Sessions
 
 	revisionIDs, err := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
 	if err != nil {
@@ -170,9 +180,6 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 			return Result{}, fmt.Errorf("open capture stager: %w", err)
 		}
 	}
-	if err := StageDiscoveredRaw(ctx, stager, discovered, revisionIDs); err != nil {
-		return Result{}, fmt.Errorf("stage raw sessions: %w", err)
-	}
 
 	inventory := capture.NewInventoryCollector()
 	claudeParser := &claude.Parser{Inventory: inventory}
@@ -184,9 +191,13 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	}
 	activeParsers := buildToolParsers(tools, claudeParser, codexParser, cursorParser)
 
-	events, err := parsers.ParseAll(discovered, repoRoot, activeParsers)
+	perSource, err := parsers.ParseAllPerSource(discovered, repoRoot, activeParsers)
 	if err != nil {
 		return Result{}, fmt.Errorf("parse sessions: %w", err)
+	}
+	var events []capture.SessionEvent
+	for _, source := range perSource {
+		events = append(events, source.Events...)
 	}
 
 	eligibleEvents := filterEvents(events, excluder, firstTS-timeSlack.Milliseconds(), lastTS+time.Hour.Milliseconds())
@@ -202,14 +213,15 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	matchedAgents := len(matchResult.MatchedEvents)
 
 	result := Result{
-		RefRange:       refRange,
-		EligibleHunks:  len(eligibleHunks),
-		EligibleEvents: len(eligibleEvents),
-		HunkCoverage:   coverage,
-		Tier1Hunks:     t1,
-		Tier2Hunks:     t2,
-		HunkLinks:      hunkLinks,
-		Tools:          tools,
+		RefRange:          refRange,
+		EligibleHunks:     len(eligibleHunks),
+		EligibleEvents:    len(eligibleEvents),
+		HunkCoverage:      coverage,
+		Tier1Hunks:        t1,
+		Tier2Hunks:        t2,
+		HunkLinks:         hunkLinks,
+		Tools:             tools,
+		DiscoveryProblems: discovery.ProblemStrings(),
 	}
 
 	redactedEvents := redactEvents(eligibleEvents)
@@ -224,7 +236,23 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		EligibleEvents: len(eligibleEvents),
 		Tools:          tools,
 	}
-	sessions := groupSessions(redactedEvents)
+
+	// Sessions are staged only after matching, and only the sources that
+	// produced at least one content-matched event. Discovery deliberately
+	// over-collects (it scans every project directory), so staging everything
+	// it finds wrote hundreds of megabytes about other repos.
+	matchedSources := map[int][]capture.SessionEvent{}
+	for idx := range matchResult.RelevantEvents {
+		src := eligibleEvents[idx].SourceIndex
+		if _, ok := matchedSources[src]; !ok {
+			matchedSources[src] = nil
+		}
+	}
+	for _, ev := range redactedEvents {
+		if _, ok := matchedSources[ev.SourceIndex]; ok {
+			matchedSources[ev.SourceIndex] = append(matchedSources[ev.SourceIndex], ev)
+		}
+	}
 
 	client := opts.Telemetry
 	if client == nil {
@@ -248,32 +276,44 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	})
 	emitSchemaDrift(ctx, client, inventory)
 
-	extractID, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract, revisionIDs)
+	extractIDs, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract, revisionIDs)
+	result.StagedExtractIDs = extractIDs
+	if len(extractIDs) > 0 {
+		result.StagedExtractID = extractIDs[0]
+	}
 	if err != nil {
 		return result, fmt.Errorf("stage extract: %w", err)
 	}
-	result.StagedExtractID = extractID
-	for _, session := range sessions {
-		if err := stageSession(ctx, stager, session, revisionIDs); err != nil {
-			return result, fmt.Errorf("stage session %s: %w", session.SessionID, err)
+	for i, source := range perSource {
+		matched, ok := matchedSources[i]
+		if !ok {
+			continue
 		}
-		result.StagedSessions++
+		sessionIDs, err := stageMatchedSource(ctx, stager, source.Source, matched, revisionIDs)
+		result.StagedSessionIDs = append(result.StagedSessionIDs, sessionIDs...)
+		result.StagedSessions += len(sessionIDs)
+		if err != nil {
+			return result, fmt.Errorf("stage session %s: %w", source.Source.SessionID, err)
+		}
 	}
 
 	_ = report.VerdictForCoverage(coverage)
 	return result, nil
 }
 
-func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, refRange string, extract StagedExtract, revisionIDs []string) (string, error) {
+// stageExtract writes the extract rows and returns their ids in write order,
+// including the ids written before any failure: rows that reached SQLite are
+// uploadable regardless of what happened after them.
+func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, refRange string, extract StagedExtract, revisionIDs []string) ([]string, error) {
 	payload, err := json.Marshal(extract)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	ids := revisionIDs
 	if len(ids) == 0 {
 		ids = []string{""}
 	}
-	var firstID string
+	var staged []string
 	for _, revisionID := range ids {
 		contentHash := storage.PayloadContentHash(payload)
 		row := storage.StagedExtract{
@@ -288,42 +328,11 @@ func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, r
 			row.ID = uuid.NewString()
 		}
 		if err := stager.StageExtract(ctx, row); err != nil {
-			return "", err
+			return staged, err
 		}
-		if firstID == "" {
-			firstID = row.ID
-		}
+		staged = append(staged, row.ID)
 	}
-	return firstID, nil
-}
-
-func stageSession(ctx context.Context, stager storage.CaptureStager, session StagedSession, revisionIDs []string) error {
-	payload, err := json.Marshal(session)
-	if err != nil {
-		return err
-	}
-	ids := revisionIDs
-	if len(ids) == 0 {
-		ids = []string{""}
-	}
-	for _, revisionID := range ids {
-		contentHash := storage.PayloadContentHash(payload)
-		row := storage.StagedSession{
-			SessionID:   session.SessionID,
-			Tool:        session.Tool,
-			PayloadJSON: payload,
-			RevisionID:  revisionID,
-			ContentHash: contentHash,
-		}
-		row.ID = storage.CaptureRowID(revisionID, contentHash)
-		if row.ID == "" {
-			row.ID = uuid.NewString()
-		}
-		if err := stager.StageSession(ctx, row); err != nil {
-			return err
-		}
-	}
-	return nil
+	return staged, nil
 }
 
 func emitSchemaDrift(ctx context.Context, client telemetry.Client, inventory *capture.InventoryCollector) {

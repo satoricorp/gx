@@ -12,6 +12,7 @@ import (
 
 	"github.com/satoricorp/gx/internal/codereview"
 	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/gx/internal/reviewsource"
 )
 
 func TestGitHubPullRequestBodyOmitsNotableChangesWhenEmpty(t *testing.T) {
@@ -34,13 +35,11 @@ func TestGitHubPullRequestBodyOmitsNotableChangesWhenEmpty(t *testing.T) {
 			HeadCommitID:         "abc123",
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
-			BranchName: "docs/demo",
-			Change: reviewbundle.ChangePayload{
-				CurrentCommitID: "abc123",
-				Description:     "clarify docs",
-				Files:           []string{"docs/demo.md"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			BranchName:           "docs/demo",
+			CommitID:             "abc123",
+			Description:          "clarify docs",
+			Files:                []string{"docs/demo.md"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -95,7 +94,7 @@ func TestGitHubPullRequestBodyCapsNotableChanges(t *testing.T) {
 			HeadCommitID:         "abc123",
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			BranchName: "feature/github-client",
 			Patch: strings.Join([]string{
 				"diff --git a/internal/github/client.go b/internal/github/client.go",
@@ -117,11 +116,9 @@ func TestGitHubPullRequestBodyCapsNotableChanges(t *testing.T) {
 				"+func UpdatePullRequest12() {}",
 				"",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				CurrentCommitID: "abc123",
-				Description:     "update github client",
-				Files:           []string{"internal/github/client.go"},
-			},
+			CommitID:             "abc123",
+			Description:          "update github client",
+			Files:                []string{"internal/github/client.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -224,12 +221,10 @@ func TestPRBodyHasNoBareFileDiffLinks(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Description: "add session validation",
-				Files:       []string{"internal/auth/session.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:                "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
+			Description:          "add session validation",
+			Files:                []string{"internal/auth/session.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -258,7 +253,7 @@ func TestNotableChangesRendersPlainTextWithoutPRURL(t *testing.T) {
 		Event:         "gx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
 				"--- a/internal/app/handler.go",
@@ -267,10 +262,8 @@ func TestNotableChangesRendersPlainTextWithoutPRURL(t *testing.T) {
 				" package app",
 				"+func Handle() {}",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				Description: "update handler",
-				Files:       []string{"internal/app/handler.go"},
-			},
+			Description: "update handler",
+			Files:       []string{"internal/app/handler.go"},
 		}},
 	}))
 	if err != nil {
@@ -303,7 +296,7 @@ func TestNotableChangesIncludesTopHunkFill(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
 				"--- a/internal/app/handler.go",
@@ -312,10 +305,8 @@ func TestNotableChangesIncludesTopHunkFill(t *testing.T) {
 				" package app",
 				"+func Handle() {}",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				Description: "update handler",
-				Files:       []string{"internal/app/handler.go"},
-			},
+			Description:          "update handler",
+			Files:                []string{"internal/app/handler.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -351,7 +342,7 @@ func TestNotableChangesDropsUnanchoredAIEntry(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/internal/app/handler.go b/internal/app/handler.go",
 				"--- a/internal/app/handler.go",
@@ -360,10 +351,8 @@ func TestNotableChangesDropsUnanchoredAIEntry(t *testing.T) {
 				" package app",
 				"+func Handle() {}",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				Description: "update handler",
-				Files:       []string{"internal/app/handler.go"},
-			},
+			Description:          "update handler",
+			Files:                []string{"internal/app/handler.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -678,11 +667,9 @@ func TestReviewVerdictStrongFinding(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"internal/auth/session.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:                "diff --git a/internal/auth/session.go b/internal/auth/session.go\n--- a/internal/auth/session.go\n+++ b/internal/auth/session.go\n@@ -1 +1,2 @@\n package auth\n+func Validate() {}\n",
+			Files:                []string{"internal/auth/session.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -696,7 +683,7 @@ func TestReviewVerdictStrongFinding(t *testing.T) {
 
 func TestTriageChangeFromCatalogTestsOnly(t *testing.T) {
 	catalog := buildPRBodyCatalog(reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/internal/app/app_test.go b/internal/app/app_test.go",
 				"--- a/internal/app/app_test.go",
@@ -705,7 +692,7 @@ func TestTriageChangeFromCatalogTestsOnly(t *testing.T) {
 				" package app",
 				"+func TestMore() {}",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{Files: []string{"internal/app/app_test.go"}},
+			Files: []string{"internal/app/app_test.go"},
 		}},
 	}))
 	triage := triageChangeFromCatalog(catalog)
@@ -724,7 +711,7 @@ func docsOnlyPRArtifact() reviewbundle.Artifact {
 			HeadCommitID:         "abc123",
 			GitHubPullRequestURL: &prURL,
 		},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			BranchName: "docs/demo",
 			Patch: strings.Join([]string{
 				"diff --git a/docs/demo.md b/docs/demo.md",
@@ -735,11 +722,9 @@ func docsOnlyPRArtifact() reviewbundle.Artifact {
 				"+Small docs clarification.",
 				"",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				CurrentCommitID: "abc123",
-				Description:     "clarify docs",
-				Files:           []string{"docs/demo.md"},
-			},
+			CommitID:             "abc123",
+			Description:          "clarify docs",
+			Files:                []string{"docs/demo.md"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	})
@@ -769,11 +754,9 @@ func TestSpeculativeFindingsDroppedFromPRBody(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
-			Patch: "diff --git a/internal/github/client.go b/internal/github/client.go\n--- a/internal/github/client.go\n+++ b/internal/github/client.go\n@@ -1 +1,2 @@\n package github\n+// change\n",
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"internal/github/client.go"},
-			},
+		Revisions: []reviewbundle.RevisionPayload{{
+			Patch:                "diff --git a/internal/github/client.go b/internal/github/client.go\n--- a/internal/github/client.go\n+++ b/internal/github/client.go\n@@ -1 +1,2 @@\n package github\n+// change\n",
+			Files:                []string{"internal/github/client.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -1035,7 +1018,7 @@ func TestGitHubPullRequestBodyUsesConfiguredRiskPath(t *testing.T) {
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: root},
 		Push:          reviewbundle.PushPayload{GitHubPullRequestURL: &prURL},
-		Stack: []reviewbundle.StackPayload{{
+		Revisions: []reviewbundle.RevisionPayload{{
 			Patch: strings.Join([]string{
 				"diff --git a/internal/billing/charge.go b/internal/billing/charge.go",
 				"--- a/internal/billing/charge.go",
@@ -1044,9 +1027,7 @@ func TestGitHubPullRequestBodyUsesConfiguredRiskPath(t *testing.T) {
 				" package billing",
 				"+func Charge() {}",
 			}, "\n"),
-			Change: reviewbundle.ChangePayload{
-				Files: []string{"internal/billing/charge.go"},
-			},
+			Files:                []string{"internal/billing/charge.go"},
 			GitHubPullRequestURL: &prURL,
 		}},
 	}))
@@ -1188,5 +1169,124 @@ func TestRenderVerdictBannerFormat(t *testing.T) {
 		if got := renderVerdictBanner(tc.verdict, tc.reason); got != tc.want {
 			t.Fatalf("renderVerdictBanner(%q, %q) = %q, want %q", tc.verdict, tc.reason, got, tc.want)
 		}
+	}
+}
+
+// A reader has to be able to tell a context-rich summary from a diff-only one,
+// and the note must never fire on a PR that really was captured.
+func TestSessionContextInformedSummarySignals(t *testing.T) {
+	linkedContext := func(context *reviewbundle.ReviewContextPayload) reviewbundle.Artifact {
+		artifact := docsOnlyPRArtifact()
+		artifact.Bundle.Revisions[0].ReviewContext = context
+		return artifact
+	}
+	tests := []struct {
+		name           string
+		artifact       reviewbundle.Artifact
+		summaryContext prSummaryContext
+		wantNote       bool
+	}{
+		{
+			name:           "nothing captured",
+			artifact:       docsOnlyPRArtifact(),
+			summaryContext: prSummaryContext{Sources: []string{"codebase"}},
+			wantNote:       true,
+		},
+		{
+			name:     "session transcript reached the model",
+			artifact: docsOnlyPRArtifact(),
+			summaryContext: prSummaryContext{
+				Snippets: []codereview.ContextSnippet{{Kind: "session_transcript", Source: "artifact", Ref: "abc123:sess-1:req-1"}},
+				Sources:  []string{"codebase", "session"},
+			},
+			wantNote: false,
+		},
+		{
+			name:     "indexed session hit is not this branch's session",
+			artifact: docsOnlyPRArtifact(),
+			summaryContext: prSummaryContext{
+				Snippets: []codereview.ContextSnippet{{Kind: "session_transcript", Source: "turbopuffer:gx-sessions", Ref: "other-branch"}},
+				Sources:  []string{"indexed code/session"},
+			},
+			wantNote: true,
+		},
+		{
+			name:           "sessions linked but no transcript survived into the bundle",
+			artifact:       linkedContext(&reviewbundle.ReviewContextPayload{ProvenanceStatus: reviewsource.StatusLinked, LinkedSessionCount: 1}),
+			summaryContext: prSummaryContext{},
+			wantNote:       false,
+		},
+		{
+			name:           "repo-local sessions still count as captured",
+			artifact:       linkedContext(&reviewbundle.ReviewContextPayload{ProvenanceStatus: reviewsource.StatusRepoLocal, LinkedSessionCount: 2}),
+			summaryContext: prSummaryContext{},
+			wantNote:       false,
+		},
+		{
+			name:           "review context that matched no session",
+			artifact:       linkedContext(&reviewbundle.ReviewContextPayload{ProvenanceStatus: reviewsource.StatusAbsent}),
+			summaryContext: prSummaryContext{},
+			wantNote:       true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			note := missingSessionContextNote(tc.artifact, tc.summaryContext)
+			if gotNote := note != ""; gotNote != tc.wantNote {
+				t.Fatalf("missingSessionContextNote() = %q, want note = %v", note, tc.wantNote)
+			}
+			if tc.wantNote && !strings.Contains(note, "pre-push hook") {
+				t.Fatalf("note does not say what causes it: %q", note)
+			}
+		})
+	}
+}
+
+func TestGitHubPullRequestBodyPlacesMissingSessionNoteAboveTheFooter(t *testing.T) {
+	oldReviewer := prSummaryReviewerFromEnvWithInfo
+	oldContext := collectPRSummaryContext
+	defer func() {
+		prSummaryReviewerFromEnvWithInfo = oldReviewer
+		collectPRSummaryContext = oldContext
+	}()
+	prSummaryReviewerFromEnvWithInfo = func() (codereview.AIReviewer, codereview.ReviewerInfo) {
+		return &fakePRSummaryReviewer{}, codereview.ReviewerInfo{}
+	}
+
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{Sources: []string{"codebase"}}, nil
+	}
+	body, err := GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	noteIdx := strings.Index(body, "*No captured coding session was linked to this branch")
+	footerIdx := strings.LastIndex(body, "*Generated by GX")
+	if noteIdx < 0 {
+		t.Fatalf("body missing the missing-session-context note:\n%s", body)
+	}
+	if noteIdx >= footerIdx {
+		t.Fatalf("note should sit above the provenance footer:\n%s", body)
+	}
+	if between := body[noteIdx:footerIdx]; strings.Count(between, "\n\n") != 1 {
+		t.Fatalf("note should be the paragraph immediately above the footer, got %q", between)
+	}
+	if strings.Contains(openingParagraphFromPRBody(body), "No captured coding session") {
+		t.Fatalf("note should not crowd the opening summary:\n%s", body)
+	}
+
+	// With session context the body says nothing extra.
+	collectPRSummaryContext = func(_ context.Context, _ reviewbundle.Artifact, _ prBodyCatalog) (prSummaryContext, error) {
+		return prSummaryContext{
+			Snippets: []codereview.ContextSnippet{{Kind: "session_transcript", Source: "artifact", Ref: "abc123:sess-1:req-1"}},
+			Sources:  []string{"codebase", "session"},
+		}, nil
+	}
+	body, err = GitHubPullRequestBodyFromArtifact(context.Background(), docsOnlyPRArtifact())
+	if err != nil {
+		t.Fatalf("GitHubPullRequestBodyFromArtifact() error = %v", err)
+	}
+	if strings.Contains(body, "No captured coding session") {
+		t.Fatalf("body should stay quiet when session context is present:\n%s", body)
 	}
 }

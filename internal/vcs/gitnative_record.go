@@ -57,27 +57,19 @@ func (s *Service) RecordGitCommit(ctx context.Context, repo RepoInfo, commitOID 
 	if branch == "" {
 		branch, _ = s.currentStagedCommitBranch(ctx, repo.RootPath)
 	}
-	stack, _, err := s.resolveStagedCommitStack(ctx, repo, branch, pending.RequestedBranch, parentOID)
+	stack, err := s.resolveStagedCommitStack(ctx, repo, branch, parentOID)
 	if err != nil {
 		return CommitResult{}, err
 	}
-	var sessionIDs []string
-	var sessionContexts []storage.SessionContext
-	var eventAttributions []storage.SessionEventAttribution
-	if parentOID != "" {
-		sessionIDs, sessionContexts, eventAttributions = s.matchStagedSessions(ctx, repo.RootPath, parentOID, commitOID)
-	}
+	// Sessions are deliberately not matched here. A `sessions` row exists
+	// because a transcript was observed, never because a commit happened to
+	// match one; the links are written at push time from the hunk links the
+	// capture pipeline already produces (AttachSessionsFromHunkLinks).
 	result := CommitResult{
-		Repo:                     repo,
-		Change:                   change,
-		Stack:                    &stack,
-		OperationID:              commitOID,
-		PreferredSessionIDs:      uniqueStrings(append(pending.PreferredSessionIDs, sessionIDs...)),
-		SessionContexts:          append(pending.SessionContexts, sessionContexts...),
-		ProvenanceStatus:         stagedProvenanceStatus(sessionIDs),
-		SkipRepoLocalSessions:    true,
-		SessionEventAttributions: eventAttributions,
-		SelfReport:               pending.SelfReport,
+		Repo:        repo,
+		Change:      change,
+		Stack:       &stack,
+		OperationID: commitOID,
 	}
 	if err := recordCommit(ctx, result); err != nil {
 		return result, err

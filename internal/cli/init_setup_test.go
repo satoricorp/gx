@@ -24,16 +24,18 @@ func TestAgentsMDContainsSnippet(t *testing.T) {
 	if !strings.Contains(agentsMDSnippet, "gx capture push") {
 		t.Fatal("expected agentsMDSnippet to forbid gx capture push")
 	}
-	for _, stale := range []string{"gx_edit", "gx base", "gx edit"} {
+	for _, stale := range []string{"gx_edit", "gx base", "gx edit", "gx commit", "gx status"} {
 		if strings.Contains(agentsMDSnippet, stale) {
 			t.Fatalf("agentsMDSnippet contains removed command %q", stale)
 		}
 	}
 	for _, want := range []string{
-		"Git with GX hooks and metadata",
-		"via native `git commit` plus GX hooks",
+		"Version control: plain Git",
+		"there is no GX save verb",
+		"git commit -m",
 		"`git commit --amend`",
 		"preserve the GX revision trailer",
+		"gx_review",
 	} {
 		if !strings.Contains(agentsMDSnippet, want) {
 			t.Fatalf("agentsMDSnippet missing canonical guidance %q", want)

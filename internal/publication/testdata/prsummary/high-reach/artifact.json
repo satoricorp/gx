@@ -1,23 +1,39 @@
 {
   "index_status": "pending",
   "event": "gx.pr",
-  "schema_version": 1,
-  "repo": {"root_path": "/tmp/reach"},
+  "schema_version": 2,
+  "repo": {
+    "root_path": "/tmp/reach"
+  },
   "push": {
     "head_commit_id": "reach-head",
     "github_pull_request_url": "https://github.com/example/reach/pull/1"
   },
-  "stack": [{
-    "patch": "diff --git a/lib.go b/lib.go\n--- a/lib.go\n+++ b/lib.go\n@@ -1,3 +1,3 @@\n package main\n \n-func HelloWorld() {}\n+func HelloWorld() { /* changed */ }\n",
-    "change": {
-      "current_commit_id": "reach-head",
+  "revisions": [
+    {
+      "revision_id": "",
+      "commit_id": "reach-head",
       "description": "change HelloWorld",
-      "files": ["lib.go"],
+      "files": [
+        "lib.go"
+      ],
+      "branch_name": "",
+      "base_branch_name": "",
+      "patch": "diff --git a/lib.go b/lib.go\n--- a/lib.go\n+++ b/lib.go\n@@ -1,3 +1,3 @@\n package main\n \n-func HelloWorld() {}\n+func HelloWorld() { /* changed */ }\n",
+      "github_pull_request_url": "https://github.com/example/reach/pull/1",
       "review_context": {
-        "changed_symbols": [{"file": "lib.go", "symbol": "HelloWorld", "kind": "func"}],
-        "risk": {"level": "low", "score": 0}
+        "changed_symbols": [
+          {
+            "file": "lib.go",
+            "symbol": "HelloWorld",
+            "kind": "func"
+          }
+        ],
+        "risk": {
+          "level": "low",
+          "score": 0
+        }
       }
-    },
-    "github_pull_request_url": "https://github.com/example/reach/pull/1"
-  }]
+    }
+  ]
 }

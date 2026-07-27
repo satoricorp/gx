@@ -17,7 +17,7 @@ func (s *Service) ensureBranchMutationAllowed(ctx context.Context, repoRoot, nam
 		return nil
 	}
 	// Advancing the checked-out branch to one of its own descendants is
-	// git-commit semantics, not a base move; gx commit on the default branch
+	// git-commit semantics, not a base move; committing on the default branch
 	// depends on it. Rewinds and moves of branches that are not checked out
 	// stay protected.
 	if err == nil && s.isCheckedOutBranch(ctx, repoRoot, name) &&

@@ -3,26 +3,35 @@ package codereview
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
 
+// fileTokenPattern matches file-ish tokens (a path segment ending in an
+// extension) so relevance matching compares whole filenames, not substrings.
+var fileTokenPattern = regexp.MustCompile(`[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]+`)
+
 type Finding struct {
-	ID               string
-	Scopes           []string
-	Title            string
-	Summary          string
-	Benefit          string
-	Evidence         []Evidence
-	Anchors          []FindingAnchor
-	File             string
-	Line             int
-	ResolvedSources  []ResolvedSource
-	Recommendation   string
-	Strength         string
-	SourceIDs        []string
-	SourcePublishers []string
+	ID       string          `json:"id"`
+	Scopes   []string        `json:"scopes,omitempty"`
+	Title    string          `json:"title"`
+	Summary  string          `json:"summary,omitempty"`
+	Benefit  string          `json:"benefit,omitempty"`
+	Evidence []Evidence      `json:"evidence,omitempty"`
+	Anchors  []FindingAnchor `json:"anchors,omitempty"`
+	File     string          `json:"file,omitempty"`
+	Line     int             `json:"line,omitempty"`
+
+	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
+	Recommendation  string           `json:"recommendation,omitempty"`
+	// Strength is the severity vocabulary gates read: "Blocking", "Strong",
+	// "Worth exploring", or "Speculative".
+	Strength         string   `json:"strength,omitempty"`
+	SourceIDs        []string `json:"source_ids,omitempty"`
+	SourcePublishers []string `json:"source_publishers,omitempty"`
 }
 
 type FindingAnchor struct {
@@ -31,8 +40,8 @@ type FindingAnchor struct {
 }
 
 type Evidence struct {
-	Label string
-	Value string
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 type Rule interface {
@@ -462,10 +471,34 @@ func findingMentionsChangedFile(finding Finding, changed []string) bool {
 		anchorsText(finding.Anchors),
 		fileLineText(finding.File, finding.Line),
 	}, "\n")
-	text = filepath.ToSlash(text)
+
+	changedFull := make(map[string]struct{}, len(changed))
+	changedBase := make(map[string]struct{}, len(changed))
 	for _, file := range changed {
-		if strings.Contains(text, file) {
+		file = strings.TrimSpace(filepath.ToSlash(file))
+		if file == "" {
+			continue
+		}
+		changedFull[file] = struct{}{}
+		changedBase[path.Base(file)] = struct{}{}
+	}
+
+	// Compare whole file tokens rather than substrings: an exact path match, or
+	// a bare filename (no directory) that matches a changed file's basename.
+	// This avoids "utils.go" matching "myutils.go" and matches findings that
+	// reference a file by name only.
+	for _, token := range fileTokenPattern.FindAllString(filepath.ToSlash(text), -1) {
+		token = strings.Trim(token, "./")
+		if token == "" {
+			continue
+		}
+		if _, ok := changedFull[token]; ok {
 			return true
+		}
+		if token == path.Base(token) {
+			if _, ok := changedBase[token]; ok {
+				return true
+			}
 		}
 	}
 	return false

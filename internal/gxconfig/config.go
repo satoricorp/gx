@@ -7,17 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
 type Config struct {
-	User    User           `json:"user"`
-	Capture CaptureSettings `json:"capture"`
-}
-
-type CaptureSettings struct {
-	CleanupPeriodDays int `json:"cleanupPeriodDays"`
+	User User `json:"user"`
 }
 
 type User struct {
@@ -103,17 +97,4 @@ func SaveAt(root string, cfg Config) error {
 		return fmt.Errorf("write gx config: %w", err)
 	}
 	return nil
-}
-
-// EnsureCaptureRetention guarantees cleanupPeriodDays is never below MinCleanupPeriodDays.
-func EnsureCaptureRetention() error {
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-	if cfg.Capture.CleanupPeriodDays >= auth.MinCleanupPeriodDays {
-		return nil
-	}
-	cfg.Capture.CleanupPeriodDays = auth.MinCleanupPeriodDays
-	return Save(cfg)
 }

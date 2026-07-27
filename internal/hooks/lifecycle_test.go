@@ -143,7 +143,7 @@ func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 	}
 }
 
-func TestCommitOnlyBootstrapFromLinkedWorktree(t *testing.T) {
+func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	primary := t.TempDir()
 	gxHome := t.TempDir()
 	t.Setenv("GX_HOME", gxHome)
@@ -170,17 +170,20 @@ func TestCommitOnlyBootstrapFromLinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGitInRepo(t, linked, "add", "linked.txt")
+	// Any gx command run inside the linked worktree bootstraps the repo and
+	// installs the lifecycle hooks; the commit itself is plain git.
 	gxPath := buildGXBinary(t)
-	cmd := exec.Command(gxPath, "commit", "-m", "linked worktree commit")
+	cmd := exec.Command(gxPath, "doctor")
 	cmd.Dir = linked
 	cmd.Env = append(os.Environ(), "GX_HOME="+gxHome, "GX_DISABLE_BACKGROUND_WORKERS=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gx commit: %v\n%s", err, out)
+		t.Fatalf("gx doctor: %v\n%s", err, out)
 	}
 
 	if !hooks.IsInstalled(linked) {
-		t.Fatal("commit-only bootstrap did not install lifecycle hooks")
+		t.Fatal("bootstrap did not install lifecycle hooks")
 	}
+	runGitInRepo(t, linked, "commit", "-m", "linked worktree commit")
 	linkedMessage := gitOutput(t, linked, "log", "-1", "--format=%B")
 	revisionIDs := vcs.ParseRevisionIDsFromMessage(linkedMessage)
 	if len(revisionIDs) != 1 {

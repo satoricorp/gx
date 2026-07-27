@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/satoricorp/gx/internal/commitcontext"
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
@@ -13,23 +11,11 @@ type RepoInfo = vcs.RepoInfo
 type ChangeInfo = vcs.ChangeInfo
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
-type CheckpointResult = vcs.CommitResult
 type StackInfo = vcs.StackInfo
-type SyncResult = vcs.SyncResult
 type RevisionSummary = vcs.RevisionSummary
 type StackSummary = vcs.StackSummary
-type StatusSnapshot = vcs.StatusSnapshot
 type GitWorkingStatus = vcs.GitWorkingStatus
 type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
-type PruneGitHubPullRequestsResult = vcs.PruneGitHubPullRequestsResult
-
-type CommitStagedOptions struct {
-	Message             string
-	Branch              string
-	PreferredSessionIDs []string
-	SessionContexts     []storage.SessionContext
-	SelfReport          commitcontext.SelfReport
-}
 
 // Engine is GX's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
@@ -59,22 +45,8 @@ func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error)
 	return e.vcs.EnsureReadyRepo(ctx, cwd)
 }
 
-func (e *Engine) CommitStaged(ctx context.Context, opts CommitStagedOptions) (CheckpointResult, error) {
-	return e.vcs.RecordStagedRevision(ctx, vcs.StagedRevisionOptions{
-		Message:             opts.Message,
-		Branch:              opts.Branch,
-		PreferredSessionIDs: opts.PreferredSessionIDs,
-		SessionContexts:     opts.SessionContexts,
-		SelfReport:          opts.SelfReport,
-	})
-}
-
 func (e *Engine) Status(ctx context.Context) (StackSummary, error) {
 	return e.vcs.Stack(ctx)
-}
-
-func (e *Engine) StatusSnapshot(ctx context.Context) (StatusSnapshot, error) {
-	return e.vcs.StatusSnapshot(ctx)
 }
 
 func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {
@@ -91,20 +63,4 @@ func (e *Engine) CurrentChange(ctx context.Context, repoRoot, rev string) (Chang
 
 func (e *Engine) PruneEmptyStacks(ctx context.Context) (PruneEmptyStacksResult, error) {
 	return e.vcs.PruneEmptyStacks(ctx)
-}
-
-func (e *Engine) Sync(ctx context.Context, remote string) (SyncResult, error) {
-	return e.vcs.Sync(ctx, remote)
-}
-
-func (e *Engine) SyncCloudBookmarkTip(ctx context.Context, repo RepoInfo, branchName string) error {
-	return e.vcs.SyncCloudBookmarkTip(ctx, repo, branchName)
-}
-
-func (e *Engine) PrunePublishedStackByRef(ctx context.Context, repo RepoInfo, publishRef string) (bool, error) {
-	return e.vcs.PrunePublishedStackByRef(ctx, repo, publishRef)
-}
-
-func (e *Engine) PruneTerminalGitHubPullRequestStacks(ctx context.Context, repo RepoInfo) (PruneGitHubPullRequestsResult, error) {
-	return e.vcs.PruneTerminalGitHubPullRequestStacks(ctx, repo)
 }

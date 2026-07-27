@@ -2,14 +2,33 @@ package cli
 
 import (
 	"io"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/satoricorp/gx/internal/codereview"
 )
+
+// useInteractiveTerminal reports whether both ends of the pipe are a real
+// terminal, so a Bubble Tea loader can take over the screen.
+func useInteractiveTerminal(in io.Reader, out io.Writer) bool {
+	if os.Getenv("GX_PLAIN_PROMPTS") != "" {
+		return false
+	}
+	input, ok := in.(*os.File)
+	if !ok || !term.IsTerminal(input.Fd()) {
+		return false
+	}
+	output, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(output.Fd())
+}
 
 type reviewLoaderRunFunc func(io.Writer) (codereview.Report, error)
 
@@ -33,7 +52,7 @@ type reviewLoaderResultMsg struct {
 }
 
 func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
-	if !useStatusInteractive(in, out) {
+	if !useInteractiveTerminal(in, out) {
 		return run(nil)
 	}
 	phases := make(chan string, 6)

@@ -86,6 +86,12 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate sessions table: %w", err)
 	}
+	// After the column migration, never in schema.sql: repo_root arrived as a
+	// migration column, so an older database reaches schema.sql without it.
+	if err := ensureSessionIndexes(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate sessions indexes: %w", err)
+	}
 	if err := ensureChangeSessionProvenanceTable(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate change_session_provenance table: %w", err)
@@ -97,6 +103,12 @@ func Open(ctx context.Context) (*sql.DB, error) {
 	if err := ensureSessionEventAttributionsTable(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate session_event_attributions table: %w", err)
+	}
+	// Immediately before the repair pass so its five stale change_sessions
+	// rows cascade off in the same open.
+	if err := deleteCommitSelfReportSession(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("remove gx commit self-report session: %w", err)
 	}
 	if err := repairDanglingSessionLinks(ctx, db); err != nil {
 		_ = db.Close()
@@ -121,10 +133,6 @@ func Open(ctx context.Context) (*sql.DB, error) {
 	if err := ensureStacksTables(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate stacks tables: %w", err)
-	}
-	if err := ensureCloudBookmarksTable(ctx, db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate cloud_bookmarks table: %w", err)
 	}
 	if err := ensureDemuxProposalsTable(ctx, db); err != nil {
 		_ = db.Close()
@@ -376,6 +384,34 @@ func ensureSessionEventAttributionsTable(ctx context.Context, db *sql.DB) error 
 		CREATE INDEX IF NOT EXISTS idx_session_event_attributions_session ON session_event_attributions(session_id);
 	`)
 	return err
+}
+
+func ensureSessionIndexes(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_sessions_repo_root ON sessions(repo_root);
+	`)
+	return err
+}
+
+// commitSelfReportSessionID is the fossil left by the retired `gx commit`
+// self-report. It has cwd='' and repo_root=NULL, so it can never match a repo
+// and only ever contributed noise to the change_sessions table. Nothing writes
+// it any more, so removing it on open is a one-way cleanup.
+const commitSelfReportSessionID = "gx-commit-self-report"
+
+func deleteCommitSelfReportSession(ctx context.Context, db *sql.DB) error {
+	for _, stmt := range []string{
+		`DELETE FROM change_session_provenance WHERE session_id = ?`,
+		`DELETE FROM session_event_attributions WHERE session_id = ?`,
+		`DELETE FROM change_sessions WHERE session_id = ?`,
+		`DELETE FROM session_contexts WHERE session_id = ?`,
+		`DELETE FROM sessions WHERE id = ?`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt, commitSelfReportSessionID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func repairDanglingSessionLinks(ctx context.Context, db *sql.DB) error {

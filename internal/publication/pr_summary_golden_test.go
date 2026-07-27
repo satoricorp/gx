@@ -85,8 +85,8 @@ func runPRSummaryGoldenCase(t *testing.T, dir string) {
 		artifact.Bundle.Repo.RootPath = reachRoot
 		if headSHA != "" {
 			artifact.Bundle.Push.HeadCommitID = headSHA
-			for i := range artifact.Bundle.Stack {
-				artifact.Bundle.Stack[i].Change.CurrentCommitID = headSHA
+			for i := range artifact.Bundle.Revisions {
+				artifact.Bundle.Revisions[i].CommitID = headSHA
 			}
 		}
 	} else if setup.ReviewMD {
@@ -324,8 +324,8 @@ type goldenPRSummaryReviewer struct {
 }
 
 func (r *goldenPRSummaryReviewer) Review(ctx context.Context, brief codereview.ReviewBrief) ([]codereview.Finding, error) {
-	_, findings, err := r.ReviewWithOverview(ctx, brief)
-	return findings, err
+	summary, err := r.ReviewForSummary(ctx, brief)
+	return summary.Findings, err
 }
 
 func (r *goldenPRSummaryReviewer) ReviewForSummary(ctx context.Context, brief codereview.ReviewBrief) (codereview.PRSummaryReview, error) {
@@ -340,18 +340,4 @@ func (r *goldenPRSummaryReviewer) ReviewForSummary(ctx context.Context, brief co
 		return codereview.PRSummaryReview{}, nil
 	}
 	return codereview.ParsePRSummaryReview(string(r.aiResponse), brief)
-}
-
-func (r *goldenPRSummaryReviewer) ReviewWithOverview(ctx context.Context, brief codereview.ReviewBrief) (string, []codereview.Finding, error) {
-	r.attempts++
-	if r.attempts <= r.failCount {
-		if r.failErr != nil {
-			return "", nil, r.failErr
-		}
-		return "", nil, fmt.Errorf("model unavailable")
-	}
-	if len(r.aiResponse) == 0 {
-		return "", []codereview.Finding{}, nil
-	}
-	return codereview.ParseAIReviewOutput(string(r.aiResponse), brief)
 }

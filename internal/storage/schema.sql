@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_write_tokens INTEGER NOT NULL DEFAULT 0
 );
 
+-- idx_sessions_repo_root is created in db.go, not here: repo_root arrived as a
+-- migration column, so on a database predating it this file still sees a
+-- sessions table without the column and CREATE INDEX would fail the open.
+
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -325,7 +329,8 @@ CREATE TABLE IF NOT EXISTS capture_extracts (
     acceptor_email TEXT,
     attested_at INTEGER,
     uploaded_at INTEGER,
-    upload_error TEXT
+    upload_error TEXT,
+    upload_attempts INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_capture_extracts_pending ON capture_extracts(uploaded_at, created_at);
@@ -337,6 +342,8 @@ CREATE TABLE IF NOT EXISTS capture_sessions (
     payload_json BLOB NOT NULL,
     raw_blob BLOB,
     source_path TEXT,
+    source_bytes INTEGER,
+    source_mtime INTEGER,
     bad_lines INTEGER,
     created_at INTEGER NOT NULL,
     revision_id TEXT,
@@ -346,7 +353,8 @@ CREATE TABLE IF NOT EXISTS capture_sessions (
     acceptor_email TEXT,
     attested_at INTEGER,
     uploaded_at INTEGER,
-    upload_error TEXT
+    upload_error TEXT,
+    upload_attempts INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_capture_sessions_pending ON capture_sessions(uploaded_at, created_at);

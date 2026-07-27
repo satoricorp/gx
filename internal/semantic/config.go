@@ -4,19 +4,60 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
 const (
-	defaultOpenAIBaseURL      = "https://api.openai.com"
+	defaultOpenAIBaseURL = "https://api.openai.com"
+	// defaultOpenAIEmbedModel / defaultEmbeddingDims are the model's native
+	// width, not a truncation of it. The previous 512 was a Matryoshka
+	// truncation requested at embed time via the API's `dimensions` parameter.
+	//
+	// The model and the width were both chosen by measurement, not by
+	// reputation. Indexing this repository (3883 chunks) four ways and running
+	// a 16-query ground-truth set over each:
+	//
+	//	config                 vector r@10  vector MRR  hybrid r@25
+	//	3-small @ 512 (old)          0.513       0.710        0.692
+	//	3-small @ 1536 (native)      0.538       0.750        0.692
+	//	3-large @ 1536               0.410       0.598        0.667
+	//	3-large @ 3072 (native)      0.436       0.568        0.641
+	//
+	// Paired per query, 3-small@1536 ranks the first correct file higher than
+	// 3-large@3072 on 8 of 16 queries and lower on 1 (hybrid: 7 better, 0
+	// worse), so the larger model is not a close call on this corpus — it is
+	// worse. Going from 512 to the native 1536 is free at review time:
+	// embedding latency does not vary with width (the round trip dominates)
+	// and TurboPuffer ANN stays in the low tens of milliseconds.
 	defaultOpenAIEmbedModel   = "text-embedding-3-small"
-	defaultEmbeddingDims      = 512
+	defaultEmbeddingDims      = 1536
 	defaultTurboPufferBaseURL = "https://gcp-us-central1.turbopuffer.com"
-	defaultTurboPufferNS      = "gx-sessions"
-	defaultBatchSize          = 64
-	defaultMaxChunkBytes      = 12000
+	// defaultTurboPufferNS is intentionally empty. The old default,
+	// "gx-sessions", is a flat global namespace with no org and no repo
+	// dimension; it was never created in production and could never match the
+	// per-org-per-repo namespaces every reader uses. Callers resolve a
+	// namespace with NamespaceForRepo instead.
+	defaultTurboPufferNS = ""
+	defaultBatchSize     = 64
+	defaultMaxChunkBytes = 12000
 )
+
+// embeddingModelDimensions is the native (maximum) width of each supported
+// embedding model.
+var embeddingModelDimensions = map[string]int{
+	"text-embedding-3-small": 1536,
+	"text-embedding-3-large": 3072,
+	"text-embedding-ada-002": 1536,
+}
+
+// MaxEmbeddingDimensions reports the native width of a model, or 0 when it is
+// unknown (a custom or self-hosted model, where no cap is enforced).
+func MaxEmbeddingDimensions(model string) int {
+	return embeddingModelDimensions[strings.TrimSpace(model)]
+}
 
 type Config struct {
 	Enabled              bool
@@ -69,7 +110,72 @@ func ConfigFromEnv() (Config, error) {
 	if _, err := url.ParseRequestURI(strings.TrimRight(cfg.TurboPufferBaseURL, "/")); err != nil {
 		return cfg, fmt.Errorf("GX_TPUF_BASE_URL is invalid: %w", err)
 	}
+	// The legacy bundle indexer addresses one fixed namespace and has no repo
+	// context to derive one from. Failing loudly here beats the old behaviour,
+	// which silently pointed every read and write at "gx-sessions" — a
+	// namespace that has never existed.
+	if cfg.TurboPufferNamespace == "" {
+		return cfg, fmt.Errorf("GX_TPUF_NAMESPACE is required when GX_SEMANTIC_INDEX is set; repository indexing resolves its own namespace via semantic.NamespaceForRepo")
+	}
 	return cfg, nil
+}
+
+// CodeIndexConfigFromEnv builds a configuration for repository indexing.
+//
+// Unlike ConfigFromEnv it is not behind GX_SEMANTIC_INDEX. Repository indexing
+// is the thing that makes review retrieval work at all, so it runs whenever
+// credentials exist; GX_SEMANTIC_INDEX=0 still turns it off explicitly. It also
+// never returns a namespace, because a namespace is a function of the repo
+// being indexed (see NamespaceForRepo), not of the environment.
+func CodeIndexConfigFromEnv() Config {
+	model := envOrDefault("GX_OPENAI_EMBEDDING_MODEL", defaultOpenAIEmbedModel)
+	dimensions := envIntOrDefault("GX_EMBEDDING_DIMENSIONS", defaultEmbeddingDims)
+	if max := MaxEmbeddingDimensions(model); max > 0 && (dimensions <= 0 || dimensions > max) {
+		dimensions = max
+	}
+	return Config{
+		Enabled:              !strings.EqualFold(strings.TrimSpace(os.Getenv("GX_SEMANTIC_INDEX")), "0"),
+		OpenAIAPIKey:         strings.TrimSpace(firstNonEmptyString(os.Getenv("OPENAI_API_KEY"), os.Getenv("GX_OPENAI_API_KEY"))),
+		OpenAIBaseURL:        envOrDefault("GX_OPENAI_BASE_URL", defaultOpenAIBaseURL),
+		OpenAIEmbeddingModel: model,
+		EmbeddingDimensions:  dimensions,
+		TurboPufferAPIKey:    strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")),
+		TurboPufferBaseURL:   envOrDefault("GX_TPUF_BASE_URL", defaultTurboPufferBaseURL),
+		BatchSize:            envIntOrDefault("GX_SEMANTIC_BATCH_SIZE", defaultBatchSize),
+		MaxChunkBytes:        envIntOrDefault("GX_SEMANTIC_MAX_CHUNK_BYTES", defaultMaxChunkBytes),
+	}
+}
+
+// NamespaceForRepo computes the TurboPuffer namespace for one repository.
+//
+// The shape matches the console writer (`gx-<orgId>-<slug>`) so the CLI and the
+// server address the same rows, with a schema-version suffix appended: vector
+// width and full-text settings are fixed per namespace in TurboPuffer, so a
+// schema change has to land in a new namespace rather than corrupting an
+// existing one. A repository with no org (never pushed, no credentials) gets a
+// `gx-local-` namespace so a first review still has an index to read.
+func NamespaceForRepo(orgID, repoFullName, repoRoot string) string {
+	orgID = namespaceSlug(orgID)
+	slug := namespaceSlug(repoFullName)
+	if slug == "" {
+		base := namespaceSlug(filepath.Base(strings.TrimRight(repoRoot, string(filepath.Separator))))
+		if base == "" {
+			base = "repo"
+		}
+		slug = base + "-" + shortHash(repoRoot)[:12]
+	}
+	prefix := "gx-local"
+	if orgID != "" {
+		prefix = "gx-" + orgID
+	}
+	return fmt.Sprintf("%s-%s-v%d", prefix, slug, IndexSchemaVersion)
+}
+
+var namespaceUnsafe = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+
+func namespaceSlug(value string) string {
+	value = namespaceUnsafe.ReplaceAllString(strings.TrimSpace(value), "-")
+	return strings.ToLower(strings.Trim(value, "-"))
 }
 
 func envOrDefault(name, fallback string) string {

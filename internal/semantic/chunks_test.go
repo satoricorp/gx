@@ -13,35 +13,32 @@ func TestBuildSessionChunksUsesRevisionTranscriptSources(t *testing.T) {
 	model := "gpt-5.1-code"
 	bundle := reviewbundle.Bundle{
 		Repo: reviewbundle.RepoPayload{RootPath: "/repo"},
-		Stack: []reviewbundle.StackPayload{{
-			BranchName: "feature/alpha",
-			Change: reviewbundle.ChangePayload{
-				JJChangeID:      "change-alpha",
-				CurrentCommitID: "commit-alpha",
-				Description:     "feat alpha",
-				ReviewContext: &reviewbundle.ReviewContextPayload{
-					TranscriptSources: []reviewbundle.ReviewTranscriptSource{{
-						SessionID:  "session-one",
-						RequestID:  "request-one",
-						ResponseID: &responseID,
-						Provider:   "openai",
-						Model:      &model,
-						CreatedAt:  3,
-						Status:     "linked",
-					}},
-					AgentProvenance: []reviewbundle.ReviewAgentProvenance{{
-						SessionID: "session-one",
-						AgentTool: "codex",
-						Provider:  "openai",
-						ModelID:   model,
-						CreatedAt: 3,
-					}},
-				},
+		Revisions: []reviewbundle.RevisionPayload{{
+			BranchName:  "feature/alpha",
+			RevisionID:  "change-alpha",
+			CommitID:    "commit-alpha",
+			Description: "feat alpha",
+			ReviewContext: &reviewbundle.ReviewContextPayload{
+				TranscriptSources: []reviewbundle.ReviewTranscriptSource{{
+					SessionID:  "session-one",
+					RequestID:  "request-one",
+					ResponseID: &responseID,
+					Provider:   "openai",
+					Model:      &model,
+					CreatedAt:  3,
+					Status:     "linked",
+				}},
+				AgentProvenance: []reviewbundle.ReviewAgentProvenance{{
+					SessionID: "session-one",
+					AgentTool: "codex",
+					Provider:  "openai",
+					ModelID:   model,
+					CreatedAt: 3,
+				}},
 			},
 		}},
 		Sessions: []reviewbundle.SessionPayload{{
-			ID:      "session-one",
-			Command: "codex",
+			ID: "session-one",
 			Requests: []reviewbundle.RequestPayload{{
 				ID:             "request-one",
 				SessionID:      "session-one",
@@ -76,9 +73,11 @@ func TestBuildSessionChunksUsesRevisionTranscriptSources(t *testing.T) {
 		}
 	}
 	wantAttrs := map[string]any{
-		"source_kind":       "session_transcript",
-		"repo_root":         "/repo",
-		"branch_name":       "feature/alpha",
+		"source_kind": "session_transcript",
+		"repo_root":   "/repo",
+		"branch_name": "feature/alpha",
+		"revision_id": "change-alpha",
+		// Legacy twin kept until a full reindex; must carry the same value.
 		"jj_change_id":      "change-alpha",
 		"session_id":        "session-one",
 		"request_id":        "request-one",

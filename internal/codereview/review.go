@@ -3,7 +3,6 @@ package codereview
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,13 +11,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
 const (
 	DefaultScope    = "architecture"
-	DefaultFormat   = "markdown"
 	reviewMintANSI  = "\x1b[38;2;61;220;151m"
 	reviewResetANSI = "\x1b[0m"
 )
@@ -34,19 +31,23 @@ var supportedScopes = map[string]struct{}{
 	"maintainability": {},
 }
 
-var supportedFormats = map[string]struct{}{
-	"markdown": {},
-	"html":     {},
-}
-
 var baselineScopes = []string{"dependencies", "testing", "maintainability"}
 
 type Options struct {
-	Scope        string
-	Format       string
-	Deep         bool
-	Since        string
-	Focus        string
+	Scope string
+	Deep  bool
+	Focus string
+	// Base names the ref to review against. When set, the review covers
+	// "<Base>...HEAD" (three-dot: what HEAD added since the merge base) and
+	// ignores the working tree.
+	Base string
+	// WholeRepo makes the repository itself the subject of the review, whatever
+	// the working tree looks like. It is the explicit answer to "review the
+	// codebase, not just my diff": without it a dirty tree always wins and a
+	// whole-repo review is unreachable. Any diff that was resolved is still
+	// read, so the work in progress informs the review instead of being
+	// discarded.
+	WholeRepo    bool
 	Prompt       string
 	Verbose      bool
 	PatchFocused bool
@@ -57,44 +58,68 @@ type Options struct {
 }
 
 type Report struct {
-	RepoRoot          string
-	Scope             string
-	Format            string
-	Deep              bool
-	Since             string
-	Focus             string
-	Prompt            string
-	BaselineScopes    []string
-	Docs              []FilePresence
-	DependencyFiles   []string
-	TestFileCount     int
-	TrackedFileCount  int
-	ChangedFiles      []string
-	ObservationLabels []string
-	Findings          []Finding
-	Sources           []Source
-	SourceRefs        []SourceRef
-	Reviewer          string
-	ContextSnippets   int
-	Verbose           bool
-	Color             bool
-	Triage            ChangeTriage
-	NoFindingsMessage string
-	DegradedReasons   []string
+	RepoRoot          string         `json:"repo_root,omitempty"`
+	Scope             string         `json:"scope,omitempty"`
+	Deep              bool           `json:"deep"`
+	Focus             string         `json:"focus,omitempty"`
+	Prompt            string         `json:"prompt,omitempty"`
+	BaselineScopes    []string       `json:"baseline_scopes,omitempty"`
+	Docs              []FilePresence `json:"docs,omitempty"`
+	DependencyFiles   []string       `json:"dependency_files,omitempty"`
+	TestFileCount     int            `json:"test_file_count"`
+	TrackedFileCount  int            `json:"tracked_file_count"`
+	ChangedFiles      []string       `json:"changed_files,omitempty"`
+	ObservationLabels []string       `json:"observation_labels,omitempty"`
+	Findings          []Finding      `json:"findings"`
+	Sources           []Source       `json:"sources,omitempty"`
+	SourceRefs        []SourceRef    `json:"source_refs,omitempty"`
+	Reviewer          string         `json:"reviewer,omitempty"`
+	// ReviewModels and ReviewTransport are which models answered and over which
+	// wire. Both questions come up the moment a review is slow or wrong, and
+	// neither is recoverable after the fact: the same panel run against local
+	// AWS credentials and run through GX Cloud has different latency, different
+	// quota behavior, and completely different failure modes.
+	ReviewModels      []string     `json:"review_models,omitempty"`
+	ReviewTransport   string       `json:"review_transport,omitempty"`
+	ContextSnippets   int          `json:"context_snippets"`
+	Verbose           bool         `json:"-"`
+	Color             bool         `json:"-"`
+	Triage            ChangeTriage `json:"triage,omitempty"`
+	NoFindingsMessage string       `json:"no_findings_message,omitempty"`
+	DegradedReasons   []string     `json:"degraded_reasons,omitempty"`
+	// Evidence is what each retrieval source contributed, including the ones
+	// that contributed nothing because they were missing or unreachable. It is
+	// separate from DegradedReasons, which is specifically about the AI
+	// reviewer: a review can have a working reviewer and no evidence, or the
+	// reverse, and the reader needs to be able to tell which.
+	Evidence []EvidenceStatus `json:"evidence,omitempty"`
+	// Coverage is how much of the subject reached the model. Evidence is about
+	// the supporting material; this is about the subject itself, and it is what
+	// decides whether "no material issues found in the repository" is a
+	// sentence this review is entitled to.
+	Coverage Coverage `json:"coverage,omitempty"`
+
+	// Reviewed and the fields below answer "what did this review actually
+	// read?". Reviewed is false only when nothing was inspected, which is a
+	// distinct outcome from a clean review and must never be reported as one.
+	Reviewed    bool   `json:"reviewed"`
+	ReviewMode  string `json:"review_mode,omitempty"`
+	ReviewBase  string `json:"review_base,omitempty"`
+	ReviewRange string `json:"review_range,omitempty"`
+	// ReviewTarget is the human phrase naming what was inspected, or where gx
+	// looked when it found nothing.
+	ReviewTarget string `json:"review_target,omitempty"`
 }
 
 type FilePresence struct {
-	Path    string
-	Present bool
+	Path    string `json:"path"`
+	Present bool   `json:"present"`
 }
 
 func ValidateOptions(opts Options) error {
 	opts = normalizeOptions(opts)
 	if _, ok := supportedScopes[opts.Scope]; !ok {
 		return fmt.Errorf("unsupported review scope %q", opts.Scope)
-	}
-	if _, ok := supportedFormats[opts.Format]; !ok {
-		return fmt.Errorf("unsupported review format %q", opts.Format)
 	}
 	return nil
 }
@@ -105,11 +130,45 @@ func RenderMarkdown(report Report) string {
 		reason := strings.Join(report.DegradedReasons, "; ")
 		fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
 	}
+	// Evidence that could not be read is stated unconditionally, not behind
+	// --verbose. A review that never reached the code index looks exactly like
+	// one that did unless it says so, and "no issues found" means something
+	// materially weaker when half the evidence was missing.
+	if warnings := EvidenceWarnings(report.Evidence); len(warnings) > 0 {
+		fmt.Fprintf(&b, "> Warning: review evidence unavailable — %s. Findings are based on the change and the checkout only.\n\n", strings.Join(warnings, "; "))
+	}
+	// Coverage is stated whenever it is short, findings or no findings. A
+	// review that read a third of a change and found two problems is not a
+	// review that found two problems in the change.
+	if report.Coverage.Partial() {
+		fmt.Fprintf(&b, "> Warning: partial coverage — %s\n\n", report.Coverage.Statement())
+	}
+	if report.ReviewMode == ReviewModeNone {
+		fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
+		fmt.Fprintf(&b, "- %s\n", NothingToReviewMessage(report))
+		return strings.TrimRight(b.String(), "\n") + "\n"
+	}
 	fmt.Fprintln(&b, reviewTitle(report, "## Recommendations"))
+	if report.ReviewMode == ReviewModeRepo {
+		// A whole-repo review has a different subject from a diff review, and
+		// the reader cannot tell them apart from the findings alone. Naming
+		// the subject keeps the reporting invariant honest in both directions.
+		//
+		// Deliberately keyed on the mode, not on the --repo flag: repo mode is
+		// also reached without the flag, when a scope-, prompt-, or
+		// deep-directed review finds no diff at all. That review reads the
+		// repository too, so it says so too — including in the PR comment and
+		// the GX Cloud history entry this same text becomes. Both paths are
+		// pinned by tests so the wording cannot drift for one and not the
+		// other.
+		if target := strings.TrimSpace(report.ReviewTarget); target != "" {
+			fmt.Fprintf(&b, "\n_Reviewed %s._\n\n", target)
+		}
+	}
 	if len(report.Findings) == 0 {
 		message := strings.TrimSpace(report.NoFindingsMessage)
 		if message == "" {
-			message = "No material issues found in this change."
+			message = noFindingsMessage(report.ReviewMode, report.Coverage)
 		}
 		fmt.Fprintf(&b, "- %s\n", message)
 	} else {
@@ -167,15 +226,25 @@ func RenderMarkdown(report Report) string {
 		fmt.Fprintf(&b, "- Tracked/source files scanned: `%d`\n", report.TrackedFileCount)
 		fmt.Fprintf(&b, "- Test files: `%d`\n", report.TestFileCount)
 		fmt.Fprintf(&b, "- Context snippets: `%d`\n", report.ContextSnippets)
+		// Which models, over which wire. Kept together on one line each because
+		// they are read together: "slow" is usually a model answer and "denied"
+		// is usually a transport answer, and telling them apart starts here.
+		if len(report.ReviewModels) > 0 {
+			fmt.Fprintf(&b, "- AI models: `%s`\n", strings.Join(report.ReviewModels, "`, `"))
+		}
+		if transport := strings.TrimSpace(report.ReviewTransport); transport != "" {
+			fmt.Fprintf(&b, "- AI transport: %s\n", transport)
+		}
+		if statement := report.Coverage.Statement(); statement != "" {
+			fmt.Fprintf(&b, "- Coverage: %s\n", statement)
+		}
+		for _, status := range report.Evidence {
+			fmt.Fprintf(&b, "- Evidence: %s\n", EvidenceSummaryLine(status))
+		}
 		if len(report.DependencyFiles) == 0 {
 			fmt.Fprintln(&b, "- Dependency manifests: none detected")
 		} else {
 			fmt.Fprintf(&b, "- Dependency manifests: `%s`\n", strings.Join(report.DependencyFiles, "`, `"))
-		}
-		if report.Since != "" {
-			fmt.Fprintf(&b, "- Since: `%s`\n", report.Since)
-		} else {
-			fmt.Fprintln(&b, "- Since: `forever`")
 		}
 		fmt.Fprintln(&b)
 
@@ -200,6 +269,17 @@ func RenderMarkdown(report Report) string {
 		fmt.Fprintln(&b)
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+// NothingToReviewMessage states plainly that no code was inspected. It exists
+// so this outcome can never be confused with "reviewed and clean": a gate that
+// reads "no material issues" for a diff nobody opened is a silent false pass.
+func NothingToReviewMessage(report Report) string {
+	target := strings.TrimSpace(report.ReviewTarget)
+	if target == "" {
+		target = "the working tree"
+	}
+	return fmt.Sprintf("Nothing to review: no changes found in %s. No code was inspected, so this is not a clean review.", target)
 }
 
 func renderFindingAttributions(report Report, finding Finding) []string {
@@ -335,9 +415,11 @@ func normalizeOptions(opts Options) Options {
 	} else {
 		opts.Scope = scope
 	}
-	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
-	if opts.Format == "" {
-		opts.Format = DefaultFormat
+	if opts.WholeRepo {
+		// A whole-repo review and the patch-focused filter are contradictory:
+		// that filter keeps only findings anchored in the diff, which is
+		// exactly the reach WholeRepo exists to restore.
+		opts.PatchFocused = false
 	}
 	return opts
 }
@@ -359,7 +441,19 @@ func depthLabel(deep bool) string {
 	return "shallow"
 }
 
+// reviewProfileWholeRepo is the profile token for a whole-repo review. Every
+// profile token the brief can carry must be defined in the instructions sent
+// with it (see reviewDeveloperPrompt), so this name is shared rather than
+// spelled twice.
+const reviewProfileWholeRepo = "whole_repo"
+
+// reviewProfile names what kind of review this is for the model. WholeRepo
+// comes before Deep because the profile names the subject; depth travels
+// separately in the brief's Depth field and is not lost by this ordering.
 func reviewProfile(opts Options) string {
+	if opts.WholeRepo {
+		return reviewProfileWholeRepo
+	}
 	if opts.Deep {
 		return "deep_full_spectrum"
 	}
@@ -608,7 +702,13 @@ func isTestFile(rel string) bool {
 }
 
 func changedFiles(ctx context.Context, repoRoot string) []string {
-	cmd := exec.CommandContext(ctx, "git", "status", "--short")
+	// --untracked-files=all, because the default collapses a new directory into
+	// a single `internal/gxtest/` entry. That entry is not a file: it produces
+	// no diff, reads as nothing, and takes an entire directory of brand-new
+	// unreviewed code out of the review without anything saying so. Listing the
+	// files individually is what makes them reviewable and what makes the
+	// coverage count true.
+	cmd := exec.CommandContext(ctx, "git", "status", "--short", "--untracked-files=all")
 	cmd.Dir = repoRoot
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -628,79 +728,6 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 		if file != "" {
 			files = append(files, file)
 		}
-	}
-	sort.Strings(files)
-	return files
-}
-
-func reviewChangedFiles(ctx context.Context, repoRoot string) []string {
-	files := changedFiles(ctx, repoRoot)
-	if len(files) > 0 {
-		return files
-	}
-	return gxRevisionChangedFiles(ctx, repoRoot)
-}
-
-func gxRevisionChangedFiles(ctx context.Context, repoRoot string) []string {
-	repoRoot = strings.TrimSpace(repoRoot)
-	if repoRoot == "" {
-		return nil
-	}
-	db, err := storage.Open(ctx)
-	if err != nil {
-		return nil
-	}
-	defer db.Close()
-
-	rows, err := db.QueryContext(ctx, `
-		WITH latest_revisions AS (
-			SELECT cr.change_id, cr.changed_files_json
-			FROM change_revisions cr
-			JOIN (
-				SELECT change_id, MAX(created_at) AS created_at
-				FROM change_revisions
-				GROUP BY change_id
-			) latest
-				ON latest.change_id = cr.change_id AND latest.created_at = cr.created_at
-		)
-		SELECT lr.changed_files_json
-		FROM repos r
-		JOIN stacks s ON s.repo_id = r.id
-		JOIN stack_changes sc ON sc.stack_id = s.id
-		JOIN changes c ON c.id = sc.change_id
-		JOIN latest_revisions lr ON lr.change_id = c.id
-		WHERE r.root_path = ? AND COALESCE(s.status, '') != 'merged'
-		ORDER BY sc.position ASC, c.updated_at DESC
-	`, repoRoot)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	seen := map[string]struct{}{}
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil
-		}
-		var files []string
-		if err := json.Unmarshal([]byte(raw), &files); err != nil {
-			continue
-		}
-		for _, file := range files {
-			file = strings.TrimSpace(filepath.ToSlash(file))
-			if file == "" {
-				continue
-			}
-			seen[file] = struct{}{}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil
-	}
-	files := make([]string, 0, len(seen))
-	for file := range seen {
-		files = append(files, file)
 	}
 	sort.Strings(files)
 	return files

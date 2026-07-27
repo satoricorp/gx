@@ -1,14 +1,34 @@
 # Agents
 
-Version control: use Git with GX hooks and metadata, not raw `git commit` for normal agent work.
+Version control: plain Git. Once `gx init` installs the hooks, GX records and publishes automatically — there is no GX save verb.
 
 Default flow:
 - Run `git add` to stage the files for this revision.
-- Run `gx commit` (or MCP `gx_commit`) to record staged work as a GX revision via native `git commit` plus GX hooks.
-- Run `gx status` to inspect staged files, local revisions, and remote state.
-- Run plain `git push` to ship. The GX pre-push hook captures sessions and publishes GX metadata to GX Cloud automatically — do not run `gx push` or `gx capture push` yourself.
+- Run `git commit -m "..."` to save. A GX hook records the commit as a reviewable revision.
+- Run plain `git push` to publish. The GX pre-push hook captures the session and publishes code changes, sessions, and GX metadata to GX Cloud automatically — do not run `gx push` or `gx capture push` yourself; they bypass the hook.
 - Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; GX Cloud appends the rich summary below once the PR exists.
+- To amend, use `git commit --amend` and preserve the GX revision trailer in the message.
 
-Use GX MCP first: `gx_status`, then `gx_commit`; push with plain `git push`.
+For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
 
-To amend an existing GX revision, use `git commit --amend` and preserve the GX revision trailer in the message.
+## Tests: seed through the writer production uses, or do not seed
+
+Two production defects shipped past a fully green suite because every test built
+a pristine, freshly migrated database in a temp dir, which never resembles a real
+install. Both rules below exist because of that.
+
+- **Never seed through a function production does not call.** `store.WriteSession`
+  had zero production callers and fourteen test call sites while the only real
+  writer of `sessions` could not bootstrap its first row, so 171 of 174 published
+  bundles shipped `sessions: []` with the suite green. `TestSeedersAreProductionWriters`
+  (internal/storage/storagetest) fails on any exported storage method with test
+  callers and no production ones; its allowlist in
+  `internal/storage/storagetest/testdata/test_only_writers.txt` is a ratchet —
+  entries may be removed, never added.
+- **Prefer a weathered database to a pristine one.** Use
+  `storagetest.New(t, shapes...)` / `NewInWorld` with shapes such as
+  `DriftedRepoIdentity`, `WeatheredNeighbourRepos`, `LegacyCaptureSessions` and
+  `FossilCommitSelfReportSession` instead of hand-rolling
+  `t.Setenv("GX_HOME", t.TempDir())`. Repositories and worktrees come from
+  `gxtest.NewWorld(t)`. Cold start is also a real case, so keep pristine tests —
+  just mark the premise with `storagetest.NoSessions()`.

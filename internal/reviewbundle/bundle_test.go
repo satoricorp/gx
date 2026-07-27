@@ -1,9 +1,11 @@
 package reviewbundle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/reviewsource"
@@ -11,7 +13,7 @@ import (
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
-func TestBuildPushIncludesDemuxEvidence(t *testing.T) {
+func TestBuildPushIncludesDemuxEvidenceContext(t *testing.T) {
 	store := newBundleTestStore(t)
 	ctx := context.Background()
 	repoID := seedRepo(t, store, "/repo")
@@ -45,14 +47,16 @@ func TestBuildPushIncludesDemuxEvidence(t *testing.T) {
 
 	bundle, err := BuildPush(ctx, vcs.PushResult{
 		HeadCommitID: "commit-1",
-		CurrentChange: &vcs.ChangeInfo{
-			ChangeID: "change-1",
-			CommitID: "commit-1",
-		},
 		Repo: vcs.RepoInfo{
 			RootPath: "/repo",
-			Backend:  "jj",
+			Backend:  "git",
 		},
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "commit-1",
+			RevisionID: "change-1",
+			Message:    "split alpha",
+			Files:      []string{"alpha.txt"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("BuildPush() error = %v", err)
@@ -60,58 +64,55 @@ func TestBuildPushIncludesDemuxEvidence(t *testing.T) {
 	if bundle.SchemaVersion != SchemaVersion {
 		t.Fatalf("schema version = %d, want %d", bundle.SchemaVersion, SchemaVersion)
 	}
-	if bundle.Change == nil || len(bundle.Change.DemuxEvidence) != 1 {
-		t.Fatalf("bundle change demux evidence = %#v", bundle.Change)
+	if len(bundle.Revisions) != 1 {
+		t.Fatalf("bundle revisions = %#v, want one entry", bundle.Revisions)
 	}
-	evidence := bundle.Change.DemuxEvidence[0]
-	if evidence.DemuxProposalID != "demux-test" || evidence.RevisionProposalID != "r1" || !evidence.UseHunks {
-		t.Fatalf("demux evidence = %#v", evidence)
+	revision := bundle.Revisions[0]
+	if revision.RevisionID != "change-1" || revision.CommitID != "commit-1" {
+		t.Fatalf("revision identity = %#v", revision)
 	}
-	if !reflect.DeepEqual(evidence.Files, []string{"alpha.txt"}) || !reflect.DeepEqual(evidence.HunkIDs, []string{"h1"}) {
-		t.Fatalf("demux evidence files/hunks = %#v/%#v", evidence.Files, evidence.HunkIDs)
+	if revision.ReviewContext == nil {
+		t.Fatal("revision review context = nil")
 	}
-	if string(evidence.Evidence) != reviewContextFixture() {
-		t.Fatalf("evidence JSON = %s", evidence.Evidence)
+	if revision.ReviewContext.ProvenanceStatus != "explicit" || revision.ReviewContext.StructuralStatus != "available" {
+		t.Fatalf("review context status = %#v", revision.ReviewContext)
 	}
-	if bundle.Change.ReviewContext == nil {
-		t.Fatal("bundle change review context = nil")
+	if revision.ReviewContext.Risk.Level != "high" || revision.ReviewContext.Risk.Score == 0 {
+		t.Fatalf("review context risk = %#v, want high risk", revision.ReviewContext.Risk)
 	}
-	if bundle.Change.ReviewContext.ProvenanceStatus != "explicit" || bundle.Change.ReviewContext.StructuralStatus != "available" {
-		t.Fatalf("review context status = %#v", bundle.Change.ReviewContext)
+	if len(revision.ReviewContext.StructuralFacts) != 1 || revision.ReviewContext.StructuralFacts[0].File != "alpha.txt" {
+		t.Fatalf("review context structural facts = %#v", revision.ReviewContext.StructuralFacts)
 	}
-	if bundle.Change.ReviewContext.Risk.Level != "high" || bundle.Change.ReviewContext.Risk.Score == 0 {
-		t.Fatalf("review context risk = %#v, want high risk", bundle.Change.ReviewContext.Risk)
+	if len(revision.ReviewContext.ChangedSymbols) != 1 || revision.ReviewContext.ChangedSymbols[0].Symbol != "Run" {
+		t.Fatalf("review context changed symbols = %#v", revision.ReviewContext.ChangedSymbols)
 	}
-	if len(bundle.Change.ReviewContext.StructuralFacts) != 1 || bundle.Change.ReviewContext.StructuralFacts[0].File != "alpha.txt" {
-		t.Fatalf("review context structural facts = %#v", bundle.Change.ReviewContext.StructuralFacts)
+	if len(revision.ReviewContext.FeasibilityWarnings) != 1 || revision.ReviewContext.FeasibilityWarnings[0].Source != "structural_dependency" {
+		t.Fatalf("review context warnings = %#v", revision.ReviewContext.FeasibilityWarnings)
 	}
-	if len(bundle.Change.ReviewContext.ChangedSymbols) != 1 || bundle.Change.ReviewContext.ChangedSymbols[0].Symbol != "Run" {
-		t.Fatalf("review context changed symbols = %#v", bundle.Change.ReviewContext.ChangedSymbols)
-	}
-	if len(bundle.Change.ReviewContext.FeasibilityWarnings) != 1 || bundle.Change.ReviewContext.FeasibilityWarnings[0].Source != "structural_dependency" {
-		t.Fatalf("review context warnings = %#v", bundle.Change.ReviewContext.FeasibilityWarnings)
-	}
-	if !hasEvidenceKind(bundle.Change.ReviewContext.Evidence, "provenance") ||
-		!hasEvidenceKind(bundle.Change.ReviewContext.Evidence, "structural") ||
-		!hasEvidenceKind(bundle.Change.ReviewContext.Evidence, "risk") {
-		t.Fatalf("review context evidence = %#v, want typed provenance/structural/risk evidence", bundle.Change.ReviewContext.Evidence)
+	if !hasEvidenceKind(revision.ReviewContext.Evidence, "provenance") ||
+		!hasEvidenceKind(revision.ReviewContext.Evidence, "structural") ||
+		!hasEvidenceKind(revision.ReviewContext.Evidence, "risk") {
+		t.Fatalf("review context evidence = %#v, want typed provenance/structural/risk evidence", revision.ReviewContext.Evidence)
 	}
 }
 
-func TestBuildPushStackIncludesPatchesAndDedupedSessions(t *testing.T) {
+func TestBuildPushIncludesPatchesAndDedupedSessions(t *testing.T) {
 	store := newBundleTestStore(t)
 	ctx := context.Background()
 	repoID := seedRepo(t, store, "/repo")
 	alphaID := seedChange(t, store, repoID, "alpha-change", "alpha-commit", "alpha", []string{"alpha.txt"})
 	betaID := seedChange(t, store, repoID, "beta-change", "beta-commit", "beta", []string{"beta.txt"})
-	if err := store.WriteSession(ctx, storage.Session{
+	// UpsertObservedSession, not WriteSession: the latter has no production
+	// callers, and seeding through it is what let a bundle test pass against a
+	// `sessions` table production could never have written.
+	if err := store.UpsertObservedSession(ctx, storage.Session{
 		ID:        "session-one",
 		CreatedAt: 1,
 		Command:   "codex",
 		Cwd:       "/repo",
 		GXVersion: "test",
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	if err := store.WriteChangeSessions(ctx, alphaID, []string{"session-one"}, 2); err != nil {
 		t.Fatalf("WriteChangeSessions(alpha) error = %v", err)
@@ -144,54 +145,63 @@ func TestBuildPushStackIncludesPatchesAndDedupedSessions(t *testing.T) {
 		t.Fatalf("WriteResponse() error = %v", err)
 	}
 
+	main := "main"
 	bundle, err := BuildPush(ctx, vcs.PushResult{
 		HeadCommitID: "beta-commit",
 		Repo: vcs.RepoInfo{
-			RootPath: "/repo",
-			Backend:  "jj",
+			RootPath:      "/repo",
+			Backend:       "git",
+			DefaultBranch: &main,
 		},
-		Published: []vcs.PushedChange{
+		GXStackRef: "feature/alpha",
+		Commits: []vcs.PushedCommit{
 			{
-				Change:         vcs.ChangeInfo{ChangeID: "alpha-change", CommitID: "alpha-commit"},
-				BranchName:     "feature/alpha",
-				BaseBranchName: "main",
-				Patch:          "diff --git a/alpha.txt b/alpha.txt\n",
+				CommitID:   "alpha-commit",
+				RevisionID: "alpha-change",
+				Message:    "alpha",
+				Files:      []string{"alpha.txt"},
+				Patch:      "diff --git a/alpha.txt b/alpha.txt\n",
 			},
 			{
-				Change:         vcs.ChangeInfo{ChangeID: "beta-change", CommitID: "beta-commit"},
-				BranchName:     "feature/beta",
-				BaseBranchName: "feature/alpha",
-				Patch:          "diff --git a/beta.txt b/beta.txt\n",
+				CommitID:   "beta-commit",
+				RevisionID: "beta-change",
+				Message:    "beta",
+				Files:      []string{"beta.txt"},
+				Patch:      "diff --git a/beta.txt b/beta.txt\n",
 			},
 		},
 	})
 	if err != nil {
 		t.Fatalf("BuildPush() error = %v", err)
 	}
-	if len(bundle.Stack) != 2 {
-		t.Fatalf("bundle stack = %#v, want two entries", bundle.Stack)
+	if len(bundle.Revisions) != 2 {
+		t.Fatalf("bundle revisions = %#v, want two entries", bundle.Revisions)
 	}
-	if bundle.Stack[0].Patch == "" || bundle.Stack[1].Patch == "" {
-		t.Fatalf("bundle stack patches missing: %#v", bundle.Stack)
+	if bundle.Revisions[0].Patch == "" || bundle.Revisions[1].Patch == "" {
+		t.Fatalf("bundle revision patches missing: %#v", bundle.Revisions)
 	}
-	if bundle.Stack[0].Change.ReviewContext == nil || bundle.Stack[1].Change.ReviewContext == nil {
-		t.Fatalf("bundle stack review context missing: %#v", bundle.Stack)
+	if bundle.Revisions[0].BranchName != "feature/alpha" || bundle.Revisions[0].BaseBranchName != "main" {
+		t.Fatalf("revision branches = %#v, want feature/alpha on main", bundle.Revisions[0])
 	}
-	if bundle.Stack[0].Change.ReviewContext.ProvenanceStatus != "linked" || bundle.Stack[0].Change.ReviewContext.LinkedSessionCount != 1 {
-		t.Fatalf("alpha review context = %#v, want linked session provenance", bundle.Stack[0].Change.ReviewContext)
+	if bundle.Revisions[0].ReviewContext == nil || bundle.Revisions[1].ReviewContext == nil {
+		t.Fatalf("bundle revision review context missing: %#v", bundle.Revisions)
 	}
-	if len(bundle.Stack[0].Change.ReviewContext.ProvenanceSources) != 1 || bundle.Stack[0].Change.ReviewContext.ProvenanceSources[0].SessionID != "session-one" {
-		t.Fatalf("alpha provenance sources = %#v, want session-one", bundle.Stack[0].Change.ReviewContext.ProvenanceSources)
+	alphaContext := bundle.Revisions[0].ReviewContext
+	if alphaContext.ProvenanceStatus != "linked" || alphaContext.LinkedSessionCount != 1 {
+		t.Fatalf("alpha review context = %#v, want linked session provenance", alphaContext)
 	}
-	if len(bundle.Stack[0].Change.ReviewContext.TranscriptSources) != 1 {
-		t.Fatalf("alpha transcript sources = %#v, want one source", bundle.Stack[0].Change.ReviewContext.TranscriptSources)
+	if len(alphaContext.ProvenanceSources) != 1 || alphaContext.ProvenanceSources[0].SessionID != "session-one" {
+		t.Fatalf("alpha provenance sources = %#v, want session-one", alphaContext.ProvenanceSources)
 	}
-	transcriptSource := bundle.Stack[0].Change.ReviewContext.TranscriptSources[0]
+	if len(alphaContext.TranscriptSources) != 1 {
+		t.Fatalf("alpha transcript sources = %#v, want one source", alphaContext.TranscriptSources)
+	}
+	transcriptSource := alphaContext.TranscriptSources[0]
 	if transcriptSource.SessionID != "session-one" || transcriptSource.RequestID != "request-one" || transcriptSource.ResponseID == nil || *transcriptSource.ResponseID != "response-one" || transcriptSource.Status != "linked" {
 		t.Fatalf("alpha transcript source = %#v, want request/response ids", transcriptSource)
 	}
-	if containsString(bundle.Stack[0].Change.ReviewContext.Risk.Signals, "missing_provenance") {
-		t.Fatalf("alpha risk signals = %#v, did not expect missing provenance", bundle.Stack[0].Change.ReviewContext.Risk.Signals)
+	if containsString(alphaContext.Risk.Signals, "missing_provenance") {
+		t.Fatalf("alpha risk signals = %#v, did not expect missing provenance", alphaContext.Risk.Signals)
 	}
 	if len(bundle.Sessions) != 1 || bundle.Sessions[0].ID != "session-one" {
 		t.Fatalf("bundle sessions = %#v, want deduped session-one", bundle.Sessions)
@@ -206,27 +216,31 @@ func TestBuildPushIncludesReviewContextWithoutDemuxEvidence(t *testing.T) {
 
 	bundle, err := BuildPush(ctx, vcs.PushResult{
 		HeadCommitID: "commit-1",
-		CurrentChange: &vcs.ChangeInfo{
-			ChangeID: "change-1",
-			CommitID: "commit-1",
-		},
 		Repo: vcs.RepoInfo{
 			RootPath: "/repo",
-			Backend:  "jj",
+			Backend:  "git",
 		},
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "commit-1",
+			RevisionID: "change-1",
+			Message:    "manual alpha",
+		}},
 	})
 	if err != nil {
 		t.Fatalf("BuildPush() error = %v", err)
 	}
-	if bundle.Change == nil || bundle.Change.ReviewContext == nil {
-		t.Fatalf("bundle change review context = %#v, want present", bundle.Change)
+	if len(bundle.Revisions) != 1 || bundle.Revisions[0].ReviewContext == nil {
+		t.Fatalf("bundle revisions = %#v, want review context present", bundle.Revisions)
 	}
-	context := bundle.Change.ReviewContext
+	context := bundle.Revisions[0].ReviewContext
 	if context.ProvenanceStatus != "absent" || context.StructuralStatus != "unavailable" {
 		t.Fatalf("review context = %#v, want absent/unavailable", context)
 	}
 	if context.Risk.Level != "low" || !containsString(context.Risk.Signals, "missing_provenance") {
 		t.Fatalf("risk = %#v, want low missing-provenance signal", context.Risk)
+	}
+	if !reflect.DeepEqual(bundle.Revisions[0].Files, []string{"alpha.txt"}) {
+		t.Fatalf("revision files = %#v, want change-row fallback", bundle.Revisions[0].Files)
 	}
 }
 
@@ -237,7 +251,12 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 	changeID := seedChange(t, store, repoID, "change-1", "commit-1", "codex change", []string{"main.go"})
 	source := "ambient"
 	processName := "codex"
-	if err := store.WriteSession(ctx, storage.Session{
+	// UpsertCursorSession rather than UpsertObservedSession here: this test
+	// asserts on process_name, and the transcript-observation writer cannot set
+	// it. The Cursor ingest (internal/ingest/cursor) is the only production
+	// writer that fills that column, so it is the writer this row must come
+	// from if the row is to be one a real machine can hold.
+	if _, err := store.UpsertCursorSession(ctx, storage.Session{
 		ID:          "session-one",
 		CreatedAt:   1,
 		Command:     "codex exec",
@@ -246,7 +265,7 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 		Source:      &source,
 		ProcessName: &processName,
 	}); err != nil {
-		t.Fatalf("WriteSession() error = %v", err)
+		t.Fatalf("UpsertCursorSession() error = %v", err)
 	}
 	model := "gpt-5"
 	if err := store.WriteRequest(ctx, storage.Request{
@@ -268,22 +287,23 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 
 	bundle, err := BuildPush(ctx, vcs.PushResult{
 		HeadCommitID: "commit-1",
-		CurrentChange: &vcs.ChangeInfo{
-			ChangeID: "change-1",
-			CommitID: "commit-1",
-		},
 		Repo: vcs.RepoInfo{
 			RootPath: "/repo",
-			Backend:  "jj",
+			Backend:  "git",
 		},
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "commit-1",
+			RevisionID: "change-1",
+			Message:    "codex change",
+		}},
 	})
 	if err != nil {
 		t.Fatalf("BuildPush() error = %v", err)
 	}
-	if bundle.Change == nil || bundle.Change.ReviewContext == nil {
-		t.Fatalf("bundle change review context missing: %#v", bundle.Change)
+	if len(bundle.Revisions) != 1 || bundle.Revisions[0].ReviewContext == nil {
+		t.Fatalf("bundle revision review context missing: %#v", bundle.Revisions)
 	}
-	got := bundle.Change.ReviewContext.AgentProvenance
+	got := bundle.Revisions[0].ReviewContext.AgentProvenance
 	if len(got) != 1 {
 		t.Fatalf("agent provenance = %#v, want one row", got)
 	}
@@ -294,9 +314,8 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 
 func TestBuildPushUsesGXStackRefForPushBranchName(t *testing.T) {
 	store := newBundleTestStore(t)
+	_ = store
 	ctx := context.Background()
-	repoID := seedRepo(t, store, "/repo")
-	seedChange(t, store, repoID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
 
 	main := "main"
 	stackRef := "feature/cli"
@@ -305,7 +324,7 @@ func TestBuildPushUsesGXStackRefForPushBranchName(t *testing.T) {
 		GXStackRef:   stackRef,
 		Repo: vcs.RepoInfo{
 			RootPath:   "/repo",
-			Backend:    "jj",
+			Backend:    "git",
 			BranchName: &main,
 		},
 	})
@@ -317,51 +336,176 @@ func TestBuildPushUsesGXStackRefForPushBranchName(t *testing.T) {
 	}
 }
 
-func TestBuildPushJSONShapeIsStableForConsoleIngest(t *testing.T) {
+func TestBuildPushIncludesTrailerlessCommits(t *testing.T) {
 	store := newBundleTestStore(t)
+	_ = store
 	ctx := context.Background()
-	repoID := seedRepo(t, store, "/repo")
-	seedChange(t, store, repoID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
 
 	bundle, err := BuildPush(ctx, vcs.PushResult{
-		HeadCommitID: "commit-1",
-		CurrentChange: &vcs.ChangeInfo{
-			ChangeID: "change-1",
-			CommitID: "commit-1",
-		},
+		HeadCommitID: "commit-2",
 		Repo: vcs.RepoInfo{
 			RootPath: "/repo",
-			Backend:  "jj",
+			Backend:  "git",
 		},
+		Commits: []vcs.PushedCommit{{
+			CommitID: "commit-2",
+			Message:  "no trailer here",
+			Files:    []string{"a.txt"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("BuildPush() error = %v", err)
 	}
+	if len(bundle.Revisions) != 1 {
+		t.Fatalf("bundle revisions = %#v, want the trailer-less commit included", bundle.Revisions)
+	}
+	if bundle.Revisions[0].RevisionID != "" {
+		t.Fatalf("revision id = %q, want empty for trailer-less commit", bundle.Revisions[0].RevisionID)
+	}
+	if bundle.Revisions[0].ReviewContext != nil {
+		t.Fatalf("review context = %#v, want none for trailer-less commit", bundle.Revisions[0].ReviewContext)
+	}
+}
+
+// TestBuildPushMarshalsSchemaV2WireShape locks the v2 wire contract: the
+// bundle must declare schema_version 2, carry `revisions` entries with exactly
+// the agreed keys, and contain none of the retired v1 keys (`stack`, `change`,
+// `jj_change_id`) or the retired process-shaped session keys anywhere.
+//
+// `command` is deliberately NOT in the retired set. The keys this test bans are
+// process-shaped leftovers of the daemon (`client_pid`, `exit_code`,
+// `process_name`, `parent_pid`); `command` now carries the agent that produced
+// the transcript ("claude", "codex", "cursor"), which the console reads first
+// and only then falls back to `source`. Dropping it rendered every session as
+// `command=?`, so it is required here rather than forbidden.
+func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
+	store := newBundleTestStore(t)
+	ctx := context.Background()
+	repoID := seedRepo(t, store, "/repo")
+	changeID := seedChange(t, store, repoID, "gxr-3f9c", "0f4b21c9", "add retry helper\n\nCovers the timeout path.", []string{"retry.go"})
+	if err := store.UpsertObservedSession(ctx, storage.Session{
+		ID:        "session-one",
+		CreatedAt: 1,
+		Command:   "claude",
+		Cwd:       "/repo",
+		GXVersion: "test",
+	}); err != nil {
+		t.Fatalf("UpsertObservedSession() error = %v", err)
+	}
+	if err := store.WriteChangeSessions(ctx, changeID, []string{"session-one"}, 2); err != nil {
+		t.Fatalf("WriteChangeSessions() error = %v", err)
+	}
+	if err := store.WriteRequest(ctx, storage.Request{
+		ID:             "request-one",
+		SessionID:      "session-one",
+		CreatedAt:      3,
+		Provider:       "anthropic",
+		Endpoint:       "/v1/messages",
+		Method:         "POST",
+		RequestBody:    []byte(`{"input":"add retry"}`),
+		RequestHeaders: "{}",
+	}); err != nil {
+		t.Fatalf("WriteRequest() error = %v", err)
+	}
+
+	main := "main"
+	remote := "origin"
+	prURL := "https://github.com/acme/repo/pull/7"
+	bundle, err := BuildPush(ctx, vcs.PushResult{
+		HeadCommitID: "0f4b21c9",
+		RemoteName:   &remote,
+		Repo: vcs.RepoInfo{
+			RootPath:      "/repo",
+			Backend:       "jj", // stale stored value; the wire must still say git
+			DefaultBranch: &main,
+			BranchName:    &main,
+		},
+		GXStackRef:           "feature/retry",
+		GitHubPullRequestURL: &prURL,
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "0f4b21c9",
+			RevisionID: "gxr-3f9c",
+			Message:    "add retry helper\n\nCovers the timeout path.",
+			Files:      []string{"retry.go"},
+			Patch:      "diff --git a/retry.go b/retry.go\n@@ -0,0 +1 @@\n+package retry\n",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildPush() error = %v", err)
+	}
+
 	data, err := json.Marshal(bundle)
 	if err != nil {
 		t.Fatalf("marshal bundle: %v", err)
 	}
+	t.Logf("v2 bundle JSON:\n%s", indentJSON(t, data))
+
 	var decoded map[string]any
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("decode bundle: %v", err)
 	}
-	for _, key := range []string{"event", "schema_version", "created_at", "gx_version", "repo", "push", "change", "sessions"} {
+	if got, ok := decoded["schema_version"].(float64); !ok || int(got) != 2 {
+		t.Fatalf("schema_version = %#v, want 2", decoded["schema_version"])
+	}
+	if decoded["repo"].(map[string]any)["backend"] != "git" {
+		t.Fatalf("repo.backend = %#v, want git", decoded["repo"])
+	}
+	for _, key := range []string{"event", "schema_version", "created_at", "gx_version", "repo", "push", "revisions", "sessions"} {
 		if _, ok := decoded[key]; !ok {
 			t.Fatalf("bundle JSON missing %q: %s", key, data)
 		}
 	}
-	change, ok := decoded["change"].(map[string]any)
-	if !ok {
-		t.Fatalf("bundle change JSON = %#v", decoded["change"])
+	revisions, ok := decoded["revisions"].([]any)
+	if !ok || len(revisions) != 1 {
+		t.Fatalf("bundle revisions JSON = %#v, want one entry", decoded["revisions"])
 	}
-	reviewContext, ok := change["review_context"].(map[string]any)
+	revision, ok := revisions[0].(map[string]any)
 	if !ok {
-		t.Fatalf("bundle change missing review_context: %s", data)
+		t.Fatalf("revision JSON = %#v", revisions[0])
 	}
-	for _, key := range []string{"provenance_status", "structural_status", "risk", "evidence"} {
-		if _, ok := reviewContext[key]; !ok {
-			t.Fatalf("review_context JSON missing %q: %s", key, data)
+	for _, key := range []string{
+		"revision_id", "commit_id", "description", "files",
+		"branch_name", "base_branch_name", "patch",
+		"github_pull_request_url", "review_context",
+	} {
+		if _, ok := revision[key]; !ok {
+			t.Fatalf("revision JSON missing %q: %s", key, data)
 		}
+	}
+	if revision["revision_id"] != "gxr-3f9c" || revision["commit_id"] != "0f4b21c9" {
+		t.Fatalf("revision identity JSON = %#v", revision)
+	}
+	if revision["branch_name"] != "feature/retry" || revision["base_branch_name"] != "main" {
+		t.Fatalf("revision branch JSON = %#v", revision)
+	}
+
+	for _, forbidden := range []string{`"stack"`, `"change"`, `"jj_change_id"`} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("bundle JSON still contains retired key %s:\n%s", forbidden, data)
+		}
+	}
+	sessions, ok := decoded["sessions"].([]any)
+	if !ok || len(sessions) != 1 {
+		t.Fatalf("bundle sessions JSON = %#v, want one entry", decoded["sessions"])
+	}
+	session, ok := sessions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("session JSON = %#v", sessions[0])
+	}
+	for _, forbidden := range []string{"client_pid", "exit_code", "process_name", "parent_pid"} {
+		if _, present := session[forbidden]; present {
+			t.Fatalf("session JSON still contains retired key %q: %s", forbidden, data)
+		}
+	}
+	for _, key := range []string{"id", "created_at", "command", "cwd", "gx_version", "requests"} {
+		if _, ok := session[key]; !ok {
+			t.Fatalf("session JSON missing %q: %s", key, data)
+		}
+	}
+	// The console renders this verbatim; an empty string here is the `command=?`
+	// bug, which a mere presence check would not catch.
+	if session["command"] != "claude" {
+		t.Fatalf("session command = %#v, want %q: %s", session["command"], "claude", data)
 	}
 }
 
@@ -369,16 +513,15 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 	artifact := NewArtifact(Bundle{
 		Event:         "gx.pr",
 		SchemaVersion: SchemaVersion,
-		Repo:          RepoPayload{RootPath: "/repo", Backend: "jj"},
+		Repo:          RepoPayload{RootPath: "/repo", Backend: "git"},
 		Push:          PushPayload{HeadCommitID: "commit-1"},
-		Stack: []StackPayload{{
-			BranchName: "feature/alpha",
-			Patch:      "diff --git a/a.txt b/a.txt\n",
-			Change: ChangePayload{
-				JJChangeID:      "change-1",
-				CurrentCommitID: "commit-1",
-				Description:     "alpha",
-			},
+		Revisions: []RevisionPayload{{
+			RevisionID:  "change-1",
+			CommitID:    "commit-1",
+			Description: "alpha",
+			Files:       []string{"a.txt"},
+			BranchName:  "feature/alpha",
+			Patch:       "diff --git a/a.txt b/a.txt\n",
 		}},
 		Sessions: []SessionPayload{},
 	})
@@ -393,7 +536,7 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("decode artifact: %v", err)
 	}
-	for _, key := range []string{"review_id", "review_url", "index_status", "event", "schema_version", "repo", "push", "stack", "sessions"} {
+	for _, key := range []string{"review_id", "review_url", "index_status", "event", "schema_version", "repo", "push", "revisions", "sessions"} {
 		if _, ok := decoded[key]; !ok {
 			t.Fatalf("artifact JSON missing %q: %s", key, data)
 		}
@@ -401,13 +544,13 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 	if _, ok := decoded["bundle"]; ok {
 		t.Fatalf("artifact JSON should be flattened, got nested bundle: %s", data)
 	}
-	stack, ok := decoded["stack"].([]any)
-	if !ok || len(stack) != 1 {
-		t.Fatalf("artifact stack = %#v, want one entry", decoded["stack"])
+	revisions, ok := decoded["revisions"].([]any)
+	if !ok || len(revisions) != 1 {
+		t.Fatalf("artifact revisions = %#v, want one entry", decoded["revisions"])
 	}
-	entry, ok := stack[0].(map[string]any)
+	entry, ok := revisions[0].(map[string]any)
 	if !ok || entry["patch"] == "" {
-		t.Fatalf("artifact stack entry = %#v, want patch for diffs ingest", stack[0])
+		t.Fatalf("artifact revision entry = %#v, want patch for diffs ingest", revisions[0])
 	}
 }
 
@@ -439,6 +582,45 @@ func TestBuildReviewContextComputesRiskFromEvidence(t *testing.T) {
 	}
 }
 
+func TestProvenanceRiskHandlesEveryReportedStatus(t *testing.T) {
+	// Every status reviewsource can report must produce a signal, so a new or
+	// unrecognized status can never pass through risk scoring unnoticed.
+	for _, status := range []string{
+		reviewsource.StatusAbsent,
+		reviewsource.StatusRepoLocal,
+		reviewsource.StatusUnknown,
+		reviewsource.StatusLinked,
+		reviewsource.StatusExplicit,
+		"some-status-we-have-not-seen",
+	} {
+		points, signal := provenanceRisk(status)
+		if signal == "" {
+			t.Fatalf("provenanceRisk(%q) returned no signal", status)
+		}
+		if points < 0 {
+			t.Fatalf("provenanceRisk(%q) points = %d, want >= 0", status, points)
+		}
+	}
+	if points, _ := provenanceRisk(reviewsource.StatusAbsent); points <= 0 {
+		t.Fatal("absent provenance should raise risk")
+	}
+	if points, _ := provenanceRisk(reviewsource.StatusExplicit); points != 0 {
+		t.Fatal("explicit provenance should not raise risk")
+	}
+	if points, signal := provenanceRisk(""); points != 0 || signal != "" {
+		t.Fatalf("empty status = (%d, %q), want (0, \"\")", points, signal)
+	}
+}
+
+func indentJSON(t *testing.T, data []byte) string {
+	t.Helper()
+	var out bytes.Buffer
+	if err := json.Indent(&out, data, "", "  "); err != nil {
+		t.Fatalf("indent bundle JSON: %v", err)
+	}
+	return out.String()
+}
+
 func newBundleTestStore(t *testing.T) *storage.Store {
 	t.Helper()
 	t.Setenv("GX_HOME", t.TempDir())
@@ -458,7 +640,7 @@ func seedRepo(t *testing.T, store *storage.Store, root string) int64 {
 	t.Helper()
 	id, err := store.UpsertRepo(context.Background(), storage.Repo{
 		RootPath:  root,
-		Backend:   "jj",
+		Backend:   "git",
 		CreatedAt: 1,
 		UpdatedAt: 1,
 	})
@@ -518,4 +700,99 @@ func hasEvidenceKind(evidence []ReviewEvidencePayload, kind string) bool {
 		}
 	}
 	return false
+}
+
+// TestBuildPushFindsSessionsWhenRepoRootPathDiverges pins the bundle read path
+// to the same repository identity the write path uses.
+//
+// storage.Store.UpsertRepo matches an existing repos row on git_common_dir
+// first and its UPDATE never rewrites root_path, so the stored root_path is
+// whatever worktree registered the row first — and can even be empty. The
+// sessions this push wrote therefore hang off a repos row whose root_path is
+// not the pushing worktree's. Reading them back by root_path found nothing and
+// published `sessions: []` with no error anywhere.
+func TestBuildPushFindsSessionsWhenRepoRootPathDiverges(t *testing.T) {
+	store := newBundleTestStore(t)
+	ctx := context.Background()
+
+	// The row as UpsertRepo left it: identified by the git common dir, with a
+	// root_path that does not match the pushing worktree.
+	repoID, err := store.UpsertRepo(ctx, storage.Repo{
+		RootPath:     "/stale/other-worktree",
+		GitCommonDir: "/repo/.git",
+		Backend:      "git",
+		CreatedAt:    1,
+		UpdatedAt:    1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRepo() error = %v", err)
+	}
+	changeID := seedChange(t, store, repoID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
+	if err := store.UpsertSession(ctx, storage.Session{
+		ID: "session-one", CreatedAt: 1, Command: "claude", Cwd: "/repo", GXVersion: "test",
+	}); err != nil {
+		t.Fatalf("UpsertSession() error = %v", err)
+	}
+	if err := store.WriteChangeSessions(ctx, changeID, []string{"session-one"}, 1); err != nil {
+		t.Fatalf("WriteChangeSessions() error = %v", err)
+	}
+
+	bundle, err := BuildPush(ctx, vcs.PushResult{
+		HeadCommitID: "commit-1",
+		Repo: vcs.RepoInfo{
+			RootPath:     "/repo",
+			GitCommonDir: "/repo/.git",
+			Backend:      "git",
+		},
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "commit-1",
+			RevisionID: "change-1",
+			Message:    "alpha",
+			Files:      []string{"alpha.txt"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildPush() error = %v", err)
+	}
+	if len(bundle.Sessions) != 1 || bundle.Sessions[0].ID != "session-one" {
+		t.Fatalf("bundle sessions = %#v, want session-one resolved via git_common_dir", bundle.Sessions)
+	}
+	if bundle.Sessions[0].Command != "claude" {
+		t.Fatalf("bundle session command = %q, want claude", bundle.Sessions[0].Command)
+	}
+}
+
+// TestBuildPushDoesNotReadAnotherReposChanges guards the replacement lookup:
+// resolving by identity must still scope the revision to this repository.
+func TestBuildPushDoesNotReadAnotherReposChanges(t *testing.T) {
+	store := newBundleTestStore(t)
+	ctx := context.Background()
+
+	otherID := seedRepo(t, store, "/other")
+	otherChange := seedChange(t, store, otherID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
+	if err := store.UpsertSession(ctx, storage.Session{
+		ID: "other-session", CreatedAt: 1, Command: "claude", Cwd: "/other", GXVersion: "test",
+	}); err != nil {
+		t.Fatalf("UpsertSession() error = %v", err)
+	}
+	if err := store.WriteChangeSessions(ctx, otherChange, []string{"other-session"}, 1); err != nil {
+		t.Fatalf("WriteChangeSessions() error = %v", err)
+	}
+	seedRepo(t, store, "/repo")
+
+	bundle, err := BuildPush(ctx, vcs.PushResult{
+		HeadCommitID: "commit-1",
+		Repo:         vcs.RepoInfo{RootPath: "/repo", GitCommonDir: "/repo", Backend: "git"},
+		Commits: []vcs.PushedCommit{{
+			CommitID:   "commit-1",
+			RevisionID: "change-1",
+			Message:    "alpha",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildPush() error = %v", err)
+	}
+	if len(bundle.Sessions) != 0 {
+		t.Fatalf("bundle sessions = %#v, want none from a different repo", bundle.Sessions)
+	}
 }

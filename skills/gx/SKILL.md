@@ -5,26 +5,27 @@ description: >-
   the user asks to commit, save, record, amend, land, publish, ship, or open a PR for
   work in a repo that has GX initialized (GX hooks/metadata present, GX instructions in
   AGENTS.md, or the user mentions "gx") — even if they only say "save my work" or
-  "commit this". In a GX repo this skill overrides generic git habits: record changes
-  with `gx commit` (or MCP `gx_commit`) after `git add`, inspect with `gx status`, and
-  publish with plain `git push` (not `gx push`), then `gh pr create`. Use git for
-  staging, amending, rebasing, and read-only inspection.
+  "commit this". In a GX repo you work in plain Git: save with `git add` + `git commit`
+  (GX's hooks record the commit as a reviewable revision), inspect with `git status`, and
+  publish with `git push` (never `gx push`), then `gh pr create`. GX adds AI review via
+  `gx review`; use it for review, not for saving.
 ---
 
-# GX CLI workflow
+# GX workflow
 
-GX is a quality layer for agent-written code. It records **revisions** grouped into
-**stacks** (one stack = one reviewable line of work, exported as one Git branch and PR),
-attaches what the agent did to what changed, and publishes ordinary Git branches and
-commits to GitHub.
+GX is a quality layer for agent-written code. Its Git hooks record your commits as
+**revisions** grouped into **stacks** (one stack = one reviewable line of work, which is
+just a Git branch and its PR), attach what the agent did to what changed, and publish to
+GitHub on `git push`.
 
-The commands below mirror the GX MCP tools (`gx_commit`, `gx_status`, `gx_review`), plus
-plain `git push` for publishing.
+You work in plain Git — `git add`, `git commit`, `git push`, `git checkout -b`. There is
+no GX save verb; the hooks do the recording and publishing automatically. GX MCP exposes
+`gx_review` only — save and publish with Git, and use `gx review` for AI review.
 
 ## First: make sure the repo is initialized
 
 GX is initialized when `gx init` has registered the repository (hooks + local metadata).
-If commands fail with init errors, initialize non-interactively before other gx work:
+If Git or gx commands fail with init errors, initialize non-interactively first:
 
 ```bash
 gx init -y
@@ -38,43 +39,49 @@ identity is missing. Run once per repository.
 When the user says "save", "commit", "save my work", or finishes a task in a GX repo:
 
 ```bash
-git add <files>                       # 1. choose scope — one logical change per revision
-gx commit -m "describe this change"   # 2. record staged changes as a GX revision
-gx status --agent                     # 3. verify the stack looks right
-git push                              # 4. publish — the GX pre-push hook does the rest
-gh pr create                          # 5. open the PR (only when the user wants one)
+git add <files>                        # 1. choose scope — one logical change per revision
+git commit -m "describe this change"   # 2. a GX hook records the commit as a revision
+git status                             # 3. confirm the tree is clean and the branch is right
+git push                               # 4. publish — the GX pre-push hook does the rest
+gh pr create                           # 5. open the PR (only when the user wants one)
 ```
 
-`gx commit` behaves like `git commit`: the revision lands on the current branch and
-`HEAD` advances. To start a new line of work from the base branch, mint the stack's
-branch at commit time:
+`git commit` records the change on the current branch and advances `HEAD`; GX's
+`prepare-commit-msg` and `post-commit` hooks record it as a **revision** behind the
+scenes, leaving Git's output unchanged (`[branch shorthash] message`). To start a new
+line of work (a new stack), branch first with plain Git:
 
 ```bash
-gx commit -m "add exponential backoff helper" -b feature/retry-backoff
+git checkout -b feature/retry-backoff
+git add <files>
+git commit -m "add exponential backoff helper"
 ```
 
-Exit codes: `0` success, `1` general error, `2` nothing staged (run `git add` first).
+If nothing is staged, `git commit` reports "nothing to commit" — run `git add <files>` first.
 
 ### Provenance is captured automatically
 
-`gx init` installs a pre-push hook that runs capture/publication on `git push`: it
-records the coding session and attaches that context to the pushed revisions. Just
-`git push`; the provenance rides along.
+`gx init` installs a pre-push hook that runs capture/publication on `git push`: it records
+the coding session and matches it to the hunks each revision changed, so the review bundle
+knows which session produced each change. Just `git push` — the provenance rides along.
+There is no manual attach or self-report step; do not try to declare provenance by hand.
 
-## Inspect state: gx status
+## Inspect state: plain Git
+
+A stack is just a Git branch and a revision is just a commit on it — inspect both with Git:
 
 ```bash
-gx status --agent   # stable key=value lines designed for agents to parse
-gx status --json    # machine-readable JSON (what MCP gx_status returns)
-gx status --all     # include every changed file in the working-tree sections
+git status              # working-tree state: staged/unstaged files, current branch
+git log --oneline -10   # recent revisions (commits) on this stack (branch)
 ```
 
-Use status after commits and before a push. One check at a decision point is enough.
+Check state after commits and before a push. One check at a decision point is enough.
 
 ## Amend or rewrite recorded work
 
-Use normal Git for history edits. Preserve the GX revision trailer in the commit message
-when amending or rebasing so metadata stays linked:
+Use normal Git for history edits. The `post-rewrite` hook follows amended and rebased
+commits to their new OIDs; keep the GX revision trailer in the message so metadata stays
+linked:
 
 ```bash
 git commit --amend
@@ -93,32 +100,55 @@ publish/CI status as the branch goes up. Open the pull request with `gh pr creat
 **not** seed a `## Summary` section in the PR body (leave human notes only). GX Cloud
 appends the rich summary below the existing body once the PR exists.
 
-Do not run `gx push`. It bypasses the pre-push hook path GX is built around.
+Do not run `gx push` — the command has been removed. Publish with plain `git push`; the
+pre-push hook is the only publish path.
 
 ## Review: gx review
 
 ```bash
 gx review                                    # patch-focused default
 gx review "did we break the retry contract?" # steer with a prompt
+gx review --repo                             # review the codebase, not just the current change
 gx review --scope security                   # architecture, security, performance, etc.
 gx review --focus src/auth --deep            # deep pass limited to a path prefix
 gx review --verbose                          # include repo facts, docs, changed files
 ```
 
+Without `--repo`, a dirty working tree is the review subject: gx reviews the diff. Use
+`--repo` to review the repository itself — the reviewer is given an inventory of the
+repository and its source files, in any language, and findings are no longer filtered
+down to changed lines. The uncommitted work stays in focus, so the review still sees
+what you just edited, and static checks run over the repository when there is no diff.
+`--repo` also wins over `--base`.
+
+The `gxr` alias runs `gx review`. The `gx_review` MCP tool is the same review from an
+agent client.
+
 ## Do not
 
-- `git commit` for normal GX save flows — use `gx commit` after `git add` so revisions are recorded.
-- `gx push` / manual `gx capture push` — bypass the pre-push hook publish path.
-- `gx commit -a` / `-F` / path arguments — stage with `git add`.
-- Hidden utilities such as `gx edit`, `gx base`, `gx generate`, or `gx push` — removed; use Git-native workflows instead.
+- `gx commit` / `gx status` / `gx push` / `gx edit` — removed. Use `git commit`,
+  `git status`, `git push`, and `git commit --amend`; GX's hooks record revisions for you.
+- `gx capture push` or any manual capture/attach step — the pre-push hook captures and
+  publishes on `git push`, and provenance is inferred automatically.
+- Hidden utilities such as `gx base`, `gx generate`, or `gx sync` — removed; use plain
+  Git (`git pull --rebase`, `git checkout -b`) instead. Queued uploads retry on the next
+  `git push`, and `gx doctor` shows and drains the upload outbox.
+- `gx demo` and `gx ops` — removed. There is no walkthrough, and `gx ops diagnose doctor`
+  was only ever `gx doctor` under another name; run `gx doctor`.
+- `gx report` — folded into `gx doctor --report`, which diagnoses first and then sends
+  that diagnosis with recent logs to support.
+- Declaring provenance by hand (self-reports, task summaries) — there is no such channel;
+  sessions are matched to changed hunks automatically.
 
 ## When a command fails
 
 | Symptom | Fix |
 | --- | --- |
-| `gx commit` exit code 2 | Nothing staged — run `git add <files>` first |
+| `git commit` says "nothing to commit" | Nothing staged — run `git add <files>` first |
 | Error mentions `gx auth login` or "not logged in" | Ask the user to run `gx auth login`, then retry |
 | Error mentions session expired / `gx auth logout` | Ask the user to run `gx auth logout` then `gx auth login`, then retry |
 | `git push` fails: no `origin` / not a GitHub remote | `git remote -v`; point `origin` at GitHub, or skip publishing |
-| `git push` rejected (remote moved) | `gx sync`, then retry `git push` |
-| Repo not initialized errors | `gx init -y`, then retry the original command |
+| `git push` rejected (remote moved) | `git pull --rebase`, then retry `git push` |
+| No PR summary on the PR | Confirm the branch was pushed with `git push` while hooks are installed; run `gx doctor` |
+| Repo not initialized errors | `gx init -y`, then retry |
+| Something is broken and the user wants support to see it | `gx doctor --report` sends the diagnosis plus recent gx logs |

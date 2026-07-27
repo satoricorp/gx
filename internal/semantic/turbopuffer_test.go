@@ -36,6 +36,7 @@ func TestTurboPufferClientUpsertsRows(t *testing.T) {
 		Attributes: map[string]any{
 			"text":         "alpha transcript",
 			"session_id":   "session-one",
+			"revision_id":  "change-one",
 			"jj_change_id": "change-one",
 		},
 	}})
@@ -61,6 +62,14 @@ func TestTurboPufferClientUpsertsRows(t *testing.T) {
 	agentToolSchema := schema["agent_tool"].(map[string]any)
 	if agentToolSchema["type"] != "string" || agentToolSchema["filterable"] != true {
 		t.Fatalf("agent_tool schema = %#v, want filterable string", agentToolSchema)
+	}
+	// Both the new attribute and its legacy twin stay declared until a full
+	// reindex retires jj_change_id.
+	for _, field := range []string{"revision_id", "jj_change_id"} {
+		fieldSchema, ok := schema[field].(map[string]any)
+		if !ok || fieldSchema["type"] != "string" || fieldSchema["filterable"] != true {
+			t.Fatalf("%s schema = %#v, want filterable string", field, schema[field])
+		}
 	}
 }
 

@@ -50,7 +50,7 @@ func validatedAnchorsForFinding(ctx ReviewContext, finding Finding) []FindingAnc
 		if !anchorRelevantToFinding(finding, anchor, lineText) {
 			continue
 		}
-		if AnchorMapsToChangedHunk(context.Background(), ctx.Brief.RepoRoot, anchor) {
+		if anchorMapsToReviewedHunk(context.Background(), ctx.Brief.RepoRoot, ctx.Brief.Static.ReviewRange, anchor) {
 			inHunks = append(inHunks, anchor)
 			continue
 		}
@@ -156,13 +156,25 @@ func sortedAnchors(anchors []FindingAnchor) []FindingAnchor {
 }
 
 func AnchorMapsToChangedHunk(ctx context.Context, repoRoot string, anchor FindingAnchor) bool {
+	return anchorMapsToReviewedHunk(ctx, repoRoot, "", anchor)
+}
+
+// anchorMapsToReviewedHunk checks the anchor against the diff the review
+// actually read. refRange is empty for a working-tree review, in which case the
+// working-tree diff is tried first and the last commit second.
+func anchorMapsToReviewedHunk(ctx context.Context, repoRoot, refRange string, anchor FindingAnchor) bool {
 	anchor.File = normalizeAnchorFile(anchor.File)
 	if strings.TrimSpace(repoRoot) == "" || anchor.File == "" || anchor.Line <= 0 {
 		return false
 	}
-	diff := fileDiff(ctx, repoRoot, anchor.File)
-	if strings.TrimSpace(diff) == "" {
-		diff = committedFileDiff(ctx, repoRoot, anchor.File)
+	var diff string
+	if strings.TrimSpace(refRange) != "" {
+		diff = rangeFileDiff(ctx, repoRoot, refRange, anchor.File)
+	} else {
+		diff = fileDiff(ctx, repoRoot, anchor.File)
+		if strings.TrimSpace(diff) == "" {
+			diff = committedFileDiff(ctx, repoRoot, anchor.File)
+		}
 	}
 	if strings.TrimSpace(diff) == "" {
 		return false

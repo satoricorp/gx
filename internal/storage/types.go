@@ -161,19 +161,6 @@ type SessionContext struct {
 	CapturedAt  int64
 }
 
-type SessionEventAttribution struct {
-	ID               int64
-	RepoID           int64
-	Tool             string
-	SessionID        string
-	EventFingerprint string
-	ChangeID         int64
-	StackBookmark    *string
-	AttributedVia    string
-	Confidence       *float64
-	CreatedAt        int64
-}
-
 type DemuxProposal struct {
 	ID           string
 	RepoID       int64

@@ -11,39 +11,6 @@ import (
 	"github.com/satoricorp/gx/internal/gxconfig"
 )
 
-func TestShouldLaunch(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want bool
-	}{
-		{name: "no args", args: nil, want: false},
-		{name: "help flag", args: []string{"--help"}, want: false},
-		{name: "help command", args: []string{"help"}, want: false},
-		{name: "internal daemon command", args: []string{"__gx-daemon"}, want: false},
-		{name: "version command", args: []string{"version"}, want: false},
-		{name: "init command", args: []string{"init"}, want: false},
-		{name: "demo command", args: []string{"demo"}, want: false},
-		{name: "compose command", args: []string{"compose"}, want: false},
-		{name: "add command", args: []string{"add", "-m", "hi"}, want: false},
-		{name: "add interactive command", args: []string{"add", "--interactive", "-m", "hi"}, want: false},
-		{name: "edit command", args: []string{"edit", "abc"}, want: false},
-		{name: "status command", args: []string{"status"}, want: false},
-		{name: "stacks command", args: []string{"stacks"}, want: false},
-		{name: "publish command", args: []string{"publish"}, want: false},
-		{name: "auth command", args: []string{"auth"}, want: false},
-		{name: "ops command", args: []string{"ops"}, want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldLaunch(tt.args); got != tt.want {
-				t.Fatalf("shouldLaunch(%v) = %v, want %v", tt.args, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestRootExposesAuthCommand(t *testing.T) {
 	root := cli.NewRoot(context.Background())
 	cmd, _, err := root.Find([]string{"auth", "login"})
@@ -54,7 +21,7 @@ func TestRootExposesAuthCommand(t *testing.T) {
 
 func TestRootRemovesShortcutCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"gxa", "gxt"} {
+	for _, name := range []string{"gxa", "gxs", "gxt"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
 			t.Fatalf("%s command resolved after removal", name)
 		}
@@ -129,17 +96,11 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"Setup:",
 		"  init",
 		"  auth",
-		"  demo",
 		"  set",
 		"Work:",
-		"  commit",
 		"  review (gxr)",
-		"  status (gxs)",
-		"Ship:",
-		"  sync",
 		"Help:",
 		"  doctor",
-		"  report",
 		"  version",
 		"  help",
 	}
@@ -157,7 +118,6 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	for _, want := range []string{
 		"Setup:",
 		"Work:",
-		"Ship:",
 		"Help:",
 	} {
 		if !strings.Contains(text, want) {
@@ -167,10 +127,44 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	if strings.Contains(text, "Available Commands:") {
 		t.Fatalf("root help should group commands by type:\n%s", text)
 	}
-	for _, hidden := range []string{"  add ", "  edit ", "  ops ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux ", "  generate "} {
+	if strings.Contains(text, "Ship:") {
+		t.Fatalf("root help should not render a Ship group after sync's retirement:\n%s", text)
+	}
+	if strings.Contains(text, "Advanced:") {
+		t.Fatalf("root help should not render an Advanced group after ops' removal:\n%s", text)
+	}
+	for _, hidden := range []string{"  add ", "  edit ", "  ops ", "  demo ", "  report ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux ", "  generate ", "  sync "} {
 		if strings.Contains(text, hidden) {
 			t.Fatalf("root help should hide %q in:\n%s", hidden, text)
 		}
+	}
+}
+
+func TestRootRemovesDemoAndOpsCommands(t *testing.T) {
+	root := cli.NewRoot(context.Background())
+	for _, name := range []string{"demo", "ops"} {
+		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
+			t.Fatalf("Find(%s) resolved removed command", name)
+		}
+	}
+}
+
+func TestRootKeepsReportAsHiddenAlias(t *testing.T) {
+	root := cli.NewRoot(context.Background())
+	cmd, _, err := root.Find([]string{"report"})
+	if err != nil || cmd == nil || cmd.Name() != "report" {
+		t.Fatalf("Find(report) = cmd=%v err=%v, want the hidden report alias", cmd, err)
+	}
+	if !cmd.Hidden {
+		t.Fatal("gx report should be hidden after folding into gx doctor --report")
+	}
+}
+
+func TestRootRemovesSyncCommand(t *testing.T) {
+	root := cli.NewRoot(context.Background())
+	cmd, _, err := root.Find([]string{"sync"})
+	if err == nil && cmd != nil && cmd.Name() == "sync" {
+		t.Fatalf("Find(sync) resolved removed command")
 	}
 }
 
@@ -184,7 +178,7 @@ func TestRootRemovesHiddenDemuxCompatibilityCommand(t *testing.T) {
 
 func TestRootDoesNotExposeRemovedLegacyCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"compose", "publish", "stacks", "codex", "claude"} {
+	for _, name := range []string{"commit", "status", "compose", "publish", "stacks", "codex", "claude"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != root {
 			t.Fatalf("unexpected legacy command exposed: %s", cmd.Name())
 		}
@@ -202,26 +196,6 @@ func TestRootDoesNotExposeDaemonCommand(t *testing.T) {
 	root := cli.NewRoot(context.Background())
 	if cmd, _, err := root.Find([]string{"daemon"}); err == nil && cmd != root {
 		t.Fatalf("unexpected daemon command exposed: %s", cmd.Name())
-	}
-}
-
-func TestCommitHelpUsesGitNativeAmendmentGuidance(t *testing.T) {
-	root := cli.NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"commit"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, stale := range []string{"gx_edit", "gx edit", "gx base"} {
-		if strings.Contains(cmd.Long, stale) {
-			t.Fatalf("commit help contains removed command %q:\n%s", stale, cmd.Long)
-		}
-	}
-	if !strings.Contains(cmd.Long, "git commit --amend") {
-		t.Fatalf("commit help missing Git-native amend guidance:\n%s", cmd.Long)
-	}
-	if !strings.Contains(cmd.Long, "advances the current branch and HEAD") ||
-		!strings.Contains(cmd.Long, "create and switch to a new branch") {
-		t.Fatalf("commit help describes HEAD or branch behavior incorrectly:\n%s", cmd.Long)
 	}
 }
 

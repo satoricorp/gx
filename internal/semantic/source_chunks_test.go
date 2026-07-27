@@ -1,8 +1,6 @@
 package semantic
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/reviewbundle"
@@ -30,29 +28,54 @@ func Run() {
 	}
 
 	chunks := BuildRepositoryChunks(bundle)
-	if len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want package preamble and symbol chunks", chunks)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want one chunk for the single indexable file", len(chunks))
 	}
-	chunk := chunks[1]
-	if chunk.Attributes["source_kind"] != "code_file" ||
-		chunk.Attributes["repo_full_name"] != "acme/widgets" ||
-		chunk.Attributes["file_path"] != "src/app.go" ||
-		chunk.Attributes["symbol"] != "Run" ||
-		chunk.Attributes["language"] != "go" {
+	chunk := chunks[0]
+	if chunk.Attributes[transcriptFieldSourceKind] != SourceKindCodeFile ||
+		chunk.Attributes[codeFieldRepoFullName] != "acme/widgets" ||
+		chunk.Attributes[codeFieldFilePath] != "src/app.go" ||
+		chunk.Attributes[codeFieldSymbolName] != "Run" ||
+		chunk.Attributes[codeFieldLanguage] != "go" {
 		t.Fatalf("attributes = %#v", chunk.Attributes)
 	}
-	if chunk.ID == "" || chunk.Text == "" {
-		t.Fatalf("chunk = %#v, want stable id and text", chunk)
+	// The publish path and `gx index` must mint the same id for the same
+	// chunk, otherwise one namespace ends up holding two copies of every file.
+	if chunk.ID != CodeRowID("acme/widgets", "src/app.go", 0) {
+		t.Fatalf("chunk id = %q, want the shared content-addressed code row id", chunk.ID)
+	}
+	if chunk.Text == "" {
+		t.Fatalf("chunk = %#v, want embedded text", chunk)
 	}
 }
 
-func writeTestFile(t *testing.T, root, rel, body string) {
-	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+func TestDocTypeFromPath(t *testing.T) {
+	cases := map[string]string{
+		"internal/semantic/codeindex.go":      "code_chunk",
+		"internal/semantic/codeindex_test.go": "test_file",
+		"server/test/review.test.ts":          "test_file",
+		"docs/how-it-works.mdx":               "architecture_doc",
+		"README.md":                           "architecture_doc",
+		"tsconfig.json":                       "config_file",
 	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+	for path, want := range cases {
+		if got := docTypeFromPath(path); got != want {
+			t.Fatalf("docTypeFromPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestRepoFullNameFromRemoteURL(t *testing.T) {
+	cases := map[string]string{
+		"git@github.com:satoricorp/gx.git":     "satoricorp/gx",
+		"https://github.com/satoricorp/gx.git": "satoricorp/gx",
+		"https://github.com/satoricorp/gx":     "satoricorp/gx",
+		"https://example.com/not/github":       "",
+		"":                                     "",
+	}
+	for input, want := range cases {
+		if got := repoFullNameFromRemoteURL(input); got != want {
+			t.Fatalf("repoFullNameFromRemoteURL(%q) = %q, want %q", input, got, want)
+		}
 	}
 }

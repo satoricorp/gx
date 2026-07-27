@@ -1,0 +1,11 @@
+{
+  "sources": ["codebase", "session"],
+  "snippets": [{
+    "kind": "session_transcript",
+    "ref": "cache001:sess-cache-1:req-cache-1",
+    "source": "artifact",
+    "source_label": "linked session",
+    "publisher": "this repo",
+    "text": "user: Cache eviction is walking the whole table every minute. Move it to TTL buckets.\nassistant: Replaced the LRU scan with TTL buckets: EvictExpired only touches the expired bucket."
+  }]
+}

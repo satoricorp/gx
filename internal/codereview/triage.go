@@ -3,7 +3,6 @@ package codereview
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -24,13 +23,23 @@ type ReviewExecutionPlan struct {
 }
 
 type RetrieveInput struct {
-	RepoRoot     string
-	Options      Options
-	Facts        RepoFacts
-	Hints        []ReviewHint
-	Plan         ReviewExecutionPlan
+	RepoRoot string
+	Options  Options
+	Facts    RepoFacts
+	Hints    []ReviewHint
+	Plan     ReviewExecutionPlan
+	// ChangedFiles are the files under review; DiffRange is the git ref range
+	// they came from, empty when they came from the working tree.
 	ChangedFiles []string
+	DiffRange    string
 	DiffSnippets []DiffSnippet
+	// Evidence collects each retrieval source's availability. It is carried on
+	// the input rather than returned from Retrieve because one retriever reads
+	// several namespaces and can succeed on one while failing on another, which
+	// a single error return cannot express. Nil is safe: every method on
+	// *EvidenceLog tolerates a nil receiver, so a caller that does not care
+	// about evidence reporting need not build one.
+	Evidence *EvidenceLog
 }
 
 func TriageChange(changedFiles []string, diffSnippets []DiffSnippet, opts Options) ChangeTriage {
@@ -339,11 +348,5 @@ func stringSet(values []string) map[string]struct{} {
 			out[value] = struct{}{}
 		}
 	}
-	return out
-}
-
-func sortedStrings(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
 	return out
 }

@@ -2,13 +2,11 @@ package codereview
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -30,8 +28,8 @@ func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
-	if report.Scope != DefaultScope || report.Format != DefaultFormat {
-		t.Fatalf("Review() scope/format = %q/%q, want defaults", report.Scope, report.Format)
+	if report.Scope != DefaultScope {
+		t.Fatalf("Review() scope = %q, want default %q", report.Scope, DefaultScope)
 	}
 	if !strings.Contains(strings.Join(report.DependencyFiles, ","), "go.mod") {
 		t.Fatalf("dependency files = %#v, want go.mod", report.DependencyFiles)
@@ -58,9 +56,12 @@ func TestUnpromptedDefaultReviewStaysPatchFocused(t *testing.T) {
 }
 
 func TestReviewEmitsProgress(t *testing.T) {
-	root := t.TempDir()
+	root := initRepo(t)
 	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
+	gitAdd(t, root, "README.md", "go.mod")
+	gitCommit(t, root)
+	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	var progress strings.Builder
 
 	_, err := Review(context.Background(), root, Options{ProgressWriter: &progress})
@@ -125,25 +126,13 @@ func TestValidateOptionsRejectsUnsupportedValues(t *testing.T) {
 	if err := ValidateOptions(Options{Scope: "ai-readiness"}); err == nil {
 		t.Fatal("ValidateOptions() with unsupported scope succeeded")
 	}
-	if err := ValidateOptions(Options{Format: "json"}); err == nil {
-		t.Fatal("ValidateOptions() with unsupported format succeeded")
-	}
-}
-
-func TestReviewHTMLErrorIsExplicit(t *testing.T) {
-	_, err := Review(context.Background(), t.TempDir(), Options{Format: "html"})
-	if err == nil || !strings.Contains(err.Error(), "html review output is not implemented yet") {
-		t.Fatalf("Review(html) error = %v", err)
-	}
 }
 
 func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 	report := Report{
 		RepoRoot:         "/repo",
 		Scope:            "security",
-		Format:           "markdown",
 		Deep:             true,
-		Since:            "30d",
 		Focus:            "internal",
 		BaselineScopes:   []string{"dependencies", "testing", "maintainability"},
 		DependencyFiles:  []string{"go.mod"},
@@ -179,7 +168,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Since: `30d`", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
+	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("RenderMarkdown() should not include %q by default:\n%s", unwanted, text)
 		}
@@ -228,8 +217,6 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 	report := Report{
 		RepoRoot:         "/repo",
 		Scope:            "security",
-		Format:           "markdown",
-		Since:            "30d",
 		BaselineScopes:   []string{"dependencies", "testing", "maintainability"},
 		DependencyFiles:  []string{"go.mod"},
 		TestFileCount:    2,
@@ -239,7 +226,7 @@ func TestRenderMarkdownVerboseIncludesFacts(t *testing.T) {
 		Verbose:          true,
 	}
 	text := RenderMarkdown(report)
-	for _, want := range []string{"## Repo Facts", "Since: `30d`", "Dependency manifests: `go.mod`", "## Changed Files", "`main.go`"} {
+	for _, want := range []string{"## Repo Facts", "Dependency manifests: `go.mod`", "## Changed Files", "`main.go`"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("RenderMarkdown(verbose) missing %q in:\n%s", want, text)
 		}
@@ -347,71 +334,6 @@ func TestAnchorValidationDropsOutOfRangeAnchorsButKeepsFinding(t *testing.T) {
 	}
 	if len(findings[0].Anchors) != 0 {
 		t.Fatalf("Anchors = %#v, want out-of-range anchor dropped", findings[0].Anchors)
-	}
-}
-
-func TestAgenticEnvGatePreservesSingleShotByDefault(t *testing.T) {
-	t.Setenv("GX_REVIEW_AGENTIC", "0")
-	base := &responsesAIReviewer{}
-	if got := maybeAgenticReviewer(base); got != base {
-		t.Fatalf("maybeAgenticReviewer() = %T, want original reviewer", got)
-	}
-	t.Setenv("GX_REVIEW_AGENTIC", "1")
-	if _, ok := maybeAgenticReviewer(base).(*agenticResponsesAIReviewer); !ok {
-		t.Fatalf("maybeAgenticReviewer() did not wrap responses reviewer when enabled")
-	}
-}
-
-func TestAgenticToolLoopCanCallReadFile(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
-	var sawToolOutput bool
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if requests == 1 {
-			_, _ = w.Write([]byte(`{"id":"resp_1","output":[{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"file\":\"internal/app/app.go\",\"start_line\":2,\"end_line\":2}"}]}`))
-			return
-		}
-		body, _ := json.Marshal(payload["input"])
-		sawToolOutput = strings.Contains(string(body), "internal/app/app.go:2: func Run()")
-		_, _ = w.Write([]byte(`{"id":"resp_2","output_text":"{\"recommendations\":[{\"title\":\"Read file finding\",\"summary\":\"internal/app/app.go needs review\",\"benefit\":\"Keeps agentic loop tested\",\"recommendation\":\"Inspect internal/app/app.go\",\"evidence\":[\"internal/app/app.go:2\"],\"anchors\":[{\"file\":\"internal/app/app.go\",\"line\":2}]}]}"}`))
-	}))
-	defer server.Close()
-
-	reviewer := &agenticResponsesAIReviewer{base: &responsesAIReviewer{url: server.URL, token: "token", model: "test", client: server.Client()}}
-	findings, err := reviewer.Review(context.Background(), ReviewBrief{RepoRoot: root})
-	if err != nil {
-		t.Fatalf("Review() error = %v", err)
-	}
-	if !sawToolOutput || len(findings) != 1 || findings[0].Title != "Read file finding" {
-		t.Fatalf("sawToolOutput=%v findings=%#v", sawToolOutput, findings)
-	}
-}
-
-func TestAgenticToolsCanCallGrepListChangedHunksAndSearchKnowledge(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
-	brief := ReviewBrief{
-		RepoRoot: root,
-		Static: StaticSnapshot{DiffSnippets: []DiffSnippet{{
-			File: "internal/app/app.go",
-			Diff: "@@ -1 +1,2 @@\n package app\n+func Run() {}\n",
-		}}},
-		Context: []ContextSnippet{{SourceLabel: "L1", Ref: "REVIEW.md", Text: "Always inspect authorization rollback paths."}},
-	}
-	if got := executeAgenticTool(context.Background(), brief, "grep", `{"pattern":"func Run"}`); !strings.Contains(got, "internal/app/app.go:2") {
-		t.Fatalf("grep output = %q", got)
-	}
-	if got := executeAgenticTool(context.Background(), brief, "list_changed_hunks", `{"file":"internal/app/app.go"}`); !strings.Contains(got, "+func Run") {
-		t.Fatalf("list_changed_hunks output = %q", got)
-	}
-	if got := executeAgenticTool(context.Background(), brief, "search_knowledge", `{"query":"authorization rollback"}`); !strings.Contains(got, "REVIEW.md") {
-		t.Fatalf("search_knowledge output = %q", got)
 	}
 }
 
@@ -568,21 +490,25 @@ func TestEnginePassesReviewPromptToAIReviewer(t *testing.T) {
 	}
 }
 
-func TestOpenAIReviewerFromEnvPrefersUserOpenAIKey(t *testing.T) {
-	t.Setenv("GX_OPENAI_PROXY_URL", "")
+// TestOpenAICredentialsAloneProduceNoReviewer replaces the deleted
+// TestOpenAIReviewerFromEnvPrefersUserOpenAIKey. OPENAI_API_KEY is still set on
+// every machine that indexes code (internal/semantic embeds with it), so the
+// regression to guard is the opposite of the old one: an OpenAI key must not
+// conjure a reviewer now that Bedrock is the only provider.
+func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
+	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
-	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-	t.Setenv("GX_OPENAI_API_KEY", "gx-key")
-	t.Setenv("GX_OPENAI_BASE_URL", "http://127.0.0.1:43124")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
-	reviewer := openAIReviewerFromEnvWithModel("")
-	got, ok := reviewer.(*responsesAIReviewer)
-	if !ok {
-		t.Fatalf("reviewer = %T, want *responsesAIReviewer", reviewer)
+	reviewer := reviewerFromEnvWithPolicy(nil)
+	if reviewerAvailable(reviewer) {
+		t.Fatalf("reviewerAvailable(%T) = true, want false with only an OpenAI key", reviewer)
 	}
-	if got.url != "http://127.0.0.1:43123/v1/responses" || got.token != "openai-key" {
-		t.Fatalf("reviewer config = url %q token %q", got.url, got.token)
+	reason := ReviewerUnavailableReason(reviewer)
+	if !strings.Contains(reason, "AWS credentials") {
+		t.Fatalf("ReviewerUnavailableReason() = %q, want the missing AWS credentials named", reason)
 	}
 }
 
@@ -824,7 +750,7 @@ func TestRenderMarkdownDoesNotRenderOverview(t *testing.T) {
 }
 
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
-	prompt := reviewDeveloperPrompt()
+	prompt := reviewDeveloperPrompt(ReviewBrief{})
 	for _, want := range []string{
 		"patch_focused",
 		"pr_summary",
@@ -986,13 +912,15 @@ func (f fakeRetriever) Retrieve(context.Context, RetrieveInput) ([]ContextSnippe
 
 func buildReviewBriefForTest(ctx context.Context, repoRoot string, opts Options, facts RepoFacts, sources []Source, retriever ContextRetriever) (ReviewBrief, error) {
 	opts = normalizeOptions(opts)
+	changes := resolveChangeSet(ctx, repoRoot, opts.Base)
 	return BuildReviewBrief(ctx, RetrieveInput{
 		RepoRoot:     repoRoot,
 		Options:      opts,
 		Facts:        facts,
 		Hints:        reviewHints(facts),
 		Plan:         reviewPlanFor(opts, ChangeTriage{}),
-		ChangedFiles: reviewChangedFiles(ctx, repoRoot),
+		ChangedFiles: changes.Files,
+		DiffRange:    changes.Range,
 	}, sources, retriever)
 }
 
@@ -1004,12 +932,23 @@ func (f fakeReviewer) Review(context.Context, ReviewBrief) ([]Finding, error) {
 	return f.findings, nil
 }
 
+// capturingReviewer records the briefs it was asked to review. A review can
+// fan out into several concurrent calls, so the briefs are guarded and all of
+// them are kept: `brief` is the first, which is the whole brief whenever the
+// review did not fan out, and `briefs` is every shard.
 type capturingReviewer struct {
-	brief ReviewBrief
+	mu     sync.Mutex
+	brief  ReviewBrief
+	briefs []ReviewBrief
 }
 
 func (c *capturingReviewer) Review(_ context.Context, brief ReviewBrief) ([]Finding, error) {
-	c.brief = brief
+	c.mu.Lock()
+	if len(c.briefs) == 0 {
+		c.brief = brief
+	}
+	c.briefs = append(c.briefs, brief)
+	c.mu.Unlock()
 	return []Finding{{
 		ID:             "ai.prompt",
 		Title:          "Prompt-directed finding",

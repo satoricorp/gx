@@ -6,15 +6,15 @@ import (
 )
 
 type ResolvedSource struct {
-	ID        string
-	Kind      string
-	Publisher string
-	Opaque    bool
-	Ref       string
-	File      string
-	StartLine int
-	EndLine   int
-	URL       string
+	ID        string `json:"id,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Publisher string `json:"publisher,omitempty"`
+	Opaque    bool   `json:"opaque,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	File      string `json:"file,omitempty"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	URL       string `json:"url,omitempty"`
 }
 
 func ResolvedSourceLabel(src ResolvedSource) string {

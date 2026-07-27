@@ -30,6 +30,9 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 		if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: GX lifecycle hooks not installed: %v\n", hookErr)
 		}
+		// Existing installs may still run the retired ambient-capture
+		// LaunchAgent; retire it the next time gx touches an initialized repo.
+		cleanupLegacyAmbientCaptureQuiet(ctx, cmd.ErrOrStderr())
 	}
 	return nil
 }
@@ -56,7 +59,10 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		case "init", "version", "login", "auth", "set", "demo":
+		// `review` is read-only: it must work as a CI gate and on someone
+		// else's checkout without installing hooks or writing GX state into a
+		// repo the reviewer does not own.
+		case "init", "version", "login", "auth", "set", "review":
 			return true
 		}
 	}
