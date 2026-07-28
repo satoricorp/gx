@@ -14,7 +14,26 @@ import (
 )
 
 const (
-	defaultJudgeMaxOutputTokens = 4000
+	// defaultJudgeMaxOutputTokens bounds one judge batch's reply.
+	//
+	// Sized against measurement, not taste, and re-measured whenever the reply
+	// shape changes — because overrunning it is not a partial answer, it is an
+	// unparseable one that costs every candidate in the batch its verdict.
+	//
+	// The measurement that set this: replaying the real 21-candidate judge
+	// request captured from a live gx review against
+	// us.anthropic.claude-sonnet-4-6, with the cap high enough that the reply's
+	// natural length was what got measured, produced 7,019 to 8,326 output
+	// tokens. Scaled to a full judgeBatchSize of 24 that is roughly 9.5K on the
+	// worst run. The previous 12000 was set when the judge answered without an
+	// analysis field and a full batch cost 2.1K to 3.1K tokens; the analysis
+	// field roughly tripled the reply, which would have put the worst case at
+	// about 80% of that cap — the same thin margin that truncated the 4000-token
+	// cap before it, arrived at from the other direction.
+	//
+	// A cap is not a reservation: unused budget is neither billed nor waited on,
+	// so the headroom is free and there is no reason to run close to the line.
+	defaultJudgeMaxOutputTokens = 32000
 	maxJudgeCandidateBytes      = 24 * 1024
 	// maxAdvisoryFindings caps the fallback path (no judge / judge error), where
 	// we have no impact signal and rely on heuristic strength. The judged path is
@@ -93,7 +112,23 @@ type judgeResponse struct {
 }
 
 type judgeResult struct {
-	CandidateID      string  `json:"candidate_id"`
+	CandidateID string `json:"candidate_id"`
+	// Analysis is where the judge does its thinking, and it is deliberately
+	// read into a field nothing renders.
+	//
+	// The model has no hidden reasoning channel — bedrockRequestBody carries
+	// anthropic_version, max_tokens, system and messages, and nothing else, so
+	// extended thinking is not enabled and never was. Telling it to "reason
+	// silently" therefore did not move the reasoning anywhere, it deleted it:
+	// measured across 18 paired runs of one identical 10-candidate request,
+	// output fell 24% and the confirm rate doubled from 10.0% to 20.6%, taking a
+	// candidate whose stated mechanism the provided file content refutes from
+	// wrong 18/18 to confirmed 2/18.
+	//
+	// A JSON object is emitted key by key, so a reasoning field written before
+	// verdict is reasoning the verdict is conditioned on. That is what this
+	// field buys, and why it stays even though no report ever prints it.
+	Analysis         string  `json:"analysis"`
 	Verdict          string  `json:"verdict"`
 	Impact           string  `json:"impact"`
 	Severity         int     `json:"severity"`
@@ -163,40 +198,184 @@ func (j bedrockReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judg
 	if j.client == nil {
 		return nil, fmt.Errorf("review judge is not configured")
 	}
-	content, err := j.client.completeJSON(ctx, judgeDeveloperPrompt(), mustJSON(req), defaultJudgeMaxOutputTokens)
+	completion, err := j.client.completeJSON(ctx, judgeDeveloperPrompt(), mustJSON(req), defaultJudgeMaxOutputTokens)
 	if err != nil {
 		return nil, err
 	}
-	return parseJudgeResponse(content)
+	results, parseErr := parseJudgeResponse(completion.Text, judgeCandidateIDs(req.Candidates))
+	if parseErr != nil && completion.truncated() {
+		// A batch cut off at the cap has no complete verdict set, only a
+		// prefix of one. Report it as a failure so the batch fails open and
+		// says why, rather than reading a partial answer as a whole one and
+		// silently dropping every candidate the model never reached.
+		return nil, describeTruncatedCompletion("judge", defaultJudgeMaxOutputTokens, parseErr)
+	}
+	return results, parseErr
 }
 
 // parseJudgeResponse tolerates a model that wraps its JSON in prose or a fenced
 // block. The deleted OpenAI path could rely on response_format:json_object to
-// guarantee a bare object; Bedrock has no equivalent, so the same
-// truncation-shaped failure the batching work fixed would otherwise come back as
-// a parse error on every batch.
-func parseJudgeResponse(content string) ([]judgeResult, error) {
+// guarantee a bare object; Bedrock has no equivalent, so a model free to answer
+// however it likes would otherwise come back as a parse error on whole batches.
+//
+// asked is the candidate IDs this reply is supposed to account for, and it is
+// what makes the tolerance safe. Without it the rule was "first decodable object
+// carrying a results key", and the judge prompt prints the literal shape
+// {"results":[...]} to the model — so a model that restates its own output shape
+// in a preamble hands the parser an empty result set that decodes perfectly.
+// Measured: a reply reading `I will answer with {"results":[]} if none of the
+// candidates check out.` followed by the real verdicts returned 0 verdicts and
+// no error, which (applyJudgeResults being delete-only) drops every candidate in
+// the batch with BatchesFailed=0, so nothing tells the reader. Scoring by how
+// many of the asked candidates an object actually answers picks the answer over
+// the quotation.
+//
+// There is deliberately no "the whole reply parses, take it" fast path any more.
+// It looked like a strict-first optimization and was a third silent-drop route:
+// json.Unmarshal of `{"overview":"looks fine"}` into judgeResponse succeeds with
+// no results and no error, which is the same batch-wide silent drop wearing a
+// different hat. Requiring the results key on every path costs one decode of an
+// already-in-memory string.
+func parseJudgeResponse(content string, asked []string) ([]judgeResult, error) {
+	object := pickAnsweringJSONObject(content, judgeAnswerScore(asked))
+	if object == "" {
+		return nil, fmt.Errorf("decode judge JSON: no complete JSON object with a results field in response")
+	}
 	var parsed judgeResponse
-	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
-		return parsed.Results, nil
-	}
-	trimmed := extractJSONObject(content)
-	if trimmed == "" {
-		return nil, fmt.Errorf("decode judge JSON: no JSON object in response")
-	}
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(object), &parsed); err != nil {
 		return nil, fmt.Errorf("decode judge JSON: %w", err)
 	}
 	return parsed.Results, nil
 }
 
-func extractJSONObject(content string) string {
-	start := strings.Index(content, "{")
-	end := strings.LastIndex(content, "}")
-	if start < 0 || end <= start {
-		return ""
+// judgeAnswerScore ranks a decoded object by how much of this request it
+// answers: 0 for "not a verdict set at all", otherwise one point for carrying
+// the results key plus one for each asked candidate it returns a verdict for.
+//
+// With no asked IDs — a caller that does not know what was requested — every
+// verdict set scores 1 and the first one wins, which is the old behavior and the
+// best that can be done without knowing the question.
+func judgeAnswerScore(asked []string) func(map[string]json.RawMessage) int {
+	want := make(map[string]struct{}, len(asked))
+	for _, id := range asked {
+		if id = strings.TrimSpace(id); id != "" {
+			want[id] = struct{}{}
+		}
 	}
-	return content[start : end+1]
+	return func(object map[string]json.RawMessage) int {
+		raw, ok := object["results"]
+		if !ok {
+			return 0
+		}
+		if len(want) == 0 {
+			return 1
+		}
+		var results []judgeResult
+		if err := json.Unmarshal(raw, &results); err != nil {
+			return 0
+		}
+		score := 1
+		for _, result := range results {
+			if _, ok := want[strings.TrimSpace(result.CandidateID)]; ok {
+				score++
+			}
+		}
+		return score
+	}
+}
+
+// judgeCandidateIDs is what the batch asked about, in the order it asked.
+func judgeCandidateIDs(candidates []judgeCandidate) []string {
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if id := strings.TrimSpace(candidate.ID); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// extractJSONObject returns the substring of content that best answers a request
+// whose reply carries one of requiredKeys, preferring the object that carries
+// the most of them. With no requiredKeys, the first object wins.
+//
+// It scans for a *decodable* object rather than slicing from the first "{" to
+// the last "}", which is what this used to do and is why a real review ran
+// degraded with "invalid character 'r' looking for beginning of object key
+// string". Measured, not inferred: replaying a captured 24-candidate judge
+// request against us.anthropic.claude-sonnet-4-6 reproduced it 1 run in 20. The
+// model prefixed 5,439 characters of reasoning before its ```json fence, and
+// that prose quoted source code — `if (existsSync(p)) { try { return ... } }` —
+// so the first "{" in the response was 4KB before the JSON and the naive slice
+// began mid-sentence. The JSON inside the fence was complete and valid the whole
+// time; every finding in that batch lost its verdict to a substring bug.
+//
+// Key count is a weaker discriminator than the judge's, which counts answered
+// candidate IDs (see judgeAnswerScore), and it is weaker on purpose: this is the
+// caller for replies with no identifiers to match — the reviewer legs' overview
+// and recommendations — where "the object carrying most of the shape" is the
+// most the content supports. A preamble quoting a one-key fragment of the shape
+// loses to the real reply, which carries several; a preamble quoting the whole
+// shape would still win, and that is a known limit rather than a claim of
+// safety.
+//
+// A truncated response has no complete object anywhere, so this returns "" and
+// the caller reports a decode failure. That is deliberate: partial verdicts are
+// worse than none, because a missing verdict drops a real finding silently.
+func extractJSONObject(content string, requiredKeys ...string) string {
+	return pickAnsweringJSONObject(content, func(object map[string]json.RawMessage) int {
+		if len(requiredKeys) == 0 {
+			return 1
+		}
+		score := 0
+		for _, key := range requiredKeys {
+			if _, ok := object[key]; ok {
+				score++
+			}
+		}
+		return score
+	})
+}
+
+// pickAnsweringJSONObject returns the highest-scoring decodable JSON object in
+// content, or "" if score rejects every one of them. Ties go to the earliest,
+// so a model that simply answers is never second-guessed.
+//
+// json.Decoder is what makes the scan correct: it tracks strings and escapes, so
+// a "}" inside a verification note ends nothing.
+//
+// An object that scores nothing is stepped over one byte at a time rather than
+// skipped whole, so that an answer nested inside a wrapper — {"result":{"results":
+// [...]}} — is still found. Skipping non-answers whole was faster and was a
+// regression: it could turn a reply the old first-match extractor recovered into
+// a decode failure. A scoring object is skipped whole, because its own children
+// cannot be a better answer than it is.
+func pickAnsweringJSONObject(content string, score func(map[string]json.RawMessage) int) string {
+	best := ""
+	bestScore := 0
+	for offset := 0; offset < len(content); {
+		index := strings.IndexByte(content[offset:], '{')
+		if index < 0 {
+			break
+		}
+		start := offset + index
+		decoder := json.NewDecoder(strings.NewReader(content[start:]))
+		var probe map[string]json.RawMessage
+		if err := decoder.Decode(&probe); err != nil {
+			offset = start + 1
+			continue
+		}
+		points := score(probe)
+		if points == 0 {
+			offset = start + 1
+			continue
+		}
+		if points > bestScore {
+			best, bestScore = content[start:start+int(decoder.InputOffset())], points
+		}
+		offset = start + int(decoder.InputOffset())
+	}
+	return best
 }
 
 func (j unavailableReviewJudge) Available() bool {
@@ -217,12 +396,51 @@ func judgeAvailable(judge FindingJudge) bool {
 	return true
 }
 
+// judgeDeveloperPrompt states the output contract twice, at the top and at the
+// bottom, because the model reads both ends hardest — and it moves the judge's
+// reasoning inside the object rather than banning it.
+//
+// The contract is not decoration. Bedrock's InvokeModel has no
+// response_format:json_object, and the two mechanisms that would enforce a shape
+// from the request side — Anthropic structured outputs and forced tool_choice —
+// are both unavailable here: the request body for the cloud transport is a fixed
+// struct that GX Cloud's /gx/bedrock/fight normalizes, so a field only the
+// direct-AWS path could send would leave the judge behaving differently
+// depending on which wire the user is on, which is precisely the split this
+// package refuses to ship. So the prompt is the enforcement, and
+// parseJudgeResponse is the seatbelt.
+//
+// The sentences below are aimed at an observed failure, not a hypothetical one:
+// the model answered a 24-candidate batch with 5,439 characters of prose
+// reasoning and then a ```json fence. The prose quoted code containing braces,
+// which broke the response parser outright.
+//
+// The first attempt at fixing that said "Reason silently, then emit only the
+// object", and it was a regression wearing a fix's clothes. There is no silent
+// channel to reason in — see judgeResult.Analysis — so the instruction did not
+// relocate the reasoning, it removed it. A/B on one identical 10-candidate
+// request, 18 paired runs, prompt the only variable: output tokens fell 24%
+// (median 1313 -> 1005) and the confirm rate doubled, 10.0% -> 20.6% (Fisher
+// exact p = 7.9e-3). A candidate claiming a bare `catch { }` swallows only JSON
+// errors — refuted by the very snippet the judge was handed — went from wrong
+// 18/18 to confirmed 2/18 at confidence 0.85, which is high enough to reach the
+// reader. The judge was not formatting better, it was checking less.
+//
+// So the analysis field carries what the preamble used to, in the one place it
+// can do its job: inside the object, before the verdict it justifies.
 func judgeDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You are GX Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
-		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
+		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
+		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
+		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
+		"THINK IN THE analysis FIELD. Write it first, before the verdict of the same object, and use it to do the actual work: quote the lines of the provided file content that decide the claim, state what that code really does, and name any part of the claimed mechanism the file contradicts. Then let the verdict follow from it.",
+		"Take as many sentences in analysis as the candidate needs. An analysis that only restates the claim is a verdict guessed rather than checked, and a wrong confirmation costs a reviewer more than a long analysis costs you.",
+		"analysis is the only place reasoning may appear. Never write it outside the JSON object. Every result object must carry a non-empty analysis; a result without one has skipped the check the field exists to force.",
+		"analysis and verification_note are JSON string values, so quote code inside them with backticks and never with a raw double quote. One unescaped \" makes the whole reply undecodable and costs every candidate in this batch its verdict, not just the one you were writing about.",
 		"Verdict must be confirmed, unverified, or wrong. Only confirmed findings survive; mark weak or unsupported claims unverified or wrong.",
-		"Confirm only when the named files and file content snippets support the title, summary, recommendation, and evidence.",
+		"Confirm only when the named files and file content snippets support the title, summary, recommendation, and evidence. A finding whose conclusion may be right but whose stated mechanism the file content refutes is wrong, not confirmed — a reviewer acting on it would look for a bug that is not there.",
+		"Read absolute claims literally. When a candidate says something never happens, always happens, or appears nowhere in a file, one counter-example in the provided content refutes it; look for that counter-example before you confirm, and say in the analysis whether you found one.",
 		"If a candidate names no file, treat that as a strike and do not confirm unless static tool evidence conclusively proves it.",
 		"impact rates the real-world consequence if the finding is acted on or ignored:",
 		"- breaking: risks incorrect behavior, a crash, data loss, a security hole, or a broken build or test.",
@@ -230,7 +448,9 @@ func judgeDeveloperPrompt() string {
 		"- cosmetic: style, naming, wording, or clarity only — nothing that can break.",
 		"- none: not a real issue.",
 		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — GX will not surface those.",
-		"Severity is 1-5. Confidence is 0-1. Include a one-line verification note.",
+		"Severity is 1-5. Confidence is 0-1. verification_note is one line for the reader, summarizing the analysis.",
+		"Emit exactly one result object per candidate_id you were given, in the order given. A candidate you leave out is a finding GX must ship unverified, so leave none out.",
+		"Reply with the JSON object alone. No preamble, no fence, no trailing remarks.",
 	}, "\n")
 }
 
@@ -351,24 +571,37 @@ func strengthFromImpact(impact string) string {
 // A truncated response is not partial data, it is unparseable JSON, so Judge
 // returns an error and every candidate loses its verdict at once. Before
 // batching, a review that produced 48 candidate findings surfaced at most
-// maxAdvisoryFindings (3) of them and said nothing about why. 24 keeps the
-// worst measured batch at roughly 65% of the output budget, which leaves room
-// for the longer verification notes a genuinely complex finding attracts.
+// maxAdvisoryFindings (3) of them and said nothing about why.
+//
+// Re-measured on Bedrock after the judge moved there, and again after the
+// analysis field landed: a real 21-candidate request now costs 7.0K to 8.3K
+// output tokens, so a full batch of 24 sits at roughly 9.5K, under a third of
+// defaultJudgeMaxOutputTokens. The size is kept at 24 rather than widened with
+// the budget, because the batch is also the blast radius: one unparseable reply
+// costs every candidate in its batch a verdict, and two concurrent batches cost
+// less wall clock than one call twice the size.
 const judgeBatchSize = 24
 
 // judgeBatchOutcome is what one batch of candidates came back with.
 type judgeBatchOutcome struct {
 	// Judged are the candidates a verdict was returned for.
 	Judged []Finding
-	// Unjudged are candidates whose batch failed. They are kept rather than
-	// dropped: "the judge could not be reached" and "the judge rejected this"
-	// are different facts and must not produce the same review.
+	// Unjudged are candidates that got no verdict — because their batch failed,
+	// or because a batch that succeeded simply did not mention them. They are
+	// kept rather than dropped: "the judge could not be reached" and "the judge
+	// rejected this" are different facts and must not produce the same review.
 	Unjudged []Finding
 	// Err is the first batch failure, for the degraded-reasons line.
 	Err error
 	// Batches / BatchesFailed describe the fan-out for the same line.
 	Batches       int
 	BatchesFailed int
+	// Unanswered counts candidates a *successful* batch returned no verdict
+	// for. It is separate from BatchesFailed because it is a separate fact with
+	// a separate cause: the call worked, the JSON parsed, and the model just
+	// left findings out. Without this count that shortfall is indistinguishable
+	// from a judge that considered every candidate and rejected most of them.
+	Unanswered int
 }
 
 // runJudge verifies candidates in concurrent batches.
@@ -419,9 +652,48 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 			outcome.Unjudged = append(outcome.Unjudged, batch...)
 			continue
 		}
-		outcome.Judged = append(outcome.Judged, applyJudgeResults(batch, out[i].results)...)
+		// A verdict set is checked against the candidates it was asked about
+		// before it is applied. applyJudgeResults is delete-only, so a candidate
+		// the model never mentioned is indistinguishable there from one it
+		// rejected — and this model does leave entries out of list replies: the
+		// de-duplicator, which runs the same Sonnet, reports exactly that
+		// shortfall on real reviews. Without this split a reply covering 4 of 10
+		// candidates dropped the other 6 as unconfirmed with BatchesFailed=0,
+		// which reads to the engine as a clean, complete verification.
+		//
+		// Splitting rather than failing the batch keeps both halves honest: the
+		// answered candidates get the verdicts the judge actually reached, and
+		// the unanswered ones fall back to unjudged instead of being deleted by
+		// a verdict nobody gave.
+		verdicts := answeredCandidateIDs(out[i].results)
+		var judged, silent []Finding
+		for _, finding := range batch {
+			if _, ok := verdicts[strings.TrimSpace(finding.ID)]; ok {
+				judged = append(judged, finding)
+				continue
+			}
+			silent = append(silent, finding)
+		}
+		outcome.Judged = append(outcome.Judged, applyJudgeResults(judged, out[i].results)...)
+		if len(silent) > 0 {
+			outcome.Unanswered += len(silent)
+			outcome.Unjudged = append(outcome.Unjudged, silent...)
+		}
 	}
 	return outcome
+}
+
+// answeredCandidateIDs is the set of candidates a verdict set speaks to. A
+// verdict with no candidate_id speaks to nothing and is ignored, as it is in
+// applyJudgeResults.
+func answeredCandidateIDs(results []judgeResult) map[string]struct{} {
+	out := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		if id := strings.TrimSpace(result.CandidateID); id != "" {
+			out[id] = struct{}{}
+		}
+	}
+	return out
 }
 
 func capAdvisoryFindings(findings []Finding) []Finding {

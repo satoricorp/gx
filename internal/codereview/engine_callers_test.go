@@ -39,6 +39,12 @@ func TestReviewEngineIsReachedOnlyFromTheReviewCommand(t *testing.T) {
 			switch entry.Name() {
 			case ".git", ".gocache", "node_modules", "dist", "build", ".next", "vendor", "testdata":
 				return fs.SkipDir
+			case ".claude":
+				// Agent worktrees nest a whole checkout under the repo root.
+				// Walking into one counts its copy of internal/cli as a second
+				// caller, so this guard fails for a reason that has nothing to
+				// do with the wiring it exists to protect.
+				return fs.SkipDir
 			}
 			return nil
 		}

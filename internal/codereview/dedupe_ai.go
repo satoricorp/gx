@@ -82,11 +82,15 @@ func (a bedrockDuplicateAdjudicator) AdjudicateDuplicates(ctx context.Context, p
 	request := struct {
 		Pairs []duplicatePairInput `json:"pairs"`
 	}{Pairs: pairs}
-	content, err := a.client.completeJSON(ctx, duplicateAdjudicatorPrompt(), mustJSON(request), defaultDedupeMaxOutputTokens)
+	completion, err := a.client.completeJSON(ctx, duplicateAdjudicatorPrompt(), mustJSON(request), defaultDedupeMaxOutputTokens)
 	if err != nil {
 		return nil, err
 	}
-	return parseDuplicateAdjudication(content)
+	verdicts, parseErr := parseDuplicateAdjudication(completion.Text, duplicatePairIDs(pairs))
+	if parseErr != nil && completion.truncated() {
+		return nil, describeTruncatedCompletion("de-duplication", defaultDedupeMaxOutputTokens, parseErr)
+	}
+	return verdicts, parseErr
 }
 
 // duplicateAdjudicatorPrompt states the decision, the asymmetry of the two
@@ -110,19 +114,65 @@ func duplicateAdjudicatorPrompt() string {
 	}, "\n")
 }
 
-func parseDuplicateAdjudication(content string) ([]duplicateVerdict, error) {
+// parseDuplicateAdjudication reads the verdict set out of a reply, choosing by
+// how many of the asked pairs an object answers.
+//
+// Same model, same prompt-prints-its-own-shape hazard, same fix as the judge —
+// see parseJudgeResponse. It matters less here only because an unanswered pair
+// is already counted and reported; it is fixed anyway because "the reply parsed
+// into the wrong object" and "the model skipped these pairs" are different
+// facts, and the degraded line claims the second one.
+func parseDuplicateAdjudication(content string, asked []string) ([]duplicateVerdict, error) {
+	object := pickAnsweringJSONObject(content, duplicateAnswerScore(asked))
+	if object == "" {
+		return nil, fmt.Errorf("decode de-duplication JSON: no complete JSON object with a results field in response")
+	}
 	var parsed duplicateAdjudicationResponse
-	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
-		return parsed.Results, nil
-	}
-	trimmed := extractJSONObject(content)
-	if trimmed == "" {
-		return nil, fmt.Errorf("decode de-duplication JSON: no JSON object in response")
-	}
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(object), &parsed); err != nil {
 		return nil, fmt.Errorf("decode de-duplication JSON: %w", err)
 	}
 	return parsed.Results, nil
+}
+
+// duplicateAnswerScore ranks a decoded object by how many of the asked pairs it
+// returns a verdict for. See judgeAnswerScore, which it mirrors.
+func duplicateAnswerScore(asked []string) func(map[string]json.RawMessage) int {
+	want := make(map[string]struct{}, len(asked))
+	for _, id := range asked {
+		if id = strings.TrimSpace(id); id != "" {
+			want[id] = struct{}{}
+		}
+	}
+	return func(object map[string]json.RawMessage) int {
+		raw, ok := object["results"]
+		if !ok {
+			return 0
+		}
+		if len(want) == 0 {
+			return 1
+		}
+		var results []duplicateVerdict
+		if err := json.Unmarshal(raw, &results); err != nil {
+			return 0
+		}
+		score := 1
+		for _, result := range results {
+			if _, ok := want[strings.TrimSpace(result.PairID)]; ok {
+				score++
+			}
+		}
+		return score
+	}
+}
+
+func duplicatePairIDs(pairs []duplicatePairInput) []string {
+	out := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		if id := strings.TrimSpace(pair.PairID); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // adjudicateDuplicatePairs asks about every gated pair and returns the merges it

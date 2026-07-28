@@ -281,6 +281,16 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				"%d of %d finding verification batches failed: %v",
 				outcome.BatchesFailed, outcome.Batches, outcome.Err))
 		}
+		if outcome.Unanswered > 0 {
+			// The quieter half of the same failure: the call succeeded, the JSON
+			// parsed, and the model simply returned no verdict for some of the
+			// candidates it was handed. Those findings ship unverified, which is
+			// the safe direction but not a free one, so it is reported for the
+			// same reason an unadjudicated duplicate pair is.
+			degradedReasons = append(degradedReasons, fmt.Sprintf(
+				"%d candidate finding(s) got no verdict from the verification model, so they are reported unverified",
+				outcome.Unanswered))
+		}
 	} else {
 		advisory = capAdvisoryFindings(advisory)
 	}

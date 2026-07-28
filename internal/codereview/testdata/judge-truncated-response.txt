@@ -1,0 +1,69 @@
+```json
+{
+  "results": [
+    {
+      "candidate_id": "bedrock-a.ai.review.1.s2",
+      "verdict": "confirmed",
+      "impact": "breaking",
+      "severity": 4,
+      "confidence": 0.9,
+      "verification_note": "All cited file snippets are present and match: yeet-vm.c comment 'NOTE: this is unrestricted egress', docs/secrets.md 'run.env is inside the VM and the VM has unrestricted outbound network, so anything bridged in is exfiltratable', src/keys.ts bridging keys into run.env, docs/networking.md security note. The issue is real and acknowledged in the codebase."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.1.s3",
+      "verdict": "confirmed",
+      "impact": "breaking",
+      "severity": 4,
+      "confidence": 0.88,
+      "verification_note": "Duplicates the same finding as s2 with slightly different framing and references src/vm.ts for the recommendation; all core evidence (yeet-vm.c egress comment, docs/secrets.md quote, docs/networking.md security note) is verified. Treating as a confirmed second voice on the same issue."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.2.s1",
+      "verdict": "confirmed",
+      "impact": "functional",
+      "severity": 3,
+      "confidence": 0.75,
+      "verification_note": "src/agent.ts load() does existsSync then readFileSync on metaPath(name) — the TOCTOU pattern is clearly visible in the provided snippet. The claim about src/bridge.ts:160 and src/keys.ts:39 is plausible but those exact lines are not fully shown; the primary evidence in agent.ts is sufficient to confirm."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.2.s3",
+      "verdict": "confirmed",
+      "impact": "functional",
+      "severity": 3,
+      "confidence": 0.82,
+      "verification_note": "guest/yeet-tools.ts exchange() clearly shows existsSync(ansPath) followed by readFileSync(ansPath) with a catch that only swallows JSON parse errors, not ENOENT. The host uses atomic rename (src/bridge.ts answer() confirmed), so ENOENT is a real race window."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.4.s2",
+      "verdict": "confirmed",
+      "impact": "functional",
+      "severity": 2,
+      "confidence": 0.85,
+      "verification_note": "README.md confirms 'bun test/roundtrip.ts' as the only documented test command; test files are standalone scripts; no package.json or CI config appears in the changed or evidenced files. The observation is accurate, though this is a pre-existing gap rather than a regression introduced by this PR."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.3.s2",
+      "verdict": "confirmed",
+      "impact": "functional",
+      "severity": 3,
+      "confidence": 0.9,
+      "verification_note": "src/secrets.ts writeAll uses direct writeFileSync(KEYS, ...) without tmp+rename atomicity. src/config.ts saveConfig does the same. src/bridge.ts answer() correctly uses writeFileSync+renameSync pattern as comparison. Both config and keys files would be silently truncated on crash."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.3.s3",
+      "verdict": "unverified",
+      "impact": "functional",
+      "severity": 2,
+      "confidence": 0.4,
+      "verification_note": "guest/yeet-tools.ts imports from '@earendil-works/pi-coding-agent' and 'typebox', confirming external dependencies exist. However the static analysis 'dependency_files: null' claim cannot be verified from the provided file list alone — package.json/bun.lockb may exist outside the changed_files set. Insufficient evidence to confirm."
+    },
+    {
+      "candidate_id": "bedrock-a.ai.review.4.s1",
+      "verdict": "confirmed",
+      "impact": "functional",
+      "severity": 3,
+      "confidence": 0.9,
+      "verification_note": "src/secrets.ts writeAll confirmed to use direct writeFileSync without atomic tmp+rename. The comment in the source itself acknowledges the mode-on-existing-file issue, and the chmodSync fix is not crash-safe. guest/yeet-tools.ts uses the correct pattern for contrast."
+    },
+    {
+      "candidate_id": "bedrock-b.ai.review.1.

@@ -674,12 +674,15 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	text, err := r.completeJSON(ctx, reviewDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
+	completion, err := r.completeJSON(ctx, reviewDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
 	if err != nil {
 		return PRSummaryReview{}, err
 	}
-	output, err := parseAIReviewOutput(text, brief)
+	output, err := parseAIReviewOutput(completion.Text, brief)
 	if err != nil {
+		if completion.truncated() {
+			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, err)
+		}
 		return PRSummaryReview{}, err
 	}
 	return aiReviewOutputToPRSummaryReview(output), nil
@@ -689,11 +692,23 @@ func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief R
 // through it, so the request shape and the response parsing live in one place;
 // the transport underneath decides whether that request is signed locally or
 // posted to gx-cloud.
-func (r *bedrockAnthropicReviewer) completeJSON(ctx context.Context, system string, input string, maxOutputTokens int) (string, error) {
+func (r *bedrockAnthropicReviewer) completeJSON(ctx context.Context, system string, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if r == nil || r.transport == nil {
-		return "", fmt.Errorf("Bedrock reviewer has no transport")
+		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
 	return r.transport.complete(ctx, r.model, system, input, maxOutputTokens)
+}
+
+// describeTruncatedCompletion names the output cap as the cause when a reply
+// that would not parse was also cut off at it.
+//
+// It is only consulted after a parse failure, never instead of one: a reply can
+// stop at max_tokens with its JSON already complete — the model simply wanted to
+// keep talking — and that reply is perfectly usable. Guessing from the stop
+// reason alone would throw it away.
+func describeTruncatedCompletion(what string, maxOutputTokens int, parseErr error) error {
+	return fmt.Errorf("%s response stopped at the %d-token output cap before its JSON was complete, so no verdicts could be read (%w)",
+		what, maxOutputTokens, parseErr)
 }
 
 // describeBedrockFailure turns a bedrock-runtime error into a message that says
@@ -775,7 +790,7 @@ func ParsePRSummaryReview(content string, brief ReviewBrief) (PRSummaryReview, e
 func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		trimmed := extractJSONObject(content)
+		trimmed := extractJSONObject(content, "recommendations", "overview", "notable_changes", "downstream_impact")
 		if trimmed == "" {
 			return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
 		}

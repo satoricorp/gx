@@ -25,11 +25,29 @@ import (
 // developer's own AWS credentials and against GX Cloud without a second
 // implementation of prompt construction, parsing, or failure reporting.
 type bedrockTransport interface {
-	// complete performs one model call and returns the model's text.
-	complete(ctx context.Context, model, system, input string, maxOutputTokens int) (string, error)
+	// complete performs one model call and returns the model's reply.
+	complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error)
 	// detail is the human phrase naming this wire, reported on every review so
 	// that "slow" and "denied" stay answerable after the fact.
 	detail() string
+}
+
+// bedrockCompletion is one model reply: the text, and why the model stopped.
+//
+// The stop reason is carried because a reply cut off at the output cap and a
+// reply the model formatted badly are the same symptom at the parse site — JSON
+// that will not decode — and completely different problems. Both wires report
+// it, so the distinction survives whichever one a user is on.
+type bedrockCompletion struct {
+	Text string
+	// StopReason is Bedrock's stop_reason: "end_turn", "max_tokens", and so on.
+	// Empty when the reply carried none.
+	StopReason string
+}
+
+// truncated reports whether the model ran out of output budget mid-reply.
+func (c bedrockCompletion) truncated() bool {
+	return strings.EqualFold(strings.TrimSpace(c.StopReason), "max_tokens")
 }
 
 const (
@@ -129,6 +147,7 @@ type bedrockResponseBody struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
+	StopReason string `json:"stop_reason"`
 }
 
 // text joins the reply's text blocks. A model that answers in several blocks
@@ -188,17 +207,17 @@ func (t *directBedrockTransport) detail() string {
 	return "direct AWS credentials (" + t.region + ")"
 }
 
-func (t *directBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (string, error) {
+func (t *directBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if t == nil {
-		return "", fmt.Errorf("Bedrock reviewer has no transport")
+		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
 	body, err := json.Marshal(bedrockRequestPayload(system, input, maxOutputTokens))
 	if err != nil {
-		return "", fmt.Errorf("marshal Bedrock request: %w", err)
+		return bedrockCompletion{}, fmt.Errorf("marshal Bedrock request: %w", err)
 	}
 	req, err := t.newSignedRequest(ctx, model, body)
 	if err != nil {
-		return "", err
+		return bedrockCompletion{}, err
 	}
 	client := t.client
 	if client == nil {
@@ -206,27 +225,27 @@ func (t *directBedrockTransport) complete(ctx context.Context, model, system, in
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call Bedrock model %s in %s: %w", model, t.region, err)
+		return bedrockCompletion{}, fmt.Errorf("call Bedrock model %s in %s: %w", model, t.region, err)
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		// describeBedrockFailure turns the exception name and prose into the
 		// knob to turn; see its comment in ai.go.
-		return "", describeBedrockFailure(resp.StatusCode, resp.Status, raw, model, t.region)
+		return bedrockCompletion{}, describeBedrockFailure(resp.StatusCode, resp.Status, raw, model, t.region)
 	}
 	if readErr != nil {
-		return "", fmt.Errorf("read Bedrock response for %s: %w", model, readErr)
+		return bedrockCompletion{}, fmt.Errorf("read Bedrock response for %s: %w", model, readErr)
 	}
 	var decoded bedrockResponseBody
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return "", fmt.Errorf("decode Bedrock response for %s: %w", model, err)
+		return bedrockCompletion{}, fmt.Errorf("decode Bedrock response for %s: %w", model, err)
 	}
 	text := decoded.text()
 	if text == "" {
-		return "", fmt.Errorf("Bedrock model %s returned no content", model)
+		return bedrockCompletion{}, fmt.Errorf("Bedrock model %s returned no content", model)
 	}
-	return text, nil
+	return bedrockCompletion{Text: text, StopReason: decoded.StopReason}, nil
 }
 
 func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model string, body []byte) (*http.Request, error) {
@@ -406,9 +425,9 @@ func (t *cloudBedrockTransport) detail() string {
 	return "GX Cloud (" + t.url + ")"
 }
 
-func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (string, error) {
+func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if t == nil || t.client == nil {
-		return "", fmt.Errorf("Bedrock reviewer has no transport")
+		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
 	payload := bedrockRequestPayload(system, input, maxOutputTokens)
 	resp, err := t.client.BedrockFight(ctx, cloud.BedrockFightRequest{
@@ -419,11 +438,11 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 		Messages:         []cloud.BedrockMessage{{Role: "user", Content: input}},
 	})
 	if err != nil {
-		return "", fmt.Errorf("GX Cloud Bedrock call for %s failed: %w", model, err)
+		return bedrockCompletion{}, fmt.Errorf("GX Cloud Bedrock call for %s failed: %w", model, err)
 	}
 	text := strings.TrimSpace(resp.Text())
 	if text == "" {
-		return "", fmt.Errorf("GX Cloud returned no content for Bedrock model %s", model)
+		return bedrockCompletion{}, fmt.Errorf("GX Cloud returned no content for Bedrock model %s", model)
 	}
-	return text, nil
+	return bedrockCompletion{Text: text, StopReason: resp.StopReason}, nil
 }
