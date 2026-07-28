@@ -28,8 +28,17 @@ type changeRow struct {
 	UpdatedAt       int64
 }
 
+// DefaultDir is where gx keeps its machine-wide state: $GX_HOME when set,
+// otherwise ~/.gx.
+//
+// The override is trimmed because every other reader of GX_HOME trims it —
+// internal/auth, internal/semantic, internal/capture, internal/hooks — and this
+// one did not. A whitespace-only value put the database in a directory named
+// two spaces while the rest of gx carried on using ~/.gx, which is the
+// reader-and-writer-disagree shape this codebase has already paid for more than
+// once.
 func DefaultDir() (string, error) {
-	if override := os.Getenv("GX_HOME"); override != "" {
+	if override := strings.TrimSpace(os.Getenv("GX_HOME")); override != "" {
 		return override, nil
 	}
 	home, err := os.UserHomeDir()

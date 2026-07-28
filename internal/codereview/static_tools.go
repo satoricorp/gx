@@ -52,9 +52,19 @@ type staticToolCommand struct {
 // does not apply or the tool is not installed, and the runner is then skipped
 // silently — a missing tool is never a review finding.
 //
-// Runners must be fast and side-effect free. Outside Go, whose runner is
-// already scoped to the changed packages, gx review never runs a test suite:
-// type checkers and linters scoped to the change only.
+// Runners must be fast and scoped to the change. They are NOT side-effect
+// free, and it is worth being exact about that because the rest of `gx review`
+// is: outside Go the runners are type checkers and linters, but the Go runner
+// is `go test`, which compiles and executes the reviewed checkout's own test
+// binaries, and `cargo check` executes the crate's build.rs and proc macros.
+// On someone else's checkout that is code from the change under review running
+// on the reviewer's machine. staticToolChildEnv keeps the reviewer's
+// credentials out of it; whether it should run unprompted at all is an open
+// question, not something this comment should imply is settled.
+//
+// They also write: `cargo check` populates <repo>/target/, `tsc` writes
+// *.tsbuildinfo when tsconfig sets incremental or composite, and every Go run
+// shares a build cache at $TMPDIR/gx-review-gocache that nothing prunes.
 type staticToolRunner struct {
 	name     string
 	progress string
@@ -290,8 +300,11 @@ func mypyConfigured(repoRoot string) bool {
 		repoFileContains(repoRoot, "setup.cfg", "[mypy]")
 }
 
-// detectCargoCheck compiles without running anything; cargo has no per-file
-// scope, so the manifest plus any Rust or dependency change is the trigger.
+// detectCargoCheck stops before codegen and never runs the crate's tests or
+// binaries, but "check" is not "runs nothing": build.rs scripts and proc
+// macros execute during a check, and the run writes <repo>/target/. Cargo has
+// no per-file scope, so the manifest plus any Rust or dependency change is the
+// trigger.
 func detectCargoCheck(env staticToolEnv) (staticToolCommand, bool) {
 	if !repoFileExists(env.repoRoot, "Cargo.toml") {
 		return staticToolCommand{}, false
@@ -322,8 +335,15 @@ var (
 )
 
 // lookStaticTool resolves a tool binary, preferring the repo's conventional
-// local bin directories over PATH. Only those fixed directories are trusted:
-// gx never execs a path the repo content chose.
+// local bin directories over PATH, because a repo's pinned tsc or eslint is
+// the one whose result is worth reporting — a newer tsc on PATH reports errors
+// the repo's CI never sees.
+//
+// The directory list is fixed, so the repo cannot redirect the lookup to an
+// arbitrary path. That is the only guarantee here: the *executable* found at
+// node_modules/.bin/tsc or .venv/bin/ruff is content the checkout supplies, so
+// on a checkout the reviewer does not own this is repo-chosen code being
+// exec'd. It runs with the scrubbed environment from staticToolChildEnv.
 func lookStaticTool(repoRoot, name string, localBinDirs ...string) (string, bool) {
 	for _, dir := range localBinDirs {
 		path := filepath.Join(repoRoot, filepath.FromSlash(dir), name)
@@ -448,7 +468,10 @@ func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, 
 	defer cancel()
 	cmd := exec.CommandContext(toolCtx, command.bin, command.argv[1:]...)
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(os.TempDir(), "gx-review-gocache"))
+	// Not os.Environ(): `go test` here runs the reviewed checkout's own test
+	// binaries, so this environment is handed to code from the change under
+	// review. See staticToolChildEnv for what survives the allowlist and why.
+	cmd.Env = staticToolChildEnv(os.Environ())
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
