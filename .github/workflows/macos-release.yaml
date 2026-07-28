@@ -166,7 +166,7 @@ jobs:
 
           aws cloudfront create-invalidation \
             --distribution-id "$GX_DOWNLOAD_DISTRIBUTION_ID" \
-            --paths /GX-macOS.zip /GX-macOS.dmg /menubar/appcast.xml /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
+            --paths /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
 
       - name: Publish GitHub release assets
         if: ${{ github.ref_type == 'tag' }}
@@ -177,10 +177,6 @@ jobs:
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
           assets=(
-            apps/menubar/dist/GX-macOS.zip
-            apps/menubar/dist/GX-macOS.dmg
-            apps/menubar/dist/appcast/appcast.xml
-            apps/menubar/dist/appcast/GX-*-macOS.zip
             scripts/install.sh
             dist/cli/manifest.json
             dist/cli/gx_*.tar.gz
