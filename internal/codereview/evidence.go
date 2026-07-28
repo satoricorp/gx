@@ -33,6 +33,13 @@ type EvidenceStatus struct {
 	State string `json:"state"`
 	// Detail explains a non-ok state in one line.
 	Detail string `json:"detail,omitempty"`
+	// Remedy is what the reader can do about it, when there is something.
+	//
+	// It is separate from Detail because a source is probed across several
+	// namespaces and the fix is usually the same for all of them: folded into
+	// Detail it would be repeated once per namespace in the same sentence.
+	// Warnings state it once, at the end, where an instruction belongs.
+	Remedy string `json:"remedy,omitempty"`
 	// Snippets is how many context snippets this source contributed.
 	Snippets int `json:"snippets,omitempty"`
 }
@@ -188,7 +195,7 @@ func evidenceFailureRank(state string) int {
 // single-namespace case, which is most of them.
 func evidenceSourceWarning(source string, failed []EvidenceStatus, partial bool) string {
 	if len(failed) == 1 && !partial {
-		return failed[0].warning()
+		return withRemedy(failed[0].warning(), evidenceRemedies(failed))
 	}
 	details := make([]string, 0, len(failed))
 	for _, status := range failed {
@@ -199,11 +206,36 @@ func evidenceSourceWarning(source string, failed []EvidenceStatus, partial bool)
 		details = append(details, namespace+": "+evidenceStatusDetail(status))
 	}
 	if partial {
-		return fmt.Sprintf("%s: read in part — %d namespace(s) could not be read (%s)",
-			source, len(failed), strings.Join(details, "; "))
+		return withRemedy(fmt.Sprintf("%s: read in part — %d namespace(s) could not be read (%s)",
+			source, len(failed), strings.Join(details, "; ")), evidenceRemedies(failed))
 	}
-	return fmt.Sprintf("%s: none of %d namespace(s) could be read (%s)",
-		source, len(failed), strings.Join(details, "; "))
+	return withRemedy(fmt.Sprintf("%s: none of %d namespace(s) could be read (%s)",
+		source, len(failed), strings.Join(details, "; ")), evidenceRemedies(failed))
+}
+
+// evidenceRemedies collects the distinct fixes for one source, in the order
+// they were recorded. Distinct because the same source probed across three
+// namespaces usually has one fix, and a warning that says it three times reads
+// like three different problems.
+func evidenceRemedies(failed []EvidenceStatus) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, status := range failed {
+		remedy := strings.TrimSpace(status.Remedy)
+		if remedy == "" || seen[remedy] {
+			continue
+		}
+		seen[remedy] = true
+		out = append(out, remedy)
+	}
+	return out
+}
+
+func withRemedy(warning string, remedies []string) string {
+	if len(remedies) == 0 {
+		return warning
+	}
+	return warning + " — " + strings.Join(remedies, "; ")
 }
 
 func (s EvidenceStatus) warning() string {

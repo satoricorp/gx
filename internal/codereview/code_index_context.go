@@ -108,6 +108,11 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 			Source: codeIndexEvidenceSource,
 			State:  EvidenceMissing,
 			Detail: "no namespace could be resolved for this repository (no git remote and no org)",
+			// No remedy names the website here on purpose: without a GitHub
+			// remote there is no repository for GX Cloud to connect to, so
+			// pointing at /repositories would be an instruction that cannot be
+			// followed.
+			Remedy: "add a GitHub remote, then connect the repository at https://gx.run/repositories",
 		})
 		return nil, nil
 	}
@@ -205,6 +210,7 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 		case !result.probe.Exists:
 			status.State = EvidenceMissing
 			status.Detail = codeIndexMissingDetail(result.target)
+			status.Remedy = codeIndexMissingRemedy(result.target)
 		case result.err != nil:
 			status.State = EvidenceUnavailable
 			status.Detail = result.err.Error()
@@ -406,10 +412,21 @@ func reviewOrgID() string {
 	return ""
 }
 
+// connectRepositoryRemedy is where a user goes to get their repository indexed.
+//
+// Every "no index" message ends here rather than at `gx index`. Indexing is GX
+// Cloud's job — it runs from the GitHub App on merge, so it stays current
+// without anyone remembering to re-run anything — and `gx index` is a hidden
+// maintenance command that indexes from one developer's checkout into one
+// developer's namespace. Sending users to it would have them build, by hand, a
+// worse copy of something the server maintains for them.
+const connectRepositoryRemedy = "connect this repository at https://gx.run/repositories to have GX Cloud index it"
+
+// codeIndexMissingDetail explains an absent namespace.
 func codeIndexMissingDetail(target codeIndexTarget) string {
 	switch target.Origin {
 	case semantic.NamespaceOriginPrimary:
-		return "this repository has not been indexed; run `gx index`"
+		return "this repository has not been indexed"
 	case semantic.NamespaceOriginPreRemote:
 		return "no index under this repository's pre-remote name"
 	case semantic.NamespaceOriginConsole:
@@ -417,6 +434,30 @@ func codeIndexMissingDetail(target codeIndexTarget) string {
 	default:
 		return "namespace does not exist"
 	}
+}
+
+// codeIndexMissingRemedy is what the reader can do about an absent namespace.
+//
+// A warning with no remedy is close to useless: it tells someone their review
+// saw less than it could have and leaves them nowhere to go. This is the only
+// place that gap is visible to a user, so it carries the fix.
+//
+// Every case points at the website rather than at `gx index`. Indexing is GX
+// Cloud's job — it runs from the GitHub App on merge, so it stays current
+// without anyone remembering to re-run anything — and `gx index` is a hidden
+// maintenance command that indexes one developer's checkout into one
+// developer's namespace. Sending users there would have them build by hand a
+// worse copy of something the server maintains for them.
+//
+// The pre-remote name is the exception. It is probed only because an index may
+// predate this checkout's git remote, and connecting the repository will not
+// create a namespace under a name the repository no longer uses, so there is
+// nothing here for a user to act on.
+func codeIndexMissingRemedy(target codeIndexTarget) string {
+	if target.Origin == semantic.NamespaceOriginPreRemote {
+		return ""
+	}
+	return connectRepositoryRemedy
 }
 
 func codeIndexFreshnessDetail(probe indexProbe) string {
