@@ -126,6 +126,10 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate repos git_common_dir: %w", err)
 	}
+	if err := ensureCaptureSessionBindingColumns(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate capture_sessions binding columns: %w", err)
+	}
 	if err := ensureChangeBookmarksTable(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate change_bookmarks table: %w", err)
@@ -394,7 +398,7 @@ func ensureSessionIndexes(ctx context.Context, db *sql.DB) error {
 }
 
 // commitSelfReportSessionID is the fossil left by the retired `gx commit`
-// self-report. It has cwd='' and repo_root=NULL, so it can never match a repo
+// self-report. It has cwd=” and repo_root=NULL, so it can never match a repo
 // and only ever contributed noise to the change_sessions table. Nothing writes
 // it any more, so removing it on open is a one-way cleanup.
 const commitSelfReportSessionID = "gx-commit-self-report"
@@ -815,4 +819,14 @@ func nullableStringValue(value sql.NullString) any {
 		return value.String
 	}
 	return nil
+}
+
+// ensureCaptureSessionBindingColumns adds the columns that record which
+// repository a session belongs to. They arrived after capture_sessions
+// existed, so an older database reaches schema.sql without them.
+func ensureCaptureSessionBindingColumns(ctx context.Context, db *sql.DB) error {
+	if err := ensureColumn(ctx, db, "capture_sessions", "session_cwd", "TEXT"); err != nil {
+		return err
+	}
+	return ensureColumn(ctx, db, "capture_sessions", "session_origin", "TEXT")
 }

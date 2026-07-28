@@ -38,6 +38,11 @@ func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture
 
 	sessionID := strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl")
 	model := ""
+	// Codex writes both in its session_meta line, once, ahead of the events.
+	// The repository URL is a gift: most tools make us infer the repository
+	// from the directory, and Codex just says which one it was.
+	cwd := ""
+	originURL := ""
 	badLines := 0
 	var events []capture.SessionEvent
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
@@ -59,13 +64,55 @@ func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture
 		if m := modelFromLine(raw); m != "" {
 			model = m
 		}
+		if dir, origin := workspaceFromLine(raw); dir != "" || origin != "" {
+			if dir != "" {
+				cwd = dir
+			}
+			if origin != "" {
+				originURL = origin
+			}
+		}
 		parsed := parseCodexLine(raw, sessionID, model, repoRoot)
+		for i := range parsed {
+			parsed[i].Cwd = cwd
+			parsed[i].OriginURL = originURL
+		}
 		events = append(events, parsed...)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, badLines, err
 	}
+	// session_meta normally precedes the events, but a file that leads with
+	// events would otherwise leave them unbound.
+	if cwd != "" || originURL != "" {
+		for i := range events {
+			if events[i].Cwd == "" {
+				events[i].Cwd = cwd
+			}
+			if events[i].OriginURL == "" {
+				events[i].OriginURL = originURL
+			}
+		}
+	}
 	return events, badLines, nil
+}
+
+// workspaceFromLine reads the working directory and git remote Codex records in
+// its session_meta line.
+func workspaceFromLine(raw map[string]json.RawMessage) (cwd, originURL string) {
+	if rawString(raw["type"]) != "session_meta" {
+		return "", ""
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw["payload"], &payload); err != nil {
+		return "", ""
+	}
+	cwd = rawString(payload["cwd"])
+	var git map[string]json.RawMessage
+	if err := json.Unmarshal(payload["git"], &git); err == nil {
+		originURL = rawString(git["repository_url"])
+	}
+	return cwd, originURL
 }
 
 func metaFromLine(raw map[string]json.RawMessage) (sessionID, model string) {

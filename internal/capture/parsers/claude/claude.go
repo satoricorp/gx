@@ -56,6 +56,14 @@ func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture
 			p.LastBadLines++
 			continue
 		}
+		// Claude records cwd on the entry rather than once per session, so a
+		// session that moves between repositories carries the directory that
+		// was current for each event.
+		if cwd := rawString(raw["cwd"]); cwd != "" {
+			for i := range parsed {
+				parsed[i].Cwd = cwd
+			}
+		}
 		events = append(events, parsed...)
 	}
 	if err := scanner.Err(); err != nil {
