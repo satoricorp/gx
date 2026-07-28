@@ -20,6 +20,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture/parsers/codex"
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/capture/redact"
+	"github.com/satoricorp/gx/internal/capture/repobind"
 	"github.com/satoricorp/gx/internal/capture/report"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
@@ -292,10 +293,26 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	if err != nil {
 		return result, fmt.Errorf("stage extract: %w", err)
 	}
+	// A session that worked on this repository is context worth keeping even
+	// when none of its text reached a commit in this range. Matching answers
+	// what a session produced; it cannot answer for work that was explored and
+	// abandoned, or for a transcript the agent had not finished writing when
+	// capture read it — the case that reports zero coverage and looks exactly
+	// like a change nobody used an agent for.
+	//
+	// Binding is what makes that safe: an unmatched session is staged only when
+	// it is bound to this repository, and marking it shareable is gated on the
+	// connected set separately.
+	repoBinding := repobind.NewResolver().ForDirectory(ctx, repoRoot)
 	for i, source := range perSource {
 		matched, ok := matchedSources[i]
 		if !ok {
-			continue
+			if !boundToRepo(ctx, perSource[i].Events, repoBinding) {
+				continue
+			}
+			// Nothing matched, so there is no matched subset to stage: the
+			// session's own events are what make it useful as context.
+			matched = perSource[i].Events
 		}
 		sessionIDs, err := stageMatchedSource(ctx, stager, source.Source, matched, revisionIDs)
 		result.StagedSessionIDs = append(result.StagedSessionIDs, sessionIDs...)
@@ -525,4 +542,20 @@ func filterEvents(events []capture.SessionEvent, ex *exclude.Matcher, sinceMS, u
 // so callers can say so instead of reporting an absence of agent work.
 func attributionSuspect(eligibleHunks, discoveredSessions, hunkLinks int) bool {
 	return eligibleHunks > 0 && discoveredSessions > 0 && hunkLinks == 0
+}
+
+// boundToRepo reports whether a session was working in this repository.
+//
+// It is deliberately an identity check, not a relevance one: a session earns a
+// place by where it ran, which is knowable for every session, rather than by
+// whether its text survived into a commit, which is not.
+func boundToRepo(ctx context.Context, events []capture.SessionEvent, repo repobind.Binding) bool {
+	if !repo.Bound() {
+		return false
+	}
+	bindable := make([]repobind.Event, 0, len(events))
+	for _, e := range events {
+		bindable = append(bindable, e)
+	}
+	return repobind.BindEvents(ctx, nil, bindable).Origin == repo.Origin
 }

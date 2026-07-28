@@ -14,6 +14,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/capture/orchestrator"
 	"github.com/satoricorp/gx/internal/capture/repobind"
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
@@ -414,6 +415,16 @@ func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repo
 		// compare against and nothing is withheld.
 		return ids, 0
 	}
+	allowed := map[string]struct{}{binding.Origin: {}}
+	// Repositories the organization connected may inform each other: related
+	// projects genuinely benefit from each other's sessions. Only the server
+	// knows which those are, and when it cannot say, the pushed repository
+	// stands alone rather than the gate opening.
+	if origins, ok := cloud.ConnectedOrigins(ctx); ok {
+		for _, origin := range origins {
+			allowed[origin] = struct{}{}
+		}
+	}
 	origins, err := stager.SessionOriginsByID(ctx, ids)
 	if err != nil {
 		// A gate that cannot read is not a reason to drop work on the floor;
@@ -424,7 +435,7 @@ func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repo
 	withheld := 0
 	for _, id := range ids {
 		origin, known := origins[id]
-		if known && origin != "" && origin != binding.Origin {
+		if _, ok := allowed[origin]; known && origin != "" && !ok {
 			withheld++
 			continue
 		}
