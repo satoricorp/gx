@@ -58,6 +58,39 @@ func ngramSet(text string, n int) map[uint64]struct{} {
 	return set
 }
 
+// containmentScore is the fraction of needle's n-grams present in haystack.
+//
+// Asymmetric on purpose, and that is what separates it from fuzzyScore: a
+// command is usually far larger than the hunk it wrote — a heredoc holding a
+// whole file, a script doing several edits at once — so Jaccard similarity
+// scores it near zero however completely the hunk is contained. The question
+// here is only "is the hunk inside the command", so the command's other
+// content must not count against it.
+func containmentScore(needle, haystack string, n int) float64 {
+	needle = normalizeExact(needle)
+	haystack = normalizeExact(haystack)
+	if needle == "" || haystack == "" {
+		return 0
+	}
+	need := ngramSet(needle, n)
+	if len(need) == 0 {
+		return 0
+	}
+	have := ngramSet(haystack, n)
+	hit := 0
+	for hash := range need {
+		if _, ok := have[hash]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(need))
+}
+
+// countTokens counts whitespace-separated tokens in already-normalized text.
+func countTokens(normalized string) int {
+	return len(strings.Fields(normalized))
+}
+
 func hashString(s string) uint64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(s))

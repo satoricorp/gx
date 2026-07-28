@@ -19,6 +19,10 @@ type RepoStats struct {
 	EligibleAgentEvents int     `json:"eligible_agent_events"`
 	Tier1Hunks          int     `json:"tier1_hunks"`
 	Tier2Hunks          int     `json:"tier2_hunks"`
+	// CommandHunks are hunks attributed from the text of a command the agent
+	// ran. Reported separately from tiers 1 and 2 because the evidence is
+	// weaker: the file path is inferred, not declared.
+	CommandHunks        int     `json:"command_hunks"`
 	Tier3Pairs          int     `json:"tier3_pairs"`
 	HunkCoverage        float64 `json:"hunk_coverage"`
 	AgentPrecision      float64 `json:"agent_precision"`
@@ -31,6 +35,7 @@ type AggregateStats struct {
 	EligibleHunks  int     `json:"eligible_hunks"`
 	Tier1Hunks     int     `json:"tier1_hunks"`
 	Tier2Hunks     int     `json:"tier2_hunks"`
+	CommandHunks   int     `json:"command_hunks"`
 	Tier3Pairs     int     `json:"tier3_pairs"`
 	HunkCoverage   float64 `json:"hunk_coverage"`
 	GateVerdict    string  `json:"gate_verdict"`
@@ -60,9 +65,10 @@ type BuildInput struct {
 func BuildRepoStats(in BuildInput) RepoStats {
 	t1 := len(in.MatchResult.Tier1HunkIndexes)
 	t2 := len(in.MatchResult.Tier2HunkIndexes)
+	command := len(in.MatchResult.CommandHunkIndexes)
 	coverage := 0.0
 	if in.EligibleHunks > 0 {
-		coverage = float64(t1+t2) / float64(in.EligibleHunks)
+		coverage = float64(in.MatchResult.AuthorshipHunkCount()) / float64(in.EligibleHunks)
 	}
 	precision := 0.0
 	if in.EligibleAgentEvents > 0 {
@@ -76,6 +82,7 @@ func BuildRepoStats(in BuildInput) RepoStats {
 		EligibleAgentEvents: in.EligibleAgentEvents,
 		Tier1Hunks:          t1,
 		Tier2Hunks:          t2,
+		CommandHunks:        command,
 		Tier3Pairs:          in.MatchResult.Tier3Pairs,
 		HunkCoverage:        coverage,
 		AgentPrecision:      precision,
@@ -98,21 +105,23 @@ func VerdictForCoverage(coverage float64) string {
 
 // BuildAggregate combines repo stats into aggregate gate metrics.
 func BuildAggregate(repos []RepoStats) AggregateStats {
-	var eligible, t1, t2, t3 int
+	var eligible, t1, t2, command, t3 int
 	for _, r := range repos {
 		eligible += r.EligibleHunks
 		t1 += r.Tier1Hunks
 		t2 += r.Tier2Hunks
+		command += r.CommandHunks
 		t3 += r.Tier3Pairs
 	}
 	coverage := 0.0
 	if eligible > 0 {
-		coverage = float64(t1+t2) / float64(eligible)
+		coverage = float64(t1+t2+command) / float64(eligible)
 	}
 	return AggregateStats{
 		EligibleHunks: eligible,
 		Tier1Hunks:    t1,
 		Tier2Hunks:    t2,
+		CommandHunks:  command,
 		Tier3Pairs:    t3,
 		HunkCoverage:  coverage,
 		GateVerdict:   VerdictForCoverage(coverage),
