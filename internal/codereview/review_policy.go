@@ -97,7 +97,30 @@ func (p ReviewPolicy) QueryText() string {
 	return "repo REVIEW.md policy:\n" + strings.TrimSpace(p.Text)
 }
 
-var reviewRiskPathPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*(?:—|-)\s*(.+?)\s*$`)
+// A risk-path line is `risk-path: <glob> — <why>`, and the separator is the
+// whole difficulty. One pattern matching either dash found the wrong one:
+// `risk-path: src/my-app/** — why` split at the hyphen inside `my-app`, giving
+// the glob `src/my`, which matches nothing and silently drops the entry. Any
+// repository with a hyphen in a directory name — web-ui, api-server, my-app —
+// was affected, and nothing said so.
+//
+// So the two dashes get different rules. An em or en dash never appears in a
+// path, so it separates with or without surrounding spaces. A plain hyphen does
+// appear in paths, so it only separates when spaced, which is how anyone writes
+// it anyway. Em dash is tried first: `a-b — c` has both, and the em dash is the
+// one that was meant.
+var (
+	reviewRiskPathDashPattern   = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*[—–]\s*(.+?)\s*$`)
+	reviewRiskPathHyphenPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s+-\s+(.+?)\s*$`)
+)
+
+// matchRiskPathLine returns the glob and message of a risk-path line.
+func matchRiskPathLine(line string) []string {
+	if match := reviewRiskPathDashPattern.FindStringSubmatch(line); len(match) == 3 {
+		return match
+	}
+	return reviewRiskPathHyphenPattern.FindStringSubmatch(line)
+}
 
 func parseReviewRiskPaths(text string) []RiskPath {
 	inSection := false
@@ -125,7 +148,7 @@ func parseReviewRiskPaths(text string) []RiskPath {
 			inSection = false
 			continue
 		}
-		match := reviewRiskPathPattern.FindStringSubmatch(line)
+		match := matchRiskPathLine(line)
 		if len(match) != 3 {
 			continue
 		}

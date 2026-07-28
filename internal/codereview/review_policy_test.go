@@ -35,6 +35,37 @@ func TestParseReviewRiskPaths(t *testing.T) {
 	}
 }
 
+// A hyphen in a directory name is ordinary — web-ui, api-server, my-app — and
+// it used to split the line, leaving the glob `src/my` and an entry that
+// matched nothing. Nothing reported it: a mis-parsed risk path looks exactly
+// like a repository that declared none.
+func TestParseReviewRiskPathsHandlesHyphenatedGlobs(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		glob string
+		msg  string
+	}{
+		{"em dash, hyphenated glob", "risk-path: src/my-app/** — deploy config", "src/my-app/**", "deploy config"},
+		{"em dash, no spaces", "risk-path: src/api-server/**—auth surface", "src/api-server/**", "auth surface"},
+		{"en dash", "risk-path: src/web-ui/** – user input", "src/web-ui/**", "user input"},
+		{"spaced hyphen", "risk-path: src/web-ui/** - user input", "src/web-ui/**", "user input"},
+		{"both dashes present", "risk-path: src/my-app/** — why it matters", "src/my-app/**", "why it matters"},
+		{"no hyphen at all", "risk-path: internal/auth/** — credentials", "internal/auth/**", "credentials"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := parseReviewRiskPaths("## high-risk paths\n" + tc.line)
+			if len(paths) != 1 {
+				t.Fatalf("parseReviewRiskPaths(%q) = %#v, want one entry", tc.line, paths)
+			}
+			if paths[0].Glob != tc.glob || paths[0].Message != tc.msg {
+				t.Fatalf("glob/message = %q/%q, want %q/%q", paths[0].Glob, paths[0].Message, tc.glob, tc.msg)
+			}
+		})
+	}
+}
+
 func TestMatchRiskPathGlob(t *testing.T) {
 	cases := []struct {
 		pattern string
