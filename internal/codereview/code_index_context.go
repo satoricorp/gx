@@ -112,7 +112,7 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 			// remote there is no repository for GX Cloud to connect to, so
 			// pointing at /repositories would be an instruction that cannot be
 			// followed.
-			Remedy: "add a GitHub remote, then connect the repository at https://gx.run/repositories",
+			Remedy: "Add a GitHub remote, then connect this repository at https://gx.run/repositories",
 		})
 		return nil, nil
 	}
@@ -420,7 +420,7 @@ func reviewOrgID() string {
 // maintenance command that indexes from one developer's checkout into one
 // developer's namespace. Sending users to it would have them build, by hand, a
 // worse copy of something the server maintains for them.
-const connectRepositoryRemedy = "connect this repository at https://gx.run/repositories to have GX Cloud index it"
+const connectRepositoryRemedy = "Connect this repository at https://gx.run/repositories to have GX Cloud index it"
 
 // codeIndexMissingDetail explains an absent namespace.
 func codeIndexMissingDetail(target codeIndexTarget) string {

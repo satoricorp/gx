@@ -132,7 +132,14 @@ func TestSessionContextRetrieverReportsMissingNamespace(t *testing.T) {
 		t.Fatalf("snippets = %#v, want none", snippets)
 	}
 	warnings := EvidenceWarnings(in.Evidence.Statuses())
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "gx-sessions-dev") {
-		t.Fatalf("warnings = %v, want the missing session namespace named", warnings)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one line for the source", warnings)
+	}
+	// The namespace is not in the warning. A reader is told what they lost and
+	// what to do; an internal namespace id is neither. It stays in the
+	// structured evidence, which is where anyone diagnosing a lookup looks.
+	statuses := in.Evidence.Statuses()
+	if len(statuses) != 1 || statuses[0].Namespace != "gx-sessions-dev" {
+		t.Fatalf("statuses = %#v, want the searched namespace recorded", statuses)
 	}
 }

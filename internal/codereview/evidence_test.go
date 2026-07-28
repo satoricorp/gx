@@ -159,8 +159,17 @@ func TestRenderMarkdownStatesUnavailableEvidence(t *testing.T) {
 	if !strings.Contains(markdown, "review evidence unavailable") {
 		t.Fatalf("markdown does not warn about missing evidence:\n%s", markdown)
 	}
-	if !strings.Contains(markdown, "repo-satoricorp-yeet") {
-		t.Fatalf("markdown does not name the missing namespace:\n%s", markdown)
+	// The banner says what was lost and how to fix it, not which internal
+	// namespace id was probed — that is in report.Evidence, which the JSON
+	// output carries in full.
+	if !strings.Contains(markdown, "GX Cloud has never indexed this repository") {
+		t.Fatalf("markdown does not say what was missing:\n%s", markdown)
+	}
+	if strings.Contains(markdown, "repo-satoricorp-yeet") {
+		t.Fatalf("the warning names an internal namespace id, which means nothing to a reader:\n%s", markdown)
+	}
+	if report.Evidence[0].Namespace != "repo-satoricorp-yeet" {
+		t.Fatalf("structured evidence lost the namespace: %#v", report.Evidence[0])
 	}
 	if strings.Contains(markdown, "review knowledge") {
 		t.Fatalf("a healthy source must not appear in the warning:\n%s", markdown)

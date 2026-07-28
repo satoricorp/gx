@@ -194,6 +194,15 @@ func evidenceFailureRank(state string) int {
 // only one namespace was tried. The single-namespace phrasing is kept for the
 // single-namespace case, which is most of them.
 func evidenceSourceWarning(source string, failed []EvidenceStatus, partial bool) string {
+	// Nothing was there, and nothing broke: say that once. Which candidate
+	// names were probed on the way to finding out is a fact about how lookup
+	// works, not about the reader's repository, and listing three internal
+	// namespace ids buries the one sentence that matters — that the repository
+	// is not indexed, and where to fix it. The names stay in the structured
+	// evidence for anyone debugging.
+	if !partial && allMissing(failed) {
+		return withRemedy(source+": "+evidenceStatusDetail(failed[0]), evidenceRemedies(failed))
+	}
 	if len(failed) == 1 && !partial {
 		return withRemedy(failed[0].warning(), evidenceRemedies(failed))
 	}
@@ -231,11 +240,25 @@ func evidenceRemedies(failed []EvidenceStatus) []string {
 	return out
 }
 
+// allMissing reports whether every failure is simply an absent namespace, as
+// opposed to one that could not be read. The two need different warnings: "not
+// indexed" is the reader's to fix, "the query failed" is not.
+func allMissing(failed []EvidenceStatus) bool {
+	for _, status := range failed {
+		if status.State != EvidenceMissing {
+			return false
+		}
+	}
+	return len(failed) > 0
+}
+
+// withRemedy appends the instructions as their own sentences, because that is
+// what they are.
 func withRemedy(warning string, remedies []string) string {
 	if len(remedies) == 0 {
 		return warning
 	}
-	return warning + " — " + strings.Join(remedies, "; ")
+	return strings.TrimRight(warning, ". ") + ". " + strings.Join(remedies, ". ")
 }
 
 func (s EvidenceStatus) warning() string {
