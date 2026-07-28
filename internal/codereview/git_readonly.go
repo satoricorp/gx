@@ -55,6 +55,20 @@ func withScratchGitIndex(ctx context.Context, repoRoot string) (context.Context,
 		cleanup()
 		return ctx, noop
 	}
+	// The copy must carry the original index's modification time.
+	//
+	// Git decides which entries are worth re-hashing by comparing each entry's
+	// cached mtime against the mtime of the index file itself: an entry at or
+	// after it is "racily clean" and gets re-read from disk, because a file
+	// written in the same instant as the index cannot be trusted on stat alone.
+	// A fresh copy has a newer mtime than the index it came from, which moves
+	// that boundary and makes git skip exactly those re-reads — so a file
+	// modified moments before the review runs is reported as unchanged, and the
+	// review sees nothing to review. Preserving the timestamp keeps the copy
+	// indistinguishable from the original for that decision.
+	if info, err := os.Stat(indexPath); err == nil {
+		_ = os.Chtimes(scratch, info.ModTime(), info.ModTime())
+	}
 	if err := os.Chmod(dir, 0o500); err != nil {
 		cleanup()
 		return ctx, noop
