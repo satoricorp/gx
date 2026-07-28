@@ -162,7 +162,7 @@ type judgeResult struct {
 // silently treating an unreachable judge as a verdict. That fail-open path is
 // what the batching work made visible and it is still the only degraded
 // behavior here.
-func judgeFromEnvWithPolicy(policy *ReviewPolicy) FindingJudge {
+func judgeFromEnv() FindingJudge {
 	if judgeDisabledFromEnv() {
 		return nil
 	}
@@ -170,18 +170,14 @@ func judgeFromEnvWithPolicy(policy *ReviewPolicy) FindingJudge {
 	if err != nil {
 		return unavailableReviewJudge{reason: err.Error()}
 	}
-	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel(policy))}
+	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel())}
 }
 
-// resolveBedrockJudgeModel applies env > policy hint > default.
-func resolveBedrockJudgeModel(policy *ReviewPolicy) string {
-	hint := ""
-	if policy != nil {
-		hint = policy.JudgeModelHint()
-	}
+// resolveBedrockJudgeModel applies env > default. The reviewed repository does
+// not get a say in which model verifies the findings against it.
+func resolveBedrockJudgeModel() string {
 	return normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_JUDGE_MODEL"),
-		hint,
 		defaultBedrockJudgeModel,
 	))
 }

@@ -133,7 +133,7 @@ func GitHubPullRequestBodyFromArtifact(ctx context.Context, artifact reviewbundl
 	catalog := buildPRBodyCatalog(artifact)
 	reach := computeLexicalReach(ctx, artifact.Bundle.Repo.RootPath, catalog, artifact)
 	applyLexicalReachToStats(&catalog.Stats, reach)
-	policy := codereview.LoadReviewPolicy(ctx, artifact.Bundle.Repo.RootPath)
+	policy := codereview.LoadReviewPolicy(artifact.Bundle.Repo.RootPath)
 	summaryContext, err := collectPRSummaryContext(ctx, artifact, catalog)
 	if err != nil {
 		return "", err

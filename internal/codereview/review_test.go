@@ -514,7 +514,7 @@ func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
-	reviewer := reviewerFromEnvWithPolicy(nil)
+	reviewer := reviewerFromEnv()
 	if reviewerAvailable(reviewer) {
 		t.Fatalf("reviewerAvailable(%T) = true, want false with only an OpenAI key", reviewer)
 	}

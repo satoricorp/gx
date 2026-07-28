@@ -92,7 +92,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if err != nil {
 		return Report{}, err
 	}
-	policy := LoadReviewPolicy(ctx, repoRoot)
+	policy := LoadReviewPolicy(repoRoot)
 	opts.ReviewPolicy = &policy
 	changes := reviewChangeSet(ctx, repoRoot, opts, facts.TrackedFileCount)
 	changed := changes.Files
@@ -193,7 +193,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	reviewer := e.reviewer
 	autoLoadedReviewer := false
 	if reviewer == nil && e.autoReviewer {
-		reviewer = reviewerFromEnvWithPolicy(&policy)
+		reviewer = reviewerFromEnv()
 		autoLoadedReviewer = true
 	}
 	wantAIReview := plan.RunAI && (!autoLoadedReviewer || aiReviewRequestedFromEnv())
@@ -251,7 +251,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	blocking, advisory := splitBlockingToolFindings(findings)
 	judge := e.judge
 	if judge == nil {
-		judge = judgeFromEnvWithPolicy(&policy)
+		judge = judgeFromEnv()
 	}
 	// The panel's own adjudicator, not a second one built from the environment:
 	// the same "one plan, one wire" rule the reviewer legs and the judge follow.

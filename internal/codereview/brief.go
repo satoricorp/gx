@@ -161,7 +161,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 	opts := in.Options
 	policy := opts.ReviewPolicy
 	if policy == nil {
-		loaded := LoadReviewPolicy(ctx, in.RepoRoot)
+		loaded := LoadReviewPolicy(in.RepoRoot)
 		policy = &loaded
 		opts.ReviewPolicy = policy
 		in.Options = opts
@@ -625,10 +625,7 @@ func publisherForContextSnippet(snippet ContextSnippet) string {
 		return "session"
 	case "indexed_code":
 		return "indexed"
-	case "review_policy", "review_reference":
-		if publisher := publisherFromURLHost(snippet.URL); publisher != "" {
-			return publisher
-		}
+	case "review_policy":
 		return "local"
 	case "review_resource":
 		if publisher := publisherFromURLHost(snippet.URL); publisher != "" {
@@ -659,8 +656,6 @@ func sourceRefKind(snippet ContextSnippet) string {
 		return "resource"
 	case "review_policy":
 		return "policy"
-	case "review_reference":
-		return "reference"
 	case "domain_doc", "repo_doc", "adr", "dependency_manifest", "dependency_lockfile", "repo_inventory", "repo_source_file":
 		return "local"
 	default:

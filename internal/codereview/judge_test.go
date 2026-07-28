@@ -255,7 +255,7 @@ func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t 
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
-	judge := judgeFromEnvWithPolicy(nil)
+	judge := judgeFromEnv()
 	if judgeAvailable(judge) {
 		t.Fatalf("judgeAvailable(%T) = true, want false without AWS credentials", judge)
 	}

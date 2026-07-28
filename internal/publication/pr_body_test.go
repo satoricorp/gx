@@ -957,7 +957,7 @@ func TestHunkImpactConfiguredRiskPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "REVIEW.md"), []byte(reviewMD), 0o644); err != nil {
 		t.Fatalf("write REVIEW.md: %v", err)
 	}
-	policy := codereview.LoadReviewPolicy(context.Background(), root)
+	policy := codereview.LoadReviewPolicy(root)
 	catalog := prBodyCatalog{}
 	hunk := prHunkSummary{File: "internal/auth/session.go"}
 	score, title, detail := hunkImpact(catalog, hunk, policy)

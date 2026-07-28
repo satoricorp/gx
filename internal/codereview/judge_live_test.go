@@ -74,7 +74,7 @@ func liveJudgeVerdicts(t *testing.T) (bedrockCompletion, []judgeResult, judgeReq
 	}
 	// Built directly rather than through judgeFromEnvWithPolicy, which TestMain
 	// disables for the rest of the suite.
-	client := newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel(nil))
+	client := newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel())
 
 	request := liveJudgeRequest()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

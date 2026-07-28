@@ -268,7 +268,7 @@ func ReviewerFromEnv() AIReviewer {
 }
 
 func ReviewerFromEnvWithInfo() (AIReviewer, ReviewerInfo) {
-	reviewer := reviewerFromEnvWithPolicy(nil)
+	reviewer := reviewerFromEnv()
 	return reviewer, reviewerInfoFromReviewer(reviewer)
 }
 
@@ -315,7 +315,7 @@ func ReviewerTransport(reviewer AIReviewer) string {
 	return ""
 }
 
-// reviewerFromEnvWithPolicy builds the review panel: two competing Bedrock
+// reviewerFromEnv builds the review panel: two competing Bedrock
 // reviewers that run concurrently. There is no other provider.
 //
 // The OpenAI reviewer and its cloud proxy used to live here as a fallback and
@@ -328,7 +328,7 @@ func ReviewerTransport(reviewer AIReviewer) string {
 // Embeddings are unaffected: internal/semantic reads OPENAI_API_KEY directly
 // (see defaultEmbedderFactory in turbopuffer_index.go) and never goes through an
 // AIReviewer, so the code index still embeds on OpenAI.
-func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
+func reviewerFromEnv() AIReviewer {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
 		return nil
 	}
@@ -344,7 +344,7 @@ func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 			legFailures: newLegFailureLog(),
 		}
 	}
-	modelA, modelB := resolveBedrockReviewModels(policy)
+	modelA, modelB := resolveBedrockReviewModels()
 	return multiAIReviewer{
 		reviewers: []namedAIReviewer{
 			{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)},
@@ -354,7 +354,7 @@ func reviewerFromEnvWithPolicy(policy *ReviewPolicy) AIReviewer {
 		// Built here rather than passed in because this is the only place that
 		// knows a panel of two legs exists at all, and a panel is what produces
 		// the duplicates.
-		adjudicator: duplicateAdjudicatorFromEnvWithPolicy(policy),
+		adjudicator: duplicateAdjudicatorFromEnv(),
 	}
 }
 
@@ -433,51 +433,28 @@ func bedrockRegionFromEnv() string {
 
 // resolveBedrockReviewModels picks the model for each leg.
 //
-// Precedence per leg is REVIEW.md hint > env > default, which is the order the
-// reviewer legs already used and the reason a repo can pin its own reviewer.
-// (The judge inverts this — see resolveBedrockJudgeModel.) Leg A additionally
-// honours the legacy GX_REVIEW_ANTHROPIC_MODEL so existing setups keep working.
-//
-// REVIEW.md hints map onto the legs by order: the first anthropic-provider hint
-// steers leg A (exactly what AnthropicModelHint() meant before there were two
-// legs) and a second steers leg B. Old single-hint REVIEW.md files therefore
-// behave as they always did, and leg B keeps its default so one pinned model
-// cannot collapse the panel into two copies of itself.
-func resolveBedrockReviewModels(policy *ReviewPolicy) (string, string) {
-	hintA, hintB := policyBedrockModelHints(policy)
+// Precedence per leg is env > default. Which model reviews is the operator's
+// call: a REVIEW.md line used to win over both, which let the repository under
+// review choose the reviewer that judged it — including choosing a weaker one.
+// Leg A additionally honours the legacy GX_REVIEW_ANTHROPIC_MODEL so existing
+// setups keep working.
+func resolveBedrockReviewModels() (string, string) {
 	modelA := normalizeBedrockModelID(firstNonEmpty(
-		hintA,
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_A"),
 		os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"),
 		defaultBedrockReviewModelA,
 	))
 	modelB := normalizeBedrockModelID(firstNonEmpty(
-		hintB,
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_B"),
 		defaultBedrockReviewModelB,
 	))
 	return modelA, modelB
 }
 
-func policyBedrockModelHints(policy *ReviewPolicy) (string, string) {
-	if policy == nil {
-		return "", ""
-	}
-	hints := policy.AnthropicModelHints()
-	switch len(hints) {
-	case 0:
-		return "", ""
-	case 1:
-		return hints[0], ""
-	default:
-		return hints[0], hints[1]
-	}
-}
-
 // normalizeBedrockModelID upgrades a bare Anthropic model ID to its `us.`
 // inference profile. bedrock-runtime rejects bare IDs for on-demand invocation,
-// and REVIEW.md hints produce bare IDs by construction (parseReviewModelHints
-// normalizes "claude-x" to "anthropic.claude-x"), so an unnormalized hint is a
+// and an operator setting GX_REVIEW_BEDROCK_MODEL_A to a bare ID is easy to do,
+// so an unnormalized ID is a
 // guaranteed ValidationException rather than a preference.
 //
 // ARNs, already-prefixed profiles (us./eu./apac./global./us-gov.), and anything
@@ -994,7 +971,6 @@ func interleaveRetrievedSnippets(snippets []ContextSnippet) []ContextSnippet {
 const (
 	priorityDomainDoc         = 0
 	priorityReviewPolicy      = 1
-	priorityReviewReference   = 2
 	priorityADR               = 3
 	priorityRepoDoc           = 4
 	priorityRepoInventory     = 4
@@ -1014,8 +990,6 @@ func contextSnippetPriority(snippet ContextSnippet) int {
 		return priorityDomainDoc
 	case "review_policy":
 		return priorityReviewPolicy
-	case "review_reference":
-		return priorityReviewReference
 	case "adr":
 		return priorityADR
 	case "repo_doc", "codebase_doc":
@@ -1225,7 +1199,6 @@ func baseReviewDeveloperPromptLines() []string {
 		"For prompt_directed reviews, prioritize findings where review_prompt, the current diff, and broader repo context intersect. Do not limit yourself to changed lines, but do not emit generic repo-wide advice unrelated to review_prompt.",
 		"For deep_full_spectrum reviews, check security, bugs, data integrity, concurrency, idempotency, architecture, testing, observability, performance, dependencies, docs, and operability while still grounding every finding in changed files, tool output, local policy, or retrieved context.",
 		"Treat REVIEW.md review_policy snippets as repo-local review instructions. Follow them unless they conflict with the explicit review_prompt, hard evidence in the changed patch, or safety/security requirements.",
-		"Treat review_reference snippets as fetched guidance referenced by REVIEW.md. Use them as supporting context below local REVIEW.md and above general external review resources.",
 		"Use the architecture vocabulary exactly when discussing structure: Module, Interface, Implementation, Depth, deep, shallow, seam, adapter, leverage, locality.",
 		"Never use component, service, API, boundary, or layer when Module, Interface, seam, or adapter fits.",
 		"Treat static facts and hints as clues only. Do not turn file counts, missing docs, or missing tests directly into findings.",

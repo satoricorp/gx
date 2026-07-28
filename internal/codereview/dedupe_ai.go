@@ -61,7 +61,7 @@ type bedrockDuplicateAdjudicator struct {
 // duplicateAdjudicatorFromEnvWithPolicy builds the adjudicator, or nil when
 // there is none to build. nil is a supported state, not an error: the caller
 // falls back to merging near-verbatim copies only and reports that it did.
-func duplicateAdjudicatorFromEnvWithPolicy(policy *ReviewPolicy) duplicateAdjudicator {
+func duplicateAdjudicatorFromEnv() duplicateAdjudicator {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_DEDUPE")), "0") {
 		return nil
 	}
@@ -69,7 +69,7 @@ func duplicateAdjudicatorFromEnvWithPolicy(policy *ReviewPolicy) duplicateAdjudi
 	if err != nil {
 		return nil
 	}
-	return bedrockDuplicateAdjudicator{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel(policy))}
+	return bedrockDuplicateAdjudicator{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel())}
 }
 
 func (a bedrockDuplicateAdjudicator) AdjudicateDuplicates(ctx context.Context, pairs []duplicatePairInput) ([]duplicateVerdict, error) {

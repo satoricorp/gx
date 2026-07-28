@@ -151,11 +151,11 @@ Future review retrieval should query this namespace using signals from the diff:
 - changed file category
 - risk profile: auth, data migration, dependency, concurrency, unsafe Rust,
   package release, public API
-- repo `REVIEW.md` policy text and fetched URL summaries
+- repo `REVIEW.md` policy text
 
 Suggested priority when constructing model context:
 
-1. repo `REVIEW.md` and fetched references
+1. repo `REVIEW.md`
 2. retrieved official standards and language/tool docs
 3. prior repo findings or human review comments
 4. seed notes from this manifest

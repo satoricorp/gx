@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -59,7 +60,7 @@ func TestLoadReviewPolicyParsesRiskPaths(t *testing.T) {
 		"## high-risk paths",
 		"risk-path: internal/auth/** — auth changes can leak or misuse credentials",
 	}, "\n"))
-	policy := LoadReviewPolicy(context.Background(), root)
+	policy := LoadReviewPolicy(root)
 	if len(policy.RiskPaths) != 1 {
 		t.Fatalf("RiskPaths = %#v, want one entry", policy.RiskPaths)
 	}
@@ -68,9 +69,18 @@ func TestLoadReviewPolicyParsesRiskPaths(t *testing.T) {
 	}
 }
 
-func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) {
+// REVIEW.md is read, not executed. A URL in it used to be fetched with no
+// check beyond the scheme, by a client that followed redirects, and up to a
+// megabyte of the response was summarized into the model prompt and the report
+// — so on a cloud runner a REVIEW.md line reading
+// `http://169.254.169.254/latest/meta-data/iam/security-credentials/` returned
+// IAM credentials into the review. The server here answers on loopback: if
+// anything still fetches, the handler records it and this fails.
+func TestLoadReviewPolicyNeverFetchesURLsItFinds(t *testing.T) {
+	var hits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "<html><body><h1>Review reference</h1><p>Check authorization before side effects.</p></body></html>")
+		atomic.AddInt32(&hits, 1)
+		fmt.Fprintln(w, "Check authorization before side effects.")
 	}))
 	defer server.Close()
 
@@ -78,33 +88,49 @@ func TestLoadReviewPolicyFetchesReferencesAndParsesReviewerModels(t *testing.T) 
 	writeFile(t, root, "REVIEW.md", strings.Join([]string{
 		"# Review policy",
 		"",
-		"Use gpt-4o as the OpenAI reviewer model.",
-		"Use anthropic:claude-sonnet-4-5 for the Anthropic reviewer.",
 		"Always check tenant authorization.",
 		"Reference: " + server.URL + "/guide",
 	}, "\n"))
 
-	policy := LoadReviewPolicy(context.Background(), root)
+	policy := LoadReviewPolicy(root)
 	if !policy.Present {
 		t.Fatalf("policy = %#v, want present", policy)
 	}
-	// The openai line still parses into ModelHints — REVIEW.md files in the
-	// wild contain them — it simply no longer steers a reviewer leg, and must
-	// not be mistaken for one when the legs are mapped by order.
-	if policy.ModelHints[0].Provider != "openai" || policy.ModelHints[0].Model != "gpt-4o" {
-		t.Fatalf("ModelHints = %#v, want the openai hint parsed and kept", policy.ModelHints)
+	if got := atomic.LoadInt32(&hits); got != 0 {
+		t.Fatalf("REVIEW.md URL fetched %d time(s), want 0", got)
 	}
-	if hints := policy.AnthropicModelHints(); len(hints) != 1 {
-		t.Fatalf("AnthropicModelHints() = %#v, want only the anthropic hint to steer a leg", hints)
+	// The prose around the link is still the reviewer's context; only the
+	// fetching is gone.
+	if !strings.Contains(policy.Text, "Always check tenant authorization.") {
+		t.Fatalf("policy text = %q, want the REVIEW.md prose kept", policy.Text)
 	}
-	if policy.AnthropicModelHint() != "anthropic.claude-sonnet-4-5" {
-		t.Fatalf("AnthropicModelHint() = %q", policy.AnthropicModelHint())
+}
+
+// Which model reviews is the operator's decision. A REVIEW.md line naming one
+// used to win over the operator's own environment variables, so a repository
+// could pick the reviewer that judged it — including a weaker one.
+func TestReviewMdCannotChooseTheReviewerOrJudgeModel(t *testing.T) {
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
+	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
+	t.Setenv("GX_REVIEW_JUDGE_MODEL", "us.anthropic.claude-from-env-judge")
+
+	root := t.TempDir()
+	writeFile(t, root, "REVIEW.md", strings.Join([]string{
+		"Use anthropic:claude-attacker-a for the Anthropic reviewer.",
+		"Use anthropic:claude-attacker-b as the second reviewer model.",
+		"Use anthropic:claude-attacker-j to judge findings.",
+	}, "\n"))
+	if policy := LoadReviewPolicy(root); !policy.Present {
+		t.Fatalf("policy = %#v, want present", policy)
 	}
-	if len(policy.References) != 1 || policy.References[0].Status != "ok" {
-		t.Fatalf("References = %#v, want one fetched reference", policy.References)
+
+	modelA, modelB := resolveBedrockReviewModels()
+	if modelA != "us.anthropic.claude-from-env-a" || modelB != "us.anthropic.claude-from-env-b" {
+		t.Fatalf("review models = %q/%q, want the environment to decide", modelA, modelB)
 	}
-	if !strings.Contains(policy.References[0].Summary, "Check authorization before side effects.") {
-		t.Fatalf("reference summary = %q", policy.References[0].Summary)
+	if judge := resolveBedrockJudgeModel(); judge != "us.anthropic.claude-from-env-judge" {
+		t.Fatalf("judge model = %q, want the environment to decide", judge)
 	}
 }
 
@@ -112,7 +138,7 @@ func TestReviewPolicySummarizesOversizedMarkdown(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "REVIEW.md", strings.Repeat("Review this carefully. ", 1000))
 
-	policy := LoadReviewPolicy(context.Background(), root)
+	policy := LoadReviewPolicy(root)
 	if !policy.Present || !policy.Summarized {
 		t.Fatalf("policy = %#v, want summarized present policy", policy)
 	}
@@ -121,14 +147,9 @@ func TestReviewPolicySummarizesOversizedMarkdown(t *testing.T) {
 	}
 }
 
-func TestBuildReviewBriefUsesPolicyAndReferenceContextWithoutRenderingPolicyText(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Prefer tests that exercise rollback behavior.")
-	}))
-	defer server.Close()
-
+func TestBuildReviewBriefUsesPolicyContextWithoutRenderingPolicyText(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "REVIEW.md", "Always check tenant authorization.\n\n"+server.URL+"/rollback\n")
+	writeFile(t, root, "REVIEW.md", "Always check tenant authorization.\n\nhttps://example.invalid/rollback\n")
 
 	brief, err := buildReviewBriefForTest(context.Background(), root, normalizeOptions(Options{}), RepoFacts{}, nil, fakeRetriever{})
 	if err != nil {
@@ -137,8 +158,12 @@ func TestBuildReviewBriefUsesPolicyAndReferenceContextWithoutRenderingPolicyText
 	if !hasContextSnippet(brief.Context, "review_policy", "REVIEW.md") {
 		t.Fatalf("Context = %#v, want review_policy snippet", brief.Context)
 	}
-	if !hasContextSnippet(brief.Context, "review_reference", server.URL+"/rollback") {
-		t.Fatalf("Context = %#v, want review_reference snippet", brief.Context)
+	// The URL is prose inside the policy snippet, not a snippet of its own:
+	// nothing fetches it. See TestLoadReviewPolicyNeverFetchesURLsItFinds.
+	for _, snippet := range brief.Context {
+		if snippet.Kind == "review_reference" {
+			t.Fatalf("Context has a review_reference snippet, want REVIEW.md URLs left unfetched: %#v", snippet)
+		}
 	}
 
 	report := Report{
@@ -227,28 +252,23 @@ func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
 	}
 }
 
-// TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent covers the REVIEW.md
-// contract across the change from one Anthropic reviewer to two: a file that
-// names one Anthropic model still pins the model it always pinned (leg A), the
-// OpenAI hint no longer produces a peer reviewer, and leg B keeps its default
-// so a single hint cannot collapse the panel into one model reviewed twice.
-func TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent(t *testing.T) {
+// The panel is two Bedrock legs configured from the environment, and the legs
+// stay independent: pinning one must not collapse the panel into one model
+// reviewed twice.
+func TestReviewerFromEnvBuildsTwoIndependentBedrockLegs(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "anthropic.claude-sonnet-4-5")
 	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "")
 	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "aws-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
 	t.Setenv("AWS_REGION", "us-west-2")
 
-	reviewer := reviewerFromEnvWithPolicy(&ReviewPolicy{ModelHints: []ReviewModelHint{
-		{Provider: "openai", Model: "gpt-4o"},
-		{Provider: "anthropic", Model: "anthropic.claude-sonnet-4-5"},
-	}})
+	reviewer := reviewerFromEnv()
 	multi, ok := reviewer.(multiAIReviewer)
 	if !ok {
 		t.Fatalf("reviewer = %T, want multiAIReviewer", reviewer)
@@ -258,7 +278,7 @@ func TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent(t *testing.T) {
 	}
 	legA, ok := multi.reviewers[0].reviewer.(*bedrockAnthropicReviewer)
 	if !ok || legA.model != "us.anthropic.claude-sonnet-4-5" {
-		t.Fatalf("leg A = %#v, want the policy hint as an inference profile", multi.reviewers[0].reviewer)
+		t.Fatalf("leg A = %#v, want the configured model as an inference profile", multi.reviewers[0].reviewer)
 	}
 	legB, ok := multi.reviewers[1].reviewer.(*bedrockAnthropicReviewer)
 	if !ok || legB.model != defaultBedrockReviewModelB {
@@ -277,31 +297,6 @@ func TestReviewerFromPolicyPinsLegAAndKeepsLegBIndependent(t *testing.T) {
 		if _, isBedrock := item.reviewer.(*bedrockAnthropicReviewer); !isBedrock {
 			t.Fatalf("reviewers include a non-Bedrock leg %T: %#v", item.reviewer, multi.reviewers)
 		}
-	}
-}
-
-// TestReviewerFromPolicyPinsBothLegsFromTwoHints pins the ordinal mapping that
-// lets a REVIEW.md express the whole panel.
-func TestReviewerFromPolicyPinsBothLegsFromTwoHints(t *testing.T) {
-	t.Setenv("GX_REVIEW_AI", "1")
-	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
-	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
-	t.Setenv("AWS_ACCESS_KEY_ID", "aws-key")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
-
-	reviewer := reviewerFromEnvWithPolicy(&ReviewPolicy{ModelHints: []ReviewModelHint{
-		{Provider: "anthropic", Model: "claude-first"},
-		{Provider: "anthropic", Model: "claude-second"},
-		{Provider: "anthropic", Model: "claude-judge", Role: reviewModelRoleJudge},
-	}})
-	multi := reviewer.(multiAIReviewer)
-	legA := multi.reviewers[0].reviewer.(*bedrockAnthropicReviewer)
-	legB := multi.reviewers[1].reviewer.(*bedrockAnthropicReviewer)
-	if legA.model != "us.anthropic.claude-first" {
-		t.Fatalf("leg A = %q, want the first hint to win over the env override", legA.model)
-	}
-	if legB.model != "us.anthropic.claude-second" {
-		t.Fatalf("leg B = %q, want the second hint to win over the env override", legB.model)
 	}
 }
 

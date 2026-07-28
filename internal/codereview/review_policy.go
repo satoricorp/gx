@@ -1,40 +1,45 @@
 package codereview
 
 import (
-	"context"
 	"fmt"
-	"html"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
-	"time"
 	"unicode"
 )
 
 const (
-	reviewPolicyPath               = "REVIEW.md"
-	maxReviewPolicySummaryBytes    = 8000
-	maxReviewReferenceRawBytes     = 1 << 20
-	maxReviewReferenceSummaryBytes = 5000
-	reviewReferenceTimeout         = 8 * time.Second
+	reviewPolicyPath            = "REVIEW.md"
+	maxReviewPolicySummaryBytes = 8000
 )
 
+// REVIEW.md describes the repository to its reviewer. It does not configure the
+// reviewer, and the line between those two is the reason this file is smaller
+// than it used to be.
+//
+// Two features crossed it and were removed. The first scraped every URL out of
+// REVIEW.md and fetched it, checking only that the scheme was http or https —
+// no host check, and a client that followed redirects. On a cloud CI runner
+// `http://169.254.169.254/latest/meta-data/iam/security-credentials/` satisfied
+// every check in that path, and up to a megabyte of the response was
+// summarized into the review report and the model prompt. The second let a line
+// of REVIEW.md prose pick the reviewer and judge models, ahead of the operator's
+// own environment variables, with no allowlist.
+//
+// Both gave the repository under review control over what the reviewer does,
+// which is backwards: the repository is the subject, not the operator. Guidance
+// that matters belongs in the file itself, where it is diffable and reviewable,
+// rather than behind a URL whose contents can change after the line was written.
+// Which model reviews is the operator's call, and stays in the environment.
 type ReviewPolicy struct {
-	Present     bool              `json:"present"`
-	Path        string            `json:"path,omitempty"`
-	ByteSize    int               `json:"byte_size,omitempty"`
-	Text        string            `json:"text,omitempty"`
-	Summarized  bool              `json:"summarized,omitempty"`
-	URLs        []string          `json:"urls,omitempty"`
-	References  []ReviewReference `json:"references,omitempty"`
-	ModelHints  []ReviewModelHint `json:"model_hints,omitempty"`
-	RiskPaths   []RiskPath        `json:"risk_paths,omitempty"`
-	Diagnostics []string          `json:"diagnostics,omitempty"`
+	Present     bool       `json:"present"`
+	Path        string     `json:"path,omitempty"`
+	ByteSize    int        `json:"byte_size,omitempty"`
+	Text        string     `json:"text,omitempty"`
+	Summarized  bool       `json:"summarized,omitempty"`
+	RiskPaths   []RiskPath `json:"risk_paths,omitempty"`
+	Diagnostics []string   `json:"diagnostics,omitempty"`
 }
 
 type RiskPath struct {
@@ -43,24 +48,7 @@ type RiskPath struct {
 	Raw     string `json:"raw,omitempty"`
 }
 
-type ReviewReference struct {
-	URL        string `json:"url"`
-	Status     string `json:"status"`
-	Summary    string `json:"summary,omitempty"`
-	Error      string `json:"error,omitempty"`
-	ByteSize   int    `json:"byte_size,omitempty"`
-	Summarized bool   `json:"summarized,omitempty"`
-	Capped     bool   `json:"capped,omitempty"`
-}
-
-type ReviewModelHint struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Role     string `json:"role,omitempty"`
-	Raw      string `json:"raw,omitempty"`
-}
-
-func LoadReviewPolicy(ctx context.Context, repoRoot string) ReviewPolicy {
+func LoadReviewPolicy(repoRoot string) ReviewPolicy {
 	data, err := os.ReadFile(filepath.Join(repoRoot, reviewPolicyPath))
 	if err != nil {
 		return ReviewPolicy{Present: false, Path: reviewPolicyPath}
@@ -73,23 +61,10 @@ func LoadReviewPolicy(ctx context.Context, repoRoot string) ReviewPolicy {
 		ByteSize:   len(data),
 		Text:       summary,
 		Summarized: summarized,
-		URLs:       extractReviewPolicyURLs(text),
-		ModelHints: parseReviewModelHints(text),
 		RiskPaths:  parseReviewRiskPaths(text),
 	}
 	if summarized {
 		policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s summarized from %d byte(s)", reviewPolicyPath, len(data)))
-	}
-	for _, ref := range fetchReviewReferences(ctx, policy.URLs) {
-		policy.References = append(policy.References, ref)
-		switch {
-		case ref.Status != "ok":
-			policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s: %s", ref.URL, ref.Error))
-		case ref.Capped:
-			policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s capped at %d byte(s) before summarization", ref.URL, maxReviewReferenceRawBytes))
-		case ref.Summarized:
-			policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s summarized from %d byte(s)", ref.URL, ref.ByteSize))
-		}
 	}
 	return policy
 }
@@ -109,20 +84,6 @@ func (p ReviewPolicy) ContextSnippets() []ContextSnippet {
 			File:      p.Path,
 		})
 	}
-	for _, ref := range p.References {
-		if ref.Status != "ok" || strings.TrimSpace(ref.Summary) == "" {
-			continue
-		}
-		snippets = append(snippets, ContextSnippet{
-			Kind:      "review_reference",
-			Ref:       ref.URL,
-			Text:      ref.Summary,
-			Source:    "review.md-url",
-			Publisher: publisherFromURLHost(ref.URL),
-			URL:       ref.URL,
-			Title:     ref.URL,
-		})
-	}
 	return snippets
 }
 
@@ -130,145 +91,13 @@ func (p ReviewPolicy) QueryText() string {
 	if !p.Present {
 		return ""
 	}
-	var parts []string
-	if strings.TrimSpace(p.Text) != "" {
-		parts = append(parts, "repo REVIEW.md policy:\n"+strings.TrimSpace(p.Text))
-	}
-	for _, ref := range p.References {
-		if ref.Status != "ok" || strings.TrimSpace(ref.Summary) == "" {
-			continue
-		}
-		parts = append(parts, "REVIEW.md referenced guidance "+ref.URL+":\n"+strings.TrimSpace(ref.Summary))
-	}
-	if len(p.ModelHints) > 0 {
-		var hints []string
-		for _, hint := range p.ModelHints {
-			hints = append(hints, strings.TrimSpace(hint.Provider+":"+hint.Model))
-		}
-		parts = append(parts, "requested reviewer models: "+strings.Join(hints, ", "))
-	}
-	return strings.Join(parts, "\n\n")
-}
-
-func (p ReviewPolicy) AnthropicModelHint() string {
-	hints := p.AnthropicModelHints()
-	if len(hints) == 0 {
+	if strings.TrimSpace(p.Text) == "" {
 		return ""
 	}
-	return hints[0]
+	return "repo REVIEW.md policy:\n" + strings.TrimSpace(p.Text)
 }
 
-// AnthropicModelHints returns every Anthropic model a REVIEW.md asks for, in
-// the order the file names them, excluding any hint reserved for the judge.
-//
-// The reviewer panel has two legs now, so a single hint is no longer enough to
-// express the request. Order is the mapping (first hint -> leg A) because it is
-// the only thing REVIEW.md prose reliably carries; AnthropicModelHint() stays
-// as the first element so callers that only ever wanted one are unchanged.
-func (p ReviewPolicy) AnthropicModelHints() []string {
-	var out []string
-	for _, hint := range p.ModelHints {
-		model := strings.TrimSpace(hint.Model)
-		if hint.Provider != "anthropic" || model == "" || hint.Role == reviewModelRoleJudge {
-			continue
-		}
-		out = append(out, model)
-	}
-	return out
-}
-
-// JudgeModelHint returns the model a REVIEW.md line naming the judge asks for.
-// It is kept out of AnthropicModelHints so that pinning the judge does not
-// silently also pin a reviewer leg.
-func (p ReviewPolicy) JudgeModelHint() string {
-	for _, hint := range p.ModelHints {
-		if hint.Provider == "anthropic" && hint.Role == reviewModelRoleJudge && strings.TrimSpace(hint.Model) != "" {
-			return strings.TrimSpace(hint.Model)
-		}
-	}
-	return ""
-}
-
-func fetchReviewReferences(ctx context.Context, urls []string) []ReviewReference {
-	if len(urls) == 0 {
-		return nil
-	}
-	client := &http.Client{Timeout: reviewReferenceTimeout}
-	out := make([]ReviewReference, 0, len(urls))
-	for _, rawURL := range urls {
-		out = append(out, fetchReviewReference(ctx, client, rawURL))
-	}
-	return out
-}
-
-func fetchReviewReference(ctx context.Context, client *http.Client, rawURL string) ReviewReference {
-	item := ReviewReference{URL: rawURL, Status: "failed"}
-	parsed, err := url.ParseRequestURI(rawURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		item.Error = "invalid URL"
-		return item
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		item.Error = err.Error()
-		return item
-	}
-	req.Header.Set("Accept", "text/plain,text/markdown,text/html;q=0.9,*/*;q=0.1")
-	resp, err := client.Do(req)
-	if err != nil {
-		item.Error = err.Error()
-		return item
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		item.Error = "status " + resp.Status
-		return item
-	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxReviewReferenceRawBytes+1))
-	item.ByteSize = len(body)
-	if len(body) > maxReviewReferenceRawBytes {
-		body = body[:maxReviewReferenceRawBytes]
-		item.Capped = true
-	}
-	text := plainReviewReferenceText(resp.Header.Get("Content-Type"), string(body))
-	if strings.TrimSpace(text) == "" {
-		item.Error = "empty text content"
-		return item
-	}
-	summary, summarized := summarizeReviewText(text, maxReviewReferenceSummaryBytes)
-	item.Status = "ok"
-	item.Error = ""
-	item.Summary = summary
-	item.Summarized = summarized || item.Capped
-	return item
-}
-
-var (
-	reviewURLPattern      = regexp.MustCompile(`https?://[^\s<>()"']+`)
-	htmlTagPattern        = regexp.MustCompile(`(?s)<[^>]+>`)
-	htmlScriptPattern     = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	htmlStylePattern      = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	reviewModelPattern    = regexp.MustCompile(`(?i)\b(?:(openai|anthropic):)?((?:gpt|o)[A-Za-z0-9._-]*|(?:anthropic\.)?claude[A-Za-z0-9._-]*)\b`)
-	reviewRiskPathPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*(?:—|-)\s*(.+?)\s*$`)
-)
-
-func extractReviewPolicyURLs(text string) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, match := range reviewURLPattern.FindAllString(text, -1) {
-		cleaned := strings.TrimRight(match, ".,;:)]}>\"'")
-		if parsed, err := url.ParseRequestURI(cleaned); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			continue
-		}
-		if _, ok := seen[cleaned]; ok {
-			continue
-		}
-		seen[cleaned] = struct{}{}
-		out = append(out, cleaned)
-	}
-	sort.Strings(out)
-	return out
-}
+var reviewRiskPathPattern = regexp.MustCompile(`(?i)^\s*risk-path:\s*(.+?)\s*(?:—|-)\s*(.+?)\s*$`)
 
 func parseReviewRiskPaths(text string) []RiskPath {
 	inSection := false
@@ -358,87 +187,6 @@ func MatchRiskPathGlob(pattern, file string) bool {
 		return false
 	}
 	return true
-}
-
-func parseReviewModelHints(text string) []ReviewModelHint {
-	seen := map[string]struct{}{}
-	var out []ReviewModelHint
-	for _, line := range strings.Split(text, "\n") {
-		lower := strings.ToLower(line)
-		if !strings.Contains(lower, "model") && !strings.Contains(lower, "reviewer") && !strings.Contains(lower, "use ") {
-			continue
-		}
-		for _, match := range reviewModelPattern.FindAllStringSubmatch(line, -1) {
-			provider := strings.ToLower(strings.TrimSpace(match[1]))
-			model := strings.TrimSpace(match[2])
-			if provider == "" {
-				provider = inferReviewModelProvider(model)
-			}
-			model = normalizeReviewModel(provider, model)
-			if provider == "" || model == "" {
-				continue
-			}
-			role := inferReviewModelRole(line)
-			key := provider + "\x00" + model + "\x00" + role
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, ReviewModelHint{
-				Provider: provider,
-				Model:    model,
-				Role:     role,
-				Raw:      strings.TrimSpace(line),
-			})
-		}
-	}
-	return out
-}
-
-func inferReviewModelProvider(model string) string {
-	lower := strings.ToLower(model)
-	switch {
-	case strings.HasPrefix(lower, "gpt") || strings.HasPrefix(lower, "o"):
-		return "openai"
-	case strings.HasPrefix(lower, "claude") || strings.HasPrefix(lower, "anthropic.claude"):
-		return "anthropic"
-	default:
-		return ""
-	}
-}
-
-func normalizeReviewModel(provider, model string) string {
-	model = strings.TrimSpace(model)
-	if provider == "anthropic" && strings.HasPrefix(strings.ToLower(model), "claude") {
-		return "anthropic." + model
-	}
-	return model
-}
-
-// reviewModelRoleJudge marks a hint as being about the verification model
-// rather than a reviewer leg. It is checked first so that "use X to judge
-// findings for security" pins the judge and not the security reviewer.
-const reviewModelRoleJudge = "judge"
-
-func inferReviewModelRole(line string) string {
-	lower := strings.ToLower(line)
-	for _, role := range []string{reviewModelRoleJudge, "correctness", "security", "dissent", "performance", "testing", "maintainability", "docs", "dependencies"} {
-		if strings.Contains(lower, role) {
-			return role
-		}
-	}
-	return "general"
-}
-
-func plainReviewReferenceText(contentType, text string) string {
-	lower := strings.ToLower(contentType)
-	if strings.Contains(lower, "html") || strings.Contains(text, "<html") || strings.Contains(text, "<body") {
-		text = htmlScriptPattern.ReplaceAllString(text, " ")
-		text = htmlStylePattern.ReplaceAllString(text, " ")
-		text = htmlTagPattern.ReplaceAllString(text, " ")
-		text = html.UnescapeString(text)
-	}
-	return normalizeReviewWhitespace(text)
 }
 
 func summarizeReviewText(text string, maxBytes int) (string, bool) {
