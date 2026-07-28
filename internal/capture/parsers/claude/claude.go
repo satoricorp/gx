@@ -123,6 +123,16 @@ func parseClaudeLine(raw map[string]json.RawMessage, sessionID, repoRoot string)
 				if ev.NewText == "" {
 					ev.NewText = rawString(input["newText"])
 				}
+			case "Bash", "bash", "shell", "run_terminal_cmd":
+				// An agent that runs `sed -i`, a heredoc or an inline script
+				// edits files without ever emitting a file-edit event. The
+				// command text is the only record that the work happened, so
+				// it is kept whole for the matcher to read.
+				ev.Kind = capture.KindCommand
+				ev.Command = rawString(input["command"])
+				if ev.Command == "" {
+					ev.Kind = capture.KindToolCall
+				}
 			default:
 				ev.Kind = capture.KindToolCall
 			}

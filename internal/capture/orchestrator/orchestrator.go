@@ -216,7 +216,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	t2 := len(matchResult.Tier2HunkIndexes)
 	coverage := 0.0
 	if len(eligibleHunks) > 0 {
-		coverage = float64(t1+t2) / float64(len(eligibleHunks))
+		coverage = float64(matchResult.AuthorshipHunkCount()) / float64(len(eligibleHunks))
 	}
 	matchedAgents := len(matchResult.MatchedEvents)
 
@@ -513,10 +513,20 @@ func filterHunks(hunks []capture.CommitHunk, ex *exclude.Matcher) ([]capture.Com
 func filterEvents(events []capture.SessionEvent, ex *exclude.Matcher, sinceMS, untilMS int64) []capture.SessionEvent {
 	var out []capture.SessionEvent
 	for _, ev := range events {
-		if !ev.IsEditEvent() || strings.TrimSpace(ev.NewText) == "" || ev.FilePath == "" {
-			continue
-		}
-		if ex.IsExcluded(ev.FilePath) {
+		// A command event carries no file path and no NewText — the text it
+		// wrote is in the command itself — so it cannot meet the edit-event
+		// conditions and used to be dropped here, taking every sed, heredoc and
+		// inline script edit out of attribution before matching ever saw them.
+		// The exclusion matcher has nothing to test it against either, which is
+		// harmless: it can only claim eligible hunks, and those are already
+		// filtered.
+		switch {
+		case ev.IsCommandEvent():
+		case ev.IsEditEvent() && strings.TrimSpace(ev.NewText) != "" && ev.FilePath != "":
+			if ex.IsExcluded(ev.FilePath) {
+				continue
+			}
+		default:
 			continue
 		}
 		if ev.TS > 0 && (ev.TS < sinceMS || ev.TS > untilMS) {

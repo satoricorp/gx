@@ -1,6 +1,7 @@
 package claude_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,5 +66,43 @@ func TestParseClaude_SkipsBadLines(t *testing.T) {
 	}
 	if edits != 2 {
 		t.Fatalf("edit events = %d, want 2", edits)
+	}
+}
+
+// A Bash tool call is where a `sed -i`, heredoc or inline-script edit lives.
+// The parser recorded the block but discarded the command text, so the only
+// evidence that the agent wrote those bytes was thrown away at parse time and
+// the work was later scored as hand-written.
+func TestParseClaude_KeepsBashCommandText(t *testing.T) {
+	parser := &claude.Parser{}
+	raw := strings.Join([]string{
+		`{"type":"assistant","message":{"role":"assistant","model":"claude","content":[{"type":"tool_use","name":"Bash","input":{"command":"sed -i '' 's/old/new/' internal/foo.go"}}]},"timestamp":"2025-06-01T10:01:00.000Z","sessionId":"sess-1"}`,
+		`{"type":"assistant","message":{"role":"assistant","model":"claude","content":[{"type":"tool_use","name":"Bash","input":{}}]},"timestamp":"2025-06-01T10:02:00.000Z","sessionId":"sess-1"}`,
+	}, "\n")
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(path, []byte(raw+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := parser.ParseFile(path, "/tmp/repo")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	var commands []capture.SessionEvent
+	for _, ev := range events {
+		if ev.IsCommandEvent() {
+			commands = append(commands, ev)
+		}
+	}
+	if len(commands) != 1 {
+		t.Fatalf("command events = %d, want 1 (the empty-command call is not one)", len(commands))
+	}
+	if commands[0].Command != "sed -i '' 's/old/new/' internal/foo.go" {
+		t.Fatalf("Command = %q, want the shell text kept whole", commands[0].Command)
+	}
+	// A command is not a file edit: it names no path, so it must not be counted
+	// as one anywhere that asks.
+	if commands[0].IsEditEvent() {
+		t.Fatal("a command event reports as an edit event; the two carry different evidence")
 	}
 }

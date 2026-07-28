@@ -1,6 +1,9 @@
 package capture
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	ToolClaude = "claude"
@@ -10,6 +13,7 @@ const (
 	KindEdit       = "edit"
 	KindRead       = "read"
 	KindToolCall   = "tool_call"
+	KindCommand    = "command"
 	KindMessage    = "message"
 	KindToolResult = "tool_result"
 )
@@ -25,6 +29,13 @@ type SessionEvent struct {
 	OldText       string
 	NewText       string
 	PromptContext string
+	// Command is the shell text of a command the agent ran, for tool calls that
+	// run one. An agent that edits with `sed -i`, a heredoc or an inline script
+	// changes files without ever emitting a file-edit event, so without this the
+	// work is invisible to attribution even though the transcript recorded it in
+	// full. It is deliberately not truncated: the match is against the text the
+	// command wrote, so a clipped command matches nothing.
+	Command       string
 	Raw           map[string]json.RawMessage
 
 	// Cwd is the working directory the agent was in when this event happened,
@@ -61,6 +72,15 @@ func (e SessionEvent) IsEditEvent() bool {
 	default:
 		return false
 	}
+}
+
+// IsCommandEvent reports whether the event ran a shell command whose text was
+// recorded. It is kept apart from IsEditEvent because the two carry different
+// evidence: an edit event names the file it wrote, while a command only shows
+// the text that went through it, so a command can support authorship but never
+// declare it.
+func (e SessionEvent) IsCommandEvent() bool {
+	return e.Kind == KindCommand && strings.TrimSpace(e.Command) != ""
 }
 
 // Directory reports the working directory the agent was in for this event, and

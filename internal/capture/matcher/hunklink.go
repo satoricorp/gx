@@ -106,6 +106,9 @@ func eventFingerprint(ev capture.SessionEvent) string {
 		filepath.ToSlash(ev.FilePath),
 		hashText(ev.OldText),
 		hashText(ev.NewText),
+		// Without this every command event in one millisecond fingerprints
+		// alike: they share a session and carry no file path or edit text.
+		hashText(ev.Command),
 	}, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
