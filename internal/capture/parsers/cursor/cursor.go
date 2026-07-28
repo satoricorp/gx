@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/repopath"
 	ingestcursor "github.com/satoricorp/gx/internal/ingest/cursor"
 )
 
@@ -1097,29 +1098,11 @@ func rawInt64(raw json.RawMessage) int64 {
 	return 0
 }
 
+// relPath defers to repopath, which knows a repository can have more than one
+// checkout. Relativizing against the pushing checkout alone silently mangles
+// every edit made in a linked worktree.
 func relPath(path, repoRoot string) string {
-	path = filepath.ToSlash(strings.TrimSpace(path))
-	if path == "" {
-		return ""
-	}
-	if repoRoot != "" {
-		absRepo, err := filepath.Abs(repoRoot)
-		if err == nil {
-			absRepo = filepath.ToSlash(absRepo)
-			absPath, err := filepath.Abs(path)
-			if err == nil {
-				absPath = filepath.ToSlash(absPath)
-				if rel, err := filepath.Rel(absRepo, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-					return rel
-				}
-			}
-			prefix := absRepo + "/"
-			if strings.HasPrefix(path, prefix) {
-				return strings.TrimPrefix(path, prefix)
-			}
-		}
-	}
-	return strings.TrimPrefix(path, "./")
+	return repopath.Rel(path, repoRoot)
 }
 
 func cloneRaw(obj map[string]json.RawMessage) map[string]json.RawMessage {
