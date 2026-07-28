@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
+	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command) error {
@@ -44,6 +45,42 @@ func commandRequestsJSON(cmd *cobra.Command) bool {
 		}
 		jsonOut, err := current.Flags().GetBool("json")
 		if err == nil && jsonOut {
+			return true
+		}
+	}
+	return false
+}
+
+// commandTelemetryContext marks read-only commands so telemetry reports
+// without writing anything to the machine.
+func commandTelemetryContext(ctx context.Context, cmd *cobra.Command) context.Context {
+	if commandMustNotWriteGXState(cmd) {
+		return telemetry.WithoutStateWrites(ctx)
+	}
+	return ctx
+}
+
+// commandMustNotWriteGXState names the commands that promise to leave no GX
+// state behind. This is narrower than shouldSkipAutoInit, which also exempts
+// commands like `init` and `login` whose whole job is to write GX state — they
+// skip auto-init because they set it up themselves, not because they must not.
+func commandMustNotWriteGXState(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	for current := cmd; current != nil; current = current.Parent() {
+		switch current.Name() {
+		// `review` must work as a CI gate and on someone else's checkout
+		// without leaving GX state on the machine running it.
+		case "review":
+			return true
+		// `version` answers one question about the binary. Dockerfiles and CI
+		// steps run it to check what they installed, and minting a machine ID
+		// and an install sentinel to answer it means `gx version` creates
+		// $GX_HOME on a machine that has not yet decided to use gx. The
+		// install event is not worth that; the first command that actually
+		// does something records it.
+		case "version":
 			return true
 		}
 	}

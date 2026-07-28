@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -183,8 +182,7 @@ func anchorMapsToReviewedHunk(ctx context.Context, repoRoot, refRange string, an
 }
 
 func committedFileDiff(ctx context.Context, repoRoot, file string) string {
-	cmd := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "HEAD^", "HEAD", "--", file)
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "diff", "--no-ext-diff", "HEAD^", "HEAD", "--", file)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out

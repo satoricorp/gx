@@ -109,6 +109,7 @@ exit 1
     expect(parsed.command).toEqual([
       process.env.GX_BINARY,
       "review",
+      "--no-publish",
       "--scope",
       "architecture",
       "--focus",
@@ -120,7 +121,9 @@ exit 1
 
     const calls = await readFile(callLog, "utf8");
     expect(calls).toContain("gx|");
-    expect(calls).toContain("|1|review --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk");
+    expect(calls).toContain(
+      "|1|review --no-publish --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk",
+    );
   });
 
   test("gx_review can ask for a whole-repo review", async () => {
@@ -128,11 +131,28 @@ exit 1
     // an agent asking about the codebase gets an answer scoped to the diff.
     const output = await gxReview({ cwd: repoRoot, repo: true });
     const parsed = JSON.parse(output);
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "review", "--repo"]);
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "review", "--no-publish", "--repo"]);
 
     // Omitting it keeps the patch-focused default.
     const plain = JSON.parse(await gxReview({ cwd: repoRoot }));
-    expect(plain.command).toEqual([process.env.GX_BINARY, "review"]);
+    expect(plain.command).toEqual([process.env.GX_BINARY, "review", "--no-publish"]);
+  });
+
+  test("gx_review never publishes, whatever it is asked for", async () => {
+    // readOnlyHint is a promise to the calling agent. Without --no-publish,
+    // `gx review` posts a comment on the matching GitHub PR and records the
+    // run to GX Cloud — a write other people see, from a tool the agent was
+    // told is safe to call freely. No argument combination may drop it.
+    const variants = [
+      {},
+      { repo: true },
+      { deep: true, verbose: true },
+      { scope: "security" as const, focus: "internal", prompt: "check auth" },
+    ];
+    for (const variant of variants) {
+      const parsed = JSON.parse(await gxReview({ cwd: repoRoot, ...variant }));
+      expect(parsed.command).toContain("--no-publish");
+    }
   });
 
   test("gx_review never initializes the repo it reviews", async () => {

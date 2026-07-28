@@ -123,11 +123,18 @@ git status                             # inspect with plain Git
 git push                               # push code; GX hook publishes sessions and PR summaries
 ```
 
-Useful review command:
+Useful review commands:
 
 ```bash
-gxr        # gx review
+gxr                                              # gx review, patch-focused
+gx review --repo "how does capture work?"        # ask about the codebase
+gx review --base origin/main --fail-on strong --no-publish   # CI gate
 ```
+
+`gx review` is read-only: it never runs `gx init`, writes `~/.gx`, or touches
+`.git/index`, so it is safe in CI and on a checkout you do not own. Under
+`--fail-on` it exits `3` when findings survive and `4` when nothing was
+reviewed. See [the reference](docs/reference/review.mdx) for the full surface.
 
 ## MCP
 

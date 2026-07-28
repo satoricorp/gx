@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -560,11 +559,11 @@ type PackageFact struct {
 
 type LocalScanner struct{}
 
-func (LocalScanner) Scan(_ context.Context, repoRoot string, focus string) (RepoFacts, error) {
-	return scanRepo(repoRoot, focus)
+func (LocalScanner) Scan(ctx context.Context, repoRoot string, focus string) (RepoFacts, error) {
+	return scanRepo(ctx, repoRoot, focus)
 }
 
-func scanRepo(repoRoot, focus string) (RepoFacts, error) {
+func scanRepo(ctx context.Context, repoRoot, focus string) (RepoFacts, error) {
 	docs := []FilePresence{
 		{Path: "README.md", Present: exists(repoRoot, "README.md")},
 		{Path: "AGENTS.md", Present: exists(repoRoot, "AGENTS.md")},
@@ -572,7 +571,7 @@ func scanRepo(repoRoot, focus string) (RepoFacts, error) {
 		{Path: "docs/", Present: exists(repoRoot, "docs")},
 	}
 	facts := RepoFacts{Docs: docs}
-	if files, ok := gitTrackedFiles(repoRoot); ok {
+	if files, ok := gitTrackedFiles(ctx, repoRoot); ok {
 		for _, rel := range files {
 			if focus != "" && !inFocus(rel, focus) {
 				continue
@@ -667,9 +666,8 @@ func goPackages(files []string) []PackageFact {
 	return out
 }
 
-func gitTrackedFiles(repoRoot string) ([]string, bool) {
-	cmd := exec.Command("git", "ls-files")
-	cmd.Dir = repoRoot
+func gitTrackedFiles(ctx context.Context, repoRoot string) ([]string, bool) {
+	cmd := gitCommand(ctx, repoRoot, "ls-files")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -783,8 +781,7 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 	// unreviewed code out of the review without anything saying so. Listing the
 	// files individually is what makes them reviewable and what makes the
 	// coverage count true.
-	cmd := exec.CommandContext(ctx, "git", "status", "--short", "--untracked-files=all")
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "status", "--short", "--untracked-files=all")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {

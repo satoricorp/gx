@@ -50,7 +50,12 @@ until the branch is pushed through GX.
 
 | Tool | CLI | Purpose |
 |------|-----|---------|
-| `gx_review` | `gx review [prompt]` | Gather local review/context with AI reviewers enabled |
+| `gx_review` | `gx review --no-publish [prompt]` | Gather local review/context with AI reviewers enabled |
+
+`gx_review` always passes `--no-publish`. `gx review` on its own posts a review
+comment on the matching GitHub pull request and records the run to GX Cloud,
+which an agent calling the tool for context mid-codegen should never do — so
+publishing stays with the CLI, where a human typed the command.
 
 Saving and publishing are not MCP tools. Record work with plain `git add` + `git commit`
 (GX's hooks stamp and record the revision), push the stack with plain `git push` (the
@@ -88,7 +93,8 @@ gx auth login
 
 The GX menu-bar app installs the bundled `gx` CLI and `gx-mcp` binary. Repo Git
 hooks are installed when a repo is initialized with `gx init`; the `gx_review`
-MCP tool is read-only and never initializes a repo. The `pre-push` hook runs `gx capture push` for
+MCP tool is read-only — it never initializes a repo, never writes `~/.gx`,
+never touches `.git/index`, and never publishes. The `pre-push` hook runs `gx capture push` for
 the pushed ref range, stages captured Claude/Codex/Cursor session context in
 `~/.gx/gx.db`, and uploads only when GX upload credentials are configured.
 

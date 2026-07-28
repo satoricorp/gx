@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -103,41 +102,16 @@ func stripANSI(text string) string {
 	return ansiEscapePattern.ReplaceAllString(text, "")
 }
 
-func autoReportFailure(ctx context.Context, err error, commandName string) {
-	if !shouldAutoReportFailure(err) {
-		return
-	}
-	client := cloud.NewClient()
-	if client == nil {
-		return
-	}
-	report := buildReportLogRequest(ctx, fmt.Sprintf("%s: %s", strings.TrimSpace(commandName), redactSensitive(err.Error())))
-	if _, reportErr := client.ReportLogs(ctx, report); reportErr != nil {
-		fmt.Fprintln(os.Stderr, labelWarningValue("Warning", fmt.Sprintf("Could not report %s failure: %v", strings.TrimSpace(commandName), reportErr)))
-	}
-}
-
-func shouldAutoReportFailure(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
-		return false
-	}
-	message := strings.ToLower(strings.TrimSpace(err.Error()))
-	if message == "" {
-		return false
-	}
-	switch {
-	case strings.Contains(message, "does not accept"),
-		strings.Contains(message, "accepts at most"),
-		strings.Contains(message, "flag provided but not defined"),
-		strings.HasPrefix(message, "usage:"),
-		strings.Contains(message, "unknown command"),
-		strings.Contains(message, "unsupported review"),
-		strings.Contains(message, "unsupported format"):
-		return false
-	default:
-		return true
-	}
-}
+// Reporting logs to GX Cloud is a deliberate act: `gx report` and `gx doctor
+// --report` send them because the user asked. Nothing uploads on its own.
+//
+// `gx review` used to auto-report its failures, and it was the only command
+// that did. That put a read-only command — one built to run as a CI gate and
+// on checkouts the reviewer does not own — in the position of shipping log
+// tails and repo identity to GX Cloud on every failing run, including the
+// ordinary "N findings at or above high" that means the gate is working. The
+// upload is gone rather than narrowed: a review that fails is the user's
+// business, not telemetry.
 
 func buildReportLogRequest(ctx context.Context, overrideError string) cloud.ReportLogRequest {
 	report := cloud.ReportLogRequest{
@@ -153,7 +127,11 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 		report.MachineID = strings.TrimSpace(creds.MachineID)
 	}
 	if report.MachineID == "" {
-		if machineID, err := cloud.DefaultMachineID(); err == nil {
+		// Read the machine ID, never mint one. Minting writes machine_id.json,
+		// which creates $GX_HOME as a side effect — so a command that only
+		// reports a failure would leave GX state on a machine that has never
+		// run gx. A report without a machine ID is worth more than that.
+		if machineID, err := cloud.ExistingMachineID(); err == nil {
 			report.MachineID = strings.TrimSpace(machineID)
 		}
 	}

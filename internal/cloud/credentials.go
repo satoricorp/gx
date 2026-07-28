@@ -55,6 +55,29 @@ func credentialsPath() (string, error) {
 	return filepath.Join(dir, "credentials.json"), nil
 }
 
+// ExistingMachineID returns the stable machine UUID if one has already been
+// minted, and empty otherwise. Callers that must not leave state behind — a
+// read-only command, or a failure report from a machine that may never have
+// run gx — use this instead of DefaultMachineID, which creates $GX_HOME.
+func ExistingMachineID() (string, error) {
+	path, err := machineIDPath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read machine id: %w", err)
+	}
+	var file machineIDFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return "", fmt.Errorf("parse machine id: %w", err)
+	}
+	return strings.TrimSpace(file.ID), nil
+}
+
 // DefaultMachineID returns the stable machine UUID, creating machine_id.json on first use.
 func DefaultMachineID() (string, error) {
 	path, err := machineIDPath()

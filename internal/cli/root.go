@@ -44,7 +44,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 				return nil
 			}
 			inference.ApplyToEnvironment()
-			telemetry.EmitInstallOnce(ctx)
+			telemetry.EmitInstallOnce(commandTelemetryContext(ctx, cmd))
 			return ensureAutoInitializedRepo(ctx, engine, cmd)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -276,17 +276,14 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 		Short:   "Review changes based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Everything below runs under a context that forbids writing GX
+			// state, so review's own telemetry reports without minting a
+			// machine ID into a $GX_HOME that may not exist.
+			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
-			var runErr error
-			defer func() {
-				if runErr != nil {
-					autoReportFailure(ctx, runErr, "gx review")
-				}
-			}()
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
 			if err != nil {
-				runErr = err
-				return runErr
+				return err
 			}
 			reviewScope := ""
 			scopeExplicit := cmd.Flags().Changed("scope")
@@ -301,9 +298,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			// repo (or on a machine) that has never run `gx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				runErr = err
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
-				return runErr
+				return err
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
 				return codereview.Review(ctx, repo.RootPath, codereview.Options{
@@ -328,13 +324,11 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			}
 			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
-				runErr = err
-				return runErr
+				return err
 			}
 			if jsonOut {
 				if err := writeReviewJSON(cmd.OutOrStdout(), report); err != nil {
-					runErr = err
-					return runErr
+					return err
 				}
 			} else {
 				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
@@ -345,8 +339,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
 				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}
-			runErr = reviewGateError(report, failOnLevel)
-			return runErr
+			return reviewGateError(report, failOnLevel)
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
