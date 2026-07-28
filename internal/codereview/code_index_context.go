@@ -13,7 +13,6 @@ import (
 
 	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/semantic"
-	"github.com/satoricorp/gx/internal/storage"
 )
 
 const (
@@ -100,7 +99,12 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 	}
 	targets := r.Namespaces
 	if len(targets) == 0 {
-		refreshCodeIndex(ctx, in.RepoRoot, in.Evidence)
+		// Review reads; it does not index. Keeping this repository's index
+		// current is GX Cloud's job, done from the GitHub App when a pull
+		// request merges, which covers every user rather than only those
+		// running the CLI with an embeddings key. Two writers filling one
+		// namespace with two different chunkings would also have them
+		// overwriting each other's rows for the same file on alternating runs.
 		targets = codeIndexTargets(ctx, in.RepoRoot)
 	}
 	if len(targets) == 0 {
@@ -265,108 +269,6 @@ func (r CodeIndexRetriever) limitFor(opts Options) int {
 		limit = defaultCodeIndexWholeRepoTopK
 	}
 	return limit
-}
-
-// codeIndexRefreshTimeout bounds the refresh so a slow or unreachable indexing
-// backend delays a review instead of blocking it.
-const codeIndexRefreshTimeout = 90 * time.Second
-
-// refreshCodeIndex brings this repository's own code index up to date before
-// the review reads it.
-//
-// semantic.EnsureRepositoryIndex describes itself as "the seam a review should
-// call before retrieval", and until now nothing called it: the only writer that
-// ever populated a code index for this repository was the console, and the
-// result was an index pinned to a commit from a month earlier. Measured against
-// that index, 313 of 545 tracked files (57.4%) were absent and 59 indexed files
-// no longer existed, so retrieval was answering with deleted code. On the same
-// 40-query set, refreshing the index moved the shipped hybrid retrieval from
-// recall@5 0.550 / recall@20 0.600 to 0.875 / 0.975 — a larger effect than any
-// difference between retrieval strategies.
-//
-// The cost is small because indexing is incremental: a manifest of per-file and
-// per-chunk content hashes means an unchanged checkout uploads nothing.
-// Measured on this repository, a steady-state run takes 60-80ms and a run after
-// editing six files takes 3.4s, against a review whose median is 85 seconds.
-//
-// Failure is deliberately not fatal. A review against a stale index is worse
-// than one against a fresh index but far better than no review, so the refresh
-// records what happened and retrieval proceeds either way.
-func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_INDEX_REFRESH")), "0") {
-		return
-	}
-	if strings.TrimSpace(repoRoot) == "" {
-		return
-	}
-	// Without credentials there is nothing to refresh, and saying so here would
-	// duplicate the "namespace missing" evidence retrieval already reports.
-	cfg := semantic.CodeIndexConfigFromEnv()
-	if !cfg.Enabled || cfg.OpenAIAPIKey == "" || cfg.TurboPufferAPIKey == "" {
-		return
-	}
-	// What makes indexing incremental is a manifest of content hashes, and it
-	// lives under the GX home. A machine that has never run `gx init` has no GX
-	// home, and review must not create one: it runs as a CI gate and on
-	// checkouts the reviewer does not own, where leaving state behind is not
-	// ours to do — the same rule that keeps review out of .git/hooks.
-	//
-	// Refreshing anyway with a throwaway manifest was tried and removed. A
-	// machine that keeps nothing between runs has nothing to be incremental
-	// against, so every CI review re-embedded the whole checkout; worse, the
-	// deletion pass is computed from the previous manifest, so a run without
-	// one removes nothing and leaves rows for deleted files in the namespace
-	// forever — the "retrieval answers with code that no longer exists" failure
-	// this refresh exists to prevent, arriving by another route.
-	//
-	// Keeping a repository indexed is the server's job: GX Cloud re-indexes on
-	// merge, from the GitHub App, for every user rather than only those running
-	// CI with credentials. A checkout with no GX home reads that index and does
-	// not try to maintain one.
-	if !gxHomeExists() {
-		log.Record(EvidenceStatus{
-			Source: codeIndexEvidenceSource,
-			State:  EvidenceUnavailable,
-			Detail: "index refresh skipped: no GX home on this machine to record the index manifest, so retrieval will use whatever GX Cloud has indexed for this repository",
-		})
-		return
-	}
-	refreshCtx, cancel := context.WithTimeout(ctx, codeIndexRefreshTimeout)
-	defer cancel()
-	result, err := semantic.EnsureRepositoryIndex(refreshCtx, semantic.RepoIndexOptions{
-		RepoRoot: repoRoot,
-		OrgID:    reviewOrgID(),
-		Reason:   "review",
-	})
-	if err != nil {
-		log.Record(EvidenceStatus{
-			Source: codeIndexEvidenceSource,
-			State:  EvidenceUnavailable,
-			Detail: fmt.Sprintf("index refresh failed, retrieval will use whatever is already indexed: %v", err),
-		})
-		return
-	}
-	if result.UpToDate() {
-		return
-	}
-	log.Record(EvidenceStatus{
-		Source:    codeIndexEvidenceSource,
-		Namespace: result.Namespace,
-		State:     EvidenceOK,
-		Detail: fmt.Sprintf("index refreshed before retrieval: %d of %d files reindexed, %d chunks upserted, %d deleted",
-			result.FilesIndexed, result.FilesScanned, result.ChunksUpserted, result.ChunksDeleted),
-	})
-}
-
-// gxHomeExists reports whether this machine already has a GX home. It is
-// deliberately a read: resolving the directory must not be what creates it.
-func gxHomeExists() bool {
-	dir, err := storage.DefaultDir()
-	if err != nil || strings.TrimSpace(dir) == "" {
-		return false
-	}
-	info, err := os.Stat(dir)
-	return err == nil && info.IsDir()
 }
 
 // codeIndexTargets resolves the namespaces that may hold this repository's
