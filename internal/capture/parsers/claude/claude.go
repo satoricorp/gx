@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/repopath"
 )
 
 // Parser normalizes Claude Code session JSONL into SessionEvents.
@@ -54,6 +55,14 @@ func (p *Parser) ParseBytes(data []byte, sourcePath, repoRoot string) ([]capture
 		if err != nil {
 			p.LastBadLines++
 			continue
+		}
+		// Claude records cwd on the entry rather than once per session, so a
+		// session that moves between repositories carries the directory that
+		// was current for each event.
+		if cwd := rawString(raw["cwd"]); cwd != "" {
+			for i := range parsed {
+				parsed[i].Cwd = cwd
+			}
 		}
 		events = append(events, parsed...)
 	}
@@ -120,13 +129,13 @@ func parseClaudeLine(raw map[string]json.RawMessage, sessionID, repoRoot string)
 			events = append(events, ev)
 		case "text":
 			events = append(events, capture.SessionEvent{
-				SessionID: sessionID,
-				Tool:      capture.ToolClaude,
-				Model:     model,
-				TS:        ts,
-				Kind:      capture.KindMessage,
+				SessionID:     sessionID,
+				Tool:          capture.ToolClaude,
+				Model:         model,
+				TS:            ts,
+				Kind:          capture.KindMessage,
 				PromptContext: truncate(rawString(block["text"]), 512),
-				Raw:       cloneRaw(block),
+				Raw:           cloneRaw(block),
 			})
 		case "tool_result":
 			events = append(events, capture.SessionEvent{
@@ -232,29 +241,11 @@ func rawString(raw json.RawMessage) string {
 	return strings.Trim(string(raw), `"`)
 }
 
+// relPath defers to repopath, which knows a repository can have more than one
+// checkout. Relativizing against the pushing checkout alone silently mangles
+// every edit made in a linked worktree.
 func relPath(path, repoRoot string) string {
-	path = filepath.ToSlash(strings.TrimSpace(path))
-	if path == "" {
-		return ""
-	}
-	if repoRoot != "" {
-		absRepo, err := filepath.Abs(repoRoot)
-		if err == nil {
-			absRepo = filepath.ToSlash(absRepo)
-			absPath, err := filepath.Abs(path)
-			if err == nil {
-				absPath = filepath.ToSlash(absPath)
-				if rel, err := filepath.Rel(absRepo, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-					return rel
-				}
-			}
-			prefix := absRepo + "/"
-			if strings.HasPrefix(path, prefix) {
-				return strings.TrimPrefix(path, prefix)
-			}
-		}
-	}
-	return strings.TrimPrefix(path, "./")
+	return repopath.Rel(path, repoRoot)
 }
 
 func cloneRaw(obj map[string]json.RawMessage) map[string]json.RawMessage {

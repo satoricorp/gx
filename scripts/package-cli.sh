@@ -45,7 +45,6 @@ build_root="$(mktemp -d)"
 trap 'rm -rf "$build_root"' EXIT
 stage_dir="$build_root/gx"
 mkdir -p "$stage_dir/bin" "$stage_dir/completions" "$stage_dir/hooks" "$dist_dir"
-with_menubar="${GX_PACKAGE_MENUBAR:-0}"
 
 echo "Building gx ${version} for ${goos}/${goarch}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED="${CGO_ENABLED:-0}" \
@@ -83,12 +82,6 @@ Manual install:
   ln -sf gx ~/.local/bin/gxr
   install -m 755 bin/gx-mcp ~/.local/bin/gx-mcp
 EOF
-
-if [[ "$with_menubar" == "1" ]]; then
-  echo "Packaging macOS menu-bar app (GX_PACKAGE_MENUBAR=1)"
-  apps/menubar/scripts/package.sh
-  cp -R apps/menubar/dist/GX.app "$stage_dir/GX.app"
-fi
 
 archive_name="gx_${version}_${goos}_${goarch}.tar.gz"
 archive_path="$dist_dir/$archive_name"

@@ -58,6 +58,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	if repoRoot == "" {
 		return Report{}, fmt.Errorf("repo root is required")
 	}
+	// Reviewing a checkout must not modify it. Every git call below inherits
+	// this scratch index, so a stat-cache refresh cannot rewrite .git/index or
+	// take .git/index.lock out from under a concurrent git. It sits here
+	// rather than on the package-level Review so that callers holding an
+	// Engine get the same guarantee.
+	ctx, releaseIndex := withScratchGitIndex(ctx, repoRoot)
+	defer releaseIndex()
 	explicitScope := strings.TrimSpace(opts.Scope) != ""
 	opts = normalizeOptions(opts)
 	if err := ValidateOptions(opts); err != nil {
@@ -218,7 +225,12 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				if aiConfigured {
 					degradedReasons = append(degradedReasons, formatReviewerDegradation(result.Err))
 				}
-			} else if len(result.Findings) > 0 {
+			} else {
+				// The label says which reviewers ran, not what they happened to
+				// find. Setting it from the finding count meant a healthy review
+				// that correctly found nothing reported "results are from
+				// deterministic checks only" — the same sentence a real AI outage
+				// produces, which teaches readers to discount it when it is true.
 				findings = mergeFindings(findings, result.Findings)
 				reviewerLabel = "heuristic+ai"
 			}

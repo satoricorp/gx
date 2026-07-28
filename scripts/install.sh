@@ -3,7 +3,6 @@ set -eu
 
 base_url="${GX_INSTALL_BASE_URL:-https://download.gx.run}"
 install_dir="${GX_INSTALL_DIR:-$HOME/.local/bin}"
-with_menubar=false
 tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t gx-install)"
 
 fail() {
@@ -20,22 +19,18 @@ Repo git hooks are installed later by gx init.
 
 Usage:
   curl -fsSL https://download.gx.run/install.sh | sh
-  curl -fsSL https://download.gx.run/install.sh | sh -s -- --with-menubar
 
 Options:
-  --with-menubar   Also install the macOS menu-bar app (macOS only)
   -h, --help       Show this help
 
 Environment:
   GX_INSTALL_BASE_URL   Download base URL (default: https://download.gx.run)
   GX_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
-  GX_INSTALL_MENUBAR=1    Same as --with-menubar
 EOF
 }
 
 for arg in "$@"; do
   case "$arg" in
-    --with-menubar) with_menubar=true ;;
     -h|--help)
       usage
       exit 0
@@ -45,10 +40,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-if [ "${GX_INSTALL_MENUBAR:-}" = "1" ]; then
-  with_menubar=true
-fi
 
 cleanup() {
   rm -rf "$tmp_dir"
@@ -71,33 +62,6 @@ download() {
   fi
 }
 
-install_menubar_app() {
-  if [ "$os" != "darwin" ]; then
-    fail "--with-menubar requires macOS"
-  fi
-  need unzip
-  zip_url="$base_url/GX-macOS.zip"
-  zip_path="$tmp_dir/GX-macOS.zip"
-  echo "Downloading $zip_url"
-  download "$zip_url" "$zip_path"
-  extract_dir="$tmp_dir/menubar"
-  mkdir -p "$extract_dir"
-  unzip -q "$zip_path" -d "$extract_dir"
-  extracted="$extract_dir/GX.app"
-  test -d "$extracted" || fail "GX-macOS.zip is missing GX.app"
-  if [ -w "/Applications" ]; then
-    app_dest="/Applications/GX.app"
-    rm -rf "$app_dest"
-    cp -R "$extracted" "$app_dest"
-    echo "Installed GX menu-bar app to $app_dest"
-  else
-    app_dest="$HOME/Applications/GX.app"
-    mkdir -p "$HOME/Applications"
-    rm -rf "$app_dest"
-    cp -R "$extracted" "$app_dest"
-    echo "Installed GX menu-bar app to $app_dest"
-  fi
-}
 
 case "$(uname -s)" in
   Darwin) os="darwin" ;;
@@ -172,7 +136,4 @@ fi
 echo ""
 printf '\tRun %s to login.\n' "$gx_auth_login"
 printf '\tRun %s in each repo to initialize gx.\n' "$gx_init"
-if [ "$with_menubar" = "true" ]; then
-  install_menubar_app
-fi
 "$install_dir/gx" version

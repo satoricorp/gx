@@ -46,7 +46,7 @@ func (NopClient) EmitCaptureCoverage(context.Context, CaptureCoverageProps) {}
 func (NopClient) EmitMatchRate(context.Context, MatchRateProps)             {}
 func (NopClient) EmitSessionUploaded(context.Context, SessionUploadedProps) {}
 func (NopClient) EmitComposeRun(context.Context, ComposeRunProps)           {}
-func (NopClient) EmitSchemaDrift(context.Context, SchemaDriftProps)       {}
+func (NopClient) EmitSchemaDrift(context.Context, SchemaDriftProps)         {}
 
 func Configured() bool {
 	return postHogKey() != ""
@@ -114,7 +114,7 @@ func (c *ClientImpl) EmitSchemaDrift(ctx context.Context, props SchemaDriftProps
 }
 
 func (c *ClientImpl) capture(ctx context.Context, event string, properties map[string]any) {
-	captureProperties := ProductProperties(properties)
+	captureProperties := ProductProperties(ctx, properties)
 	body, err := json.Marshal(map[string]any{
 		"api_key":    c.apiKey,
 		"event":      event,

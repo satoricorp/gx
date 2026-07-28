@@ -22,7 +22,7 @@ curl -fsSL https://download.gx.run/install.sh | sh
 Re-run the same command to upgrade or repair an existing installation. The
 installer replaces only the GX-managed `gx` and `gx-mcp` binaries and refreshes
 the `gxr` alias. It does not remove `~/.gx`, repository metadata, or
-hooks. `--with-menubar` similarly replaces the existing GX app bundle.
+hooks.
 
 ```bash
 gx version
@@ -39,15 +39,13 @@ This configures your GX identity, installs Git lifecycle hooks to identify and
 record revisions plus a pre-push hook to publish session data, registers the GX
 MCP server, and offers to add GX workflow instructions to `AGENTS.md`.
 
-To uninstall the CLI and menu-bar app:
+To uninstall the CLI:
 
 ```bash
 rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gx-mcp
-rm -rf /Applications/GX.app ~/Applications/GX.app
 ```
 
-This removes the installed binaries and app bundle only. Local GX data remains
-in `~/.gx`.
+This removes the installed binaries only. Local GX data remains in `~/.gx`.
 
 ## Set An API Key
 
@@ -106,7 +104,7 @@ If your agent client supports tool policies, require approval for destructive re
 branch deletion.
 ```
 
-Installing the GX menu-bar app gives you the bundled `gx` CLI and `gx-mcp`.
+The installer gives you the `gx` CLI and `gx-mcp`.
 When a repo is initialized with `gx init`, GX
 installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
 hooks. They preserve durable GX revision IDs across normal Git commits and
@@ -123,11 +121,18 @@ git status                             # inspect with plain Git
 git push                               # push code; GX hook publishes sessions and PR summaries
 ```
 
-Useful review command:
+Useful review commands:
 
 ```bash
-gxr        # gx review
+gxr                                              # gx review, patch-focused
+gx review --repo "how does capture work?"        # ask about the codebase
+gx review --base origin/main --fail-on strong --no-publish   # CI gate
 ```
+
+`gx review` is read-only: it never runs `gx init`, writes `~/.gx`, or touches
+`.git/index`, so it is safe in CI and on a checkout you do not own. Under
+`--fail-on` it exits `3` when findings survive and `4` when nothing was
+reviewed. See [the reference](docs/reference/review.mdx) for the full surface.
 
 ## MCP
 

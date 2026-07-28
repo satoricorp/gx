@@ -50,6 +50,16 @@ type StagedSession struct {
 	AcceptorName  string
 	AcceptorEmail string
 	AttestedAt    int64
+
+	// SessionCwd is the working directory the agent session ran in, and
+	// SessionOrigin is the normalized git origin that directory resolved to.
+	// Together they answer which repository a session belongs to without
+	// reference to whether its work was ever committed or matched.
+	//
+	// SessionOrigin is stored normalized, never raw: a remote URL can carry a
+	// token, and the normalized form has credentials stripped.
+	SessionCwd    string
+	SessionOrigin string
 }
 
 // MaxUploadAttempts bounds how many times one staged row is re-sent.
@@ -97,6 +107,7 @@ type CaptureStager interface {
 	MarkExtractsShareableByID(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
 	MarkSessionsShareableByID(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
 	MarkSessionsShareableForSourcesOf(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
+	SessionOriginsByID(ctx context.Context, ids []string) (map[string]string, error)
 	MarkExtractUploaded(ctx context.Context, id string) error
 	MarkSessionUploaded(ctx context.Context, id string) error
 	RawSessions(ctx context.Context) ([]StagedSession, error)
@@ -213,9 +224,10 @@ func (s *CaptureStage) StageSession(ctx context.Context, row StagedSession) erro
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO capture_sessions (
 			id, session_id, tool, payload_json, raw_blob, source_path, source_bytes, source_mtime, bad_lines, created_at,
-			revision_id, content_hash, shareable_at, acceptor_name, acceptor_email, attested_at
+			revision_id, content_hash, shareable_at, acceptor_name, acceptor_email, attested_at,
+			session_cwd, session_origin
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			session_id = excluded.session_id,
 			tool = excluded.tool,
@@ -230,10 +242,13 @@ func (s *CaptureStage) StageSession(ctx context.Context, row StagedSession) erro
 			content_hash = excluded.content_hash,
 			uploaded_at = CASE WHEN excluded.content_hash IS capture_sessions.content_hash THEN capture_sessions.uploaded_at ELSE NULL END,
 			upload_error = CASE WHEN excluded.content_hash IS capture_sessions.content_hash THEN capture_sessions.upload_error ELSE NULL END,
-			upload_attempts = CASE WHEN excluded.content_hash IS capture_sessions.content_hash THEN COALESCE(capture_sessions.upload_attempts, 0) ELSE 0 END
+			upload_attempts = CASE WHEN excluded.content_hash IS capture_sessions.content_hash THEN COALESCE(capture_sessions.upload_attempts, 0) ELSE 0 END,
+			session_cwd = COALESCE(NULLIF(excluded.session_cwd, ''), capture_sessions.session_cwd),
+			session_origin = COALESCE(NULLIF(excluded.session_origin, ''), capture_sessions.session_origin)
 	`, row.ID, row.SessionID, row.Tool, row.PayloadJSON, nullBytes(row.RawBlob), nullString(row.SourcePath), nullInt64(row.SourceBytes), nullInt64(row.SourceMTime), nullInt(row.BadLines), created,
 		nullString(row.RevisionID), nullString(row.ContentHash),
-		nullInt64(row.ShareableAt), nullString(row.AcceptorName), nullString(row.AcceptorEmail), nullInt64(row.AttestedAt))
+		nullInt64(row.ShareableAt), nullString(row.AcceptorName), nullString(row.AcceptorEmail), nullInt64(row.AttestedAt),
+		nullString(row.SessionCwd), nullString(row.SessionOrigin))
 	if err != nil {
 		return fmt.Errorf("insert capture_session: %w", err)
 	}
@@ -319,6 +334,32 @@ func (s *CaptureStage) ShareableSessions(ctx context.Context) ([]StagedSession, 
 	}
 	defer rows.Close()
 	return scanSessionRows(rows)
+}
+
+// SessionOriginsByID returns the repository each staged session is bound to,
+// keyed by row id. Rows with no binding are present with an empty origin, so a
+// caller can tell "bound elsewhere" from "not bound at all" — those mean
+// different things to a gate.
+func (s *CaptureStage) SessionOriginsByID(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	list, args := placeholdersForStrings(ids)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, COALESCE(session_origin, '') FROM capture_sessions WHERE id IN (`+list+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, origin string
+		if err := rows.Scan(&id, &origin); err != nil {
+			return nil, err
+		}
+		out[id] = origin
+	}
+	return out, rows.Err()
 }
 
 // UploadFailures reports the staged rows whose last upload attempt failed.
@@ -601,7 +642,8 @@ func scanExtractRows(rows *sql.Rows) ([]StagedExtract, error) {
 const sessionColumns = `id, session_id, tool, payload_json, COALESCE(raw_blob, ''), COALESCE(source_path, ''),
 		COALESCE(source_bytes, 0), COALESCE(source_mtime, 0), COALESCE(bad_lines, 0), created_at,
 		COALESCE(revision_id, ''), COALESCE(content_hash, ''), COALESCE(shareable_at, 0),
-		COALESCE(acceptor_name, ''), COALESCE(acceptor_email, ''), COALESCE(attested_at, 0)`
+		COALESCE(acceptor_name, ''), COALESCE(acceptor_email, ''), COALESCE(attested_at, 0),
+		COALESCE(session_cwd, ''), COALESCE(session_origin, '')`
 
 func scanSessionRows(rows *sql.Rows) ([]StagedSession, error) {
 	var out []StagedSession
@@ -612,6 +654,7 @@ func scanSessionRows(rows *sql.Rows) ([]StagedSession, error) {
 			&row.SourceBytes, &row.SourceMTime, &row.BadLines, &row.CreatedAt,
 			&row.RevisionID, &row.ContentHash, &row.ShareableAt,
 			&row.AcceptorName, &row.AcceptorEmail, &row.AttestedAt,
+			&row.SessionCwd, &row.SessionOrigin,
 		); err != nil {
 			return nil, err
 		}

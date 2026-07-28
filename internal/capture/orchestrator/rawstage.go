@@ -10,6 +10,7 @@ import (
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/parsers"
+	"github.com/satoricorp/gx/internal/capture/repobind"
 	"github.com/satoricorp/gx/internal/storage"
 )
 
@@ -134,16 +135,22 @@ func stageSourceSession(
 	if err != nil {
 		return "", err
 	}
+	// Which repository this session belongs to, independent of whether any of
+	// its work was committed or matched. This is recorded, not enforced: the
+	// gate that uses it comes later.
+	binding := repobind.BindEvents(ctx, bindResolver, bindableEvents(session.Events))
 	row := storage.StagedSession{
-		SessionID:   session.SessionID,
-		Tool:        session.Tool,
-		PayloadJSON: payload,
-		SourcePath:  sourcePath,
-		SourceBytes: fp.bytes,
-		SourceMTime: fp.mtimeMS,
-		BadLines:    badLines,
-		RevisionID:  firstNonEmpty(revisionIDs),
-		ContentHash: fp.hash,
+		SessionID:     session.SessionID,
+		Tool:          session.Tool,
+		PayloadJSON:   payload,
+		SourcePath:    sourcePath,
+		SourceBytes:   fp.bytes,
+		SourceMTime:   fp.mtimeMS,
+		BadLines:      badLines,
+		RevisionID:    firstNonEmpty(revisionIDs),
+		ContentHash:   fp.hash,
+		SessionCwd:    binding.Dir,
+		SessionOrigin: binding.Origin,
 	}
 	row.ID = storage.SessionSourceRowID(session.Tool, sourcePath, session.SessionID)
 	if row.ID == "" {
@@ -153,6 +160,18 @@ func stageSourceSession(
 		return "", err
 	}
 	return row.ID, nil
+}
+
+// bindResolver caches directory lookups for the life of the process; a session
+// names its working directory on nearly every event.
+var bindResolver = repobind.NewResolver()
+
+func bindableEvents(events []capture.SessionEvent) []repobind.Event {
+	out := make([]repobind.Event, 0, len(events))
+	for _, e := range events {
+		out = append(out, e)
+	}
+	return out
 }
 
 func firstNonEmpty(values []string) string {

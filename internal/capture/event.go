@@ -27,6 +27,17 @@ type SessionEvent struct {
 	PromptContext string
 	Raw           map[string]json.RawMessage
 
+	// Cwd is the working directory the agent was in when this event happened,
+	// when the tool records one. It is what binds a session to a repository —
+	// and because Claude writes it per entry rather than once per session, a
+	// session that moves between repositories can be attributed per event
+	// rather than wholesale.
+	Cwd string
+	// OriginURL is a git remote the tool recorded itself. Codex writes one in
+	// its session_meta; most tools do not. It is a fallback for identifying a
+	// repository whose checkout no longer exists on this machine.
+	OriginURL string
+
 	// SourceIndex attributes the event to the source file that produced it
 	// (index into one parse run's source list). SessionID cannot serve here:
 	// Claude subagent transcripts share the parent's sessionId. Only
@@ -51,3 +62,13 @@ func (e SessionEvent) IsEditEvent() bool {
 		return false
 	}
 }
+
+// Directory reports the working directory the agent was in for this event, and
+// RecordedOrigin the git remote the tool recorded itself. Together they satisfy
+// the interface repobind uses to bind a session to a repository without that
+// package depending on this one.
+func (e SessionEvent) Directory() string { return e.Cwd }
+
+// RecordedOrigin is the remote URL the tool wrote into its own session record,
+// where it writes one.
+func (e SessionEvent) RecordedOrigin() string { return e.OriginURL }

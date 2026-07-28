@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -124,12 +123,12 @@ func ValidateOptions(opts Options) error {
 	return nil
 }
 
-// aiFindingsLanded reports whether any AI reviewer's findings reached this
-// report. The engine sets Reviewer to "heuristic+ai" exactly when they did, so
+// aiReviewRan reports whether a model actually reviewed this change. The engine
+// sets Reviewer to "heuristic+ai" exactly when a reviewer ran without error, so
 // this reads the one flag that already answers the question rather than
 // inferring it from the finding list, which cannot distinguish a model finding
-// from a rule finding.
-func (r Report) aiFindingsLanded() bool {
+// from a rule finding — nor a healthy review from one that never ran.
+func (r Report) aiReviewRan() bool {
 	return strings.Contains(r.Reviewer, "ai")
 }
 
@@ -142,8 +141,13 @@ func RenderMarkdown(report Report) string {
 	// about the very thing the reader is deciding how much to trust.
 	if len(report.DegradedReasons) > 0 {
 		reason := strings.Join(report.DegradedReasons, "; ")
-		if report.aiFindingsLanded() {
+		if report.aiReviewRan() && len(report.Findings) > 0 {
 			fmt.Fprintf(&b, "> Warning: the AI review ran degraded (%s); the findings below are real but this review saw less than a healthy one would.\n\n", reason)
+		} else if report.aiReviewRan() {
+			// A degraded review that found nothing is the case where "no issues"
+			// is least trustworthy, and the sentence above presupposes findings
+			// that are not there.
+			fmt.Fprintf(&b, "> Warning: the AI review ran degraded (%s); it saw less than a healthy one would, so treat \"no issues found\" with less confidence.\n\n", reason)
 		} else {
 			fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
 		}
@@ -560,11 +564,11 @@ type PackageFact struct {
 
 type LocalScanner struct{}
 
-func (LocalScanner) Scan(_ context.Context, repoRoot string, focus string) (RepoFacts, error) {
-	return scanRepo(repoRoot, focus)
+func (LocalScanner) Scan(ctx context.Context, repoRoot string, focus string) (RepoFacts, error) {
+	return scanRepo(ctx, repoRoot, focus)
 }
 
-func scanRepo(repoRoot, focus string) (RepoFacts, error) {
+func scanRepo(ctx context.Context, repoRoot, focus string) (RepoFacts, error) {
 	docs := []FilePresence{
 		{Path: "README.md", Present: exists(repoRoot, "README.md")},
 		{Path: "AGENTS.md", Present: exists(repoRoot, "AGENTS.md")},
@@ -572,7 +576,7 @@ func scanRepo(repoRoot, focus string) (RepoFacts, error) {
 		{Path: "docs/", Present: exists(repoRoot, "docs")},
 	}
 	facts := RepoFacts{Docs: docs}
-	if files, ok := gitTrackedFiles(repoRoot); ok {
+	if files, ok := gitTrackedFiles(ctx, repoRoot); ok {
 		for _, rel := range files {
 			if focus != "" && !inFocus(rel, focus) {
 				continue
@@ -667,9 +671,8 @@ func goPackages(files []string) []PackageFact {
 	return out
 }
 
-func gitTrackedFiles(repoRoot string) ([]string, bool) {
-	cmd := exec.Command("git", "ls-files")
-	cmd.Dir = repoRoot
+func gitTrackedFiles(ctx context.Context, repoRoot string) ([]string, bool) {
+	cmd := gitCommand(ctx, repoRoot, "ls-files")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -783,8 +786,7 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 	// unreviewed code out of the review without anything saying so. Listing the
 	// files individually is what makes them reviewable and what makes the
 	// coverage count true.
-	cmd := exec.CommandContext(ctx, "git", "status", "--short", "--untracked-files=all")
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "status", "--short", "--untracked-files=all")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {

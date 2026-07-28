@@ -624,33 +624,6 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	}
 }
 
-func TestAutoReportFailurePostsCommandError(t *testing.T) {
-	root := initGitRepo(t)
-	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GH_TOKEN", "token-one")
-	var gotReport cloud.ReportLogRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/reported-logs" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotReport); err != nil {
-			t.Fatalf("decode report body: %v", err)
-		}
-		_, _ = w.Write([]byte(`{"id":"report-1","url":"https://gx.run/reports/report-1"}`))
-	}))
-	defer server.Close()
-	t.Setenv("GX_CLOUD_URL", server.URL)
-
-	autoReportFailure(context.Background(), fmt.Errorf("push exploded"), "gx push")
-	if !strings.Contains(gotReport.Error, "gx push: push exploded") {
-		t.Fatalf("report error = %q, want command error", gotReport.Error)
-	}
-	if gotReport.GXVersion == "" || gotReport.OS == "" || gotReport.Arch == "" {
-		t.Fatalf("report metadata incomplete: %#v", gotReport)
-	}
-}
-
 func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 	cmd := NewRoot(context.Background())
 	cmd.SetArgs([]string{"review", "one prompt", "second prompt"})

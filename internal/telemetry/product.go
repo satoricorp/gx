@@ -12,6 +12,30 @@ import (
 	"github.com/satoricorp/gx/internal/version"
 )
 
+// stateWritesKey marks a context as belonging to a command that must not
+// create GX state on the machine.
+type stateWritesKeyType struct{}
+
+var stateWritesKey stateWritesKeyType
+
+// WithoutStateWrites marks ctx as read-only for the machine. Telemetry still
+// reports under it; it just never writes anything down to do so. `gx review`
+// runs as a CI gate and on checkouts the reviewer does not own, and minting a
+// machine ID to label an event would leave $GX_HOME behind on a machine that
+// never ran gx — buying an analytics dimension with the promise the command
+// makes.
+func WithoutStateWrites(ctx context.Context) context.Context {
+	return context.WithValue(ctx, stateWritesKey, true)
+}
+
+func stateWritesAllowed(ctx context.Context) bool {
+	if ctx == nil {
+		return true
+	}
+	blocked, _ := ctx.Value(stateWritesKey).(bool)
+	return !blocked
+}
+
 // EmitProductEvent sends low-cardinality product analytics when PostHog is configured.
 func EmitProductEvent(ctx context.Context, event string, properties map[string]any) {
 	if !Configured() {
@@ -22,6 +46,12 @@ func EmitProductEvent(ctx context.Context, event string, properties map[string]a
 
 func EmitInstallOnce(ctx context.Context) {
 	if !Configured() {
+		return
+	}
+	// The install event is remembered by writing a sentinel under $GX_HOME, so
+	// there is no way to send it without creating GX state. A command that
+	// promised not to skips it rather than sending the event and forgetting.
+	if !stateWritesAllowed(ctx) {
 		return
 	}
 	source := Entrypoint()
@@ -41,7 +71,7 @@ func EmitInstallOnce(ctx context.Context) {
 	_ = os.WriteFile(path, []byte("1\n"), 0o600)
 }
 
-func ProductProperties(properties map[string]any) map[string]any {
+func ProductProperties(ctx context.Context, properties map[string]any) map[string]any {
 	out := map[string]any{
 		"gx_version": version.Current(),
 		"entrypoint": Entrypoint(),
@@ -69,7 +99,17 @@ func ProductProperties(properties map[string]any) map[string]any {
 			}
 		}
 	} else if _, ok := out["distinct_id"]; !ok {
-		if machineID, err := cloud.DefaultMachineID(); err == nil && strings.TrimSpace(machineID) != "" {
+		// Signed out: fall back to the machine ID. Minting one writes
+		// machine_id.json and creates $GX_HOME, so a read-only command reads
+		// the existing ID and otherwise reports anonymously. The first command
+		// that legitimately writes GX state mints it for everyone after.
+		machineID, err := "", error(nil)
+		if stateWritesAllowed(ctx) {
+			machineID, err = cloud.DefaultMachineID()
+		} else {
+			machineID, err = cloud.ExistingMachineID()
+		}
+		if err == nil && strings.TrimSpace(machineID) != "" {
 			out["machine_id"] = strings.TrimSpace(machineID)
 			out["distinct_id"] = strings.TrimSpace(machineID)
 		}
@@ -95,9 +135,6 @@ func installSentinelPath(source string) (string, error) {
 func Entrypoint() string {
 	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
 		return "mcp"
-	}
-	if strings.TrimSpace(os.Getenv("GX_MENUBAR")) != "" {
-		return "menubar"
 	}
 	return "cli"
 }

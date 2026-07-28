@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -170,8 +169,7 @@ func rangeChangedFiles(ctx context.Context, repoRoot, refRange string) []string 
 	if repoRoot == "" || refRange == "" {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "--no-ext-diff", refRange)
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "diff", "--name-only", "--no-ext-diff", refRange)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -204,7 +202,6 @@ func refExists(ctx context.Context, repoRoot, ref string) bool {
 	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(ref) == "" {
 		return false
 	}
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
 	return cmd.Run() == nil
 }

@@ -33,7 +33,7 @@ func Install(opts InstallOptions) error {
 	}
 	gxPath := opts.GXPath
 	if gxPath == "" {
-		gxPath, err = os.Executable()
+		gxPath, err = installGXPath()
 		if err != nil {
 			return fmt.Errorf("resolve gx binary: %w", err)
 		}

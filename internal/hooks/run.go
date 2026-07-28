@@ -13,6 +13,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/capture/repobind"
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
@@ -80,6 +81,9 @@ type PushOutcome struct {
 	PublicationError string
 	ShareableExtract int
 	ShareableSession int
+	// WithheldSessions counts sessions this push staged but did not make
+	// shareable because they belong to a different repository.
+	WithheldSessions int
 	AttachedSessions int
 	UploadFailures   storage.CaptureUploadFailures
 	Publication      publication.Result
@@ -287,12 +291,23 @@ func markShareable(ctx context.Context, repoRoot string, outcome *PushOutcome, r
 		}
 		return n
 	}
+	// A session bound to a different repository is not this repository's to
+	// share. Discovery deliberately casts a wide net — any transcript that
+	// mentions this repo's path is a candidate — and content matching used to
+	// be the only thing throwing the others back. Binding is the gate that
+	// does not depend on whether a session's work was committed or matched.
+	//
+	// Only sessions bound *elsewhere* are withheld. A session with no binding
+	// keeps the previous behavior, so this can only ever share less.
+	shareableIDs, withheld := sessionsForThisRepo(ctx, stager, repoRoot, outcome.Result.StagedSessionIDs)
+	outcome.WithheldSessions += withheld
+
 	outcome.ShareableExtract += count(stager.MarkExtractsShareableByID(ctx, outcome.Result.StagedExtractIDs, att))
-	outcome.ShareableSession += count(stager.MarkSessionsShareableByID(ctx, outcome.Result.StagedSessionIDs, att))
+	outcome.ShareableSession += count(stager.MarkSessionsShareableByID(ctx, shareableIDs, att))
 	// Rows left behind by the older row-key scheme describe the very same
 	// transcripts this run just staged, so they carry the same attestation
 	// rather than sitting unshareable for the rest of time.
-	outcome.ShareableSession += count(stager.MarkSessionsShareableForSourcesOf(ctx, outcome.Result.StagedSessionIDs, att))
+	outcome.ShareableSession += count(stager.MarkSessionsShareableForSourcesOf(ctx, shareableIDs, att))
 	outcome.ShareableExtract += count(stager.MarkExtractShareable(ctx, revisionIDs, att))
 	outcome.ShareableSession += count(stager.MarkSessionShareable(ctx, revisionIDs, att))
 	return errors.Join(problems...)
@@ -378,4 +393,42 @@ func RefRangeForPush(localSHA, remoteSHA string) string {
 
 func backgroundWorkersEnabled() bool {
 	return os.Getenv("GX_DISABLE_BACKGROUND_WORKERS") == ""
+}
+
+// sessionsForThisRepo keeps the staged sessions that belong to the repository
+// being pushed, and reports how many were withheld because they belong to a
+// different one.
+//
+// The allowed set is the pushed repository's own origin. Sharing between
+// several repositories an organization has connected is a real requirement, but
+// only the server knows which repositories those are; until it can say, the
+// safe answer is the one repository we can prove is connected — this one, which
+// is being pushed through GX right now.
+func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repoRoot string, ids []string) ([]string, int) {
+	if len(ids) == 0 {
+		return ids, 0
+	}
+	binding := repobind.NewResolver().ForDirectory(ctx, repoRoot)
+	if !binding.Bound() {
+		// This repository has no identity of its own, so there is nothing to
+		// compare against and nothing is withheld.
+		return ids, 0
+	}
+	origins, err := stager.SessionOriginsByID(ctx, ids)
+	if err != nil {
+		// A gate that cannot read is not a reason to drop work on the floor;
+		// this narrows sharing, it is not the last line of defense.
+		return ids, 0
+	}
+	kept := make([]string, 0, len(ids))
+	withheld := 0
+	for _, id := range ids {
+		origin, known := origins[id]
+		if known && origin != "" && origin != binding.Origin {
+			withheld++
+			continue
+		}
+		kept = append(kept, id)
+	}
+	return kept, withheld
 }

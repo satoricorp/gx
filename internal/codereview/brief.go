@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -355,8 +354,7 @@ func diffForFile(ctx context.Context, repoRoot, refRange, file string) string {
 
 // rangeFileDiff diffs one file across a ref range, e.g. "main...HEAD".
 func rangeFileDiff(ctx context.Context, repoRoot, refRange, file string) string {
-	cmd := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", refRange, "--", file)
-	cmd.Dir = repoRoot
+	cmd := gitCommand(ctx, repoRoot, "diff", "--no-ext-diff", refRange, "--", file)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -372,8 +370,7 @@ func fileDiff(ctx context.Context, repoRoot, file string) string {
 		{"diff", "--no-ext-diff", "--", file},
 		{"diff", "--cached", "--no-ext-diff", "--", file},
 	} {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = repoRoot
+		cmd := gitCommand(ctx, repoRoot, args...)
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out

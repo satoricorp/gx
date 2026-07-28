@@ -44,7 +44,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 				return nil
 			}
 			inference.ApplyToEnvironment()
-			telemetry.EmitInstallOnce(ctx)
+			telemetry.EmitInstallOnce(commandTelemetryContext(ctx, cmd))
 			return ensureAutoInitializedRepo(ctx, engine, cmd)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -258,6 +258,11 @@ const (
 	// A gate that passes without looking is the false pass --fail-on exists to
 	// prevent, so an explicit gate treats "never looked" as a failure too.
 	reviewNothingToReviewExitCode = 4
+	// reviewDegradedExitCode means code was read but the review that read it was
+	// incomplete — no model ran, or only part of the subject reached one. Same
+	// reasoning as above: "no findings at or above X" is a claim about what was
+	// inspected, and a gate must not make it on a review that did not run.
+	reviewDegradedExitCode = 5
 )
 
 func newReviewCommand(ctx context.Context) *cobra.Command {
@@ -276,17 +281,14 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 		Short:   "Review changes based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Everything below runs under a context that forbids writing GX
+			// state, so review's own telemetry reports without minting a
+			// machine ID into a $GX_HOME that may not exist.
+			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
-			var runErr error
-			defer func() {
-				if runErr != nil {
-					autoReportFailure(ctx, runErr, "gx review")
-				}
-			}()
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
 			if err != nil {
-				runErr = err
-				return runErr
+				return err
 			}
 			reviewScope := ""
 			scopeExplicit := cmd.Flags().Changed("scope")
@@ -301,9 +303,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			// repo (or on a machine) that has never run `gx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				runErr = err
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
-				return runErr
+				return err
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
 				return codereview.Review(ctx, repo.RootPath, codereview.Options{
@@ -328,13 +329,11 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			}
 			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
-				runErr = err
-				return runErr
+				return err
 			}
 			if jsonOut {
 				if err := writeReviewJSON(cmd.OutOrStdout(), report); err != nil {
-					runErr = err
-					return runErr
+					return err
 				}
 			} else {
 				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
@@ -345,8 +344,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
 				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}
-			runErr = reviewGateError(report, failOnLevel)
-			return runErr
+			return reviewGateError(report, failOnLevel)
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
@@ -356,7 +354,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
-	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode))
+	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
 	return cmd
 }
@@ -383,11 +381,35 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 		}
 		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
 	}
+	// A degraded run is not a clean run with fewer findings. When no model ran,
+	// `findings` is whatever the deterministic checks produced — usually nothing
+	// once patch-focus filtering is applied — so the gate exited 0 and the pull
+	// request merged reporting a review that never happened. The rendered report
+	// says so in a banner, but an exit code is the only thing a CI step reads.
+	if reason := gateDegradedReason(report); reason != "" {
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx review: %s; refusing to pass a gate on an incomplete review", reason))
+	}
 	failures := report.GateFailures(level)
 	if len(failures) == 0 {
 		return nil
 	}
 	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx review: %d finding(s) at or above %q", len(failures), string(level)))
+}
+
+// gateDegradedReason states why this review cannot answer the gate's question,
+// or "" when it can. Both signals are already computed and rendered; no gate
+// path read either until now.
+func gateDegradedReason(report codereview.Report) string {
+	if len(report.DegradedReasons) > 0 {
+		return strings.Join(report.DegradedReasons, "; ")
+	}
+	if report.Coverage.Partial() {
+		if statement := strings.TrimSpace(report.Coverage.Statement()); statement != "" {
+			return statement
+		}
+		return "only part of the change was reviewed"
+	}
+	return ""
 }
 
 func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {

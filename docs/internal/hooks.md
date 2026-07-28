@@ -5,8 +5,7 @@ hooks. Together they stamp revision trailers, record commits, follow rewritten
 commit OIDs, and run capture before a push completes. Staged extracts and
 sessions are written to `~/.gx/gx.db` without network access.
 
-Installing the GX menu-bar app installs the bundled `gx` CLI and `gx-mcp`
-binary. It does not rewrite every repository immediately; each repo gets the
+Installing the GX CLI package provides `gx` and `gx-mcp`. It does not rewrite every repository immediately; each repo gets the
 Git hook when it is initialized with `gx init`, initialized automatically by
 the CLI or MCP.
 
