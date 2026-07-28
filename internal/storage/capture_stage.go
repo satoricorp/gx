@@ -107,6 +107,7 @@ type CaptureStager interface {
 	MarkExtractsShareableByID(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
 	MarkSessionsShareableByID(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
 	MarkSessionsShareableForSourcesOf(ctx context.Context, ids []string, att CaptureAttestation) (int, error)
+	SessionOriginsByID(ctx context.Context, ids []string) (map[string]string, error)
 	MarkExtractUploaded(ctx context.Context, id string) error
 	MarkSessionUploaded(ctx context.Context, id string) error
 	RawSessions(ctx context.Context) ([]StagedSession, error)
@@ -333,6 +334,32 @@ func (s *CaptureStage) ShareableSessions(ctx context.Context) ([]StagedSession, 
 	}
 	defer rows.Close()
 	return scanSessionRows(rows)
+}
+
+// SessionOriginsByID returns the repository each staged session is bound to,
+// keyed by row id. Rows with no binding are present with an empty origin, so a
+// caller can tell "bound elsewhere" from "not bound at all" — those mean
+// different things to a gate.
+func (s *CaptureStage) SessionOriginsByID(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	list, args := placeholdersForStrings(ids)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, COALESCE(session_origin, '') FROM capture_sessions WHERE id IN (`+list+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, origin string
+		if err := rows.Scan(&id, &origin); err != nil {
+			return nil, err
+		}
+		out[id] = origin
+	}
+	return out, rows.Err()
 }
 
 // UploadFailures reports the staged rows whose last upload attempt failed.
