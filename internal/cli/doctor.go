@@ -13,8 +13,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/satoricorp/gx/internal/auth"
 	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
 	"github.com/satoricorp/gx/internal/publication"
+	"github.com/satoricorp/gx/internal/semantic"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/vcs"
 )
@@ -89,6 +91,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 			capture := captureDoctorStatus(ctx, "")
 			printCaptureDoctor(out, capture)
 			reportAndDrainPublishOutbox(ctx, out)
+			reportCodeIndexFreshness(ctx, out, repoRootForDoctor(ctx))
 			printDoctorMissingBaseRefRepair(out, missingBaseRepair, missingBaseErr)
 			printDoctorStaleStacks(out, fix, stale, staleErr)
 			printDoctorMissingStackBaseRefs(out, fix, missingBase, missingDetectErr, missingBaseRepair, missingBaseErr)
@@ -756,4 +759,93 @@ func writeJSON(cmd *cobra.Command, value any) error {
 	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+// reportCodeIndexFreshness surfaces how far the local code index has drifted
+// from the checkout.
+//
+// `gx review` retrieves from this index, and a stale one fails silently: the
+// query succeeds, returns chunks for code that has since changed, and the
+// review reads as fully informed. Measured on this repository, an index 30 days
+// behind HEAD scored 0.000 recall on every query targeting code written after
+// the indexed commit — vector, BM25 and hybrid alike. Retrieval strategy cannot
+// compensate for an index that does not contain the code, so doctor reports the
+// drift rather than leaving it to be inferred from a disappointing review.
+func reportCodeIndexFreshness(ctx context.Context, w io.Writer, repoRoot string) {
+	if strings.TrimSpace(repoRoot) == "" {
+		return
+	}
+	orgID := ""
+	if creds, ok := auth.LoadUpload(); ok {
+		orgID = strings.TrimSpace(creds.OrgID)
+	}
+	identity := semantic.ResolveRepoIdentity(ctx, repoRoot, orgID, "")
+
+	statePath, err := semantic.RepoIndexStatePath(identity.Namespace)
+	if err != nil {
+		fmt.Fprintln(w, labelWarningValue("Code index", "check skipped: "+err.Error()))
+		return
+	}
+	state := semantic.LoadRepoIndexState(statePath)
+	if state == nil {
+		fmt.Fprintln(w, labelWarningValue("Code index",
+			"not indexed ("+identity.Namespace+"); run `gx index` so review can retrieve from this repository"))
+		return
+	}
+
+	head := currentHeadCommit(ctx, repoRoot)
+	age := codeIndexAge(state.UpdatedAt)
+
+	// A matching commit is the only state that proves the index describes the
+	// checkout. Age alone is not a fault: an untouched repository stays correct
+	// however long it sits.
+	if head != "" && state.CommitID == head {
+		fmt.Fprintln(w, labelValue("Code index", success("ok")+": current at "+shortCommit(head)+age))
+		return
+	}
+	detail := "stale"
+	if state.CommitID != "" && head != "" {
+		detail += ": indexed at " + shortCommit(state.CommitID) + ", HEAD is " + shortCommit(head)
+	}
+	detail += age + "; run `gx index` to refresh"
+	fmt.Fprintln(w, labelWarningValue("Code index", detail))
+}
+
+// codeIndexAge renders " (N days old)" and nothing at all when the timestamp is
+// missing or younger than a day, so a fresh index stays quiet.
+func codeIndexAge(updatedAtMS int64) string {
+	if updatedAtMS <= 0 {
+		return ""
+	}
+	days := int(time.Since(time.UnixMilli(updatedAtMS)).Hours() / 24)
+	if days < 1 {
+		return ""
+	}
+	if days == 1 {
+		return " (1 day old)"
+	}
+	return fmt.Sprintf(" (%d days old)", days)
+}
+
+func shortCommit(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
+// repoRootForDoctor resolves the repository doctor is inspecting. Doctor runs
+// outside a repository too, where an empty root simply skips the repo-scoped
+// sections rather than failing the whole diagnosis.
+func repoRootForDoctor(ctx context.Context) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	repo, err := vcs.NewService().ResolveGXRepoAtPath(ctx, cwd)
+	if err != nil {
+		return ""
+	}
+	return repo.RootPath
 }
