@@ -123,12 +123,12 @@ func ValidateOptions(opts Options) error {
 	return nil
 }
 
-// aiFindingsLanded reports whether any AI reviewer's findings reached this
-// report. The engine sets Reviewer to "heuristic+ai" exactly when they did, so
+// aiReviewRan reports whether a model actually reviewed this change. The engine
+// sets Reviewer to "heuristic+ai" exactly when a reviewer ran without error, so
 // this reads the one flag that already answers the question rather than
 // inferring it from the finding list, which cannot distinguish a model finding
-// from a rule finding.
-func (r Report) aiFindingsLanded() bool {
+// from a rule finding — nor a healthy review from one that never ran.
+func (r Report) aiReviewRan() bool {
 	return strings.Contains(r.Reviewer, "ai")
 }
 
@@ -141,8 +141,13 @@ func RenderMarkdown(report Report) string {
 	// about the very thing the reader is deciding how much to trust.
 	if len(report.DegradedReasons) > 0 {
 		reason := strings.Join(report.DegradedReasons, "; ")
-		if report.aiFindingsLanded() {
+		if report.aiReviewRan() && len(report.Findings) > 0 {
 			fmt.Fprintf(&b, "> Warning: the AI review ran degraded (%s); the findings below are real but this review saw less than a healthy one would.\n\n", reason)
+		} else if report.aiReviewRan() {
+			// A degraded review that found nothing is the case where "no issues"
+			// is least trustworthy, and the sentence above presupposes findings
+			// that are not there.
+			fmt.Fprintf(&b, "> Warning: the AI review ran degraded (%s); it saw less than a healthy one would, so treat \"no issues found\" with less confidence.\n\n", reason)
 		} else {
 			fmt.Fprintf(&b, "> Warning: AI review unavailable (%s); results are from deterministic checks only.\n\n", reason)
 		}
