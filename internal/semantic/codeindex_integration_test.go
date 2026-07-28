@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // requireLiveIndexingCredentials skips unless real keys are present. Nothing in
@@ -14,6 +16,11 @@ import (
 // prefixed gx-eval- and deleted before the test returns.
 func requireLiveIndexingCredentials(t *testing.T) Config {
 	t.Helper()
+	// This test writes to a real TurboPuffer account and embeds through the
+	// real OpenAI API. It cleans its scratch namespaces up, but a run that dies
+	// between the upsert and the cleanup leaves them behind, so arming it on
+	// nothing more than an exported key is not a decision anyone made.
+	gxtest.RequireNoNetwork(t)
 	if strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")) == "" {
 		t.Skip("TURBOPUFFER_API_KEY is not set; skipping live indexing test")
 	}

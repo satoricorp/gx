@@ -251,6 +251,15 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	}))
 	defer server.Close()
 	t.Setenv("GX_CLOUD_URL", server.URL)
+	// `gx doctor` checks the saved GitHub token against GitHub's user endpoint,
+	// which sent this test to api.github.com on every run with a token it had
+	// just invented. The endpoint is a separate override from GX_GITHUB_API_URL,
+	// so pointing that one at a fake is not enough.
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"login":"octocat","id":583231}`))
+	}))
+	defer github.Close()
+	t.Setenv("GX_GITHUB_USER_URL", github.URL)
 
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -344,6 +353,28 @@ func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
 	}
 }
 
+// narrowPathToGit leaves git on PATH and nothing else.
+//
+// `gx init` registers the GX MCP server with every agent CLI it finds installed
+// by running it (`claude mcp add gx …`, `cursor mcp add gx …`). On a developer's
+// machine those resolve to the real binaries, so this test was launching the
+// developer's own Claude Code — which calls home to api.anthropic.com — as a
+// side effect of asserting that `gx init -y` prints nothing. What the test means
+// by a default machine is one with no agent CLI installed, and this is how to
+// say that rather than inherit whatever the author happened to have.
+func narrowPathToGit(t *testing.T) {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("locate git: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(git, filepath.Join(dir, "git")); err != nil {
+		t.Fatalf("link git into the test PATH: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
+
 func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	root := initGitRepo(t)
 	runGitTest(t, root, "config", "user.name", "Joe Example")
@@ -354,6 +385,7 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	narrowPathToGit(t)
 
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer

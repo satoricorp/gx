@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // `gx review` has to be usable as a CI gate and on a checkout the reviewer
@@ -16,6 +18,17 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	commitOnBranch(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
+
+	// Every other review test runs without credentials, which would make this
+	// one vacuous: the biggest thing review can leave on a machine is the code
+	// index manifest, and the refresh that writes it does not even start
+	// without a key. So this test alone is given credentials and a backend that
+	// answers successfully. A dead endpoint would not do — the test would then
+	// pass because the network failed rather than because review kept its hands
+	// off the machine, which is exactly how this assertion came to be satisfied
+	// by accident.
+	backend := gxtest.NewIndexBackend(t)
+	backend.Use(t)
 
 	// Point GX_HOME and HOME at paths that do not exist yet: anything that
 	// opens the store or writes config has to create them, which makes the
@@ -35,6 +48,13 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	}
 	if strings.TrimSpace(out) == "" {
 		t.Fatalf("gx review produced no report in an uninitialized repo")
+	}
+	// The refresh has to have actually run, or the assertions below are about a
+	// code path that never executed. This is the CI shape — no GX home, so the
+	// manifest goes somewhere disposable — and the point is that indexing still
+	// happens there.
+	if !backend.Upserted() {
+		t.Fatalf("gx review indexed nothing on a machine with no GX home; CI would review against a stale index.\nrequests: %v", backend.Requests())
 	}
 
 	if after := hookDirEntries(t, hooksDir); !equalStrings(before, after) {

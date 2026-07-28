@@ -8,13 +8,25 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
+// TestMain disables the model paths and cuts the package off from the network.
+//
+// The three kill switches below only ever covered the paths that call a model.
+// Retrieval is reached from BuildReviewBrief regardless of GX_REVIEW_AI, so on
+// a developer's machine — where OPENAI_API_KEY and TURBOPUFFER_API_KEY are
+// exported — every test here that reviewed a non-empty repository embedded that
+// repository through the real embeddings API and upserted it into the
+// production TurboPuffer account. gxtest.DenyNetwork closes that by clearing
+// the credentials, and reports anything that dials out anyway.
 func TestMain(m *testing.M) {
+	egress := gxtest.DenyNetwork()
 	_ = os.Setenv("GX_REVIEW_AI", "0")
 	_ = os.Setenv("GX_REVIEW_JUDGE", "0")
 	_ = os.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	os.Exit(m.Run())
+	os.Exit(gxtest.FailOnEgress(m.Run(), egress()))
 }
 
 func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {

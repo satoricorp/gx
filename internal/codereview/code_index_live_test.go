@@ -6,12 +6,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // requireLiveRetrievalCredentials skips unless real keys are present. These
 // tests only read; they create nothing and delete nothing.
 func requireLiveRetrievalCredentials(t *testing.T) {
 	t.Helper()
+	// Checking only for keys is not a guard: it arms this test on the machine
+	// of everyone who has them exported, which is everyone working on GX.
+	gxtest.RequireNoNetwork(t)
 	if strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")) == "" {
 		t.Skip("TURBOPUFFER_API_KEY is not set; skipping live retrieval test")
 	}

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // liveJudgeRequest is the fixed three-candidate probe the live tests share: one
@@ -60,6 +62,9 @@ func liveJudgeRequest() judgeRequest {
 // skips when this machine cannot reach Bedrock.
 func liveJudgeVerdicts(t *testing.T) (bedrockCompletion, []judgeResult, judgeRequest) {
 	t.Helper()
+	// Billable Bedrock inference, so reaching it has to be asked for rather
+	// than inherited from whichever AWS profile the shell happens to carry.
+	gxtest.RequireNoNetwork(t)
 	if _, err := bedrockCredentialsFromEnv(); err != nil {
 		t.Skipf("no AWS credentials; skipping live judge test (%v)", err)
 	}

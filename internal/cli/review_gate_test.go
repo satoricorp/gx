@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -44,6 +46,46 @@ func setReviewGateEnv(t *testing.T) {
 	t.Setenv("GX_REVIEW_RESOURCES", "0")
 	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
 	t.Setenv("GX_REVIEW_HISTORY_CONTEXT", "0")
+	denyReviewNetwork(t)
+}
+
+// denyReviewNetwork makes a review test hermetic.
+//
+// These tests inherit the developer's shell, and a developer working on GX has
+// OPENAI_API_KEY and TURBOPUFFER_API_KEY exported. Every review network path is
+// gated on those keys being present, so with them exported the gate tests were
+// not testing the offline path at all: each one embedded the fixture repository
+// through the real embeddings API and upserted it into the production
+// TurboPuffer account. The namespace is derived from the fixture's temp
+// directory (semantic.NamespaceForRepo), so every `go test ./internal/cli` run
+// created a brand new `gx-local-*` namespace that nothing would ever delete.
+//
+// Clearing the credentials is the mechanism rather than a per-feature kill
+// switch such as GX_REVIEW_CODE_INDEX=0, because it shuts every door at once:
+// a retriever added tomorrow is off here for the same reason it is off in CI,
+// without anyone having to remember to add its switch to this list.
+//
+// The endpoints then point at a tripwire instead of a dead port, so a path that
+// dials out despite having no credentials fails the test by name rather than
+// hanging on a connect timeout and being read as slowness.
+func denyReviewNetwork(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"OPENAI_API_KEY",
+		"GX_OPENAI_API_KEY",
+		"TURBOPUFFER_API_KEY",
+		"ANTHROPIC_API_KEY",
+		"GX_TPUF_NAMESPACE",
+	} {
+		t.Setenv(key, "")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("review test called %s %s; review tests must not reach a real API", r.Method, r.URL.Path)
+		http.Error(w, "network denied in tests", http.StatusForbidden)
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("GX_OPENAI_BASE_URL", server.URL)
+	t.Setenv("GX_TPUF_BASE_URL", server.URL)
 }
 
 func runReviewCommand(t *testing.T, args ...string) (string, error) {

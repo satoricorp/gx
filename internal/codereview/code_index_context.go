@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/satoricorp/gx/internal/auth"
 	"github.com/satoricorp/gx/internal/semantic"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 const (
@@ -298,13 +300,39 @@ func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
 	if !cfg.Enabled || cfg.OpenAIAPIKey == "" || cfg.TurboPufferAPIKey == "" {
 		return
 	}
-	refreshCtx, cancel := context.WithTimeout(ctx, codeIndexRefreshTimeout)
-	defer cancel()
-	result, err := semantic.EnsureRepositoryIndex(refreshCtx, semantic.RepoIndexOptions{
+	options := semantic.RepoIndexOptions{
 		RepoRoot: repoRoot,
 		OrgID:    reviewOrgID(),
 		Reason:   "review",
-	})
+	}
+	// What makes indexing incremental is a manifest of content hashes, and it
+	// lives under the GX home. A machine that has never run `gx init` has no GX
+	// home, and review must not create one: it runs as a CI gate and on
+	// checkouts the reviewer does not own, where leaving state behind is not
+	// ours to do — the same rule that keeps review out of .git/hooks.
+	//
+	// The manifest is only a cache, so the answer is to put it somewhere
+	// disposable rather than to skip. CI is precisely where the code is newest
+	// and the index most likely to be stale, which makes it the last place a
+	// refresh should be turned off. The cost is that a run with no manifest to
+	// reuse re-embeds the whole checkout, which is the honest price of indexing
+	// a machine that keeps nothing between runs.
+	if !gxHomeExists() {
+		dir, err := os.MkdirTemp("", "gx-review-index-")
+		if err != nil {
+			log.Record(EvidenceStatus{
+				Source: codeIndexEvidenceSource,
+				State:  EvidenceUnavailable,
+				Detail: fmt.Sprintf("index refresh skipped: no GX home and no temporary directory for the manifest: %v", err),
+			})
+			return
+		}
+		defer os.RemoveAll(dir)
+		options.StatePath = filepath.Join(dir, "manifest.json")
+	}
+	refreshCtx, cancel := context.WithTimeout(ctx, codeIndexRefreshTimeout)
+	defer cancel()
+	result, err := semantic.EnsureRepositoryIndex(refreshCtx, options)
 	if err != nil {
 		log.Record(EvidenceStatus{
 			Source: codeIndexEvidenceSource,
@@ -323,6 +351,17 @@ func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
 		Detail: fmt.Sprintf("index refreshed before retrieval: %d of %d files reindexed, %d chunks upserted, %d deleted",
 			result.FilesIndexed, result.FilesScanned, result.ChunksUpserted, result.ChunksDeleted),
 	})
+}
+
+// gxHomeExists reports whether this machine already has a GX home. It is
+// deliberately a read: resolving the directory must not be what creates it.
+func gxHomeExists() bool {
+	dir, err := storage.DefaultDir()
+	if err != nil || strings.TrimSpace(dir) == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
 }
 
 // codeIndexTargets resolves the namespaces that may hold this repository's
