@@ -49,12 +49,12 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	if strings.TrimSpace(out) == "" {
 		t.Fatalf("gx review produced no report in an uninitialized repo")
 	}
-	// The refresh has to have actually run, or the assertions below are about a
-	// code path that never executed. This is the CI shape — no GX home, so the
-	// manifest goes somewhere disposable — and the point is that indexing still
-	// happens there.
-	if !backend.Upserted() {
-		t.Fatalf("gx review indexed nothing on a machine with no GX home; CI would review against a stale index.\nrequests: %v", backend.Requests())
+	// Indexing is GX Cloud's job, done on merge from the GitHub App. A review on
+	// a machine with no GX home reads that index; it must not write one, which
+	// would mean both re-embedding the whole checkout and leaving a manifest
+	// behind.
+	if backend.Upserted() {
+		t.Fatalf("gx review indexed from a checkout with no GX home.\nrequests: %v", backend.Requests())
 	}
 
 	if after := hookDirEntries(t, hooksDir); !equalStrings(before, after) {

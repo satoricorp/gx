@@ -40,26 +40,33 @@ func TestRefreshCodeIndexHonoursKillSwitch(t *testing.T) {
 	}
 }
 
-// TestRefreshCodeIndexWithoutAGXHomeStillIndexes pins the CI case: a machine
-// with no GX home must still get a fresh index.
+// TestRefreshCodeIndexSkipsWithoutAGXHome pins that review does not index on a
+// machine that has never run `gx init` — the CI shape.
 //
-// CI is where the code is newest and the index most likely to be stale, so it
-// is the last place a refresh should be turned off. The manifest is only a
-// cache, so a machine that keeps nothing between runs gets a disposable one
-// rather than no refresh.
-func TestRefreshCodeIndexWithoutAGXHomeStillIndexes(t *testing.T) {
+// Keeping a repository indexed is GX Cloud's job, done on merge from the GitHub
+// App, so it covers every user rather than only those whose CI happens to carry
+// credentials. Review on such a machine reads that index and does not try to
+// maintain one: it must neither create a GX home for the manifest nor index
+// without one, because a run with no manifest re-embeds everything and can
+// never delete rows for files that are gone.
+func TestRefreshCodeIndexSkipsWithoutAGXHome(t *testing.T) {
 	backend := gxtest.NewIndexBackend(t)
 	backend.Use(t)
 	gxHome := filepath.Join(t.TempDir(), "absent")
 	t.Setenv("GX_HOME", gxHome)
 
-	refreshCodeIndex(context.Background(), indexableRepo(t), &EvidenceLog{})
+	log := &EvidenceLog{}
+	refreshCodeIndex(context.Background(), indexableRepo(t), log)
 
-	if !backend.Upserted() {
-		t.Fatalf("no rows upserted; the refresh was skipped on a machine with no GX home.\nrequests: %v", backend.Requests())
+	if backend.Upserted() {
+		t.Fatalf("review indexed on a machine with no GX home; that is GX Cloud's job now.\nrequests: %v", backend.Requests())
 	}
 	if _, err := os.Stat(gxHome); !os.IsNotExist(err) {
-		t.Fatalf("refresh created %s (stat error = %v); the manifest must go somewhere disposable", gxHome, err)
+		t.Fatalf("refresh created %s (stat error = %v), want it untouched", gxHome, err)
+	}
+	statuses := log.Statuses()
+	if len(statuses) != 1 || statuses[0].State != EvidenceUnavailable {
+		t.Fatalf("Statuses() = %#v, want one status explaining why the index may be stale", statuses)
 	}
 }
 

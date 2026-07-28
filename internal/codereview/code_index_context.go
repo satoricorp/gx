@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -300,39 +299,39 @@ func refreshCodeIndex(ctx context.Context, repoRoot string, log *EvidenceLog) {
 	if !cfg.Enabled || cfg.OpenAIAPIKey == "" || cfg.TurboPufferAPIKey == "" {
 		return
 	}
-	options := semantic.RepoIndexOptions{
-		RepoRoot: repoRoot,
-		OrgID:    reviewOrgID(),
-		Reason:   "review",
-	}
 	// What makes indexing incremental is a manifest of content hashes, and it
 	// lives under the GX home. A machine that has never run `gx init` has no GX
 	// home, and review must not create one: it runs as a CI gate and on
 	// checkouts the reviewer does not own, where leaving state behind is not
 	// ours to do — the same rule that keeps review out of .git/hooks.
 	//
-	// The manifest is only a cache, so the answer is to put it somewhere
-	// disposable rather than to skip. CI is precisely where the code is newest
-	// and the index most likely to be stale, which makes it the last place a
-	// refresh should be turned off. The cost is that a run with no manifest to
-	// reuse re-embeds the whole checkout, which is the honest price of indexing
-	// a machine that keeps nothing between runs.
+	// Refreshing anyway with a throwaway manifest was tried and removed. A
+	// machine that keeps nothing between runs has nothing to be incremental
+	// against, so every CI review re-embedded the whole checkout; worse, the
+	// deletion pass is computed from the previous manifest, so a run without
+	// one removes nothing and leaves rows for deleted files in the namespace
+	// forever — the "retrieval answers with code that no longer exists" failure
+	// this refresh exists to prevent, arriving by another route.
+	//
+	// Keeping a repository indexed is the server's job: GX Cloud re-indexes on
+	// merge, from the GitHub App, for every user rather than only those running
+	// CI with credentials. A checkout with no GX home reads that index and does
+	// not try to maintain one.
 	if !gxHomeExists() {
-		dir, err := os.MkdirTemp("", "gx-review-index-")
-		if err != nil {
-			log.Record(EvidenceStatus{
-				Source: codeIndexEvidenceSource,
-				State:  EvidenceUnavailable,
-				Detail: fmt.Sprintf("index refresh skipped: no GX home and no temporary directory for the manifest: %v", err),
-			})
-			return
-		}
-		defer os.RemoveAll(dir)
-		options.StatePath = filepath.Join(dir, "manifest.json")
+		log.Record(EvidenceStatus{
+			Source: codeIndexEvidenceSource,
+			State:  EvidenceUnavailable,
+			Detail: "index refresh skipped: no GX home on this machine to record the index manifest, so retrieval will use whatever GX Cloud has indexed for this repository",
+		})
+		return
 	}
 	refreshCtx, cancel := context.WithTimeout(ctx, codeIndexRefreshTimeout)
 	defer cancel()
-	result, err := semantic.EnsureRepositoryIndex(refreshCtx, options)
+	result, err := semantic.EnsureRepositoryIndex(refreshCtx, semantic.RepoIndexOptions{
+		RepoRoot: repoRoot,
+		OrgID:    reviewOrgID(),
+		Reason:   "review",
+	})
 	if err != nil {
 		log.Record(EvidenceStatus{
 			Source: codeIndexEvidenceSource,
