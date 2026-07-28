@@ -52,20 +52,27 @@ type RunOptions struct {
 // set for the pushed range. Both are populated as rows are written, so they
 // still describe a run that failed partway.
 type Result struct {
-	RefRange          string             `json:"refRange"`
-	EligibleHunks     int                `json:"eligibleHunks"`
-	EligibleEvents    int                `json:"eligibleEvents"`
-	HunkCoverage      float64            `json:"hunkCoverage"`
-	Tier1Hunks        int                `json:"tier1Hunks"`
-	Tier2Hunks        int                `json:"tier2Hunks"`
-	HunkLinks         []matcher.HunkLink `json:"hunkLinks"`
-	StagedExtractID   string             `json:"stagedExtractID,omitempty"`
-	StagedExtractIDs  []string           `json:"stagedExtractIDs,omitempty"`
-	StagedSessionIDs  []string           `json:"stagedSessionIDs,omitempty"`
-	StagedSessions    int                `json:"stagedSessions"`
-	Tools             []string           `json:"tools"`
-	DiscoveryProblems []string           `json:"discoveryProblems,omitempty"`
-	UploadError       string             `json:"uploadError,omitempty"`
+	RefRange         string             `json:"refRange"`
+	EligibleHunks    int                `json:"eligibleHunks"`
+	EligibleEvents   int                `json:"eligibleEvents"`
+	HunkCoverage     float64            `json:"hunkCoverage"`
+	Tier1Hunks       int                `json:"tier1Hunks"`
+	Tier2Hunks       int                `json:"tier2Hunks"`
+	HunkLinks        []matcher.HunkLink `json:"hunkLinks"`
+	StagedExtractID  string             `json:"stagedExtractID,omitempty"`
+	StagedExtractIDs []string           `json:"stagedExtractIDs,omitempty"`
+	StagedSessionIDs []string           `json:"stagedSessionIDs,omitempty"`
+	StagedSessions   int                `json:"stagedSessions"`
+	// AttributionSuspect marks a run that found agent sessions and committed
+	// work but linked none of it. That combination is not evidence the change
+	// was written by hand — it is the signature of session data that was not
+	// on disk yet when capture read it, and it used to print as a clean
+	// `sessions=0 coverage=0.0%`, which reads like an answer rather than a
+	// gap.
+	AttributionSuspect bool     `json:"attributionSuspect,omitempty"`
+	Tools              []string `json:"tools"`
+	DiscoveryProblems  []string `json:"discoveryProblems,omitempty"`
+	UploadError        string   `json:"uploadError,omitempty"`
 }
 
 // StagedExtract is the redacted extract payload written to SQLite.
@@ -213,15 +220,16 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	matchedAgents := len(matchResult.MatchedEvents)
 
 	result := Result{
-		RefRange:          refRange,
-		EligibleHunks:     len(eligibleHunks),
-		EligibleEvents:    len(eligibleEvents),
-		HunkCoverage:      coverage,
-		Tier1Hunks:        t1,
-		Tier2Hunks:        t2,
-		HunkLinks:         hunkLinks,
-		Tools:             tools,
-		DiscoveryProblems: discovery.ProblemStrings(),
+		RefRange:           refRange,
+		EligibleHunks:      len(eligibleHunks),
+		EligibleEvents:     len(eligibleEvents),
+		HunkCoverage:       coverage,
+		Tier1Hunks:         t1,
+		Tier2Hunks:         t2,
+		HunkLinks:          hunkLinks,
+		Tools:              tools,
+		DiscoveryProblems:  discovery.ProblemStrings(),
+		AttributionSuspect: attributionSuspect(len(eligibleHunks), len(discovered), len(hunkLinks)),
 	}
 
 	redactedEvents := redactEvents(eligibleEvents)
@@ -501,4 +509,20 @@ func filterEvents(events []capture.SessionEvent, ex *exclude.Matcher, sinceMS, u
 		out = append(out, ev)
 	}
 	return out
+}
+
+// attributionSuspect reports a run that had everything it needed and still
+// linked nothing.
+//
+// Capture parses the agent's transcript while the agent is still writing it.
+// A push that happens mid-session can read a file that is missing the very
+// work being pushed, and the run then reports zero coverage — indistinguishable
+// from a change genuinely written by hand. Truncating a real transcript
+// reproduces it exactly: at ~70% of its eventual size the same ref range
+// scores 0.0%, at 90% it scores 50.0%.
+//
+// Committed work plus discovered sessions plus no links at all is that shape,
+// so callers can say so instead of reporting an absence of agent work.
+func attributionSuspect(eligibleHunks, discoveredSessions, hunkLinks int) bool {
+	return eligibleHunks > 0 && discoveredSessions > 0 && hunkLinks == 0
 }

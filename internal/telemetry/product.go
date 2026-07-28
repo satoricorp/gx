@@ -136,8 +136,5 @@ func Entrypoint() string {
 	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
 		return "mcp"
 	}
-	if strings.TrimSpace(os.Getenv("GX_MENUBAR")) != "" {
-		return "menubar"
-	}
 	return "cli"
 }

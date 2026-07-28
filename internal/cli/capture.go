@@ -130,6 +130,16 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 					outcome.ShareableExtract,
 					outcome.ShareableSession,
 				)
+				// Zero coverage with sessions on disk and work in the range is
+				// not a hand-written change; it is capture reading a
+				// transcript the agent had not finished writing. Say so, or
+				// the staging line reads as a verdict on the change.
+				if result.AttributionSuspect {
+					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Warning", fmt.Sprintf(
+						"found agent sessions but linked none of %d changed hunk(s); session data was likely still being written. Re-run once the session settles: gx capture push --repo %s --ref-range %s",
+						result.EligibleHunks, repoRoot, result.RefRange,
+					)))
+				}
 			}
 			if outcome.Publication.Queued {
 				fmt.Fprintf(cmd.OutOrStdout(), "publication queued id=%s\n", outcome.Publication.QueueID)

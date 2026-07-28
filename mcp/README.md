@@ -91,7 +91,7 @@ For cloud auth, log in once with GitHub:
 gx auth login
 ```
 
-The GX menu-bar app installs the bundled `gx` CLI and `gx-mcp` binary. Repo Git
+The installer provides the `gx` CLI and `gx-mcp` binary. Repo Git
 hooks are installed when a repo is initialized with `gx init`; the `gx_review`
 MCP tool is read-only — it never initializes a repo, never writes `~/.gx`,
 never touches `.git/index`, and never publishes. The `pre-push` hook runs `gx capture push` for
@@ -101,7 +101,7 @@ the pushed ref range, stages captured Claude/Codex/Cursor session context in
 Development stdio:
 
 ```bash
-GX_BINARY="$PWD/../apps/menubar/bin/gx" bun run start
+GX_BINARY="$(command -v gx)" bun run start
 ```
 
 ## Scripts
