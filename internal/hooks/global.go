@@ -165,7 +165,7 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 
 	gxPath := strings.TrimSpace(opts.GXPath)
 	if gxPath == "" {
-		gxPath, err = os.Executable()
+		gxPath, err = installGXPath()
 		if err != nil {
 			return result, fmt.Errorf("resolve gx binary: %w", err)
 		}
