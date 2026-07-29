@@ -239,7 +239,6 @@ func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 		Namespaces: []codeIndexTarget{
 			{Namespace: "gx-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
 			{Namespace: "gx-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
-			{Namespace: "repo-satoricorp-yeet", Origin: semantic.NamespaceOriginConsole},
 		},
 		Limit:       10,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
@@ -260,7 +259,7 @@ func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 	for _, status := range in.Evidence.Statuses() {
 		namespaces = append(namespaces, status.Namespace)
 	}
-	if len(namespaces) != 3 {
+	if len(namespaces) != 2 {
 		t.Fatalf("statuses = %v, want every searched namespace reported", namespaces)
 	}
 }
@@ -382,18 +381,6 @@ func TestCodeIndexRetrieverReportsStaleIndex(t *testing.T) {
 	statuses := in.Evidence.Statuses()
 	if len(statuses) != 1 || !strings.Contains(statuses[0].Detail, "day(s) ago") {
 		t.Fatalf("statuses = %#v, want the index age reported", statuses)
-	}
-}
-
-func TestConsoleCodeIndexNamespace(t *testing.T) {
-	if got := semantic.ConsoleNamespaceForRepo("satoricorp/gx"); got != "repo-satoricorp-gx" {
-		t.Fatalf("ConsoleNamespaceForRepo = %q", got)
-	}
-	if got := semantic.ConsoleNamespaceForRepo(""); got != "" {
-		t.Fatalf("ConsoleNamespaceForRepo(empty) = %q, want empty", got)
-	}
-	if got := semantic.ConsoleNamespaceForRepo("nosllash"); got != "" {
-		t.Fatalf("ConsoleNamespaceForRepo(no owner) = %q, want empty", got)
 	}
 }
 

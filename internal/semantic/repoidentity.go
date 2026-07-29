@@ -74,7 +74,6 @@ const (
 	// NamespaceOriginPreRemote is the name this repository's index was written
 	// under before the checkout gained a git remote.
 	NamespaceOriginPreRemote = "gx code index (pre-remote name)"
-	NamespaceOriginConsole   = "GX Cloud code index"
 )
 
 // ResolveRepoIdentity derives a repository's identity from its checkout.
@@ -100,11 +99,16 @@ func ResolveRepoIdentity(ctx context.Context, repoRoot, orgID, repoFullName stri
 
 // Candidates lists the namespaces a read should try, most specific first.
 //
-// The primary is the one a write would go to now. The pre-remote name is
-// included whenever this repository has a remote, because the index may predate
-// it; that costs one namespace-metadata probe and buys back an index that would
-// otherwise be reported as absent. The console name is the Convex indexer's,
-// which is keyed only on the GitHub remote and written by a different system.
+// The primary is the one a write would go to now — and since the console,
+// the server, and this CLI all converged on `gx-<orgId>-<slug>-v2` (console
+// #58), it is also the cloud indexers' name: there is no separate "console
+// namespace" to probe anymore. A `ConsoleNamespaceForRepo` guess at the old
+// `repo-<owner>-<repo>` name lived here until it silently drifted — the
+// convex function it claimed to mirror had been renamed and re-shaped — which
+// is this file's bug class exactly, so the reader now carries no local copy
+// of any other system's naming. The pre-remote name remains, because an index
+// may predate this checkout's git remote; that costs one metadata probe and
+// buys back an index that would otherwise be reported as absent.
 func (r RepoIdentity) Candidates() []NamespaceCandidate {
 	var out []NamespaceCandidate
 	seen := map[string]struct{}{}
@@ -123,19 +127,7 @@ func (r RepoIdentity) Candidates() []NamespaceCandidate {
 	if r.RepoFullName != "" {
 		add(NamespaceForRepo(r.OrgID, "", r.RepoRoot), NamespaceOriginPreRemote)
 	}
-	add(ConsoleNamespaceForRepo(r.RepoFullName), NamespaceOriginConsole)
 	return out
-}
-
-// ConsoleNamespaceForRepo is the console/Convex code index name for a repo. It
-// mirrors namespaceForRepo in convex/lib/turbopuffer/utils.ts, which does a
-// plain slash-to-dash substitution and does not case-fold.
-func ConsoleNamespaceForRepo(repoFullName string) string {
-	repoFullName = strings.Trim(strings.TrimSpace(repoFullName), "/")
-	if repoFullName == "" || !strings.Contains(repoFullName, "/") {
-		return ""
-	}
-	return "repo-" + strings.ReplaceAll(repoFullName, "/", "-")
 }
 
 // RepoFullNameForRoot reads "owner/name" from a checkout's remotes.

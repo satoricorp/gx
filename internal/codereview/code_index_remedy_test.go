@@ -17,7 +17,7 @@ import (
 // App, and that is connected on the site.
 func TestMissingIndexWarningsCarryTheirRemedy(t *testing.T) {
 	// The shape a repository with a git remote and no index anywhere produces:
-	// three candidate namespaces, all absent.
+	// both candidate namespaces absent.
 	statuses := []EvidenceStatus{
 		{
 			Source: codeIndexEvidenceSource, Namespace: "gx-001-acme-api-v2", State: EvidenceMissing,
@@ -28,11 +28,6 @@ func TestMissingIndexWarningsCarryTheirRemedy(t *testing.T) {
 			Source: codeIndexEvidenceSource, Namespace: "gx-local-api-abc-v2", State: EvidenceMissing,
 			Detail: codeIndexMissingDetail(codeIndexTarget{Origin: semantic.NamespaceOriginPreRemote}),
 			Remedy: codeIndexMissingRemedy(codeIndexTarget{Origin: semantic.NamespaceOriginPreRemote}),
-		},
-		{
-			Source: codeIndexEvidenceSource, Namespace: "repo-acme-api", State: EvidenceMissing,
-			Detail: codeIndexMissingDetail(codeIndexTarget{Origin: semantic.NamespaceOriginConsole}),
-			Remedy: codeIndexMissingRemedy(codeIndexTarget{Origin: semantic.NamespaceOriginConsole}),
 		},
 	}
 
@@ -58,7 +53,6 @@ func TestMissingIndexWarningsCarryTheirRemedy(t *testing.T) {
 func TestEveryMissingCodeIndexOriginHasARemedy(t *testing.T) {
 	for _, origin := range []string{
 		semantic.NamespaceOriginPrimary,
-		semantic.NamespaceOriginConsole,
 		"some-future-origin",
 	} {
 		target := codeIndexTarget{Origin: origin}

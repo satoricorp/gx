@@ -170,9 +170,6 @@ func TestRepoFullNameIsNeverGuessed(t *testing.T) {
 	if identity.RepoFullName != "" {
 		t.Fatalf("RepoFullName = %q, want empty", identity.RepoFullName)
 	}
-	if ConsoleNamespaceForRepo(identity.RepoFullName) != "" {
-		t.Fatal("a repository with no remote must not be given a console namespace")
-	}
 	// Two checkouts of the same directory name must not collide.
 	other := initTestRepo(t)
 	if ResolveRepoIdentity(context.Background(), other, "", "").Namespace == identity.Namespace {

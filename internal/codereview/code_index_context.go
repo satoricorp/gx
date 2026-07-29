@@ -347,8 +347,6 @@ func codeIndexMissingDetail(target codeIndexTarget) string {
 		return "this repository has not been indexed"
 	case semantic.NamespaceOriginPreRemote:
 		return "no index under this repository's pre-remote name"
-	case semantic.NamespaceOriginConsole:
-		return "GX Cloud has never indexed this repository"
 	default:
 		return "namespace does not exist"
 	}
