@@ -18,10 +18,6 @@ export type GxRunResult = {
   stderr: string;
 };
 
-export type GxJsonRunResult = GxRunResult & {
-  json: unknown;
-};
-
 export type FormatOptions = {
   action?: string;
   display?: string;
@@ -159,30 +155,6 @@ function envelope(result: GxRunResult, options: FormatOptions = {}) {
 
 export function formatResult(result: GxRunResult, options: FormatOptions = {}): string {
   return JSON.stringify(envelope(result, options), null, 2);
-}
-
-export function parseGxJson(result: GxRunResult): GxJsonRunResult {
-  try {
-    return { ...result, json: JSON.parse(result.stdout) as unknown };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw Object.assign(new Error(`gx did not return valid JSON: ${message}`), { result });
-  }
-}
-
-export async function runGxJson(args: string[], options: GxRunOptions = {}): Promise<GxJsonRunResult> {
-  return parseGxJson(await runGx(args, options));
-}
-
-export function formatJsonResult(result: GxJsonRunResult, options: FormatOptions = {}): string {
-  return JSON.stringify(
-    envelope(result, {
-      ...options,
-      result: options.result ?? result.json,
-    }),
-    null,
-    2,
-  );
 }
 
 export function formatError(error: unknown, options: FormatOptions = {}): string {

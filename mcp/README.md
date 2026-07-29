@@ -17,10 +17,6 @@ GX PR summaries are posted for PRs whose branch was pushed through GX with `git 
 while the pre-push hook is installed. A PR opened before that push will not get a summary
 until the branch is pushed through GX.
 
-If a repository is not initialized for GX, MCP runs `gx init` non-interactively
-before repository tools continue. It uses Git identity when available and falls
-back to `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL`, then safe placeholder values.
-
 ## Agent instructions
 
 Add a block like this to the start or end of `AGENTS.md` or `CLAUDE.md` in repos
@@ -121,10 +117,7 @@ GX_BINARY="$(command -v gx)" bun run start
 | Variable | Description |
 |----------|-------------|
 | `GX_BINARY` | Optional path to `gx` executable |
-| `GIT_BINARY` | Path to `git` executable (default: `git` on PATH) |
 | `GX_CLOUD_URL` | GX cloud API base URL for review AI fallback |
-| `GX_MCP_INIT_NAME` / `GX_MCP_INIT_EMAIL` | Optional identity used when MCP auto-runs `gx init` |
-| `GX_REVIEW_CONTEXT_URL` / `GX_REVIEW_CONTEXT_TOKEN` | Optional indexed review-context endpoint and token |
 
 Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Cloud calls use credentials from `gx auth login` when available.
 
