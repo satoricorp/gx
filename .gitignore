@@ -11,3 +11,7 @@ mcp/dist/
 mcp/node_modules/
 mcp/xmcp-env.d.ts
 .gstack/
+
+# Personal Claude Code settings. The shared .claude/settings.json carries the
+# GX capture hooks; this one is per-developer and must never be committed.
+.claude/settings.local.json
