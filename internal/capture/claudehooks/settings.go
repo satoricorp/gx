@@ -48,7 +48,7 @@ func MergeSettings(repoRoot, gxPath string) error {
 		hooks = map[string]json.RawMessage{}
 	}
 
-	command := shellQuote(gxPath) + " capture transcript"
+	command := shellQuote(portableGxPath(gxPath)) + " capture transcript"
 	for _, event := range []string{"Stop", "SessionEnd"} {
 		merged, err := mergeHookEvent(hooks[event], command)
 		if err != nil {
@@ -121,10 +121,33 @@ func hookGroupContainsMarker(group map[string]any) bool {
 	return false
 }
 
+// portableGxPath substitutes the user's home-directory prefix with $HOME.
+//
+// .claude/settings.json is repo-shared and conventionally committed, and the
+// hook command used to embed the absolute binary path — /Users/<name>/… — so
+// every teammate who pulled it got a hook pointing into someone else's home
+// directory. Claude Code runs hook commands through a shell, so a
+// double-quoted $HOME expands per machine. A path outside the home directory
+// is left as-is: there is nothing portable to substitute.
+func portableGxPath(gxPath string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return gxPath
+	}
+	home = strings.TrimRight(home, string(filepath.Separator))
+	if gxPath == home || !strings.HasPrefix(gxPath, home+string(filepath.Separator)) {
+		return gxPath
+	}
+	return "$HOME" + strings.TrimPrefix(gxPath, home)
+}
+
 func shellQuote(value string) string {
 	if value == "" {
 		return `""`
 	}
+	// $HOME must stay expandable, so a value that only became quote-worthy
+	// through the $HOME substitution is wrapped in double quotes (where the
+	// shell still expands $), never single ones.
 	if !strings.ContainsAny(value, " \t\n\"'$\\`") {
 		return value
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/satoricorp/gx/internal/capture/claudehooks"
@@ -125,4 +126,47 @@ func indexOf(body, part string) int {
 		}
 	}
 	return -1
+}
+
+// The hook command lands in a repo-shared, conventionally committed file, so
+// it must not embed this machine's home directory. Regression: it used to
+// write the absolute os.Executable() path (/Users/<name>/…), which pointed
+// every teammate's hooks at a binary that does not exist on their machine.
+func TestMergeSettingsSubstitutesHomeWithVariable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := t.TempDir()
+	gxPath := filepath.Join(home, ".local", "bin", "gx")
+
+	if err := claudehooks.MergeSettings(repo, gxPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := string(data)
+	if !strings.Contains(settings, `"\"$HOME/.local/bin/gx\" capture transcript"`) {
+		t.Fatalf("settings do not carry the $HOME-relative command:\n%s", settings)
+	}
+	if strings.Contains(settings, home) {
+		t.Fatalf("settings leak the literal home directory %q:\n%s", home, settings)
+	}
+}
+
+// A binary outside the home directory has nothing portable to substitute.
+func TestMergeSettingsKeepsNonHomePathsAbsolute(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := t.TempDir()
+
+	if err := claudehooks.MergeSettings(repo, "/opt/gx/bin/gx"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "/opt/gx/bin/gx capture transcript") {
+		t.Fatalf("settings = %s, want the absolute non-home path kept", data)
+	}
 }
