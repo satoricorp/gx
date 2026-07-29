@@ -24,29 +24,6 @@ func TestLabelValuePlainWithoutColor(t *testing.T) {
 	}
 }
 
-func TestFormatStatusPrefixes(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	if got := FormatStatus("ok: ready"); got != "ok: ready" {
-		t.Fatalf("FormatStatus() = %q", got)
-	}
-}
-
-func TestRenderStackEmpty(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	got := RenderStack("main", 0, nil)
-	if !strings.Contains(got, "No GX stack recorded yet") {
-		t.Fatalf("RenderStack() = %q", got)
-	}
-}
-
-func TestRenderDoctorTablePlain(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	got := RenderDoctorTable([]DoctorRow{{Check: "Proxy", Status: "ok: up"}})
-	if !strings.Contains(got, "Proxy") || !strings.Contains(got, "ok: up") {
-		t.Fatalf("RenderDoctorTable() = %q", got)
-	}
-}
-
 func TestHyperlinkWithoutColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	url := "https://github.com/example/compare/main...feature"

@@ -25,21 +25,12 @@ func success(text string) string { return termstyle.Success(text) }
 func section(text string) string { return termstyle.Section(text) }
 func command(text string) string { return termstyle.Command(text) }
 func muted(text string) string   { return termstyle.Muted(text) }
-func hint(text string) string    { return termstyle.Hint(text) }
-func mint(text string) string    { return termstyle.Mint(text) }
 func value(text string) string   { return termstyle.Value(text) }
-func divider(width int) string   { return termstyle.Divider(width) }
 func labelWarningValue(label, value string) string {
 	return termstyle.LabelWarning(label, value)
 }
-func labelMintValue(label, value string) string { return termstyle.LabelMint(label, value) }
-func labelStatus(label, value string) string    { return termstyle.LabelStatus(label, value) }
 func commandLine(invocation string, accentCommand bool) string {
 	return termstyle.CommandLine(invocation, accentCommand)
-}
-
-func hyperlink(url, text string) string {
-	return termstyle.Hyperlink(url, text)
 }
 
 const (
