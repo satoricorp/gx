@@ -7,15 +7,8 @@ import (
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
-type RepoInfo = vcs.RepoInfo
-type ChangeInfo = vcs.ChangeInfo
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
-type StackInfo = vcs.StackInfo
-type RevisionSummary = vcs.RevisionSummary
-type StackSummary = vcs.StackSummary
-type GitWorkingStatus = vcs.GitWorkingStatus
-type PruneEmptyStacksResult = vcs.PruneEmptyStacksResult
 
 // Engine is GX's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
@@ -45,22 +38,7 @@ func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error)
 	return e.vcs.EnsureReadyRepo(ctx, cwd)
 }
 
-func (e *Engine) Status(ctx context.Context) (StackSummary, error) {
-	return e.vcs.Stack(ctx)
-}
-
 func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {
 	return e.vcs.PreservingGitIndexForCwd(ctx, fn)
 }
 
-func (e *Engine) GitWorkingStatus(ctx context.Context, repoRoot string) (GitWorkingStatus, error) {
-	return e.vcs.GitWorkingStatus(ctx, repoRoot)
-}
-
-func (e *Engine) CurrentChange(ctx context.Context, repoRoot, rev string) (ChangeInfo, error) {
-	return e.vcs.CurrentChange(ctx, repoRoot, rev)
-}
-
-func (e *Engine) PruneEmptyStacks(ctx context.Context) (PruneEmptyStacksResult, error) {
-	return e.vcs.PruneEmptyStacks(ctx)
-}

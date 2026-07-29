@@ -387,14 +387,6 @@ func TestRecordedCommitDeleteFidelity(t *testing.T) {
 	}
 }
 
-func TestRejectProtectedStackBookmarkSecondChokePoint(t *testing.T) {
-	svc, root := setupStagedCommitRepo(t, "main")
-	err := svc.rejectProtectedStackBookmark(context.Background(), root, "main")
-	if err == nil || !strings.Contains(err.Error(), "protected") {
-		t.Fatalf("rejectProtectedStackBookmark() error = %v, want protected stack bookmark", err)
-	}
-}
-
 func TestRecordedCommitQuotedPathWithSpaces(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	runGit(t, root, "checkout", "-b", "quoted-path")

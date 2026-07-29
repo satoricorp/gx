@@ -219,18 +219,6 @@ type DeleteRevisionResult struct {
 	Output string
 }
 
-type DeleteStackResult struct {
-	Repo      RepoInfo
-	Stack     StackInfo
-	Revisions []ChangeInfo
-	Output    string
-}
-
-type PruneEmptyStacksResult struct {
-	Repo    RepoInfo
-	Deleted []DeleteStackResult
-}
-
 type RepairResult struct {
 	Repo     RepoInfo `json:"repo"`
 	Actions  []string `json:"actions"`
@@ -337,10 +325,6 @@ func (s *Service) InitWithOptions(ctx context.Context, opts InitOptions) (InitRe
 	return s.InitAtPath(ctx, cwd, opts)
 }
 
-func (s *Service) EnsureRepoAtPath(ctx context.Context, startPath string) (InitResult, error) {
-	return s.InitAtPath(ctx, startPath, InitOptions{})
-}
-
 func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOptions) (InitResult, error) {
 	repo, err := s.ResolveGXRepoAtPath(ctx, startPath)
 	if err != nil {
@@ -381,87 +365,6 @@ func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOpt
 		IdentityName:    name,
 		IdentityEmail:   email,
 		IdentityApplied: applied,
-	}, nil
-}
-
-func (s *Service) PruneEmptyStacks(ctx context.Context) (PruneEmptyStacksResult, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return PruneEmptyStacksResult{}, err
-	}
-	repo, err := s.ResolveGXRepoAtPath(ctx, cwd)
-	if err != nil {
-		return PruneEmptyStacksResult{}, err
-	}
-	result := PruneEmptyStacksResult{Repo: repo}
-	err = withRepoIdentityLock(repo.GitCommonDir, func() error {
-		model, err := s.loadGitStackReadModel(ctx, repo)
-		if err != nil {
-			return err
-		}
-		for _, stack := range model.stacks {
-			if !emptyStackForPrune(stack) {
-				continue
-			}
-			deleted, err := s.deleteStackUnlocked(ctx, repo, stack.BookmarkName, false)
-			if err != nil {
-				return err
-			}
-			result.Deleted = append(result.Deleted, deleted)
-		}
-		return nil
-	})
-	return result, err
-}
-
-func emptyStackForPrune(stack StackInfo) bool {
-	if IsTerminalStackStatus(stack.Status) {
-		return false
-	}
-	if len(stack.Revisions) > 0 {
-		return false
-	}
-	return stack.RevisionCount == 0
-}
-
-func (s *Service) deleteStackUnlocked(ctx context.Context, repo RepoInfo, bookmarkName string, abandonChanges bool) (DeleteStackResult, error) {
-	store, err := openStore(ctx)
-	if err != nil {
-		return DeleteStackResult{}, err
-	}
-	defer store.Close()
-	repoRow, err := store.FindRepoByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
-	if err != nil {
-		return DeleteStackResult{}, err
-	}
-	if repoRow == nil {
-		return DeleteStackResult{}, fmt.Errorf("unknown repo %s", repo.RootPath)
-	}
-	storedStack, err := store.FindStackByBookmark(ctx, repoRow.ID, bookmarkName)
-	if err != nil {
-		return DeleteStackResult{}, err
-	}
-	if storedStack == nil {
-		return DeleteStackResult{}, fmt.Errorf("unknown stack %q", bookmarkName)
-	}
-	changes, err := store.ListChangesByStackID(ctx, storedStack.ID)
-	if err != nil {
-		return DeleteStackResult{}, err
-	}
-	if abandonChanges {
-		for _, change := range changes {
-			if err := store.MarkChangeStatus(ctx, change.ID, "abandoned", time.Now().UnixMilli()); err != nil {
-				return DeleteStackResult{}, err
-			}
-		}
-	}
-	if err := store.DeleteStack(ctx, storedStack.ID); err != nil {
-		return DeleteStackResult{}, err
-	}
-	return DeleteStackResult{
-		Repo:      repo,
-		Stack:     stackInfoFromStorage(*storedStack),
-		Revisions: changesToChangeInfo(changes),
 	}, nil
 }
 
@@ -649,14 +552,6 @@ func stackSummaryForStack(repo RepoInfo, stack StackInfo, stackFound bool, stack
 		Units:          revisions,
 		Revisions:      revisions,
 	}
-}
-
-func (s *Service) ResolveGitRepo(ctx context.Context) (RepoInfo, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	return s.ResolveGitRepoAtPath(ctx, cwd)
 }
 
 func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (RepoInfo, error) {
@@ -852,19 +747,6 @@ func upsertChange(ctx context.Context, store *storage.Store, repoID int64, chang
 		FirstSeenAt:     now,
 		UpdatedAt:       now,
 	})
-}
-
-func changesToChangeInfo(changes []storage.Change) []ChangeInfo {
-	out := make([]ChangeInfo, 0, len(changes))
-	for _, change := range changes {
-		out = append(out, ChangeInfo{
-			ChangeID:       change.JJChangeID,
-			CommitID:       change.CurrentCommitID,
-			Description:    change.Description,
-			ParentChangeID: change.ParentChangeID,
-		})
-	}
-	return out
 }
 
 func upsertStackInfo(ctx context.Context, store *storage.Store, repoID int64, stack StackInfo) (int64, error) {
@@ -1167,22 +1049,6 @@ func stackInfoFromStorage(body storage.Stack) StackInfo {
 
 func stackAlias(index int) string {
 	return "s" + strconv.Itoa(index+1)
-}
-
-func (s *Service) setBookmarkTargetAtRev(ctx context.Context, repoRoot, name, targetRev string, allowBackwards bool) error {
-	targetRev = strings.TrimSpace(targetRev)
-	if targetRev == "" {
-		return fmt.Errorf("container target revision is empty")
-	}
-	if err := s.ensureBookmarkMutationAllowed(ctx, repoRoot, name, targetRev); err != nil {
-		return err
-	}
-	targetCommit, err := s.commitIDForRev(ctx, repoRoot, targetRev)
-	if err != nil {
-		return err
-	}
-	_, err = s.runner.Run(ctx, repoRoot, "git", "update-ref", "refs/heads/"+cleanRefName(name), targetCommit)
-	return err
 }
 
 func (s *Service) commitIDForRev(ctx context.Context, repoRoot, rev string) (string, error) {

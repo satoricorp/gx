@@ -533,21 +533,6 @@ func (s *Store) RenameStackBaseRef(ctx context.Context, repoID int64, oldRef, ne
 	return nil
 }
 
-func (s *Store) DeleteStack(ctx context.Context, stackID int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin delete stack: %w", err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM stack_changes WHERE stack_id = ?`, stackID); err != nil {
-		return fmt.Errorf("delete stack changes: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM stacks WHERE id = ?`, stackID); err != nil {
-		return fmt.Errorf("delete stack: %w", err)
-	}
-	return tx.Commit()
-}
-
 func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, publishRef string, updatedAt int64) error {
 	publishRef = strings.TrimSpace(publishRef)
 	if repoID == 0 || stackID == 0 || publishRef == "" {
@@ -597,18 +582,6 @@ func (s *Store) MarkStackStatus(ctx context.Context, stackID int64, status strin
 	`, status, updatedAt, stackID)
 	if err != nil {
 		return fmt.Errorf("mark stack status: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) MarkChangeStatus(ctx context.Context, changeID int64, status string, updatedAt int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE changes
-		SET status = ?, updated_at = ?
-		WHERE id = ?
-	`, status, updatedAt, changeID)
-	if err != nil {
-		return fmt.Errorf("mark change status: %w", err)
 	}
 	return nil
 }
