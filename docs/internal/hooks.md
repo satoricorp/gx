@@ -59,33 +59,6 @@ Refusals and opt-outs:
 - `gx doctor` reports the global state and flags an overridden or incomplete
   install; it never repairs it silently.
 
-## Team propagation
-
-### lefthook
-
-Generate a starter template:
-
-```go
-hooks.WriteLefthookTemplate(repoRoot, gxBinaryPath)
-```
-
-Or add manually to `.lefthook.yml`:
-
-```yaml
-pre-push:
-  commands:
-    gx-capture:
-      run: gx capture push --remote "$1" --ref-range "$range"
-```
-
-See `internal/hooks/lefthook.go` for the full template.
-
-### husky
-
-Add a `.husky/pre-push` script using `hooks.HuskyPrePushSnippet(gxPath)`.
-
-gx does not install husky or lefthook automatically — copy the snippet into your team's hook manager.
-
 ## Manual run
 
 ```bash

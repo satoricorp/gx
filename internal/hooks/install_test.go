@@ -168,10 +168,3 @@ func TestParsePrePushLine(t *testing.T) {
 		t.Fatalf("unexpected parse: %q %q %q %q", localRef, localSHA, remoteRef, remoteSHA)
 	}
 }
-
-func TestHuskySnippet(t *testing.T) {
-	snippet := hooks.HuskyPrePushSnippet("/bin/gx")
-	if snippet == "" || snippet[:6] != "remote" {
-		t.Fatalf("unexpected snippet: %q", snippet)
-	}
-}
