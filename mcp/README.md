@@ -131,10 +131,11 @@ a `mcp-v<version>` tag is pushed — the tag must match `package.json`'s version
 git tag mcp-v0.1.0 && git push origin mcp-v0.1.0
 ```
 
-The workflow needs an `NPM_TOKEN` repository secret (npm automation token with
-publish rights on the `@satoricorp` org). The npm package ships only the
-bundled `dist/*.js`; the compiled `dist/tl-mcp` binary is distributed by the
-CLI installer instead.
+CI publishes via npm Trusted Publishing (OIDC) — no token secret. One-time
+setup: publish once locally, then on npmjs.com under the package's Settings add
+a trusted publisher (GitHub Actions, owner `satoricorp`, repo `totality`,
+workflow `mcp.yml`). The npm package ships only the bundled `dist/*.js`; the
+compiled `dist/tl-mcp` binary is distributed by the CLI installer instead.
 
 ## Environment
 

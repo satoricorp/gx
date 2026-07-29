@@ -1,0 +1,195 @@
+name: Release CLI
+
+# Builds the tl CLI + tl-mcp for darwin/linux, publishes the archives,
+# manifest, and install.sh to the downloads bucket (fronted by
+# download.totality.sh), and attaches assets to a GitHub release on v* tags.
+# Pushes to main publish a "latest" build versioned by commit SHA; v* tags
+# publish that version and create the GitHub release.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and publish the tl CLI
+    runs-on: macos-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      DEPLOY_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      DEPLOY_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TOTALITY_DOWNLOAD_BUCKET_NAME: ${{ vars.TOTALITY_DOWNLOAD_BUCKET_NAME }}
+      TOTALITY_DOWNLOAD_DISTRIBUTION_ID: ${{ vars.TOTALITY_DOWNLOAD_DISTRIBUTION_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.4"
+
+      - name: Install tools
+        run: |
+          brew install just
+          command -v aws >/dev/null || brew install awscli
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${GITHUB_SHA:0:12}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build CLI packages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_CLIENT_ID: ${{ vars.TOTALITY_GITHUB_CLIENT_ID }}
+          CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
+          TOTALITY_CLOUD_URL: ${{ vars.TOTALITY_CLOUD_URL }}
+          TOTALITY_POSTHOG_KEY: ${{ vars.TOTALITY_POSTHOG_KEY }}
+          TOTALITY_POSTHOG_HOST: ${{ vars.TOTALITY_POSTHOG_HOST || 'https://f.totality.sh' }}
+          TOTALITY_DOWNLOAD_BASE_URL: https://download.totality.sh
+        run: |
+          GOOS=darwin GOARCH=arm64 BUN_TARGET=bun-darwin-arm64 scripts/package-cli.sh
+          GOOS=darwin GOARCH=amd64 BUN_TARGET=bun-darwin-x64 scripts/package-cli.sh
+          GOOS=linux GOARCH=arm64 BUN_TARGET=bun-linux-arm64 scripts/package-cli.sh
+          GOOS=linux GOARCH=amd64 BUN_TARGET=bun-linux-x64 scripts/package-cli.sh
+          scripts/render-cli-manifest.sh dist/cli
+
+      - name: Verify artifacts
+        run: |
+          test -f dist/cli/tl_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+          test -f dist/cli/tl_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+          test -f dist/cli/tl_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
+          test -f dist/cli/tl_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+          test -f dist/cli/manifest.json
+          test -f scripts/install.sh
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tl-cli
+          path: |
+            dist/cli/*
+            scripts/install.sh
+          if-no-files-found: error
+
+      - name: Configure AWS credentials with OIDC
+        if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials with access keys
+        if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.DEPLOY_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.DEPLOY_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish downloads to S3
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$TOTALITY_DOWNLOAD_BUCKET_NAME" || {
+            echo "TOTALITY_DOWNLOAD_BUCKET_NAME repository variable is required" >&2
+            exit 1
+          }
+          test -n "$TOTALITY_DOWNLOAD_DISTRIBUTION_ID" || {
+            echo "TOTALITY_DOWNLOAD_DISTRIBUTION_ID repository variable is required" >&2
+            exit 1
+          }
+
+          aws s3 cp scripts/install.sh "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/install.sh" \
+            --content-type text/x-shellscript \
+            --cache-control "public, max-age=300"
+          aws s3 cp dist/cli/manifest.json "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/manifest.json" \
+            --content-type application/json \
+            --cache-control "public, max-age=300"
+
+          for archive in dist/cli/tl_"$VERSION"_*.tar.gz; do
+            test -f "$archive" || continue
+            base="$(basename "$archive")"
+            checksum="$archive.sha256"
+            test -f "$checksum" || {
+              echo "missing checksum for $archive" >&2
+              exit 1
+            }
+            rest="${base#tl_${VERSION}_}"
+            platform="${rest%.tar.gz}"
+            goos="${platform%_*}"
+            goarch="${platform##*_}"
+            latest="tl_${goos}_${goarch}.tar.gz"
+
+            aws s3 cp "$archive" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/latest/$latest" \
+              --content-type application/gzip \
+              --cache-control "public, max-age=300"
+            aws s3 cp "$checksum" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/latest/$latest.sha256" \
+              --content-type text/plain \
+              --cache-control "public, max-age=300"
+            aws s3 cp "$archive" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base" \
+              --content-type application/gzip \
+              --cache-control "public, max-age=31536000, immutable"
+            aws s3 cp "$checksum" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base.sha256" \
+              --content-type text/plain \
+              --cache-control "public, max-age=31536000, immutable"
+          done
+
+          printf 'Totality download not found\n' > 404.txt
+          aws s3 cp 404.txt "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/404.txt" \
+            --content-type text/plain \
+            --cache-control "public, max-age=300"
+
+          aws cloudfront create-invalidation \
+            --distribution-id "$TOTALITY_DOWNLOAD_DISTRIBUTION_ID" \
+            --paths /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
+
+      - name: Publish GitHub release assets
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          assets=(
+            scripts/install.sh
+            dist/cli/manifest.json
+            dist/cli/tl_*.tar.gz
+            dist/cli/tl_*.tar.gz.sha256
+          )
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --title "$tag" --generate-notes
+          fi
