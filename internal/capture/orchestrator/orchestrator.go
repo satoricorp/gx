@@ -21,7 +21,6 @@ import (
 	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/capture/repobind"
-	"github.com/satoricorp/gx/internal/capture/report"
 	"github.com/satoricorp/gx/internal/storage"
 	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
@@ -322,7 +321,6 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 		}
 	}
 
-	_ = report.VerdictForCoverage(coverage)
 	return result, nil
 }
 

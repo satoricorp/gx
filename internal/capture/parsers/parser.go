@@ -153,13 +153,6 @@ func unreadable(path string, err error) error {
 	return fmt.Errorf("read %s: %w", path, err)
 }
 
-// DiscoverSessions returns session sources overlapping the time window.
-// Per-tool problems are dropped; use Discover to see them.
-func DiscoverSessions(opts DiscoverOptions) ([]DiscoveredSession, error) {
-	discovery, err := Discover(opts)
-	return discovery.Sessions, err
-}
-
 // Discover runs every requested tool's discovery leg independently. A leg that
 // cannot run contributes nothing and records a problem; the others still
 // return their sources. Only a sweep where every attempted leg failed and
@@ -725,42 +718,3 @@ func ParseAllPerSource(sessions []DiscoveredSession, repoRoot string, parsers []
 	return out, nil
 }
 
-// ParseAll parses discovered session sources with the given parsers.
-func ParseAll(sessions []DiscoveredSession, repoRoot string, parsers []Parser) ([]capture.SessionEvent, error) {
-	perSource, err := ParseAllPerSource(sessions, repoRoot, parsers)
-	if err != nil {
-		return nil, err
-	}
-	var events []capture.SessionEvent
-	for _, source := range perSource {
-		events = append(events, source.Events...)
-	}
-	return events, nil
-}
-
-// CountSessionsScanned returns session units scanned per tool.
-func CountSessionsScanned(sessions []DiscoveredSession, events []capture.SessionEvent) int {
-	if len(sessions) == 0 {
-		return 0
-	}
-	hasCursor := false
-	jsonlCount := 0
-	for _, s := range sessions {
-		if s.Tool == capture.ToolCursor {
-			hasCursor = true
-			continue
-		}
-		jsonlCount++
-	}
-	if !hasCursor {
-		return jsonlCount
-	}
-	seen := map[string]struct{}{}
-	for _, ev := range events {
-		if ev.Tool != capture.ToolCursor || ev.SessionID == "" {
-			continue
-		}
-		seen[ev.SessionID] = struct{}{}
-	}
-	return jsonlCount + len(seen)
-}

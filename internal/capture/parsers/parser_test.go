@@ -10,7 +10,7 @@ import (
 	"github.com/satoricorp/gx/internal/capture"
 )
 
-func TestDiscoverSessionsFindsCursorAgentTranscripts(t *testing.T) {
+func TestDiscoverFindsCursorAgentTranscripts(t *testing.T) {
 	home := t.TempDir()
 	repoRoot := filepath.Join(string(filepath.Separator), "Users", "joe", "git", "gx")
 	root := filepath.Join(home, ".cursor", "projects", "Users-joe-git-gx", "agent-transcripts", "parent-1")
@@ -37,7 +37,7 @@ func TestDiscoverSessionsFindsCursorAgentTranscripts(t *testing.T) {
 		t.Fatalf("chtimes old: %v", err)
 	}
 
-	sessions, err := DiscoverSessions(DiscoverOptions{
+	discovery, err := Discover(DiscoverOptions{
 		HomeDir:     home,
 		RepoRoot:    repoRoot,
 		Since:       now.Add(-time.Hour),
@@ -46,8 +46,9 @@ func TestDiscoverSessionsFindsCursorAgentTranscripts(t *testing.T) {
 		Tools:       []string{capture.ToolCursor},
 	})
 	if err != nil {
-		t.Fatalf("DiscoverSessions: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
+	sessions := discovery.Sessions
 	if len(sessions) != 2 {
 		t.Fatalf("sessions = %#v, want main + subagent", sessions)
 	}
@@ -87,7 +88,7 @@ func discoveredPaths(sessions []DiscoveredSession) []string {
 	return paths
 }
 
-func TestDiscoverSessionsFindsClaudeSessionsFiledUnderAnotherProject(t *testing.T) {
+func TestDiscoverFindsClaudeSessionsFiledUnderAnotherProject(t *testing.T) {
 	home := t.TempDir()
 	repoRoot := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo")
 	sibling := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo-cloud")
@@ -111,7 +112,7 @@ func TestDiscoverSessionsFindsClaudeSessionsFiledUnderAnotherProject(t *testing.
 	writeClaudeTranscript(t, siblingPath, claudeEditLine("sibling", filepath.Join(sibling, "d.go")), now.Add(-time.Minute))
 	writeClaudeTranscript(t, stalePath, claudeEditLine("stale", filepath.Join(repoRoot, "e.go")), stale)
 
-	sessions, err := DiscoverSessions(DiscoverOptions{
+	discovery, err := Discover(DiscoverOptions{
 		HomeDir:  home,
 		RepoRoot: repoRoot,
 		Since:    now.Add(-time.Hour),
@@ -119,8 +120,9 @@ func TestDiscoverSessionsFindsClaudeSessionsFiledUnderAnotherProject(t *testing.
 		Tools:    []string{capture.ToolClaude},
 	})
 	if err != nil {
-		t.Fatalf("DiscoverSessions: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
+	sessions := discovery.Sessions
 	got := discoveredPaths(sessions)
 	want := []string{ownPath, crossPath}
 	if len(got) != len(want) {
@@ -141,7 +143,7 @@ func TestDiscoverSessionsFindsClaudeSessionsFiledUnderAnotherProject(t *testing.
 	}
 }
 
-func TestDiscoverSessionsDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) {
+func TestDiscoverDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) {
 	home := t.TempDir()
 	repoRoot := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo")
 	other := filepath.Join(string(filepath.Separator), "gx-xrepo", "elsewhere")
@@ -154,7 +156,7 @@ func TestDiscoverSessionsDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) 
 	writeClaudeTranscript(t, ownPath, body, now)
 	writeClaudeTranscript(t, dupPath, body, now)
 
-	sessions, err := DiscoverSessions(DiscoverOptions{
+	discovery, err := Discover(DiscoverOptions{
 		HomeDir:  home,
 		RepoRoot: repoRoot,
 		Since:    now.Add(-time.Hour),
@@ -162,8 +164,9 @@ func TestDiscoverSessionsDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) 
 		Tools:    []string{capture.ToolClaude},
 	})
 	if err != nil {
-		t.Fatalf("DiscoverSessions: %v", err)
+		t.Fatalf("Discover: %v", err)
 	}
+	sessions := discovery.Sessions
 	if len(sessions) != 1 {
 		t.Fatalf("discovered %v, want only the repo-slug copy", discoveredPaths(sessions))
 	}
@@ -208,7 +211,7 @@ func TestFileMentionsRepoSpansChunkBoundary(t *testing.T) {
 	}
 }
 
-func TestDiscoverSessionsFindsClaudeSubagentTranscripts(t *testing.T) {
+func TestDiscoverFindsClaudeSubagentTranscripts(t *testing.T) {
 	// An agent that delegates its edits leaves most of the evidence in its
 	// subagents' transcripts, not in the parent conversation's.
 	home := t.TempDir()
@@ -226,7 +229,7 @@ func TestDiscoverSessionsFindsClaudeSubagentTranscripts(t *testing.T) {
 	// A second conversation reusing a subagent name must not collide.
 	writeClaudeTranscript(t, filepath.Join(other, "conv-2", "subagents", "agent-a.jsonl"), edit, mod)
 
-	sessions, err := DiscoverSessions(DiscoverOptions{
+	discovery, err := Discover(DiscoverOptions{
 		HomeDir:   home,
 		RepoRoot:  repoRoot,
 		ClaudeDir: claudeDir,
@@ -235,8 +238,9 @@ func TestDiscoverSessionsFindsClaudeSubagentTranscripts(t *testing.T) {
 		Tools:     []string{capture.ToolClaude},
 	})
 	if err != nil {
-		t.Fatalf("DiscoverSessions() error = %v", err)
+		t.Fatalf("Discover() error = %v", err)
 	}
+	sessions := discovery.Sessions
 
 	got := map[string]bool{}
 	for _, session := range sessions {
@@ -322,11 +326,6 @@ func TestDiscoverSurvivesUnreadableCursorTranscripts(t *testing.T) {
 		t.Fatalf("problem = %q, want it to name the unreadable directory %q", discovery.Problems[0].String(), cursorDir)
 	}
 
-	sessions, err := DiscoverSessions(opts)
-	if err != nil || len(sessions) != len(discovery.Sessions) {
-		t.Fatalf("DiscoverSessions() = %d sources, %v; want %d sources and no error",
-			len(sessions), err, len(discovery.Sessions))
-	}
 }
 
 // TestDiscoverReportsUnreadableClaudeAndCodexRoots is the finding this whole
