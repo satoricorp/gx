@@ -5,10 +5,6 @@
 /gx
 dist/
 node_modules/
-apps/menubar/.build/
-apps/menubar/bin/
-apps/menubar/dist/
-apps/menubar/node_modules/
 mcp/.xmcp/
 mcp/.*.bun-build
 mcp/dist/

@@ -66,13 +66,6 @@ verify-bake bin="gx":
 test:
   go test ./...
 
-test-e2e:
-  go test -tags=e2e ./test/e2e
-
-test-all:
-  go test ./...
-  go test -tags=e2e ./test/e2e
-
 run *args:
   {{repo_root}}/gx {{args}}
 

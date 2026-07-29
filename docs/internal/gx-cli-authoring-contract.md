@@ -233,7 +233,6 @@ Before landing authoring changes, run:
 
 ```bash
 go test ./...
-go test -tags e2e ./test/e2e -run 'TestGXCompose|TestGXPublishAllPublishesEveryStack' -count=1
 ```
 
 Then run a manual dogfood:

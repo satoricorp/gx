@@ -601,7 +601,6 @@ internal/authoring/compose_capture_test.go
 internal/cli/demux_loader_test.go
 internal/storage/db_test.go
 internal/reviewbundle/bundle_test.go
-test/e2e/gx_e2e_test.go
 ```
 
 Highest-value scenarios:
