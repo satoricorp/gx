@@ -250,22 +250,19 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 	repoID := seedRepo(t, store, "/repo")
 	changeID := seedChange(t, store, repoID, "change-1", "commit-1", "codex change", []string{"main.go"})
 	source := "ambient"
-	processName := "codex"
-	// UpsertCursorSession rather than UpsertObservedSession here: this test
-	// asserts on process_name, and the transcript-observation writer cannot set
-	// it. The Cursor ingest (internal/ingest/cursor) is the only production
-	// writer that fills that column, so it is the writer this row must come
-	// from if the row is to be one a real machine can hold.
-	if _, err := store.UpsertCursorSession(ctx, storage.Session{
-		ID:          "session-one",
-		CreatedAt:   1,
-		Command:     "codex exec",
-		Cwd:         "/repo",
-		GXVersion:   "test",
-		Source:      &source,
-		ProcessName: &processName,
+	// UpsertObservedSession is the push path's writer and the only production
+	// writer of `sessions` now that the cursor ingest is retired. It cannot
+	// set process_name — nothing can any more — so the agent tool must resolve
+	// from the command.
+	if err := store.UpsertObservedSession(ctx, storage.Session{
+		ID:        "session-one",
+		CreatedAt: 1,
+		Command:   "codex exec",
+		Cwd:       "/repo",
+		GXVersion: "test",
+		Source:    &source,
 	}); err != nil {
-		t.Fatalf("UpsertCursorSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	model := "gpt-5"
 	if err := store.WriteRequest(ctx, storage.Request{

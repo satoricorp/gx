@@ -187,24 +187,6 @@ type ChangeDemuxEvidence struct {
 	CreatedAt          int64
 }
 
-type SemanticLabelSearchDocument struct {
-	Ordinal      int
-	Label        string
-	Text         string
-	Source       string
-	Status       string
-	EvidenceJSON string
-}
-
-type SemanticLabelSearchResult struct {
-	Ordinal      int
-	Label        string
-	Source       string
-	Status       string
-	EvidenceJSON string
-	RawScore     float64
-}
-
 type SemanticLabelWrite struct {
 	Label SemanticLabel
 	Link  SemanticLabelLink
@@ -236,26 +218,6 @@ type SemanticLabelLink struct {
 	Accepted           bool
 	EvidenceJSON       string
 	CreatedAt          int64
-}
-
-type ModifyEvent struct {
-	ID                      int64
-	RepoID                  int64
-	TargetChangeID          int64
-	PreviousCurrentChangeID *int64
-	JJOperationID           string
-	CreatedAt               int64
-}
-
-type CursorMessage struct {
-	ID           string
-	SessionID    string
-	CreatedAt    int64
-	Role         string
-	Text         string
-	RawJSON      []byte
-	InputTokens  *int
-	OutputTokens *int
 }
 
 type Push struct {

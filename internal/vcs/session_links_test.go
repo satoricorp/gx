@@ -61,17 +61,18 @@ func changeSessionCount(t *testing.T, db *sql.DB, ctx context.Context, query str
 	return count
 }
 
-// TestAttachSessionsPreservesIngestedSessionMetadata pins the push-time writer
+// TestAttachSessionsPreservesExistingSessionMetadata pins the push-time writer
 // to filling blanks rather than overwriting.
 //
 // Cursor's state.vscdb transcripts keep the id the parser mints,
 // "cursor-<composerID>", because the path-derived identity override in
-// internal/capture/parsers only applies to JSONL sources. That is byte for
-// byte the id internal/ingest/cursor writes, so this writer lands on the exact
-// ingest row. An UpsertSession here replaced the ingested composer title with
-// a bare "cursor", irrecoverably: the ingest writer is INSERT OR IGNORE and
-// never rewrites command afterwards.
-func TestAttachSessionsPreservesIngestedSessionMetadata(t *testing.T) {
+// internal/capture/parsers only applies to JSONL sources. Databases written
+// while the cursor ingest existed still hold rows under exactly that id with
+// the composer title as the command, so an attach lands on those rows. An
+// UpsertSession here replaced the title with a bare "cursor", irrecoverably:
+// nothing rewrites command afterwards. The richer pre-existing row is seeded
+// through UpsertObservedSession, the same writer the attach path uses.
+func TestAttachSessionsPreservesExistingSessionMetadata(t *testing.T) {
 	store, db, ctx := newSessionLinkStore(t)
 	const sha = "1111111111111111111111111111111111111111"
 	const root = "/repo"
@@ -79,7 +80,7 @@ func TestAttachSessionsPreservesIngestedSessionMetadata(t *testing.T) {
 
 	ingestSource := "cursor"
 	ingestRoot := "/repo"
-	inserted, err := store.UpsertCursorSession(ctx, storage.Session{
+	if err := store.UpsertObservedSession(ctx, storage.Session{
 		ID:        "cursor-abc123",
 		CreatedAt: 500,
 		Command:   "cursor: Refactor the auth middleware",
@@ -87,12 +88,8 @@ func TestAttachSessionsPreservesIngestedSessionMetadata(t *testing.T) {
 		GXVersion: "test",
 		Source:    &ingestSource,
 		RepoRoot:  &ingestRoot,
-	})
-	if err != nil {
-		t.Fatalf("UpsertCursorSession() error = %v", err)
-	}
-	if !inserted {
-		t.Fatal("UpsertCursorSession() did not insert the ingest row")
+	}); err != nil {
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 
 	attached, err := NewService().AttachSessionsFromHunkLinks(ctx, RepoInfo{
@@ -112,7 +109,7 @@ func TestAttachSessionsPreservesIngestedSessionMetadata(t *testing.T) {
 	}
 
 	if got := sessionCommand(t, db, ctx, "cursor-abc123"); got != "cursor: Refactor the auth middleware" {
-		t.Fatalf("session command = %q, want the ingested composer title preserved", got)
+		t.Fatalf("session command = %q, want the composer title preserved", got)
 	}
 
 	links := changeSessionCount(t, db, ctx,

@@ -16,7 +16,6 @@ import (
 
 	"github.com/satoricorp/gx/internal/capture"
 	"github.com/satoricorp/gx/internal/capture/repopath"
-	ingestcursor "github.com/satoricorp/gx/internal/ingest/cursor"
 )
 
 // Parser normalizes Cursor composer bubbles from state.vscdb into SessionEvents.
@@ -1215,11 +1214,6 @@ func diffAddedText(before, after string) string {
 		return ""
 	}
 	return strings.Join(aLines[start:endA+1], "\n")
-}
-
-// DefaultVSCDBPath returns Cursor's global state.vscdb on macOS.
-func DefaultVSCDBPath() (string, error) {
-	return ingestcursor.DefaultVSCDBPath()
 }
 
 // DiscoverVSCDBPath is deliberately gone. It took a home directory, ignored it

@@ -5,9 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
-	"time"
 
 	"github.com/satoricorp/gx/internal/agentprovenance"
 )
@@ -22,8 +20,6 @@ type sqlExecutor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
-
-var ftsQueryTokenPattern = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 func NewStore(ctx context.Context, db *sql.DB) (*Store, error) {
 	requestStmt, err := db.PrepareContext(ctx, `
@@ -75,8 +71,7 @@ func (s *Store) Close() error {
 // session test seeded rows through it while UpsertObservedSession — the only
 // writer of that table production actually runs — could never bootstrap its
 // first row. Tests now seed through UpsertObservedSession (transcript
-// observations, the push path) or UpsertCursorSession (the ingest path, the
-// only writer of process_name and last_seen_at).
+// observations, the push path).
 //
 // TestSeedersAreProductionWriters in internal/storage/storagetest fails on any
 // exported storage method that has test callers and no production ones, so
@@ -131,12 +126,12 @@ func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 // UpsertSession is the wrong writer for this. Its ON CONFLICT clause lets a
 // non-empty incoming value win, and a transcript observation only knows the
 // tool name. Session IDs derived from a transcript path can collide with IDs
-// minted by a richer ingest: Cursor's state.vscdb leg keeps the parser-minted
-// "cursor-<composerID>", byte-identical to what internal/ingest/cursor writes,
-// so an UpsertSession here would replace the ingested composer title
-// ("cursor: Refactor the auth middleware") with a bare "cursor". That loss is
-// permanent — the ingest writer is INSERT OR IGNORE and never rewrites command
-// on a later pass.
+// an earlier, richer writer minted: Cursor's state.vscdb leg keeps the
+// parser-minted "cursor-<composerID>", byte-identical to the ids the retired
+// cursor ingest wrote, and real databases still hold its rows with the
+// composer title as the command ("cursor: Refactor the auth middleware").
+// An UpsertSession here would replace that title with a bare "cursor",
+// permanently — nothing rewrites command afterwards.
 func (s *Store) UpsertObservedSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, created_at, command, cwd, gx_version, source, repo_root)
@@ -207,18 +202,6 @@ func (s *Store) UpsertSessionContext(ctx context.Context, session Session, conte
 	}
 	if err := s.refreshSessionUsage(ctx, context.SessionID); err != nil {
 		return err
-	}
-	return nil
-}
-
-func (s *Store) TouchSession(ctx context.Context, sessionID string, lastSeenAt int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE sessions
-		SET last_seen_at = ?
-		WHERE id = ?
-	`, lastSeenAt, sessionID)
-	if err != nil {
-		return fmt.Errorf("touch session: %w", err)
 	}
 	return nil
 }
@@ -526,23 +509,6 @@ func (s *Store) UpsertStack(ctx context.Context, stack Stack) (int64, error) {
 	return id, nil
 }
 
-func (s *Store) RenameStackBookmark(ctx context.Context, repoID int64, oldName, newName, normalizedName string, updatedAt int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE stacks
-		SET bookmark_name = ?,
-			name = CASE
-				WHEN name = ? THEN ?
-				ELSE name
-			END,
-			updated_at = ?
-		WHERE repo_id = ? AND bookmark_name = ?
-	`, newName, oldName, normalizedName, updatedAt, repoID, oldName)
-	if err != nil {
-		return fmt.Errorf("rename stack bookmark: %w", err)
-	}
-	return nil
-}
-
 func (s *Store) RenameStack(ctx context.Context, repoID int64, bookmarkName, normalizedName string, updatedAt int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE stacks
@@ -682,38 +648,6 @@ func (s *Store) WriteChangeRevision(ctx context.Context, rev ChangeRevision) err
 		return fmt.Errorf("insert change revision: %w", err)
 	}
 	return nil
-}
-
-func (s *Store) ListChangeRevisionsByChangeID(ctx context.Context, changeID int64) ([]ChangeRevision, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, change_id, jj_commit_id, jj_operation_id, changed_files_json, created_at
-		FROM change_revisions
-		WHERE change_id = ?
-		ORDER BY created_at ASC, id ASC
-	`, changeID)
-	if err != nil {
-		return nil, fmt.Errorf("list change revisions: %w", err)
-	}
-	defer rows.Close()
-	revisions := []ChangeRevision{}
-	for rows.Next() {
-		var revision ChangeRevision
-		if err := rows.Scan(
-			&revision.ID,
-			&revision.ChangeID,
-			&revision.JJCommitID,
-			&revision.JJOperationID,
-			&revision.ChangedFiles,
-			&revision.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan change revision: %w", err)
-		}
-		revisions = append(revisions, revision)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate change revisions: %w", err)
-	}
-	return revisions, nil
 }
 
 func (s *Store) WriteChangeSessions(ctx context.Context, changeID int64, sessionIDs []string, createdAt int64) error {
@@ -1080,221 +1014,6 @@ func (s *Store) ListSemanticLabelsByRepoID(ctx context.Context, repoID int64, li
 	return out, nil
 }
 
-func (s *Store) RankSemanticLabelDocuments(ctx context.Context, docs []SemanticLabelSearchDocument, query string, limit int) ([]SemanticLabelSearchResult, error) {
-	if len(docs) == 0 {
-		return nil, nil
-	}
-	match := ftsMatchQuery(query)
-	if match == "" {
-		return nil, nil
-	}
-	if limit <= 0 {
-		limit = 20
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin semantic label fts rank: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS temp.semantic_label_rank_fts`); err != nil {
-		return nil, fmt.Errorf("drop semantic label rank fts: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		CREATE VIRTUAL TABLE temp.semantic_label_rank_fts USING fts5(
-			ordinal UNINDEXED,
-			label,
-			text,
-			source UNINDEXED,
-			status UNINDEXED,
-			evidence_json UNINDEXED,
-			tokenize='unicode61'
-		)
-	`); err != nil {
-		return nil, fmt.Errorf("create semantic label rank fts: %w", err)
-	}
-	insert, err := tx.PrepareContext(ctx, `
-		INSERT INTO semantic_label_rank_fts (ordinal, label, text, source, status, evidence_json)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("prepare semantic label rank insert: %w", err)
-	}
-	defer insert.Close()
-	for _, doc := range docs {
-		if strings.TrimSpace(doc.Label) == "" {
-			continue
-		}
-		if _, err := insert.ExecContext(ctx, doc.Ordinal, doc.Label, strings.TrimSpace(doc.Text+" "+doc.Label), doc.Source, doc.Status, doc.EvidenceJSON); err != nil {
-			return nil, fmt.Errorf("insert semantic label rank doc: %w", err)
-		}
-	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT ordinal, label, source, status, evidence_json,
-			bm25(semantic_label_rank_fts, 4.0, 1.0, 0.0, 0.0, 0.0, 0.0) AS score
-		FROM semantic_label_rank_fts
-		WHERE semantic_label_rank_fts MATCH ?
-		ORDER BY score ASC
-		LIMIT ?
-	`, match, limit)
-	if err != nil {
-		return nil, fmt.Errorf("rank semantic label fts docs: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]SemanticLabelSearchResult, 0, limit)
-	for rows.Next() {
-		var result SemanticLabelSearchResult
-		if err := rows.Scan(&result.Ordinal, &result.Label, &result.Source, &result.Status, &result.EvidenceJSON, &result.RawScore); err != nil {
-			return nil, fmt.Errorf("scan semantic label fts result: %w", err)
-		}
-		out = append(out, result)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate semantic label fts results: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS temp.semantic_label_rank_fts`); err != nil {
-		return nil, fmt.Errorf("cleanup semantic label rank fts: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit semantic label fts rank: %w", err)
-	}
-	return out, nil
-}
-
-func (s *Store) MergeSemanticLabels(ctx context.Context, repoID int64, merges map[string]string, updatedAt int64) error {
-	if repoID == 0 || len(merges) == 0 {
-		return nil
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin semantic label merge: %w", err)
-	}
-	defer tx.Rollback()
-	for from, to := range merges {
-		from = strings.TrimSpace(from)
-		to = strings.TrimSpace(to)
-		if from == "" || to == "" || from == to {
-			continue
-		}
-		var source SemanticLabel
-		if err := tx.QueryRowContext(ctx, `
-			SELECT id, repo_id, label, aliases_json, sources_json, seen_count, accepted_count,
-				confidence, created_at, updated_at
-			FROM semantic_labels
-			WHERE repo_id = ? AND label = ?
-		`, repoID, from).Scan(
-			&source.ID,
-			&source.RepoID,
-			&source.Label,
-			&source.AliasesJSON,
-			&source.SourcesJSON,
-			&source.SeenCount,
-			&source.AcceptedCount,
-			&source.Confidence,
-			&source.CreatedAt,
-			&source.UpdatedAt,
-		); err != nil {
-			if err == sql.ErrNoRows {
-				continue
-			}
-			return fmt.Errorf("lookup semantic label merge source: %w", err)
-		}
-		target := source
-		target.Label = to
-		target.UpdatedAt = updatedAt
-		targetID, err := upsertSemanticLabel(ctx, tx, target)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE semantic_label_links
-			SET label_id = ?
-			WHERE label_id = ?
-		`, targetID, source.ID); err != nil {
-			return fmt.Errorf("retarget semantic label links: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_label_fts WHERE rowid = ?`, source.ID); err != nil {
-			return fmt.Errorf("delete semantic label fts source: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM semantic_labels WHERE id = ?`, source.ID); err != nil {
-			return fmt.Errorf("delete semantic label merge source: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit semantic label merge: %w", err)
-	}
-	return nil
-}
-
-func ftsMatchQuery(query string) string {
-	raw := ftsQueryTokenPattern.FindAllString(strings.ToLower(query), -1)
-	if len(raw) == 0 {
-		return ""
-	}
-	seen := map[string]struct{}{}
-	tokens := make([]string, 0, len(raw))
-	for _, token := range raw {
-		if len(token) <= 1 {
-			continue
-		}
-		if _, ok := seen[token]; ok {
-			continue
-		}
-		seen[token] = struct{}{}
-		tokens = append(tokens, token)
-		if len(tokens) >= 12 {
-			break
-		}
-	}
-	return strings.Join(tokens, " OR ")
-}
-
-func (s *Store) FindAttachableSessionsForRepo(ctx context.Context, repoRoot string, limit int) ([]string, error) {
-	repoRoot = strings.TrimSpace(repoRoot)
-	if repoRoot == "" {
-		return nil, nil
-	}
-	if limit <= 0 {
-		limit = 20
-	}
-	childCWD := strings.TrimRight(repoRoot, "/") + "/%"
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT s.id
-		FROM sessions s
-		WHERE (
-			s.repo_root = ?
-			OR s.cwd = ?
-			OR (s.repo_root IS NULL AND s.cwd LIKE ?)
-		)
-		AND NOT EXISTS (
-			SELECT 1
-			FROM change_sessions cs
-			JOIN changes c ON c.id = cs.change_id
-			WHERE cs.session_id = s.id
-		)
-		ORDER BY COALESCE(s.last_seen_at, s.ended_at, s.created_at) DESC, s.created_at DESC
-		LIMIT ?
-	`, repoRoot, repoRoot, childCWD, limit)
-	if err != nil {
-		return nil, fmt.Errorf("find attachable sessions for repo: %w", err)
-	}
-	defer rows.Close()
-
-	var sessionIDs []string
-	for rows.Next() {
-		var sessionID string
-		if err := rows.Scan(&sessionID); err != nil {
-			return nil, fmt.Errorf("scan attachable session: %w", err)
-		}
-		sessionIDs = append(sessionIDs, sessionID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate attachable sessions: %w", err)
-	}
-	return sessionIDs, nil
-}
-
 func (s *Store) UpsertDemuxProposal(ctx context.Context, proposal DemuxProposal) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO demux_proposals (
@@ -1347,39 +1066,6 @@ func (s *Store) FindLatestDemuxProposal(ctx context.Context, repoID int64, statu
 	query += ` ORDER BY created_at DESC, updated_at DESC LIMIT 1`
 	row := s.db.QueryRowContext(ctx, query, args...)
 	return scanDemuxProposal(row)
-}
-
-func (s *Store) ListActiveDemuxProposals(ctx context.Context, repoID int64, limit int) ([]DemuxProposal, error) {
-	query := `
-		SELECT id, repo_id, base_change_id, status, payload_json, created_at, updated_at, applied_at
-		FROM demux_proposals
-		WHERE repo_id = ? AND status IN ('pending', 'partially_applied')
-	`
-	args := []any{repoID}
-	query += ` ORDER BY created_at DESC, updated_at DESC`
-	if limit > 0 {
-		query += ` LIMIT ?`
-		args = append(args, limit)
-	}
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list active demux proposals: %w", err)
-	}
-	defer rows.Close()
-	var proposals []DemuxProposal
-	for rows.Next() {
-		proposal, err := scanDemuxProposal(rows)
-		if err != nil {
-			return nil, err
-		}
-		if proposal != nil {
-			proposals = append(proposals, *proposal)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate active demux proposals: %w", err)
-	}
-	return proposals, nil
 }
 
 func (s *Store) ListDemuxProposals(ctx context.Context, repoID int64, status string, limit int) ([]DemuxProposal, error) {
@@ -1439,59 +1125,6 @@ func (s *Store) DeletePendingDemuxProposalsForRepo(ctx context.Context, repoID i
 	return nil
 }
 
-func (s *Store) FilterExistingSessionIDs(ctx context.Context, sessionIDs []string) ([]string, error) {
-	if len(sessionIDs) == 0 {
-		return nil, nil
-	}
-	seen := map[string]struct{}{}
-	ordered := make([]string, 0, len(sessionIDs))
-	for _, sessionID := range sessionIDs {
-		sessionID = strings.TrimSpace(sessionID)
-		if sessionID == "" {
-			continue
-		}
-		if _, ok := seen[sessionID]; ok {
-			continue
-		}
-		seen[sessionID] = struct{}{}
-		ordered = append(ordered, sessionID)
-	}
-	if len(ordered) == 0 {
-		return nil, nil
-	}
-	placeholders := strings.Repeat("?,", len(ordered))
-	placeholders = strings.TrimSuffix(placeholders, ",")
-	args := make([]any, len(ordered))
-	for i, sessionID := range ordered {
-		args[i] = sessionID
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id FROM sessions WHERE id IN (`+placeholders+`)
-	`, args...)
-	if err != nil {
-		return nil, fmt.Errorf("filter existing session ids: %w", err)
-	}
-	defer rows.Close()
-	existing := map[string]struct{}{}
-	for rows.Next() {
-		var sessionID string
-		if err := rows.Scan(&sessionID); err != nil {
-			return nil, fmt.Errorf("scan existing session id: %w", err)
-		}
-		existing[sessionID] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate existing session ids: %w", err)
-	}
-	filtered := make([]string, 0, len(ordered))
-	for _, sessionID := range ordered {
-		if _, ok := existing[sessionID]; ok {
-			filtered = append(filtered, sessionID)
-		}
-	}
-	return filtered, nil
-}
-
 func (s *Store) UpdateDemuxProposalStatus(ctx context.Context, id, status string, updatedAt int64, appliedAt *int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE demux_proposals
@@ -1500,46 +1133,6 @@ func (s *Store) UpdateDemuxProposalStatus(ctx context.Context, id, status string
 	`, status, updatedAt, appliedAt, id)
 	if err != nil {
 		return fmt.Errorf("update demux proposal status: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) UpdateSessionWorkspace(ctx context.Context, sessionID, cwd, repoRoot string) error {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return nil
-	}
-	cwd = strings.TrimSpace(cwd)
-	repoRoot = strings.TrimSpace(repoRoot)
-	if cwd == "" && repoRoot == "" {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE sessions
-		SET
-			cwd = CASE WHEN ? != '' THEN ? ELSE cwd END,
-			repo_root = CASE WHEN ? != '' THEN ? ELSE repo_root END
-		WHERE id = ?
-	`, cwd, cwd, repoRoot, repoRoot, sessionID)
-	if err != nil {
-		return fmt.Errorf("update session workspace: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) WriteModifyEvent(ctx context.Context, ev ModifyEvent) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO modify_events (repo_id, target_change_id, previous_current_change_id, jj_operation_id, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`,
-		ev.RepoID,
-		ev.TargetChangeID,
-		ev.PreviousCurrentChangeID,
-		ev.JJOperationID,
-		ev.CreatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert modify event: %w", err)
 	}
 	return nil
 }
@@ -1659,86 +1252,6 @@ func (s *Store) ListChangeBookmarksByNames(ctx context.Context, bookmarkNames []
 		return nil, fmt.Errorf("iterate change bookmarks: %w", err)
 	}
 	return bookmarksByName, nil
-}
-
-func (s *Store) WritePush(ctx context.Context, push Push) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pushes (repo_id, remote_name, branch_name, head_commit_id, current_change_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`,
-		push.RepoID,
-		push.RemoteName,
-		push.BranchName,
-		push.HeadCommitID,
-		push.CurrentChangeID,
-		push.CreatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert push: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) UpsertCursorSession(ctx context.Context, session Session) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO sessions (
-			id, created_at, ended_at, command, cwd, client_pid, exit_code, gx_version,
-			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		session.ID,
-		session.CreatedAt,
-		session.EndedAt,
-		session.Command,
-		session.Cwd,
-		session.ClientPID,
-		session.ExitCode,
-		session.GXVersion,
-		session.Source,
-		session.ProcessName,
-		session.ParentPID,
-		session.LastSeenAt,
-		session.EndReason,
-		session.RepoRoot,
-	)
-	if err != nil {
-		return false, fmt.Errorf("upsert cursor session: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("cursor session rows affected: %w", err)
-	}
-	return affected > 0, nil
-}
-
-func (s *Store) UpsertCursorMessage(ctx context.Context, msg CursorMessage) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO cursor_messages (
-			id, session_id, created_at, role, text, raw_json, input_tokens, output_tokens
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		msg.ID,
-		msg.SessionID,
-		msg.CreatedAt,
-		msg.Role,
-		msg.Text,
-		msg.RawJSON,
-		msg.InputTokens,
-		msg.OutputTokens,
-	)
-	if err != nil {
-		return false, fmt.Errorf("upsert cursor message: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("cursor message rows affected: %w", err)
-	}
-	if err := s.refreshSessionUsage(ctx, msg.SessionID); err != nil {
-		return false, err
-	}
-	return affected > 0, nil
 }
 
 func (s *Store) CountCursorSessions(ctx context.Context) (int, error) {
@@ -2475,30 +1988,6 @@ func (s *Store) FindStackByBookmark(ctx context.Context, repoID int64, bookmarkN
 	return scanStack(row)
 }
 
-func (s *Store) FindStackByHeadChange(ctx context.Context, repoID int64, headChangeID string) (*Stack, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, name, bookmark_name, base_ref, base_commit_id, head_change_id, head_commit_id,
-			remote_name, remote_ref, github_pr_url, status, created_at, updated_at
-		FROM stacks
-		WHERE repo_id = ? AND head_change_id = ?
-		ORDER BY updated_at DESC, id DESC
-		LIMIT 1
-	`, repoID, headChangeID)
-	return scanStack(row)
-}
-
-func (s *Store) LatestStackByRepoID(ctx context.Context, repoID int64) (*Stack, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, name, bookmark_name, base_ref, base_commit_id, head_change_id, head_commit_id,
-			remote_name, remote_ref, github_pr_url, status, created_at, updated_at
-		FROM stacks
-		WHERE repo_id = ?
-		ORDER BY updated_at DESC, id DESC
-		LIMIT 1
-	`, repoID)
-	return scanStack(row)
-}
-
 func (s *Store) ListStacksByRepoID(ctx context.Context, repoID int64) ([]Stack, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, repo_id, name, bookmark_name, base_ref, base_commit_id, head_change_id, head_commit_id,
@@ -2659,24 +2148,6 @@ func scanStackValue(row stackScanner) (Stack, error) {
 	return stack, nil
 }
 
-func (s *Store) ResetAllPublished(ctx context.Context) (int, error) {
-	now := time.Now().UnixMilli()
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE stacks
-		SET status = 'draft', updated_at = ?
-		WHERE status != 'draft'
-	`, now)
-	if err != nil {
-		return 0, fmt.Errorf("reset stack publish state: %w", err)
-	}
-	stacksUpdated, _ := result.RowsAffected()
-
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM pushes`); err != nil {
-		return 0, fmt.Errorf("clear push history: %w", err)
-	}
-	return int(stacksUpdated), nil
-}
-
 func (s *Store) LatestPushByRepoID(ctx context.Context, repoID int64) (*Push, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, repo_id, remote_name, branch_name, head_commit_id, current_change_id, created_at
@@ -2709,45 +2180,6 @@ func (s *Store) LatestPushByRepoID(ctx context.Context, repoID int64) (*Push, er
 	}
 	if branchName.Valid {
 		push.BranchName = &branchName.String
-	}
-	if currentChangeID.Valid {
-		push.CurrentChangeID = &currentChangeID.Int64
-	}
-	return &push, nil
-}
-
-func (s *Store) LatestPushByBranchName(ctx context.Context, repoID int64, branchName string) (*Push, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, remote_name, branch_name, head_commit_id, current_change_id, created_at
-		FROM pushes
-		WHERE repo_id = ? AND branch_name = ?
-		ORDER BY created_at DESC, id DESC
-		LIMIT 1
-	`, repoID, branchName)
-
-	var push Push
-	var remoteName sql.NullString
-	var storedBranchName sql.NullString
-	var currentChangeID sql.NullInt64
-	if err := row.Scan(
-		&push.ID,
-		&push.RepoID,
-		&remoteName,
-		&storedBranchName,
-		&push.HeadCommitID,
-		&currentChangeID,
-		&push.CreatedAt,
-	); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("latest push by branch: %w", err)
-	}
-	if remoteName.Valid {
-		push.RemoteName = &remoteName.String
-	}
-	if storedBranchName.Valid {
-		push.BranchName = &storedBranchName.String
 	}
 	if currentChangeID.Valid {
 		push.CurrentChangeID = &currentChangeID.Int64

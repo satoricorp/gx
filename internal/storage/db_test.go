@@ -546,37 +546,6 @@ func TestDeletePendingDemuxProposalsForRepo(t *testing.T) {
 	}
 }
 
-func TestFilterExistingSessionIDs(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	ctx := context.Background()
-	db, err := Open(ctx)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	store, err := NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer store.Close()
-
-	for _, session := range []Session{
-		{ID: "session-one", CreatedAt: 1, Command: "codex", Cwd: "/repo", GXVersion: "test"},
-		{ID: "session-two", CreatedAt: 2, Command: "cursor", Cwd: "/repo", GXVersion: "test"},
-	} {
-		if err := store.UpsertObservedSession(ctx, session); err != nil {
-			t.Fatalf("UpsertObservedSession(%s) error = %v", session.ID, err)
-		}
-	}
-	got, err := store.FilterExistingSessionIDs(ctx, []string{"session-two", "missing", "session-one", "session-two"})
-	if err != nil {
-		t.Fatalf("FilterExistingSessionIDs() error = %v", err)
-	}
-	want := []string{"session-two", "session-one"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("FilterExistingSessionIDs() = %#v, want %#v", got, want)
-	}
-}
-
 func TestFindLatestDemuxProposal(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
@@ -720,68 +689,6 @@ func TestChangeDemuxEvidenceRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFindAttachableSessionsForRepoReturnsUnlinkedRepoSessions(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	ctx := context.Background()
-	db, err := Open(ctx)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	store, err := NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer store.Close()
-
-	repoID, err := store.UpsertRepo(ctx, Repo{
-		RootPath:  "/repo",
-		Backend:   "jj",
-		CreatedAt: 1,
-		UpdatedAt: 1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertRepo() error = %v", err)
-	}
-	changeID, err := store.UpsertChange(ctx, Change{
-		RepoID:          repoID,
-		JJChangeID:      "change-1",
-		CurrentCommitID: "commit-1",
-		Description:     "linked",
-		Status:          "draft",
-		FirstSeenAt:     1,
-		UpdatedAt:       1,
-	})
-	if err != nil {
-		t.Fatalf("UpsertChange() error = %v", err)
-	}
-	lastSeen := int64(30)
-	for _, session := range []Session{
-		{ID: "linked", CreatedAt: 10, Command: "cursor", Cwd: "/repo", GXVersion: "test", RepoRoot: ptrString("/repo")},
-		{ID: "child-cwd", CreatedAt: 20, Command: "codex", Cwd: "/repo/subdir", GXVersion: "test"},
-		{ID: "repo-root", CreatedAt: 25, Command: "cursor", Cwd: ".", GXVersion: "test", LastSeenAt: &lastSeen, RepoRoot: ptrString("/repo")},
-		{ID: "other-repo", CreatedAt: 40, Command: "cursor", Cwd: "/other", GXVersion: "test", RepoRoot: ptrString("/other")},
-	} {
-		// UpsertCursorSession: these rows carry last_seen_at, which only the
-		// Cursor ingest writes in production. UpsertObservedSession, the push
-		// path's writer, cannot express them.
-		if _, err := store.UpsertCursorSession(ctx, session); err != nil {
-			t.Fatalf("UpsertCursorSession(%s) error = %v", session.ID, err)
-		}
-	}
-	if err := store.WriteChangeSessions(ctx, changeID, []string{"linked"}, 1); err != nil {
-		t.Fatalf("WriteChangeSessions() error = %v", err)
-	}
-
-	got, err := store.FindAttachableSessionsForRepo(ctx, "/repo", 10)
-	if err != nil {
-		t.Fatalf("FindAttachableSessionsForRepo() error = %v", err)
-	}
-	want := []string{"repo-root", "child-cwd"}
-	if !equalStrings(got, want) {
-		t.Fatalf("FindAttachableSessionsForRepo() = %#v, want %#v", got, want)
-	}
-}
-
 func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
@@ -817,19 +724,20 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 		t.Fatalf("UpsertChange() error = %v", err)
 	}
 	source := "ambient"
-	processName := "codex"
-	// UpsertCursorSession: process_name is an ingest-only column, so this is
-	// the writer a real row carrying it comes from.
-	if _, err := store.UpsertCursorSession(ctx, Session{
-		ID:          "session-one",
-		CreatedAt:   10,
-		Command:     "codex exec",
-		Cwd:         "/repo",
-		GXVersion:   "test",
-		Source:      &source,
-		ProcessName: &processName,
+	// UpsertObservedSession is the writer the push path uses, and the only
+	// production writer of `sessions`. It cannot set process_name — no current
+	// writer can, since the cursor ingest was retired — so the provenance row
+	// this test expects carries a NULL process_name and the agent tool must
+	// resolve from the command alone.
+	if err := store.UpsertObservedSession(ctx, Session{
+		ID:        "session-one",
+		CreatedAt: 10,
+		Command:   "codex exec",
+		Cwd:       "/repo",
+		GXVersion: "test",
+		Source:    &source,
 	}); err != nil {
-		t.Fatalf("UpsertCursorSession() error = %v", err)
+		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
 	model := "gpt-5.1-code"
 	if err := store.WriteRequest(ctx, Request{
@@ -862,8 +770,8 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 	if gotSession != "session-one" || gotAgent != "codex" || gotProvider != "openai" || gotModel != model || gotCreatedAt != 12 {
 		t.Fatalf("provenance = %s/%s/%s/%s/%d, want session-one/codex/openai/%s/12", gotSession, gotAgent, gotProvider, gotModel, gotCreatedAt, model)
 	}
-	if gotSource.String != source || gotProcess.String != processName {
-		t.Fatalf("source/process = %#v/%#v, want %q/%q", gotSource, gotProcess, source, processName)
+	if gotSource.String != source || gotProcess.Valid {
+		t.Fatalf("source/process = %#v/%#v, want %q/NULL", gotSource, gotProcess, source)
 	}
 }
 
@@ -1035,76 +943,4 @@ func TestSessionUsageAggregatesRequestModelsAndResponseTokens(t *testing.T) {
 	if gotInput != 17 || gotOutput != 9 || gotCacheRead != 3 || gotCacheWrite != 9 {
 		t.Fatalf("tokens = %d/%d/%d/%d, want 17/9/3/9", gotInput, gotOutput, gotCacheRead, gotCacheWrite)
 	}
-}
-
-func TestSessionUsageAggregatesCursorMessages(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	ctx := context.Background()
-	db, err := Open(ctx)
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	store, err := NewStore(ctx, db)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer store.Close()
-
-	source := "cursor"
-	if _, err := store.UpsertCursorSession(ctx, Session{
-		ID:        "cursor-session",
-		CreatedAt: 10,
-		Command:   "cursor",
-		Cwd:       "/repo",
-		GXVersion: "test",
-		Source:    &source,
-	}); err != nil {
-		t.Fatalf("UpsertCursorSession() error = %v", err)
-	}
-	inputTokens := 42
-	outputTokens := 17
-	if _, err := store.UpsertCursorMessage(ctx, CursorMessage{
-		ID:           "bubble-one",
-		SessionID:    "cursor-session",
-		CreatedAt:    11,
-		Role:         "assistant",
-		Text:         "done",
-		RawJSON:      []byte(`{"model":"cursor-model","tokenCount":{"inputTokens":42,"outputTokens":17}}`),
-		InputTokens:  &inputTokens,
-		OutputTokens: &outputTokens,
-	}); err != nil {
-		t.Fatalf("UpsertCursorMessage() error = %v", err)
-	}
-
-	var modelsJSON string
-	var gotInput, gotOutput int
-	if err := store.db.QueryRowContext(ctx, `
-		SELECT models_json, input_tokens, output_tokens
-		FROM sessions
-		WHERE id = 'cursor-session'
-	`).Scan(&modelsJSON, &gotInput, &gotOutput); err != nil {
-		t.Fatalf("select cursor session usage: %v", err)
-	}
-	if modelsJSON != `["cursor-model"]` {
-		t.Fatalf("models_json = %s", modelsJSON)
-	}
-	if gotInput != 42 || gotOutput != 17 {
-		t.Fatalf("tokens = %d/%d, want 42/17", gotInput, gotOutput)
-	}
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func ptrString(value string) *string {
-	return &value
 }
