@@ -71,6 +71,9 @@ type CodeIndexRetriever struct {
 	// EmbedderFor builds an embedder for a namespace width. Injected so tests
 	// can drive fusion without an embeddings API.
 	EmbedderFor embedderFactory
+	// CloudSearcher overrides the GX Cloud retrieval client; injected in
+	// tests. When nil it is resolved from the signed-in credentials.
+	CloudSearcher reviewCloudSearcher
 }
 
 // codeIndexTarget is one candidate namespace and where it came from.
@@ -93,6 +96,18 @@ func codeIndexRetrieverFromEnv() ContextRetriever {
 }
 
 func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	// The signed-in path: retrieval through GX Cloud, no provider keys on this
+	// machine. The direct-store path below stays for development (raw
+	// TURBOPUFFER_API_KEY) and for tests that inject a Store.
+	if r.Store == nil && !rawTurboPufferKeyPresent() {
+		searcher := r.CloudSearcher
+		if searcher == nil {
+			searcher = reviewCloudSearcherFromEnv()
+		}
+		if searcher != nil {
+			return retrieveCodeIndexViaCloud(ctx, in, searcher, r.limitFor(in.Options))
+		}
+	}
 	store, ok := r.resolveStore(in.Evidence)
 	if !ok {
 		return nil, nil
@@ -250,7 +265,8 @@ func (r CodeIndexRetriever) resolveStore(log *EvidenceLog) (indexStore, bool) {
 		log.Record(EvidenceStatus{
 			Source: codeIndexEvidenceSource,
 			State:  EvidenceDisabled,
-			Detail: "TURBOPUFFER_API_KEY is not set",
+			Detail: "not signed in to GX Cloud, and no TURBOPUFFER_API_KEY for direct access",
+			Remedy: signInRemedy,
 		})
 		return nil, false
 	}

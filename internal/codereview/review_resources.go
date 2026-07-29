@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/semantic"
 )
 
@@ -29,6 +30,9 @@ type ReviewResourceRetriever struct {
 	Store     reviewResourceStore
 	Namespace string
 	Limit     int
+	// CloudSearcher overrides the GX Cloud retrieval client; injected in
+	// tests. When nil it is resolved from the signed-in credentials.
+	CloudSearcher reviewCloudSearcher
 }
 
 type reviewResourceEmbedder interface {
@@ -60,10 +64,18 @@ func reviewResourceRetrieverFromEnv() ContextRetriever {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_RESOURCES")), "0") {
 		return nil
 	}
+	retriever := ReviewResourceRetriever{
+		Limit: reviewEnvInt("GX_REVIEW_RESOURCES_TOP_K", defaultReviewResourceTopK),
+	}
 	openAIKey := strings.TrimSpace(firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("GX_OPENAI_API_KEY")))
 	tpufKey := strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY"))
 	if openAIKey == "" || tpufKey == "" {
-		return nil
+		// No direct keys. The retriever is still returned: Retrieve goes
+		// through GX Cloud when signed in, and otherwise records the source as
+		// disabled. It used to return nil here, which made the shared
+		// knowledge corpus vanish from the review with no evidence line — the
+		// exact silent-degradation the evidence log exists to prevent.
+		return retriever
 	}
 	namespace := strings.TrimSpace(os.Getenv("GX_REVIEW_KNOWLEDGE_NAMESPACE"))
 	if namespace == "" {
@@ -73,28 +85,89 @@ func reviewResourceRetrieverFromEnv() ContextRetriever {
 		OpenAIAPIKey:         openAIKey,
 		OpenAIBaseURL:        normalizeReviewOpenAIBaseURL(firstNonEmpty(os.Getenv("GX_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL"), "https://api.openai.com")),
 		OpenAIEmbeddingModel: firstNonEmpty(os.Getenv("GX_OPENAI_EMBEDDING_MODEL"), "text-embedding-3-small"),
-		EmbeddingDimensions:  reviewEnvInt("GX_EMBEDDING_DIMENSIONS", 512),
+		// 512 stays pinned for the shared corpus: its ~35k rows were embedded
+		// at that width and TurboPuffer rejects a query at any other.
+		EmbeddingDimensions: reviewEnvInt("GX_EMBEDDING_DIMENSIONS", 512),
 	}
-	return ReviewResourceRetriever{
-		Embedder: semantic.NewOpenAIEmbedder(cfg),
-		Store: turboPufferReviewResourceStore{
-			apiKey:     tpufKey,
-			baseURL:    strings.TrimRight(firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL), "/"),
-			namespace:  strings.Trim(namespace, "/"),
-			httpClient: &http.Client{Timeout: 20 * time.Second},
-		},
-		Namespace: namespace,
-		Limit:     reviewEnvInt("GX_REVIEW_RESOURCES_TOP_K", defaultReviewResourceTopK),
+	retriever.Embedder = semantic.NewOpenAIEmbedder(cfg)
+	retriever.Store = turboPufferReviewResourceStore{
+		apiKey:     tpufKey,
+		baseURL:    strings.TrimRight(firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL), "/"),
+		namespace:  strings.Trim(namespace, "/"),
+		httpClient: &http.Client{Timeout: 20 * time.Second},
 	}
+	retriever.Namespace = namespace
+	return retriever
 }
 
-// EvidenceSource implements evidenceNamer.
-func (ReviewResourceRetriever) EvidenceSource() string { return "review knowledge" }
+// reviewKnowledgeEvidenceSource is the name this source reports under.
+const reviewKnowledgeEvidenceSource = "review knowledge"
 
-func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
-	if r.Embedder == nil || r.Store == nil {
+// EvidenceSource implements evidenceNamer.
+func (ReviewResourceRetriever) EvidenceSource() string { return reviewKnowledgeEvidenceSource }
+
+// retrieveKnowledgeViaCloud searches the shared review-knowledge corpus
+// through GX Cloud. The server embeds the query at the corpus's own width and
+// applies the review_corpus filter; the tag-narrowed second query of the
+// direct path is not replicated — the broad hybrid search is what the server's
+// own summary broker uses for this corpus.
+func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
+	ctx context.Context,
+	in RetrieveInput,
+	searcher reviewCloudSearcher,
+	queryText string,
+) ([]ContextSnippet, error) {
+	limit := r.Limit
+	if in.Options.Deep && limit < defaultReviewResourceDeepTopK {
+		limit = defaultReviewResourceDeepTopK
+	}
+	if limit <= 0 {
+		limit = defaultReviewResourceTopK
+	}
+	result, err := searcher.SearchReviewIndex(ctx, cloud.ReviewSearchRequest{
+		Target: "knowledge",
+		Query:  queryText,
+		Limit:  limit,
+	})
+	if err != nil {
+		in.Evidence.Record(EvidenceStatus{
+			Source: reviewKnowledgeEvidenceSource,
+			State:  EvidenceUnavailable,
+			Detail: cloudUnavailableDetail(err),
+		})
 		return nil, nil
 	}
+	status := EvidenceStatus{Source: reviewKnowledgeEvidenceSource, Namespace: result.Namespace}
+	switch {
+	case !result.Available:
+		status.State = EvidenceUnavailable
+		status.Detail = "gx cloud retrieval is not configured server-side"
+		if result.Reason != "" {
+			status.Detail = "gx cloud: " + result.Reason
+		}
+	case !result.Exists:
+		status.State = EvidenceMissing
+		status.Detail = "the shared review-knowledge corpus does not exist on this cloud"
+	case len(result.Rows) == 0:
+		status.State = EvidenceEmpty
+	}
+	if status.State != "" {
+		in.Evidence.Record(status)
+		return nil, nil
+	}
+	rows := make([]reviewResourceRow, 0, len(result.Rows))
+	for _, row := range cloudSearchRows(result.Rows) {
+		rows = append(rows, reviewResourceRow(row))
+	}
+	snippets := reviewResourceSnippets(rows, limit, result.Namespace)
+	status.State = EvidenceOK
+	status.Snippets = len(snippets)
+	status.Detail = "via gx cloud"
+	in.Evidence.Record(status)
+	return snippets, nil
+}
+
+func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
 	if !in.Plan.RunReviewResources && in.Plan.Triage.Class != "" {
 		return nil, nil
 	}
@@ -103,6 +176,25 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	queryText := reviewResourceQueryText(opts, signals)
 	if strings.TrimSpace(queryText) == "" {
 		return nil, nil
+	}
+	if r.Embedder == nil || r.Store == nil {
+		// No direct keys: the signed-in path retrieves the shared corpus
+		// through GX Cloud, and with no login the source reports itself
+		// disabled instead of silently contributing nothing.
+		searcher := r.CloudSearcher
+		if searcher == nil {
+			searcher = reviewCloudSearcherFromEnv()
+		}
+		if searcher == nil {
+			in.Evidence.Record(EvidenceStatus{
+				Source: reviewKnowledgeEvidenceSource,
+				State:  EvidenceDisabled,
+				Detail: "not signed in to GX Cloud, and no direct keys for the shared review corpus",
+				Remedy: signInRemedy,
+			})
+			return nil, nil
+		}
+		return r.retrieveKnowledgeViaCloud(ctx, in, searcher, queryText)
 	}
 	vectors, err := r.Embedder.Embed(ctx, []string{queryText})
 	if err != nil {
@@ -638,6 +730,25 @@ func displayAttribute(value any) string {
 	}
 }
 
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
 func stringValue(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -682,310 +793,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-const (
-	defaultIndexedContextLimit     = 8
-	defaultIndexedDeepContextLimit = 24
-)
-
-type IndexedContextRetriever struct {
-	Embedder  reviewResourceEmbedder
-	Store     indexedContextStore
-	Namespace string
-	Limit     int
-}
-
-type indexedContextStore interface {
-	Query(ctx context.Context, req indexedContextQuery) ([]indexedContextRow, error)
-}
-
-type indexedContextQuery struct {
-	Vector            []float32
-	Limit             int
-	Filters           any
-	IncludeAttributes []string
-}
-
-type indexedContextRow map[string]any
-
-type turboPufferIndexedContextStore struct {
-	apiKey     string
-	baseURL    string
-	namespace  string
-	httpClient *http.Client
-}
-
-func indexedContextRetrieverFromEnv() ContextRetriever {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_INDEXED_CONTEXT")), "0") {
-		return nil
-	}
-	cfg, err := semantic.ConfigFromEnv()
-	if err != nil || !cfg.Enabled {
-		return nil
-	}
-	return IndexedContextRetriever{
-		Embedder: semantic.NewOpenAIEmbedder(cfg),
-		Store: turboPufferIndexedContextStore{
-			apiKey:     cfg.TurboPufferAPIKey,
-			baseURL:    strings.TrimRight(cfg.TurboPufferBaseURL, "/"),
-			namespace:  strings.Trim(cfg.TurboPufferNamespace, "/"),
-			httpClient: &http.Client{Timeout: 20 * time.Second},
-		},
-		Namespace: cfg.TurboPufferNamespace,
-		Limit:     reviewEnvInt("GX_REVIEW_INDEXED_CONTEXT_TOP_K", defaultIndexedContextLimit),
-	}
-}
-
-// EvidenceSource implements evidenceNamer.
-func (IndexedContextRetriever) EvidenceSource() string { return "legacy indexed context" }
-
-func (r IndexedContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
-	if r.Embedder == nil || r.Store == nil {
-		return nil, nil
-	}
-	opts := in.Options
-	repoRoot := in.RepoRoot
-	signals := reviewResourceSignals(in)
-	queryText := strings.Join([]string{
-		"GX indexed codebase and session context query",
-		reviewResourceQueryText(opts, signals),
-		"Find code chunks and prior session transcript chunks that explain changed behavior, related Modules, previous agent decisions, and review risks.",
-	}, "\n")
-	vectors, err := r.Embedder.Embed(ctx, []string{queryText})
-	if err != nil {
-		return nil, err
-	}
-	if len(vectors) != 1 {
-		return nil, fmt.Errorf("indexed context embedding returned %d vectors", len(vectors))
-	}
-	limit := r.Limit
-	if opts.Deep && limit < defaultIndexedDeepContextLimit {
-		limit = defaultIndexedDeepContextLimit
-	}
-	if limit <= 0 {
-		limit = defaultIndexedContextLimit
-	}
-	rows, err := r.Store.Query(ctx, indexedContextQuery{
-		Vector:            vectors[0],
-		Limit:             limit,
-		Filters:           indexedContextFilter(repoRoot),
-		IncludeAttributes: indexedContextAttributes(),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return indexedContextSnippets(rows, limit, r.Namespace), nil
-}
-
-func indexedContextFilter(repoRoot string) any {
-	conditions := []any{
-		[]any{"source_kind", "In", []string{"code_file", "session_transcript", "session_context"}},
-	}
-	if strings.TrimSpace(repoRoot) != "" {
-		conditions = append(conditions, []any{"repo_root", "Eq", strings.TrimSpace(repoRoot)})
-	}
-	return []any{"And", conditions}
-}
-
-func indexedContextAttributes() []string {
-	return []string{
-		"text",
-		"source_kind",
-		"source_id",
-		"repo_root",
-		"repo_full_name",
-		"branch_name",
-		"commit_id",
-		"revision_title",
-		"file_path",
-		"symbol",
-		"start_line",
-		"end_line",
-		"chunk_hash",
-		"language",
-		"doc_type",
-		"session_id",
-		"request_id",
-		"response_id",
-		"agent_tool",
-		"provider",
-		"model",
-		"created_at",
-		"provenance_status",
-		"context_format",
-	}
-}
-
-func (s turboPufferIndexedContextStore) Query(ctx context.Context, req indexedContextQuery) ([]indexedContextRow, error) {
-	limit := req.Limit
-	if limit <= 0 {
-		limit = defaultIndexedContextLimit
-	}
-	payload := map[string]any{
-		"rank_by":            []any{"vector", "ANN", req.Vector},
-		"limit":              limit,
-		"include_attributes": req.IncludeAttributes,
-	}
-	if req.Filters != nil {
-		payload["filters"] = req.Filters
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal indexed context query: %w", err)
-	}
-	endpoint := strings.TrimRight(s.baseURL, "/") + "/v2/namespaces/" + url.PathEscape(strings.Trim(s.namespace, "/")) + "/query"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create indexed context query: %w", err)
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+s.apiKey)
-	httpReq.Header.Set("Content-Type", "application/json")
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
-	}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("query indexed context: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusAccepted {
-		return nil, fmt.Errorf("indexed context is still building")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("query indexed context: status %s", resp.Status)
-	}
-	var decoded struct {
-		Rows []indexedContextRow `json:"rows"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("decode indexed context query: %w", err)
-	}
-	return decoded.Rows, nil
-}
-
-func indexedContextSnippets(rows []indexedContextRow, limit int, namespace string) []ContextSnippet {
-	if limit <= 0 {
-		limit = defaultIndexedContextLimit
-	}
-	namespace = strings.TrimSpace(namespace)
-	if namespace == "" {
-		namespace = "gx-sessions"
-	}
-	seen := map[string]struct{}{}
-	var snippets []ContextSnippet
-	for _, row := range rows {
-		snippet, ok := indexedContextSnippet(row, namespace)
-		if !ok {
-			continue
-		}
-		key := snippet.Kind + "\x00" + snippet.Ref + "\x00" + snippet.ChunkHash
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		snippets = append(snippets, snippet)
-		if len(snippets) >= limit {
-			break
-		}
-	}
-	return snippets
-}
-
-func indexedContextSnippet(row indexedContextRow, namespace string) (ContextSnippet, bool) {
-	text := stringValue(row["text"])
-	if strings.TrimSpace(text) == "" {
-		return ContextSnippet{}, false
-	}
-	sourceKind := stringValue(row["source_kind"])
-	ref := firstNonEmpty(stringValue(row["source_id"]), stringValue(row["file_path"]), stringValue(row["session_id"]))
-	if ref == "" {
-		return ContextSnippet{}, false
-	}
-	snippet := ContextSnippet{
-		Kind:       "indexed_context",
-		Ref:        ref,
-		Source:     "turbopuffer:" + strings.TrimSpace(namespace),
-		Publisher:  "this repo",
-		Title:      firstNonEmpty(stringValue(row["revision_title"]), stringValue(row["symbol"]), ref),
-		Text:       indexedContextSnippetText(row, text),
-		File:       stringValue(row["file_path"]),
-		StartLine:  intValue(row["start_line"]),
-		EndLine:    intValue(row["end_line"]),
-		Commit:     stringValue(row["commit_id"]),
-		SessionID:  stringValue(row["session_id"]),
-		RequestID:  stringValue(row["request_id"]),
-		ResponseID: stringValue(row["response_id"]),
-		ChunkHash:  stringValue(row["chunk_hash"]),
-	}
-	switch sourceKind {
-	case "code_file":
-		snippet.Kind = "indexed_code"
-		if snippet.File != "" && snippet.StartLine > 0 {
-			snippet.Ref = fmt.Sprintf("%s:%d", snippet.File, snippet.StartLine)
-		}
-	case "session_transcript", "session_context":
-		snippet.Kind = "indexed_session"
-		if snippet.SessionID != "" {
-			snippet.Ref = firstNonEmpty(snippet.SessionID+"/"+snippet.RequestID, snippet.SessionID)
-		}
-	default:
-		return ContextSnippet{}, false
-	}
-	return snippet, true
-}
-
-func indexedContextSnippetText(row indexedContextRow, text string) string {
-	var b strings.Builder
-	for _, key := range []string{
-		"source_kind",
-		"repo_full_name",
-		"repo_root",
-		"branch_name",
-		"commit_id",
-		"revision_title",
-		"file_path",
-		"symbol",
-		"start_line",
-		"end_line",
-		"chunk_hash",
-		"session_id",
-		"request_id",
-		"response_id",
-		"agent_tool",
-		"provider",
-		"model",
-		"provenance_status",
-	} {
-		value := displayAttribute(row[key])
-		if value == "" {
-			continue
-		}
-		b.WriteString(key)
-		b.WriteString(": ")
-		b.WriteString(value)
-		b.WriteString("\n")
-	}
-	if b.Len() > 0 {
-		b.WriteString("\n")
-	}
-	b.WriteString(text)
-	return strings.TrimSpace(b.String())
-}
-
-func intValue(value any) int {
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case int64:
-		return int(typed)
-	case float64:
-		return int(typed)
-	case json.Number:
-		n, _ := typed.Int64()
-		return int(n)
-	default:
-		return 0
-	}
 }

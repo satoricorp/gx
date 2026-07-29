@@ -81,6 +81,16 @@ func DenyNetwork() func() []string {
 	for _, key := range NetworkCredentialEnv {
 		_ = os.Setenv(key, "")
 	}
+	// On-disk credentials are credentials too. A developer's ~/.gx holds a
+	// live CLI session (credentials.json) and upload auth (upload.json), and a
+	// path that authenticates from disk — cloud-mode review retrieval does —
+	// would take the network branch here while taking the offline branch in
+	// CI, which is exactly the local-red/CI-green split this guard exists to
+	// prevent. An empty scratch GX_HOME makes the disk answer the way CI does;
+	// tests that need real state set their own GX_HOME afterwards.
+	if dir, err := os.MkdirTemp("", "gx-test-home-"); err == nil {
+		_ = os.Setenv("GX_HOME", dir)
+	}
 	for _, key := range []string{
 		"HTTP_PROXY", "http_proxy",
 		"HTTPS_PROXY", "https_proxy",

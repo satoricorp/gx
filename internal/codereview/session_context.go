@@ -31,14 +31,18 @@ var sessionSourceKinds = []string{"published_session_context", "session_transcri
 // changed, as captured on previous pushes.
 //
 // Nothing emitted session snippets into a review before this. The retriever
-// that would have — IndexedContextRetriever — was gated behind an environment
-// variable nobody sets and pointed at a namespace that was never created, so a
-// review's account of "why was this written this way" came from the diff alone.
+// that would have — the since-deleted legacy IndexedContextRetriever — was
+// gated behind an environment variable nobody sets and pointed at a namespace
+// that was never created, so a review's account of "why was this written this
+// way" came from the diff alone.
 type SessionContextRetriever struct {
 	Store       indexStore
 	Namespaces  []codeIndexTarget
 	Limit       int
 	EmbedderFor embedderFactory
+	// CloudSearcher overrides the GX Cloud retrieval client; injected in
+	// tests. When nil it is resolved from the signed-in credentials.
+	CloudSearcher reviewCloudSearcher
 }
 
 // EvidenceSource implements evidenceNamer.
@@ -54,18 +58,34 @@ func sessionContextRetrieverFromEnv() ContextRetriever {
 }
 
 func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	limit := r.Limit
+	if limit <= 0 {
+		limit = defaultSessionContextTopK
+	}
+	if in.Options.Deep && limit < defaultSessionContextDeepTopK {
+		limit = defaultSessionContextDeepTopK
+	}
 	store := r.Store
 	if store == nil {
-		apiKey := strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY"))
-		if apiKey == "" {
+		// The signed-in path: retrieval through GX Cloud, no provider keys on
+		// this machine. Direct store access stays for development.
+		if !rawTurboPufferKeyPresent() {
+			searcher := r.CloudSearcher
+			if searcher == nil {
+				searcher = reviewCloudSearcherFromEnv()
+			}
+			if searcher != nil {
+				return retrieveSessionsViaCloud(ctx, in, searcher, limit)
+			}
 			in.Evidence.Record(EvidenceStatus{
 				Source: sessionEvidenceSource,
 				State:  EvidenceDisabled,
-				Detail: "TURBOPUFFER_API_KEY is not set",
+				Detail: "not signed in to GX Cloud, and no TURBOPUFFER_API_KEY for direct access",
+				Remedy: signInRemedy,
 			})
 			return nil, nil
 		}
-		store = newTurboPufferIndexStore(apiKey, firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL))
+		store = newTurboPufferIndexStore(strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")), firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL))
 	}
 	repoFullName := reviewHistoryRepoFullName(ctx, in.RepoRoot)
 	targets := r.Namespaces
@@ -85,13 +105,6 @@ func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	queryText := sessionQueryText(in)
 	if strings.TrimSpace(queryText) == "" {
 		return nil, nil
-	}
-	limit := r.Limit
-	if limit <= 0 {
-		limit = defaultSessionContextTopK
-	}
-	if in.Options.Deep && limit < defaultSessionContextDeepTopK {
-		limit = defaultSessionContextDeepTopK
 	}
 	factory := r.EmbedderFor
 	if factory == nil {

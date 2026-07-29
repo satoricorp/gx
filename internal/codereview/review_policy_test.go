@@ -247,42 +247,6 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 	}
 }
 
-func TestReviewPolicyInfluencesIndexedContextQuery(t *testing.T) {
-	policy := &ReviewPolicy{
-		Present: true,
-		Path:    "REVIEW.md",
-		Text:    "Prioritize session replay risks.",
-	}
-	embedder := &recordingReviewPolicyEmbedder{vector: []float32{0.3, 0.4}}
-	store := &recordingIndexedContextStore{}
-	retriever := IndexedContextRetriever{
-		Embedder:  embedder,
-		Store:     store,
-		Namespace: "gx-sessions",
-		Limit:     2,
-	}
-
-	_, err := retriever.Retrieve(context.Background(), RetrieveInput{
-		RepoRoot:     t.TempDir(),
-		Options:      normalizeOptions(Options{ReviewPolicy: policy}),
-		Facts:        RepoFacts{Files: []string{"internal/session/replay.go"}},
-		ChangedFiles: []string{"internal/session/replay.go"},
-	})
-	if err != nil {
-		t.Fatalf("Retrieve() error = %v", err)
-	}
-	if len(embedder.inputs) != 1 || !strings.Contains(embedder.inputs[0], "Prioritize session replay risks.") {
-		t.Fatalf("embedder inputs = %#v, want policy query text", embedder.inputs)
-	}
-	if len(store.requests) == 0 {
-		t.Fatalf("store requests = %#v, want indexed context query", store.requests)
-	}
-	filters := mustReviewResourceJSON(store.requests[0].Filters)
-	if !strings.Contains(filters, "session_context") {
-		t.Fatalf("indexed context filters = %s, want session_context", filters)
-	}
-}
-
 // The panel is two Bedrock legs configured from the environment, and the legs
 // stay independent: pinning one must not collapse the panel into one model
 // reviewed twice.
@@ -408,15 +372,6 @@ func (e *recordingReviewPolicyEmbedder) Embed(_ context.Context, inputs []string
 		out[i] = e.vector
 	}
 	return out, nil
-}
-
-type recordingIndexedContextStore struct {
-	requests []indexedContextQuery
-}
-
-func (s *recordingIndexedContextStore) Query(_ context.Context, req indexedContextQuery) ([]indexedContextRow, error) {
-	s.requests = append(s.requests, req)
-	return nil, nil
 }
 
 type countingReviewer struct {
