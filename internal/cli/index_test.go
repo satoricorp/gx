@@ -13,7 +13,7 @@ func TestIndexCommandIsRegisteredAsHidden(t *testing.T) {
 		t.Fatalf("Find(index) = cmd=%v err=%v, want the index command", cmd, err)
 	}
 	if !cmd.Hidden {
-		t.Fatal("gx index is a maintenance command; review calls semantic.EnsureRepositoryIndex directly")
+		t.Fatal("gx index is a maintenance command and must stay hidden")
 	}
 	if cmd.GroupID != "" {
 		t.Fatalf("gx index GroupID = %q, want no group", cmd.GroupID)

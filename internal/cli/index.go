@@ -14,8 +14,9 @@ import (
 )
 
 // newIndexCommand exposes repository indexing as a command so an index can be
-// built (or rebuilt) without waiting for a push. Review calls the same
-// function, semantic.EnsureRepositoryIndex, so the two can never drift.
+// built (or rebuilt) without waiting for a push. It calls
+// semantic.IndexRepository, the same incremental indexer every other indexing
+// path uses.
 func newIndexCommand(ctx context.Context) *cobra.Command {
 	var full bool
 	var jsonOut bool

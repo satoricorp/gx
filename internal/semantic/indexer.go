@@ -33,10 +33,6 @@ func NewLocalIndexerFromEnv() (*Indexer, Config, error) {
 	return NewIndexer(cfg, NewOpenAIEmbedder(cfg), NewTurboPufferClient(cfg)), cfg, nil
 }
 
-func NewIndexerFromEnv() (*Indexer, Config, error) {
-	return NewLocalIndexerFromEnv()
-}
-
 func (i *Indexer) IndexBundle(ctx context.Context, bundle reviewbundle.Bundle) (IndexResult, error) {
 	if i == nil || !i.cfg.Enabled {
 		return IndexResult{}, nil

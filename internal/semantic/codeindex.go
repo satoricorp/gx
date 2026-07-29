@@ -166,13 +166,6 @@ func (r RepoIndexResult) String() string {
 	)
 }
 
-// EnsureRepositoryIndex is the seam a review should call before retrieval. It
-// indexes the checkout if anything changed and is close to free otherwise (one
-// pass of file hashing, no network), so calling it on every review is safe.
-func EnsureRepositoryIndex(ctx context.Context, opts RepoIndexOptions) (RepoIndexResult, error) {
-	return IndexRepository(ctx, opts)
-}
-
 // IndexRepository indexes a local checkout into TurboPuffer, incrementally.
 //
 // Unchanged files are neither re-chunked nor re-embedded: the manifest holds a
