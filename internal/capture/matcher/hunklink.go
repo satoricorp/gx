@@ -85,11 +85,6 @@ func BuildHunkLinks(
 	return links
 }
 
-// EventFingerprint returns a stable identifier for a session event.
-func EventFingerprint(ev capture.SessionEvent) string {
-	return eventFingerprint(ev)
-}
-
 func eventFingerprint(ev capture.SessionEvent) string {
 	for _, key := range []string{"uuid", "id", "event_id", "eventId", "message_id", "messageId"} {
 		if raw, ok := ev.Raw[key]; ok && len(raw) > 0 {

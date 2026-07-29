@@ -9,9 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 // Client uploads capture payloads to the GX server.
@@ -28,52 +25,6 @@ func NewClient(baseURL, token string) *Client {
 		Token:   token,
 		HTTP:    &http.Client{Timeout: 30 * time.Second},
 	}
-}
-
-// UploadRun posts extract + sessions for one capture run.
-func (c *Client) UploadRun(
-	ctx context.Context,
-	repoRoot, refRange, headCommit, gxVersion string,
-	hunkLinks []matcher.HunkLink,
-	fileStats interface{},
-	sessions []SessionPayload,
-	telemetryClient telemetry.Client,
-) error {
-	req := ExtractRequest{
-		RepoRoot:   repoRoot,
-		RefRange:   refRange,
-		HeadCommit: headCommit,
-		GxVersion:  gxVersion,
-		HunkLinks:  hunkLinks,
-		FileStats:  fileStats,
-	}
-	if err := c.postJSON(ctx, "/v1/extracts", req); err != nil {
-		return fmt.Errorf("upload extract: %w", err)
-	}
-
-	for _, session := range sessions {
-		content := FormatSessionContent(session)
-		body := SessionRequest{
-			SessionId: session.SessionID,
-			Tool:      session.Tool,
-			Model:     SessionModel(session),
-			Content:   content,
-			CapturedAtMs: time.Now().UnixMilli(),
-		}
-		if err := c.postJSON(ctx, "/v1/sessions", body); err != nil {
-			return fmt.Errorf("upload session %s: %w", session.SessionID, err)
-		}
-		if telemetryClient != nil {
-			telemetryClient.EmitSessionUploaded(ctx, telemetry.SessionUploadedProps{
-				SessionID: session.SessionID,
-				Tool:      session.Tool,
-				Bytes:     len(content),
-				Repo:      repoRoot,
-				RefRange:  refRange,
-			})
-		}
-	}
-	return nil
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, body interface{}) error {

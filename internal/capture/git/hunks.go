@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/satoricorp/gx/internal/capture"
 )
@@ -195,47 +194,3 @@ func parseUnifiedDiff(sha string, commitTime int64, diff string) []capture.Commi
 	return hunks
 }
 
-// RecentCommitWindow returns hunks from the last n commits when range is empty.
-func RecentCommitWindow(repoRoot string, n int) ([]capture.CommitHunk, int64, int64, error) {
-	if n <= 0 {
-		n = 20
-	}
-	headOut, err := runGit(repoRoot, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	head := strings.TrimSpace(headOut)
-	shas, err := runGit(repoRoot, "rev-list", "-n", fmt.Sprintf("%d", n), head)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	shaList := splitLines(shas)
-	var hunks []capture.CommitHunk
-	var first, last int64
-	for i, sha := range shaList {
-		tsOut, err := runGit(repoRoot, "show", "-s", "--format=%ct", sha)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		var tsSec int64
-		if _, err := fmt.Sscanf(strings.TrimSpace(tsOut), "%d", &tsSec); err != nil {
-			return nil, 0, 0, err
-		}
-		ts := tsSec * 1000
-		if i == len(shaList)-1 {
-			first = ts
-		}
-		if i == 0 {
-			last = ts
-		}
-		diffOut, err := runGit(repoRoot, "show", "--pretty=format:", "--unified=0", sha)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		hunks = append(hunks, parseUnifiedDiff(sha, ts, diffOut)...)
-	}
-	if first == 0 && last == 0 && len(shaList) > 0 {
-		first, last = time.Now().UnixMilli(), time.Now().UnixMilli()
-	}
-	return hunks, first, last, nil
-}

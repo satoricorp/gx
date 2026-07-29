@@ -196,18 +196,6 @@ func StoreGitHubToken(account string, token GitHubToken) error {
 	return nil
 }
 
-// DeleteGitHubToken removes GitHub OAuth state from the OS keychain.
-func DeleteGitHubToken(account string) error {
-	account = strings.TrimSpace(account)
-	if account == "" {
-		return nil
-	}
-	if err := keyring.Delete(githubKeyringService, account); err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		return err
-	}
-	return nil
-}
-
 func loadKeychainToken(account string) (*GitHubToken, error) {
 	raw, err := keyring.Get(githubKeyringService, account)
 	if err != nil {

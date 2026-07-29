@@ -25,11 +25,6 @@ func TestNormalizeOriginCanonicalizesEverySpelling(t *testing.T) {
 			t.Errorf("NormalizeOrigin(%q) = %q, want %q", raw, got, want)
 		}
 	}
-	for _, raw := range same {
-		if !SameRepo(raw, "git@github.com:satoricorp/gx.git") {
-			t.Errorf("SameRepo(%q, canonical) = false", raw)
-		}
-	}
 }
 
 // An origin URL can carry a token. The normalized form is what gets persisted,
@@ -98,12 +93,6 @@ func TestNormalizeOriginRejectsUnusableInput(t *testing.T) {
 		if got := NormalizeOrigin(raw); got != "" {
 			t.Errorf("NormalizeOrigin(%q) = %q, want empty", raw, got)
 		}
-	}
-	if SameRepo("", "") {
-		t.Fatal("SameRepo(\"\", \"\") = true; empty must not match empty")
-	}
-	if SameRepo("not a url", "also not a url") {
-		t.Fatal("two unidentifiable origins compared equal")
 	}
 }
 

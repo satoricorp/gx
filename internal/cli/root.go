@@ -893,9 +893,3 @@ func ExitCode(err error) int {
 	return 0
 }
 
-func shortID(value string, max int) string {
-	if len(value) <= max {
-		return value
-	}
-	return value[:max]
-}

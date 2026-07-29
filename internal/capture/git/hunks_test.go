@@ -19,8 +19,7 @@ index 1111111..2222222 100644
 
 func TestParseUnifiedDiffInline(t *testing.T) {
 	t.Parallel()
-	// Exercise parser via CollectHunks-free inline diff by calling package helper indirectly.
-	// We replicate expected behavior with RecentCommitWindow unavailable in unit tests.
+	// Exercise the parser via an inline diff, without shelling out to git.
 	hunks := parseTestDiff("abc123", 1_718_000_000_000, sampleDiff)
 	if len(hunks) != 1 {
 		t.Fatalf("hunks = %d, want 1", len(hunks))

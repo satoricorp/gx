@@ -69,13 +69,6 @@ func evalAssertRiskTags(t *testing.T, triage ChangeTriage, wants ...string) {
 	}
 }
 
-func evalAssertNoRiskTag(t *testing.T, triage ChangeTriage, tag string) {
-	t.Helper()
-	if hasString(triage.RiskTags, tag) {
-		t.Fatalf("RiskTags = %#v, did not want %q", triage.RiskTags, tag)
-	}
-}
-
 func evalCountRenderedRecommendations(text string) int {
 	count := 0
 	for line := range strings.SplitSeq(text, "\n") {

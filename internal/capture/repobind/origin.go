@@ -101,8 +101,3 @@ func splitOrigin(raw string) (host, path string) {
 	return "", ""
 }
 
-// SameRepo reports whether two remote URLs name the same repository.
-func SameRepo(a, b string) bool {
-	na, nb := NormalizeOrigin(a), NormalizeOrigin(b)
-	return na != "" && na == nb
-}
