@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	hookMarker          = "# gx lifecycle hooks"
-	legacyPrePushMarker = "# gx capture pre-push hook"
+	hookMarker          = "# tl lifecycle hooks"
+	legacyPrePushMarker = "# tl capture pre-push hook"
 )
 
 // AgentHookConfig documents future Claude/Codex lifecycle hook settings (V1.1).
@@ -21,29 +21,29 @@ type AgentHookConfig struct {
 
 // InstallOptions configures git lifecycle hook installation.
 type InstallOptions struct {
-	RepoRoot string
-	GXPath   string
+	RepoRoot     string
+	TotalityPath string
 }
 
-// Install writes gx lifecycle hooks using git's hooks directory resolution.
+// Install writes tl lifecycle hooks using git's hooks directory resolution.
 func Install(opts InstallOptions) error {
 	repoRoot, err := filepath.Abs(opts.RepoRoot)
 	if err != nil {
 		return err
 	}
-	gxPath := opts.GXPath
-	if gxPath == "" {
-		gxPath, err = installGXPath()
+	tlPath := opts.TotalityPath
+	if tlPath == "" {
+		tlPath, err = installTotalityPath()
 		if err != nil {
-			return fmt.Errorf("resolve gx binary: %w", err)
+			return fmt.Errorf("resolve tl binary: %w", err)
 		}
 	}
 	hooksDir, err := ResolveHooksDir(context.Background(), repoRoot)
 	if err != nil {
 		return err
 	}
-	// Under a machine-wide install (`gx init --global`) git resolves every
-	// repo's hooks dir to the shared GX directory. Those scripts chain to repo
+	// Under a machine-wide install (`tl init --global`) git resolves every
+	// repo's hooks dir to the shared Totality directory. Those scripts chain to repo
 	// hooks; overwriting them with the per-repo variants would break chaining
 	// for every repository on the machine.
 	if globalDir, globalErr := GlobalHooksDir(); globalErr == nil && sameHooksPath(hooksDir, globalDir) {
@@ -53,10 +53,10 @@ func Install(opts InstallOptions) error {
 		return err
 	}
 	scripts := map[string]string{
-		"prepare-commit-msg": prepareCommitMsgScript(gxPath),
-		"post-commit":        postCommitScript(gxPath),
-		"post-rewrite":       postRewriteScript(gxPath),
-		"pre-push":           prePushScript(gxPath),
+		"prepare-commit-msg": prepareCommitMsgScript(tlPath),
+		"post-commit":        postCommitScript(tlPath),
+		"post-rewrite":       postRewriteScript(tlPath),
+		"pre-push":           prePushScript(tlPath),
 	}
 	for name, script := range scripts {
 		hookPath := filepath.Join(hooksDir, name)
@@ -64,8 +64,8 @@ func Install(opts InstallOptions) error {
 			if string(data) == script {
 				continue
 			}
-			if !gxOwnedHook(name, string(data)) {
-				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying gx init", name, hookPath)
+			if !totalityOwnedHook(name, string(data)) {
+				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying tl init", name, hookPath)
 			}
 		}
 		if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
@@ -75,7 +75,7 @@ func Install(opts InstallOptions) error {
 	return nil
 }
 
-// IsInstalled reports whether gx lifecycle hooks are present.
+// IsInstalled reports whether tl lifecycle hooks are present.
 func IsInstalled(repoRoot string) bool {
 	repoRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -98,7 +98,7 @@ func containsHookMarker(content string) bool {
 	return strings.Contains(content, hookMarker)
 }
 
-func gxOwnedHook(name, content string) bool {
+func totalityOwnedHook(name, content string) bool {
 	if containsHookMarker(content) {
 		return true
 	}
@@ -109,57 +109,57 @@ func hookRepoArg() string {
 	return `repo="$(git rev-parse --show-toplevel)"`
 }
 
-// hookResolveGX emits shell that resolves the gx binary at run time: the
-// pinned install-time path when it is still an executable file, else gx from
-// PATH. Pinned paths go stale — reinstalls move the binary, and a gx run from
-// a temporary location pins that location — and a hook that cannot find gx
-// must skip GX work silently rather than break every commit and push.
-func hookResolveGX(gxPath string) string {
-	if gxPath == "" {
-		gxPath = "gx"
+// hookResolveTotality emits shell that resolves the tl binary at run time: the
+// pinned install-time path when it is still an executable file, else tl from
+// PATH. Pinned paths go stale — reinstalls move the binary, and a tl run from
+// a temporary location pins that location — and a hook that cannot find tl
+// must skip Totality work silently rather than break every commit and push.
+func hookResolveTotality(tlPath string) string {
+	if tlPath == "" {
+		tlPath = "tl"
 	}
-	return fmt.Sprintf(`gx_bin=%q
-case "$gx_bin" in /*) ;; *) gx_bin="" ;; esac
-if [ ! -f "$gx_bin" ] || [ ! -x "$gx_bin" ]; then
-  gx_bin="$(command -v gx 2>/dev/null)" || gx_bin=""
+	return fmt.Sprintf(`tl_bin=%q
+case "$tl_bin" in /*) ;; *) tl_bin="" ;; esac
+if [ ! -f "$tl_bin" ] || [ ! -x "$tl_bin" ]; then
+  tl_bin="$(command -v tl 2>/dev/null)" || tl_bin=""
 fi
-[ -n "$gx_bin" ] || exit 0`, gxPath)
+[ -n "$tl_bin" ] || exit 0`, tlPath)
 }
 
-func prepareCommitMsgScript(gxPath string) string {
+func prepareCommitMsgScript(tlPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$gx_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
-`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
+"$tl_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
+`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
 }
 
-func postCommitScript(gxPath string) string {
+func postCommitScript(tlPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$gx_bin" __hooks post-commit --repo "$repo" || {
-  echo "gx post-commit metadata recording failed" >&2
+"$tl_bin" __hooks post-commit --repo "$repo" || {
+  echo "tl post-commit metadata recording failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
+`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
 }
 
-func postRewriteScript(gxPath string) string {
+func postRewriteScript(tlPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$gx_bin" __hooks post-rewrite --repo "$repo" || {
-  echo "gx post-rewrite metadata update failed" >&2
+"$tl_bin" __hooks post-rewrite --repo "$repo" || {
+  echo "tl post-rewrite metadata update failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveGX(gxPath), hookRepoArg())
+`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
 }
 
-func prePushScript(gxPath string) string {
+func prePushScript(tlPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
@@ -175,8 +175,8 @@ do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  "$gx_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
+  "$tl_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
 done
 exit 0
-`, hookMarker, hookResolveGX(gxPath))
+`, hookMarker, hookResolveTotality(tlPath))
 }

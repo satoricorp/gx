@@ -2,7 +2,7 @@
 #
 # Each line is one exported method on storage.Store or storage.CaptureStage that
 # has zero production callers and at least one test caller. Seeding or asserting
-# through such a method proves a state a real gx install cannot reach: that is
+# through such a method proves a state a real tl install cannot reach: that is
 # precisely how the session bug survived a green suite for 174 published
 # bundles, seeded by store.WriteSession, which no production code ever called.
 #

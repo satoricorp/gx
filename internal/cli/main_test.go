@@ -4,12 +4,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/totality/internal/totalitytest"
 )
 
 // TestMain cuts this package off from the network.
 //
-// `gx review` is the command under test here, and its retrieval paths arm
+// `tl review` is the command under test here, and its retrieval paths arm
 // themselves from ambient credentials. setReviewGateEnv sandboxes the tests
 // that call it, but it is opt-in, and the two tests in root_test.go that build
 // their own environment were reaching the real embeddings API and the real
@@ -17,6 +17,6 @@ import (
 // test has to remember to ask for. Doing it here makes offline the default for
 // the package and leaves the per-test helper as a way to be explicit.
 func TestMain(m *testing.M) {
-	egress := gxtest.DenyNetwork()
-	os.Exit(gxtest.FailOnEgress(m.Run(), egress()))
+	egress := totalitytest.DenyNetwork()
+	os.Exit(totalitytest.FailOnEgress(m.Run(), egress()))
 }

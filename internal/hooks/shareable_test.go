@@ -12,30 +12,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/auth"
-	"github.com/satoricorp/gx/internal/capture/extract"
-	"github.com/satoricorp/gx/internal/hooks"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/totality/internal/auth"
+	"github.com/satoricorp/totality/internal/capture/extract"
+	"github.com/satoricorp/totality/internal/hooks"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/telemetry"
 )
 
 const shareableProbeSession = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 const shareableProbeContent = "package alpha\n\nfunc AlphaOne() int {\n\treturn 41\n}\n"
 
 // TestRunPushMarksRowsItStagedWithoutRevisionIDs covers a repo where revision
-// resolution returns nothing for the pushed range — no commit carries a GX
+// resolution returns nothing for the pushed range — no commit carries a Totality
 // trailer, so `revision_id IN (...)` matches nothing. The rows this very push
 // staged must still become shareable and drain through SyncPending. Under the
 // revision-only gate they stayed local forever.
 //
 // (Note for anyone reading this as a diagnosis of the field failure: a repo
-// with the GX prepare-commit-msg hook installed does stamp trailers on plain
+// with the Totality prepare-commit-msg hook installed does stamp trailers on plain
 // `git commit`, and marking by revision demonstrably did work for some rows.
 // This test pins the case where it cannot, which is the case the id gate
 // exists for — not a claim about why any particular row was stuck.)
 func TestRunPushMarksRowsItStagedWithoutRevisionIDs(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	t.Setenv(hooks.SuppressAdoptedPublicationEnv, "1")
 
 	home := t.TempDir()
@@ -62,7 +62,7 @@ func TestRunPushMarksRowsItStagedWithoutRevisionIDs(t *testing.T) {
 	}
 	// The premise: there is no revision to match on, and no ref-range gate either.
 	if len(outcome.RevisionIDs) != 0 {
-		t.Fatalf("RevisionIDs = %v, want none: this repo has no GX trailers", outcome.RevisionIDs)
+		t.Fatalf("RevisionIDs = %v, want none: this repo has no Totality trailers", outcome.RevisionIDs)
 	}
 	if len(outcome.Result.StagedSessionIDs) != 1 {
 		t.Fatalf("StagedSessionIDs = %v, want the one matched transcript", outcome.Result.StagedSessionIDs)
@@ -148,7 +148,7 @@ func TestRunPushMarksRowsItStagedWithoutRevisionIDs(t *testing.T) {
 	}
 }
 
-// initPlainGitRepo builds a repo whose commits carry no GX revision trailer,
+// initPlainGitRepo builds a repo whose commits carry no Totality revision trailer,
 // which is what the plain-Git workflow produces.
 func initPlainGitRepo(t *testing.T) string {
 	t.Helper()

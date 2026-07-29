@@ -1,8 +1,8 @@
 .DS_Store
 .env
 .env.local
-.gx/
-/gx
+.totality/
+/tl
 dist/
 node_modules/
 mcp/.xmcp/
@@ -13,5 +13,5 @@ mcp/xmcp-env.d.ts
 .gstack/
 
 # Personal Claude Code settings. The shared .claude/settings.json carries the
-# GX capture hooks; this one is per-developer and must never be committed.
+# Totality capture hooks; this one is per-developer and must never be committed.
 .claude/settings.local.json

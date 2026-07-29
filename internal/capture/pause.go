@@ -12,7 +12,7 @@ const (
 )
 
 // IsPaused reports whether capture hooks should no-op.
-// Respects GX_CAPTURE_PAUSED env and flag files under ~/.gx/.
+// Respects TOTALITY_CAPTURE_PAUSED env and flag files under ~/.totality/.
 func IsPaused(homeDir string) bool {
 	if pausedFromEnv() {
 		return true
@@ -24,9 +24,9 @@ func IsPaused(homeDir string) bool {
 			return false
 		}
 	}
-	gxHome := gxHomeDir(homeDir)
+	totalityHome := totalityHomeDir(homeDir)
 	for _, name := range []string{pauseFileName, legacyPauseFileName} {
-		if _, err := os.Stat(filepath.Join(gxHome, name)); err == nil {
+		if _, err := os.Stat(filepath.Join(totalityHome, name)); err == nil {
 			return true
 		}
 	}
@@ -34,13 +34,13 @@ func IsPaused(homeDir string) bool {
 }
 
 func pausedFromEnv() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("GX_CAPTURE_PAUSED")))
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("TOTALITY_CAPTURE_PAUSED")))
 	return value == "1" || value == "true" || value == "yes"
 }
 
-func gxHomeDir(homeDir string) string {
-	if custom := strings.TrimSpace(os.Getenv("GX_HOME")); custom != "" {
+func totalityHomeDir(homeDir string) string {
+	if custom := strings.TrimSpace(os.Getenv("TOTALITY_HOME")); custom != "" {
 		return custom
 	}
-	return filepath.Join(homeDir, ".gx")
+	return filepath.Join(homeDir, ".totality")
 }

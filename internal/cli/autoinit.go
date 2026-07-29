@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/authoring"
-	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/totality/internal/authoring"
+	"github.com/satoricorp/totality/internal/telemetry"
 )
 
 func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command) error {
@@ -25,14 +25,14 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 		return err
 	}
 	if result.Prepared && !commandRequestsJSON(cmd) {
-		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing gx for this repository..."))
+		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing tl for this repository..."))
 	}
 	if result.Repo.RootPath != "" {
 		if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: GX lifecycle hooks not installed: %v\n", hookErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: Totality lifecycle hooks not installed: %v\n", hookErr)
 		}
 		// Existing installs may still run the retired ambient-capture
-		// LaunchAgent; retire it the next time gx touches an initialized repo.
+		// LaunchAgent; retire it the next time tl touches an initialized repo.
 		cleanupLegacyAmbientCaptureQuiet(ctx, cmd.ErrOrStderr())
 	}
 	return nil
@@ -54,30 +54,30 @@ func commandRequestsJSON(cmd *cobra.Command) bool {
 // commandTelemetryContext marks read-only commands so telemetry reports
 // without writing anything to the machine.
 func commandTelemetryContext(ctx context.Context, cmd *cobra.Command) context.Context {
-	if commandMustNotWriteGXState(cmd) {
+	if commandMustNotWriteTotalityState(cmd) {
 		return telemetry.WithoutStateWrites(ctx)
 	}
 	return ctx
 }
 
-// commandMustNotWriteGXState names the commands that promise to leave no GX
+// commandMustNotWriteTotalityState names the commands that promise to leave no Totality
 // state behind. This is narrower than shouldSkipAutoInit, which also exempts
-// commands like `init` and `login` whose whole job is to write GX state — they
+// commands like `init` and `login` whose whole job is to write Totality state — they
 // skip auto-init because they set it up themselves, not because they must not.
-func commandMustNotWriteGXState(cmd *cobra.Command) bool {
+func commandMustNotWriteTotalityState(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return false
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
 		// `review` must work as a CI gate and on someone else's checkout
-		// without leaving GX state on the machine running it.
+		// without leaving Totality state on the machine running it.
 		case "review":
 			return true
 		// `version` answers one question about the binary. Dockerfiles and CI
 		// steps run it to check what they installed, and minting a machine ID
-		// and an install sentinel to answer it means `gx version` creates
-		// $GX_HOME on a machine that has not yet decided to use gx. The
+		// and an install sentinel to answer it means `tl version` creates
+		// $TOTALITY_HOME on a machine that has not yet decided to use tl. The
 		// install event is not worth that; the first command that actually
 		// does something records it.
 		case "version":
@@ -97,7 +97,7 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
 		// `review` is read-only: it must work as a CI gate and on someone
-		// else's checkout without installing hooks or writing GX state into a
+		// else's checkout without installing hooks or writing Totality state into a
 		// repo the reviewer does not own.
 		case "init", "version", "login", "auth", "set", "review":
 			return true

@@ -18,24 +18,24 @@ func TestAgentsMDContainsSnippet(t *testing.T) {
 	if !strings.Contains(agentsMDSnippet, "git push") {
 		t.Fatal("expected agentsMDSnippet to require plain git push")
 	}
-	if !strings.Contains(agentsMDSnippet, "do not run `gx push`") {
-		t.Fatal("expected agentsMDSnippet to forbid gx push")
+	if !strings.Contains(agentsMDSnippet, "do not run `tl push`") {
+		t.Fatal("expected agentsMDSnippet to forbid tl push")
 	}
-	if !strings.Contains(agentsMDSnippet, "gx capture push") {
-		t.Fatal("expected agentsMDSnippet to forbid gx capture push")
+	if !strings.Contains(agentsMDSnippet, "tl capture push") {
+		t.Fatal("expected agentsMDSnippet to forbid tl capture push")
 	}
-	for _, stale := range []string{"gx_edit", "gx base", "gx edit", "gx commit", "gx status"} {
+	for _, stale := range []string{"tl_edit", "tl base", "tl edit", "tl commit", "tl status"} {
 		if strings.Contains(agentsMDSnippet, stale) {
 			t.Fatalf("agentsMDSnippet contains removed command %q", stale)
 		}
 	}
 	for _, want := range []string{
 		"Version control: plain Git",
-		"there is no GX save verb",
+		"there is no Totality save verb",
 		"git commit -m",
 		"`git commit --amend`",
-		"preserve the GX revision trailer",
-		"gx_review",
+		"preserve the Totality revision trailer",
+		"tl_review",
 	} {
 		if !strings.Contains(agentsMDSnippet, want) {
 			t.Fatalf("agentsMDSnippet missing canonical guidance %q", want)
@@ -85,15 +85,15 @@ func TestAppendAgentsMDSnippetPreservesExistingContent(t *testing.T) {
 
 func TestResolveMCPBinaryFromSibling(t *testing.T) {
 	dir := t.TempDir()
-	gxPath := filepath.Join(dir, "gx")
-	mcpPath := filepath.Join(dir, "gx-mcp")
-	if err := os.WriteFile(gxPath, []byte("gx"), 0o755); err != nil {
+	tlPath := filepath.Join(dir, "tl")
+	mcpPath := filepath.Join(dir, "tl-mcp")
+	if err := os.WriteFile(tlPath, []byte("tl"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(mcpPath, []byte("mcp"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resolveMCPBinary(gxPath)
+	got, err := resolveMCPBinary(tlPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +103,8 @@ func TestResolveMCPBinaryFromSibling(t *testing.T) {
 }
 
 func TestMCPLaunchCommand(t *testing.T) {
-	got := mcpLaunchCommand("/bin/gx", "/bin/gx-mcp")
-	want := []string{"env", "GX_BINARY=/bin/gx", "/bin/gx-mcp"}
+	got := mcpLaunchCommand("/bin/tl", "/bin/tl-mcp")
+	want := []string{"env", "TOTALITY_BINARY=/bin/tl", "/bin/tl-mcp"}
 	if len(got) != len(want) {
 		t.Fatalf("len = %d, want %d", len(got), len(want))
 	}
@@ -160,7 +160,7 @@ func TestMergeCodexMCPServerAppendsBlock(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("# codex\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mergeCodexMCPServer("/bin/gx", "/bin/gx-mcp")
+	updated, err := mergeCodexMCPServer("/bin/tl", "/bin/tl-mcp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestMergeCodexMCPServerAppendsBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "[mcp_servers.gx]") {
+	if !strings.Contains(string(data), "[mcp_servers.totality]") {
 		t.Fatalf("missing codex block:\n%s", data)
 	}
 }

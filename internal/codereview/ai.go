@@ -50,7 +50,7 @@ const (
 	maxAIWholeRepoContextSnippets = 128
 	// maxAIRepoInventoryBytes is the file listing's own budget. A map of the
 	// repository is worth its bytes: at ~45 bytes a path this holds roughly
-	// 4,000 files, which is every file in both repositories gx reviews today.
+	// 4,000 files, which is every file in both repositories tl reviews today.
 	maxAIRepoInventoryBytes = 180000
 	// Diff snippets are the primary evidence for what changed, so they get their
 	// own budget rather than sharing the retrieved-context one. A PR summary
@@ -126,7 +126,7 @@ type AIReviewerWithSummary interface {
 type ReviewerInfo struct {
 	Models []string
 	// Transport is how the panel reached bedrock-runtime, phrased for a human
-	// ("GX Cloud (https://api.gx.run)" / "direct AWS credentials (us-west-2)").
+	// ("Totality Cloud (https://api.totality.sh)" / "direct AWS credentials (us-west-2)").
 	// It is reported rather than inferred because the two have different
 	// latency and different failure modes, and a review that does not say which
 	// one ran leaves both questions unanswerable after the fact.
@@ -265,7 +265,7 @@ func ReviewerTransport(reviewer AIReviewer) string {
 // (see defaultEmbedderFactory in turbopuffer_index.go) and never goes through an
 // AIReviewer, so the code index still embeds on OpenAI.
 func reviewerFromEnv() AIReviewer {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_AI")), "0") {
 		return nil
 	}
 	plan, err := resolveBedrockTransportPlan()
@@ -758,7 +758,7 @@ func reviewDeveloperPrompt(brief ReviewBrief) string {
 
 func baseReviewDeveloperPromptLines() []string {
 	return []string{
-		"You are GX Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
+		"You are Totality Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
@@ -813,7 +813,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func aiReviewRequestedFromEnv() bool {
-	value := strings.TrimSpace(os.Getenv("GX_REVIEW_AI"))
+	value := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_AI"))
 	if value == "" {
 		return true
 	}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-const pendingCommitContextName = "gx-pending-commit.json"
+const pendingCommitContextName = "totality-pending-commit.json"
 
 // PendingCommitContext carries commit metadata consumed by lifecycle hooks.
 // The post-commit hook tolerates a missing file and falls back to a zero value.

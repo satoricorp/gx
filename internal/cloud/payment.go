@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// PaymentRequiredError is returned when GX Cloud rejects an AI request with
+// PaymentRequiredError is returned when Totality Cloud rejects an AI request with
 // HTTP 402 (expired trial / no active plan).
 type PaymentRequiredError struct {
 	Message string
@@ -14,14 +14,14 @@ type PaymentRequiredError struct {
 
 func (e *PaymentRequiredError) Error() string {
 	if e == nil || strings.TrimSpace(e.Message) == "" {
-		return "GX Cloud AI needs an active plan; the free trial for this org has ended."
+		return "Totality Cloud AI needs an active plan; the free trial for this org has ended."
 	}
 	return e.Message
 }
 
-// PaymentRequiredMessage formats the JSON body of a GX Cloud 402 response
+// PaymentRequiredMessage formats the JSON body of a Totality Cloud 402 response
 // into a user-facing message that names both remedies: upgrading the org, or
-// bringing your own model key with gx set key.
+// bringing your own model key with tl set key.
 func PaymentRequiredMessage(body []byte) string {
 	var payload struct {
 		Message    string `json:"message"`
@@ -30,7 +30,7 @@ func PaymentRequiredMessage(body []byte) string {
 	_ = json.Unmarshal(body, &payload)
 	message := strings.TrimSpace(payload.Message)
 	if message == "" {
-		message = "GX Cloud AI needs an active plan; the free trial for this org has ended. Upgrade to keep using GX Cloud AI, or set your own model key with `gx set key`."
+		message = "Totality Cloud AI needs an active plan; the free trial for this org has ended. Upgrade to keep using Totality Cloud AI, or set your own model key with `tl set key`."
 	}
 	if url := strings.TrimSpace(payload.UpgradeURL); url != "" && !strings.Contains(message, url) {
 		message += " Upgrade: " + url

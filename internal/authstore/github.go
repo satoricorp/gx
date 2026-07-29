@@ -14,13 +14,13 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/satoricorp/gx/internal/buildconfig"
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/buildconfig"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 const (
 	githubAccessTokenURL = "https://github.com/login/oauth/access_token"
-	githubKeyringService = "gx"
+	githubKeyringService = "tl"
 	tokenRefreshSkew     = 5 * time.Minute
 )
 
@@ -280,7 +280,7 @@ func refreshGitHubAccessToken(refreshToken string, client *http.Client) (accessT
 	form.Set("client_id", clientID)
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
-	endpoint := strings.TrimSpace(os.Getenv("GX_GITHUB_ACCESS_TOKEN_URL"))
+	endpoint := strings.TrimSpace(os.Getenv("TOTALITY_GITHUB_ACCESS_TOKEN_URL"))
 	if endpoint == "" {
 		endpoint = githubAccessTokenURL
 	}
@@ -312,10 +312,10 @@ func refreshGitHubAccessToken(refreshToken string, client *http.Client) (accessT
 }
 
 func tokenError() error {
-	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
-		return fmt.Errorf("github token is not configured for MCP: run `gx auth login` in a terminal, then retry the MCP tool")
+	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
+		return fmt.Errorf("github token is not configured for MCP: run `tl auth login` in a terminal, then retry the MCP tool")
 	}
-	return fmt.Errorf("github token is not configured: run `gx auth login` or set GH_TOKEN/GITHUB_TOKEN")
+	return fmt.Errorf("github token is not configured: run `tl auth login` or set GH_TOKEN/GITHUB_TOKEN")
 }
 
 func reloginError(reason string) error {
@@ -323,10 +323,10 @@ func reloginError(reason string) error {
 	if reason == "" {
 		reason = "stored GitHub token is invalid"
 	}
-	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
-		return fmt.Errorf("%s; run `gx auth login` in a terminal, then retry the MCP tool", reason)
+	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
+		return fmt.Errorf("%s; run `tl auth login` in a terminal, then retry the MCP tool", reason)
 	}
-	return fmt.Errorf("%s; run `gx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", reason)
+	return fmt.Errorf("%s; run `tl auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", reason)
 }
 
 func firstNonEmpty(values ...string) string {

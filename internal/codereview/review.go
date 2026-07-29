@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/termstyle"
+	"github.com/satoricorp/totality/internal/termstyle"
 )
 
 const (
@@ -76,7 +76,7 @@ type Report struct {
 	// ReviewModels and ReviewTransport are which models answered and over which
 	// wire. Both questions come up the moment a review is slow or wrong, and
 	// neither is recoverable after the fact: the same panel run against local
-	// AWS credentials and run through GX Cloud has different latency, different
+	// AWS credentials and run through Totality Cloud has different latency, different
 	// quota behavior, and completely different failure modes.
 	ReviewModels      []string     `json:"review_models,omitempty"`
 	ReviewTransport   string       `json:"review_transport,omitempty"`
@@ -105,7 +105,7 @@ type Report struct {
 	ReviewMode  string `json:"review_mode,omitempty"`
 	ReviewBase  string `json:"review_base,omitempty"`
 	ReviewRange string `json:"review_range,omitempty"`
-	// ReviewTarget is the human phrase naming what was inspected, or where gx
+	// ReviewTarget is the human phrase naming what was inspected, or where tl
 	// looked when it found nothing.
 	ReviewTarget string `json:"review_target,omitempty"`
 }
@@ -180,7 +180,7 @@ func RenderMarkdown(report Report) string {
 		// also reached without the flag, when a scope-, prompt-, or
 		// deep-directed review finds no diff at all. That review reads the
 		// repository too, so it says so too — including in the PR comment and
-		// the GX Cloud history entry this same text becomes. Both paths are
+		// the Totality Cloud history entry this same text becomes. Both paths are
 		// pinned by tests so the wording cannot drift for one and not the
 		// other.
 		if target := strings.TrimSpace(report.ReviewTarget); target != "" {
@@ -743,7 +743,7 @@ func exists(root, rel string) bool {
 func skipDir(rel string) bool {
 	for _, part := range strings.Split(rel, "/") {
 		switch part {
-		case ".git", ".jj", ".gx", ".gocache", "node_modules", "dist", "build", ".next", "coverage", ".cache", ".turbo", "vendor":
+		case ".git", ".jj", ".totality", ".gocache", "node_modules", "dist", "build", ".next", "coverage", ".cache", ".turbo", "vendor":
 			return true
 		}
 	}
@@ -781,7 +781,7 @@ func isTestFile(rel string) bool {
 
 func changedFiles(ctx context.Context, repoRoot string) []string {
 	// --untracked-files=all, because the default collapses a new directory into
-	// a single `internal/gxtest/` entry. That entry is not a file: it produces
+	// a single `internal/totalitytest/` entry. That entry is not a file: it produces
 	// no diff, reads as nothing, and takes an entire directory of brand-new
 	// unreviewed code out of the review without anything saying so. Listing the
 	// files individually is what makes them reviewable and what makes the

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/cli"
-	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/totality/internal/cli"
+	"github.com/satoricorp/totality/internal/totalityconfig"
 )
 
 func TestRootExposesAuthCommand(t *testing.T) {
@@ -21,7 +21,7 @@ func TestRootExposesAuthCommand(t *testing.T) {
 
 func TestRootRemovesShortcutCommands(t *testing.T) {
 	root := cli.NewRoot(context.Background())
-	for _, name := range []string{"gxa", "gxs", "gxt"} {
+	for _, name := range []string{"tla", "tls", "tlt"} {
 		if cmd, _, err := root.Find([]string{name}); err == nil && cmd != nil && cmd.Name() == name {
 			t.Fatalf("%s command resolved after removal", name)
 		}
@@ -79,7 +79,7 @@ func TestRootRemovesHiddenPRCompatibilityCommand(t *testing.T) {
 }
 
 func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	root := cli.NewRoot(context.Background())
 	var out bytes.Buffer
@@ -98,7 +98,7 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"  auth",
 		"  set",
 		"Work:",
-		"  review (gxr)",
+		"  review (tlr)",
 		"Help:",
 		"  doctor",
 		"  version",
@@ -156,7 +156,7 @@ func TestRootKeepsReportAsHiddenAlias(t *testing.T) {
 		t.Fatalf("Find(report) = cmd=%v err=%v, want the hidden report alias", cmd, err)
 	}
 	if !cmd.Hidden {
-		t.Fatal("gx report should be hidden after folding into gx doctor --report")
+		t.Fatal("tl report should be hidden after folding into tl doctor --report")
 	}
 }
 
@@ -215,7 +215,7 @@ func TestRootPrintsInitNoteWhenIdentityMissing(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 	defer os.Chdir(prev)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
 	root := cli.NewRoot(context.Background())
@@ -229,7 +229,7 @@ func TestRootPrintsInitNoteWhenIdentityMissing(t *testing.T) {
 	}
 
 	text := out.String()
-	if !bytes.Contains(out.Bytes(), []byte("Run `gx init` first.")) {
+	if !bytes.Contains(out.Bytes(), []byte("Run `tl init` first.")) {
 		t.Fatalf("missing init note: %q", text)
 	}
 }
@@ -241,13 +241,13 @@ func TestRootSkipsInitNoteWhenIdentityConfigured(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 	defer os.Chdir(prev)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
-	if err := gxconfig.Save(gxconfig.Config{
-		User: gxconfig.User{Name: "Joe Example", Email: "joe@example.com"},
+	if err := totalityconfig.Save(totalityconfig.Config{
+		User: totalityconfig.User{Name: "Joe Example", Email: "joe@example.com"},
 	}); err != nil {
-		t.Fatalf("gxconfig.Save() error = %v", err)
+		t.Fatalf("totalityconfig.Save() error = %v", err)
 	}
 
 	root := cli.NewRoot(context.Background())
@@ -260,7 +260,7 @@ func TestRootSkipsInitNoteWhenIdentityConfigured(t *testing.T) {
 		t.Fatalf("root.Execute() unexpected error = %v", err)
 	}
 
-	if bytes.Contains(out.Bytes(), []byte("Run `gx init` first.")) {
+	if bytes.Contains(out.Bytes(), []byte("Run `tl init` first.")) {
 		t.Fatalf("unexpected init note: %q", out.String())
 	}
 }

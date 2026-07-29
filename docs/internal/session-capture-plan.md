@@ -4,14 +4,14 @@
 
 Every coding tool writes its own record of a session to disk as it goes — Claude
 and Codex append JSONL files under their config directories, Cursor writes rows
-into a SQLite database. When you `git push`, GX's `pre-push` hook runs `gx
+into a SQLite database. When you `git push`, Totality's `pre-push` hook runs `tl
 capture push`, which finds the session files overlapping the pushed commits,
 parses them into a normalized `SessionEvent` stream, and redacts secrets. It
 then matches those events against the commits by **comparing the text the agent
 wrote against the lines the commit added** (exact n-gram overlap first, fuzzy
 token similarity second), with timestamp proximity as a weaker third signal.
 Whatever matches becomes a hunk link — this hunk came from this session — which
-is what produces coverage, authorship, and the PR summary. Nothing depends on GX
+is what produces coverage, authorship, and the PR summary. Nothing depends on Totality
 watching the session happen; it is entirely reconstructed afterward from the
 file the tool left behind.
 
@@ -27,7 +27,7 @@ content-based, a missing tail is not a degraded match — it is no match.
 thing keeping other repositories' sessions out of a repo's context. Discovery
 casts a wide net — any transcript mentioning the repo's path is a candidate —
 and `capture_sessions` today holds sessions sourced from `-Users-joe-git-console`
-and `-Users-joe-git-yeet` that were pulled in while capturing for `gx`. Matching
+and `-Users-joe-git-yeet` that were pulled in while capturing for `tl`. Matching
 throws them back. If matching stops being a prerequisite for indexing, something
 else has to be the gate.
 
@@ -58,7 +58,7 @@ Resolution rules:
    `https` spellings, optional `.git` suffix, and case. Codex supplies the URL
    directly and can skip the inference.
 3. **Origin → connected repo** matches the normalized origin against the repos
-   connected to the user's GX org. This is the gate.
+   connected to the user's Totality org. This is the gate.
 
 ## What changes
 
@@ -74,7 +74,7 @@ better than silence.
 
 **Cross-repo context is allowed, deliberately.** Sessions bound to any connected
 repo may inform any other connected repo in the same org. Related repositories —
-`gx` and `console` — genuinely benefit from each other's context. The boundary is
+`tl` and `console` — genuinely benefit from each other's context. The boundary is
 org connection, not repo identity.
 
 **Unconnected repos never leave the machine.** A session bound to a repo with no
@@ -96,7 +96,7 @@ session deliberately mixing the two will have its company-repo portions indexed.
 That is a documented user responsibility, not a mechanism we try to defeat. It
 must be stated plainly in user-facing docs:
 
-> GX indexes agent sessions against the repositories your organization has
+> Totality indexes agent sessions against the repositories your organization has
 > connected. A session is bound to a repository by the directory it ran in and
 > that repository's git origin. Work done in a repository your organization has
 > not connected is never uploaded. If you work on a personal project inside the

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/codereview"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/totality/internal/codereview"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 var errTestComposeRepair = errors.New("compose repair unavailable")
@@ -38,7 +38,7 @@ func TestVersionCommandPrintsLabeledVersion(t *testing.T) {
 	if !strings.HasPrefix(text, "version ") {
 		t.Fatalf("version output = %q, want compact version line", text)
 	}
-	if strings.Contains(text, "$ gx version") {
+	if strings.Contains(text, "$ tl version") {
 		t.Fatalf("version output should not echo command:\n%s", text)
 	}
 }
@@ -70,7 +70,7 @@ func TestVersionCommandPrintsJSON(t *testing.T) {
 
 func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
@@ -82,22 +82,22 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.HasPrefix(text, gxLogoRaw+"\n") {
+	if !strings.HasPrefix(text, tlLogoRaw+"\n") {
 		t.Fatalf("root help should start with logo:\n%s", text)
 	}
-	if !strings.Contains(text, "$ gx help") {
-		t.Fatalf("root help missing gx help invocation:\n%s", text)
+	if !strings.Contains(text, "$ tl help") {
+		t.Fatalf("root help missing tl help invocation:\n%s", text)
 	}
-	if !strings.Contains(text, "Not signed in  gx auth login") {
+	if !strings.Contains(text, "Not signed in  tl auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	if !strings.Contains(text, "review (gxr)") {
-		t.Fatalf("root help missing alias %q:\n%s", "review (gxr)", text)
+	if !strings.Contains(text, "review (tlr)") {
+		t.Fatalf("root help missing alias %q:\n%s", "review (tlr)", text)
 	}
 	if strings.Contains(text, "status") {
 		t.Fatalf("root help should not offer a status command:\n%s", text)
 	}
-	if strings.Contains(text, "generate (gxg)") {
+	if strings.Contains(text, "generate (tlg)") {
 		t.Fatalf("root help should hide generate:\n%s", text)
 	}
 	if strings.Contains(text, "Shortcuts:") {
@@ -107,15 +107,15 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 
 func TestReviewAliasResolves(t *testing.T) {
 	root := NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"gxr"})
+	cmd, _, err := root.Find([]string{"tlr"})
 	if err != nil || cmd == nil || cmd.Name() != "review" {
-		t.Fatalf("Find(gxr) = cmd=%v err=%v, want review command", cmd, err)
+		t.Fatalf("Find(tlr) = cmd=%v err=%v, want review command", cmd, err)
 	}
 }
 
 func TestRootHelpShowsSignedInUser(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRootHelpShowsSignedInUser(t *testing.T) {
 
 func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "api-key", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -154,15 +154,15 @@ func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
 	if strings.Contains(text, "Signed in as api-key") {
 		t.Fatalf("root help showed stale legacy login:\n%s", text)
 	}
-	if !strings.Contains(text, "Not signed in  gx auth login") {
+	if !strings.Contains(text, "Not signed in  tl auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
 }
 
 func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_CLOUD_URL", "http://localhost:3200/gx/pr")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3200/tl/pr")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -210,10 +210,10 @@ func TestDoctorAcceptsReportFlag(t *testing.T) {
 	}
 	flag := doctor.Flags().Lookup("report")
 	if flag == nil {
-		t.Fatal("gx doctor is missing the --report flag")
+		t.Fatal("tl doctor is missing the --report flag")
 	}
 	if flag.Value.Type() != "bool" {
-		t.Fatalf("gx doctor --report type = %q, want bool", flag.Value.Type())
+		t.Fatalf("tl doctor --report type = %q, want bool", flag.Value.Type())
 	}
 }
 
@@ -224,10 +224,10 @@ func TestReportCommandStaysResolvableAsHiddenAlias(t *testing.T) {
 		t.Fatalf("Find(report) = cmd=%v err=%v, want report", report, err)
 	}
 	if !report.Hidden {
-		t.Fatal("gx report should be hidden now that gx doctor --report is the public spelling")
+		t.Fatal("tl report should be hidden now that tl doctor --report is the public spelling")
 	}
 	if report.GroupID != "" {
-		t.Fatalf("gx report GroupID = %q, want no group", report.GroupID)
+		t.Fatalf("tl report GroupID = %q, want no group", report.GroupID)
 	}
 }
 
@@ -235,7 +235,7 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	repoRoot := initGitRepo(t)
 	t.Chdir(repoRoot)
 	t.Setenv("NO_COLOR", "1")
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "octocat", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -247,19 +247,19 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode report body: %v", err)
 		}
-		_, _ = w.Write([]byte(`{"id":"report-9","url":"https://gx.run/reports/report-9"}`))
+		_, _ = w.Write([]byte(`{"id":"report-9","url":"https://totality.sh/reports/report-9"}`))
 	}))
 	defer server.Close()
-	t.Setenv("GX_CLOUD_URL", server.URL)
-	// `gx doctor` checks the saved GitHub token against GitHub's user endpoint,
+	t.Setenv("TOTALITY_CLOUD_URL", server.URL)
+	// `tl doctor` checks the saved GitHub token against GitHub's user endpoint,
 	// which sent this test to api.github.com on every run with a token it had
-	// just invented. The endpoint is a separate override from GX_GITHUB_API_URL,
+	// just invented. The endpoint is a separate override from TOTALITY_GITHUB_API_URL,
 	// so pointing that one at a fake is not enough.
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"login":"octocat","id":583231}`))
 	}))
 	defer github.Close()
-	t.Setenv("GX_GITHUB_USER_URL", github.URL)
+	t.Setenv("TOTALITY_GITHUB_USER_URL", github.URL)
 
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -268,12 +268,12 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	root.SetArgs([]string{"doctor", "--report"})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("gx doctor --report error = %v\n%s", err, out.String())
+		t.Fatalf("tl doctor --report error = %v\n%s", err, out.String())
 	}
 
 	var diagnosis string
 	for _, log := range got.Logs {
-		if log.Path == "gx-doctor.txt" {
+		if log.Path == "totality-doctor.txt" {
 			diagnosis = log.Content
 		}
 	}
@@ -285,10 +285,10 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	}
 	text := out.String()
 	if !strings.Contains(text, "Publish outbox") {
-		t.Fatalf("gx doctor --report stopped printing the diagnosis:\n%s", text)
+		t.Fatalf("tl doctor --report stopped printing the diagnosis:\n%s", text)
 	}
 	if !strings.Contains(text, "Report sent") || !strings.Contains(text, "report-9") {
-		t.Fatalf("gx doctor --report missing send confirmation:\n%s", text)
+		t.Fatalf("tl doctor --report missing send confirmation:\n%s", text)
 	}
 }
 
@@ -308,14 +308,14 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	writeTestFile(t, root, "main_test.go", "package main\n")
 	gitAddTestFiles(t, root, "README.md", "AGENTS.md", "go.mod", "main_test.go")
 	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_API_URL", "")
-	t.Setenv("GX_UPLOAD_TOKEN", "")
-	t.Setenv("GX_REVIEW_AI", "0")
-	t.Setenv("GX_REVIEW_JUDGE", "0")
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_REVIEW_RESOURCES", "0")
-	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_API_URL", "")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_REVIEW_AI", "0")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "0")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("TOTALITY_REVIEW_RESOURCES", "0")
+	t.Setenv("TOTALITY_REVIEW_INDEXED_CONTEXT", "0")
 
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -324,7 +324,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	cmd.SetArgs([]string{"review"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx review error = %v\n%s", err, out.String())
+		t.Fatalf("tl review error = %v\n%s", err, out.String())
 	}
 	text := out.String()
 	for _, want := range []string{
@@ -332,34 +332,34 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 		"- No material issues found in this change.",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("gx review output missing %q in:\n%s", want, text)
+			t.Fatalf("tl review output missing %q in:\n%s", want, text)
 		}
 	}
 	for _, unwanted := range []string{"brief", "PR Summary"} {
 		if strings.Contains(strings.ToLower(text), unwanted) {
-			t.Fatalf("gx review output should not include %q:\n%s", unwanted, text)
+			t.Fatalf("tl review output should not include %q:\n%s", unwanted, text)
 		}
 	}
 }
 
-func writeTestGXConfig(t *testing.T, gxHome, name, email string) {
+func writeTestTotalityConfig(t *testing.T, totalityHome, name, email string) {
 	t.Helper()
-	if err := os.MkdirAll(gxHome, 0o755); err != nil {
+	if err := os.MkdirAll(totalityHome, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	content := fmt.Sprintf(`{"user":{"name":%q,"email":%q}}`, name, email)
-	if err := os.WriteFile(filepath.Join(gxHome, "config.json"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(totalityHome, "config.json"), []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 }
 
 // narrowPathToGit leaves git on PATH and nothing else.
 //
-// `gx init` registers the GX MCP server with every agent CLI it finds installed
-// by running it (`claude mcp add gx …`, `cursor mcp add gx …`). On a developer's
+// `tl init` registers the Totality MCP server with every agent CLI it finds installed
+// by running it (`claude mcp add tl …`, `cursor mcp add tl …`). On a developer's
 // machine those resolve to the real binaries, so this test was launching the
 // developer's own Claude Code — which calls home to api.anthropic.com — as a
-// side effect of asserting that `gx init -y` prints nothing. What the test means
+// side effect of asserting that `tl init -y` prints nothing. What the test means
 // by a default machine is one with no agent CLI installed, and this is how to
 // say that rather than inherit whatever the author happened to have.
 func narrowPathToGit(t *testing.T) {
@@ -380,7 +380,7 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	runGitTest(t, root, "config", "user.name", "Joe Example")
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
 	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -394,26 +394,26 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	cmd.SetArgs([]string{"init", "-y"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx init -y error = %v\n%s", err, out.String())
+		t.Fatalf("tl init -y error = %v\n%s", err, out.String())
 	}
 	if out.String() != "" {
-		t.Fatalf("gx init -y output = %q, want empty", out.String())
+		t.Fatalf("tl init -y output = %q, want empty", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		t.Fatalf("after gx init -y .git missing: %v", err)
+		t.Fatalf("after tl init -y .git missing: %v", err)
 	}
 }
 
 func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_API_URL", "")
-	t.Setenv("GX_UPLOAD_TOKEN", "")
-	t.Setenv("GX_REVIEW_AI", "0")
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_REVIEW_RESOURCES", "0")
-	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_API_URL", "")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_REVIEW_AI", "0")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("TOTALITY_REVIEW_RESOURCES", "0")
+	t.Setenv("TOTALITY_REVIEW_INDEXED_CONTEXT", "0")
 
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -421,44 +421,44 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"review", "--scope", "architecture"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx review --scope error = %v\n%s", err, out.String())
+		t.Fatalf("tl review --scope error = %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "## Recommendations") {
-		t.Fatalf("gx review --scope output missing recommendations:\n%s", out.String())
+		t.Fatalf("tl review --scope output missing recommendations:\n%s", out.String())
 	}
 }
 
 func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
-	remote := "https://github.com/acme/gx.git"
+	remote := "https://github.com/acme/tl.git"
 	branch := "feature/demo"
 	var gotCommentBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
 			if r.URL.Query().Get("head") != "acme:"+branch {
 				t.Fatalf("head query = %q", r.URL.Query().Get("head"))
 			}
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			var payload map[string]string
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode comment body: %v", err)
 			}
 			gotCommentBody = payload["body"]
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 	t.Setenv("GH_TOKEN", "token-one")
-	t.Setenv("GX_REVIEW_AI", "0")
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_REVIEW_RESOURCES", "0")
-	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
+	t.Setenv("TOTALITY_REVIEW_AI", "0")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("TOTALITY_REVIEW_RESOURCES", "0")
+	t.Setenv("TOTALITY_REVIEW_INDEXED_CONTEXT", "0")
 
 	report := codereview.Report{
 		Findings: []codereview.Finding{{
@@ -486,7 +486,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	if gotCommentBody == "" {
 		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
+	for _, want := range []string{"<!-- tl review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
 		}
@@ -507,15 +507,15 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 	gitAddTestFiles(t, root, "main.go")
 	runGitTest(t, root, "commit", "-m", "change")
 
-	remote := "https://github.com/acme/gx.git"
+	remote := "https://github.com/acme/tl.git"
 	branch := "feature/demo"
 	var inlineAttempted bool
 	var summaryAttempted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/pulls/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/pulls/7/comments":
 			inlineAttempted = true
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -525,17 +525,17 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 				t.Fatalf("inline payload = %#v", payload)
 			}
 			_, _ = w.Write([]byte(`{"id":99}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			summaryAttempted = true
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 	t.Setenv("GH_TOKEN", "token-one")
 
 	report := codereview.Report{
@@ -577,26 +577,26 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	gitAddTestFiles(t, root, "main.go")
 	runGitTest(t, root, "commit", "-m", "change")
 
-	remote := "https://github.com/acme/gx.git"
+	remote := "https://github.com/acme/tl.git"
 	branch := "feature/demo"
 	var summaryAttempted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/pulls":
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/gx/pull/7"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/pulls/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/pulls/7/comments":
 			http.Error(w, "line cannot be commented", http.StatusUnprocessableEntity)
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/gx/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
 			summaryAttempted = true
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/gx/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 	t.Setenv("GH_TOKEN", "token-one")
 
 	report := codereview.Report{
@@ -619,7 +619,7 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	if !summaryAttempted {
 		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
 	}
-	if !strings.Contains(stderr.String(), "Could not post GX inline review comment") {
+	if !strings.Contains(stderr.String(), "Could not post Totality inline review comment") {
 		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
 	}
 }
@@ -630,10 +630,10 @@ func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("gx review accepted multiple positional prompts")
+		t.Fatal("tl review accepted multiple positional prompts")
 	}
 	if !strings.Contains(err.Error(), "accepts at most 1 arg") {
-		t.Fatalf("gx review error = %v, want maximum arg error", err)
+		t.Fatalf("tl review error = %v, want maximum arg error", err)
 	}
 }
 

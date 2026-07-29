@@ -28,24 +28,24 @@ type changeRow struct {
 	UpdatedAt       int64
 }
 
-// DefaultDir is where gx keeps its machine-wide state: $GX_HOME when set,
-// otherwise ~/.gx.
+// DefaultDir is where tl keeps its machine-wide state: $TOTALITY_HOME when set,
+// otherwise ~/.totality.
 //
-// The override is trimmed because every other reader of GX_HOME trims it —
+// The override is trimmed because every other reader of TOTALITY_HOME trims it —
 // internal/auth, internal/semantic, internal/capture, internal/hooks — and this
 // one did not. A whitespace-only value put the database in a directory named
-// two spaces while the rest of gx carried on using ~/.gx, which is the
+// two spaces while the rest of tl carried on using ~/.totality, which is the
 // reader-and-writer-disagree shape this codebase has already paid for more than
 // once.
 func DefaultDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("GX_HOME")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("TOTALITY_HOME")); override != "" {
 		return override, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
-	return filepath.Join(home, ".gx"), nil
+	return filepath.Join(home, ".totality"), nil
 }
 
 func DefaultDBPath() (string, error) {
@@ -53,7 +53,7 @@ func DefaultDBPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "gx.db"), nil
+	return filepath.Join(dir, "totality.db"), nil
 }
 
 func Open(ctx context.Context) (*sql.DB, error) {
@@ -62,7 +62,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create gx dir: %w", err)
+		return nil, fmt.Errorf("create tl dir: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -117,7 +117,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 	// rows cascade off in the same open.
 	if err := deleteCommitSelfReportSession(ctx, db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("remove gx commit self-report session: %w", err)
+		return nil, fmt.Errorf("remove tl commit self-report session: %w", err)
 	}
 	if err := repairDanglingSessionLinks(ctx, db); err != nil {
 		_ = db.Close()
@@ -406,11 +406,11 @@ func ensureSessionIndexes(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// commitSelfReportSessionID is the fossil left by the retired `gx commit`
+// commitSelfReportSessionID is the fossil left by the retired `tl commit`
 // self-report. It has cwd=” and repo_root=NULL, so it can never match a repo
 // and only ever contributed noise to the change_sessions table. Nothing writes
 // it any more, so removing it on open is a one-way cleanup.
-const commitSelfReportSessionID = "gx-commit-self-report"
+const commitSelfReportSessionID = "totality-commit-self-report"
 
 func deleteCommitSelfReportSession(ctx context.Context, db *sql.DB) error {
 	for _, stmt := range []string{

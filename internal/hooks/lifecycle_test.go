@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/hooks"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/hooks"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
@@ -18,8 +18,8 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 	runGitInRepo(t, repo, "init")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	gxPath := buildGXBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GXPath: gxPath}); err != nil {
+	tlPath := buildTotalityBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: tlPath}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -31,7 +31,7 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s hook: %v", name, err)
 		}
-		if !strings.Contains(string(data), "# gx lifecycle hooks") {
+		if !strings.Contains(string(data), "# tl lifecycle hooks") {
 			t.Fatalf("%s hook missing marker:\n%s", name, data)
 		}
 	}
@@ -54,19 +54,19 @@ func TestPrepareCommitMsgHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "GX: https://gx.run/r/") {
-		t.Fatalf("message = %q, want GX trailer", string(data))
+	if !strings.Contains(string(data), "Totality: https://totality.sh/r/") {
+		t.Fatalf("message = %q, want Totality trailer", string(data))
 	}
 }
 
 func TestPlainGitCommitWithInstalledHooks(t *testing.T) {
 	repo := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	runGitInRepo(t, repo, "init", "-b", "main")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	gxPath := buildGXBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GXPath: gxPath}); err != nil {
+	tlPath := buildTotalityBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: tlPath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
@@ -75,8 +75,8 @@ func TestPlainGitCommitWithInstalledHooks(t *testing.T) {
 	runGitInRepo(t, repo, "add", "feature.txt")
 	runGitInRepo(t, repo, "commit", "-m", "add feature")
 	message := gitOutput(t, repo, "log", "-1", "--format=%B")
-	if strings.Count(message, "GX: https://gx.run/r/") != 1 {
-		t.Fatalf("commit message = %q, want exactly one GX trailer", message)
+	if strings.Count(message, "Totality: https://totality.sh/r/") != 1 {
+		t.Fatalf("commit message = %q, want exactly one Totality trailer", message)
 	}
 }
 
@@ -91,13 +91,13 @@ func TestInstallRefusesForeignHook(t *testing.T) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\necho foreign\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, GXPath: "/bin/gx"})
+	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tl"})
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("Install() error = %v, want refusal", err)
 	}
 }
 
-func TestInstallUpgradesLegacyGXPrePushHook(t *testing.T) {
+func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -105,18 +105,18 @@ func TestInstallUpgradesLegacyGXPrePushHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(hooksDir, "pre-push")
-	legacy := "#!/bin/sh\n# gx capture pre-push hook\ngx capture push || true\n"
+	legacy := "#!/bin/sh\n# tl capture pre-push hook\ntt capture push || true\n"
 	if err := os.WriteFile(path, []byte(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GXPath: "/bin/gx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tl"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "# gx lifecycle hooks") || strings.Contains(string(data), "# gx capture pre-push hook") {
+	if !strings.Contains(string(data), "# tl lifecycle hooks") || strings.Contains(string(data), "# tl capture pre-push hook") {
 		t.Fatalf("legacy pre-push hook was not upgraded:\n%s", data)
 	}
 }
@@ -124,7 +124,7 @@ func TestInstallUpgradesLegacyGXPrePushHook(t *testing.T) {
 func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GXPath: "/missing/gx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/missing/tl"}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -145,9 +145,9 @@ func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 
 func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	primary := t.TempDir()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	totalityHome := t.TempDir()
+	t.Setenv("TOTALITY_HOME", totalityHome)
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	runGitInRepo(t, primary, "init", "-b", "main")
 	runGitInRepo(t, primary, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, primary, "config", "user.name", "Dev")
@@ -170,14 +170,14 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGitInRepo(t, linked, "add", "linked.txt")
-	// Any gx command run inside the linked worktree bootstraps the repo and
+	// Any tl command run inside the linked worktree bootstraps the repo and
 	// installs the lifecycle hooks; the commit itself is plain git.
-	gxPath := buildGXBinary(t)
-	cmd := exec.Command(gxPath, "doctor")
+	tlPath := buildTotalityBinary(t)
+	cmd := exec.Command(tlPath, "doctor")
 	cmd.Dir = linked
-	cmd.Env = append(os.Environ(), "GX_HOME="+gxHome, "GX_DISABLE_BACKGROUND_WORKERS=1")
+	cmd.Env = append(os.Environ(), "TOTALITY_HOME="+totalityHome, "TOTALITY_DISABLE_BACKGROUND_WORKERS=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gx doctor: %v\n%s", err, out)
+		t.Fatalf("tl doctor: %v\n%s", err, out)
 	}
 
 	if !hooks.IsInstalled(linked) {
@@ -192,7 +192,7 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	linkedOID := strings.TrimSpace(gitOutput(t, linked, "rev-parse", "HEAD"))
 
 	service := vcs.NewService()
-	repo, err := service.ResolveGXRepoAtPath(context.Background(), linked)
+	repo, err := service.ResolveTotalityRepoAtPath(context.Background(), linked)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	}
 	amendedRevisionIDs := vcs.ParseRevisionIDsFromMessage(gitOutput(t, linked, "log", "-1", "--format=%B"))
 	if len(amendedRevisionIDs) != 1 || amendedRevisionIDs[0] != plainRevisionIDs[0] {
-		t.Fatalf("amend changed GX revision identity: before=%v after=%v", plainRevisionIDs, amendedRevisionIDs)
+		t.Fatalf("amend changed Totality revision identity: before=%v after=%v", plainRevisionIDs, amendedRevisionIDs)
 	}
 	plainChange, err := store.FindChangeByJJChangeID(context.Background(), repoRow.ID, plainRevisionIDs[0])
 	if err != nil || plainChange == nil || plainChange.CurrentCommitID != amendedOID {
@@ -318,13 +318,13 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func buildGXBinary(t *testing.T) string {
+func buildTotalityBinary(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "gx")
-	cmd := exec.Command("go", "build", "-o", out, "./cmd/gx")
+	out := filepath.Join(t.TempDir(), "tl")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/tl")
 	cmd.Dir = mustRepoRoot(t)
 	if combined, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build gx: %v\n%s", err, combined)
+		t.Fatalf("go build tl: %v\n%s", err, combined)
 	}
 	return out
 }

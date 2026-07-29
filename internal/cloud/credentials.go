@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/satoricorp/gx/internal/authstore"
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/authstore"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 type machineIDFile struct {
@@ -22,7 +22,7 @@ type credentialsFile struct {
 	Cloud *CloudCredentials `json:"cloud,omitempty"`
 }
 
-// CloudCredentials holds gx cloud auth state.
+// CloudCredentials holds tl cloud auth state.
 type CloudCredentials struct {
 	GitHubAccessToken           string    `json:"github_access_token,omitempty"`
 	GitHubAccessTokenExpiresAt  time.Time `json:"github_access_token_expires_at,omitempty"`
@@ -58,7 +58,7 @@ func credentialsPath() (string, error) {
 // ExistingMachineID returns the stable machine UUID if one has already been
 // minted, and empty otherwise. Callers that must not leave state behind — a
 // read-only command, or a failure report from a machine that may never have
-// run gx — use this instead of DefaultMachineID, which creates $GX_HOME.
+// run tl — use this instead of DefaultMachineID, which creates $TOTALITY_HOME.
 func ExistingMachineID() (string, error) {
 	path, err := machineIDPath()
 	if err != nil {
@@ -173,7 +173,7 @@ func GitHubAccessTokenWithSource() (string, string, error) {
 	return authstore.GitHubAccessTokenWithSource()
 }
 
-// CloudAPIToken returns the bearer token used by consolidated gx-cloud HTTP APIs.
+// CloudAPIToken returns the bearer token used by consolidated totality-cloud HTTP APIs.
 func CloudAPIToken() (string, error) {
 	token, _, err := CloudAPITokenWithKind()
 	return token, err
@@ -188,12 +188,12 @@ func CloudAPITokenWithKind() (string, string, error) {
 	}
 	if creds != nil && strings.TrimSpace(creds.CLISessionToken) != "" {
 		if !creds.CLISessionExpiresAt.IsZero() && time.Now().UTC().After(creds.CLISessionExpiresAt.UTC()) {
-			if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
-				return "", "gx-cli", fmt.Errorf("gx cloud session expired: run `gx auth logout` then `gx auth login` in a terminal, then retry the MCP tool")
+			if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
+				return "", "totality-cli", fmt.Errorf("tl cloud session expired: run `tl auth logout` then `tl auth login` in a terminal, then retry the MCP tool")
 			}
-			return "", "gx-cli", fmt.Errorf("gx cloud session expired: run `gx auth logout` then `gx auth login`")
+			return "", "totality-cli", fmt.Errorf("tl cloud session expired: run `tl auth logout` then `tl auth login`")
 		}
-		return strings.TrimSpace(creds.CLISessionToken), "gx-cli", nil
+		return strings.TrimSpace(creds.CLISessionToken), "totality-cli", nil
 	}
 	if token, err := GitHubAccessToken(); err == nil {
 		return token, "github", nil
@@ -204,7 +204,7 @@ func CloudAPITokenWithKind() (string, string, error) {
 
 func writeJSONFile(path string, v any, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create gx home dir: %w", err)
+		return fmt.Errorf("create tl home dir: %w", err)
 	}
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
+            "command": "\"$HOME/.local/bin/tl\" capture transcript",
             "type": "command"
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
+            "command": "\"$HOME/.local/bin/tl\" capture transcript",
             "type": "command"
           }
         ]

@@ -1,0 +1,58 @@
+name: mcp
+
+# Tests the MCP package on pushes and PRs, and publishes @satoricorp/totality
+# to npm when a tag like mcp-v0.1.0 is pushed (the tag must match
+# mcp/package.json's version) or on manual dispatch. Publishing requires the
+# NPM_TOKEN repository secret (npm automation token with publish rights on the
+# @satoricorp org).
+
+on:
+  push:
+    branches: [main]
+    tags: ["mcp-v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build:xmcp
+      - run: bun test
+
+  publish:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+      - name: Check tag matches package version
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${GITHUB_REF_NAME#mcp-v}"
+          ver="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$ver" ]; then
+            echo "tag mcp-v$tag does not match package.json version $ver" >&2
+            exit 1
+          fi
+      - run: bun install --frozen-lockfile
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

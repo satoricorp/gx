@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/gx-review";
+import tlReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/tl-review";
 import { withUpdateNotice } from "./update";
 
 type ToolModule = {
@@ -16,17 +16,17 @@ type ToolModule = {
 };
 
 const instructions = [
-  "GX MCP exposes gx_review, a read-only tool.",
-  "It never initializes a repository; if the repo is not set up for GX yet, run gx init there first.",
-  "Save work with plain Git: git add, then git commit. GX installs Git hooks that stamp each commit with its GX revision trailer and record it, so no GX-specific commit verb is needed.",
-  "To amend the latest commit message or restage work, use git commit --amend and preserve the GX revision trailer.",
-  "Publish with plain git push, then open the PR with gh pr create. The GX pre-push hook captures the agent session, links edits to the changed hunks, and publishes the GX metadata that becomes the PR summary. Do not run gx push or gx capture push; they bypass or suppress that hook.",
-  "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
+  "Totality MCP exposes tl_review, a read-only tool.",
+  "It never initializes a repository; if the repo is not set up for Totality yet, run tl init there first.",
+  "Save work with plain Git: git add, then git commit. Totality installs Git hooks that stamp each commit with its Totality revision trailer and record it, so no Totality-specific commit verb is needed.",
+  "To amend the latest commit message or restage work, use git commit --amend and preserve the Totality revision trailer.",
+  "Publish with plain git push, then open the PR with gh pr create. The Totality pre-push hook captures the agent session, links edits to the changed hunks, and publishes the Totality metadata that becomes the PR summary. Do not run tl push or tl capture push; they bypass or suppress that hook.",
+  "Run tl_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
   "Use git status for inspection.",
 ].join(" ");
 
 const tools: ToolModule[] = [
-  defineTool(reviewMetadata, reviewSchema, gxReview),
+  defineTool(reviewMetadata, reviewSchema, tlReview),
 ];
 
 function defineTool(
@@ -66,9 +66,9 @@ async function main() {
   redirectConsoleToStderr();
   const server = new McpServer(
     {
-      name: "GX MCP",
+      name: "Totality MCP",
       version: "0.1.0",
-      description: "GX MCP stdio server",
+      description: "Totality MCP stdio server",
     },
     { instructions },
   );

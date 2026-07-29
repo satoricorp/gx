@@ -35,8 +35,8 @@ type SessionEvent struct {
 	// work is invisible to attribution even though the transcript recorded it in
 	// full. It is deliberately not truncated: the match is against the text the
 	// command wrote, so a clipped command matches nothing.
-	Command       string
-	Raw           map[string]json.RawMessage
+	Command string
+	Raw     map[string]json.RawMessage
 
 	// Cwd is the working directory the agent was in when this event happened,
 	// when the tool records one. It is what binds a session to a repository —

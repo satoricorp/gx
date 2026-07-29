@@ -1,8 +1,8 @@
 # Review Corpus Eval Results
 
 generated_at: 2026-07-08
-baseline_namespace: gx-review-knowledge
-candidate_namespace: gx-review-knowledge
+baseline_namespace: totality-review-knowledge
+candidate_namespace: totality-review-knowledge
 
 queries: 50
 v1_recall_at_10: 45/50

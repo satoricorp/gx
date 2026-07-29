@@ -8,19 +8,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/totality/internal/totalitytest"
 )
 
 // requireLiveIndexingCredentials skips unless real keys are present. Nothing in
 // this file touches a production namespace: every namespace it creates is
-// prefixed gx-eval- and deleted before the test returns.
+// prefixed totality-eval- and deleted before the test returns.
 func requireLiveIndexingCredentials(t *testing.T) Config {
 	t.Helper()
 	// This test writes to a real TurboPuffer account and embeds through the
 	// real OpenAI API. It cleans its scratch namespaces up, but a run that dies
 	// between the upsert and the cleanup leaves them behind, so arming it on
 	// nothing more than an exported key is not a decision anyone made.
-	gxtest.RequireNoNetwork(t)
+	totalitytest.RequireNoNetwork(t)
 	if strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")) == "" {
 		t.Skip("TURBOPUFFER_API_KEY is not set; skipping live indexing test")
 	}
@@ -32,7 +32,7 @@ func requireLiveIndexingCredentials(t *testing.T) Config {
 
 func scratchNamespace(t *testing.T, label string) string {
 	t.Helper()
-	return fmt.Sprintf("gx-eval-%s-%d", label, time.Now().UnixNano())
+	return fmt.Sprintf("totality-eval-%s-%d", label, time.Now().UnixNano())
 }
 
 // TestLiveIndexRoundTrip indexes a small fixture repository into a throwaway
@@ -181,25 +181,25 @@ func rowFilePaths(rows []QueryRow) []string {
 
 // TestLiveIndexRealRepository indexes an actual checkout so the reported
 // numbers (chunk count, wall clock, bytes) come from a real repository rather
-// than a fixture. It is opt-in via GX_INDEX_EVAL_ROOT and writes to a scratch
-// namespace it deletes afterwards unless GX_INDEX_EVAL_KEEP is set.
+// than a fixture. It is opt-in via TOTALITY_INDEX_EVAL_ROOT and writes to a scratch
+// namespace it deletes afterwards unless TOTALITY_INDEX_EVAL_KEEP is set.
 func TestLiveIndexRealRepository(t *testing.T) {
-	root := strings.TrimSpace(os.Getenv("GX_INDEX_EVAL_ROOT"))
+	root := strings.TrimSpace(os.Getenv("TOTALITY_INDEX_EVAL_ROOT"))
 	if root == "" {
-		t.Skip("GX_INDEX_EVAL_ROOT is not set; skipping real-repository indexing")
+		t.Skip("TOTALITY_INDEX_EVAL_ROOT is not set; skipping real-repository indexing")
 	}
 	cfg := requireLiveIndexingCredentials(t)
 
-	namespace := strings.TrimSpace(os.Getenv("GX_INDEX_EVAL_NAMESPACE"))
+	namespace := strings.TrimSpace(os.Getenv("TOTALITY_INDEX_EVAL_NAMESPACE"))
 	if namespace == "" {
 		namespace = scratchNamespace(t, "repo")
 	}
-	if !strings.HasPrefix(namespace, "gx-eval-") {
-		t.Fatalf("refusing to write to %q: evaluation namespaces must be prefixed gx-eval-", namespace)
+	if !strings.HasPrefix(namespace, "totality-eval-") {
+		t.Fatalf("refusing to write to %q: evaluation namespaces must be prefixed totality-eval-", namespace)
 	}
 
 	client := NewTurboPufferClientForNamespace(cfg, namespace)
-	if strings.TrimSpace(os.Getenv("GX_INDEX_EVAL_KEEP")) == "" {
+	if strings.TrimSpace(os.Getenv("TOTALITY_INDEX_EVAL_KEEP")) == "" {
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -212,13 +212,13 @@ func TestLiveIndexRealRepository(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	statePath := t.TempDir() + "/manifest.json"
-	if custom := strings.TrimSpace(os.Getenv("GX_INDEX_EVAL_STATE")); custom != "" {
+	if custom := strings.TrimSpace(os.Getenv("TOTALITY_INDEX_EVAL_STATE")); custom != "" {
 		statePath = custom
 	}
 
 	result, err := IndexRepository(ctx, RepoIndexOptions{
 		RepoRoot:    root,
-		OrgID:       strings.TrimSpace(os.Getenv("GX_INDEX_EVAL_ORG")),
+		OrgID:       strings.TrimSpace(os.Getenv("TOTALITY_INDEX_EVAL_ORG")),
 		Namespace:   namespace,
 		Reason:      "eval",
 		StatePath:   statePath,

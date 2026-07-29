@@ -1,24 +1,42 @@
 {
-  "name": "@gx/mcp",
+  "name": "@satoricorp/totality",
   "version": "0.1.0",
+  "description": "Totality MCP server (stdio): tl_review context from the local tl CLI.",
   "license": "AGPL-3.0-only",
-  "private": true,
+  "homepage": "https://totality.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/satoricorp/totality.git",
+    "directory": "mcp"
+  },
+  "bin": {
+    "tl-mcp": "dist/stdio.js"
+  },
+  "files": [
+    "dist/*.js",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "xmcp dev",
     "build": "xmcp build && bun run build:binary",
     "build:xmcp": "xmcp build",
-    "build:binary": "bun build src/stdio.ts --compile --outfile dist/gx-mcp",
-    "start": "./dist/gx-mcp",
+    "build:binary": "bun build src/stdio.ts --compile --outfile dist/tl-mcp",
+    "start": "./dist/tl-mcp",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "xmcp": "0.6.10",
-    "zod": "4.4.3"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build:xmcp && bun test"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@types/node": "^24.10.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "xmcp": "0.6.10",
+    "zod": "4.4.3"
   }
 }

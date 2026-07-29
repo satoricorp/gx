@@ -36,7 +36,7 @@ func TestUpsertIdentity(t *testing.T) {
 	err := client.UpsertIdentity(context.Background(), Identity{
 		Name:      "Joe Example",
 		Email:     "joe@example.com",
-		GXVersion: "dev",
+		TLVersion: "dev",
 	})
 	if err != nil {
 		t.Fatalf("UpsertIdentity() unexpected error = %v", err)
@@ -56,7 +56,7 @@ func TestUpsertIdentity(t *testing.T) {
 	if len(payload) != 1 {
 		t.Fatalf("payload len = %d, want 1", len(payload))
 	}
-	if payload[0].Name != "Joe Example" || payload[0].Email != "joe@example.com" || payload[0].Source != "gx" {
+	if payload[0].Name != "Joe Example" || payload[0].Email != "joe@example.com" || payload[0].Source != "tl" {
 		t.Fatalf("unexpected payload: %+v", payload[0])
 	}
 }

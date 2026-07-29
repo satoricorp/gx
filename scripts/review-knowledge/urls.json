@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Seed URLs and review notes for the GX review knowledge corpus. Prefer primary or official sources over summaries.",
+  "description": "Seed URLs and review notes for the Totality review knowledge corpus. Prefer primary or official sources over summaries.",
   "documents": [
     {
       "id": "google-review-standard",

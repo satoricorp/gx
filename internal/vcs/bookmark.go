@@ -11,23 +11,23 @@ type gitBranchTarget struct {
 }
 
 const (
-	legacyGXStackBookmarkPrefix = "gx/"
-	legacyGXDraftBookmarkPrefix = "gx/draft/"
+	legacyTotalityStackBookmarkPrefix = "tl/"
+	legacyTotalityDraftBookmarkPrefix = "tl/draft/"
 )
 
-func isGXStackBookmark(name string) bool {
+func isTotalityStackBookmark(name string) bool {
 	name = strings.TrimSpace(name)
-	if legacyGXInternalCheckoutRef(name) {
+	if legacyTotalityInternalCheckoutRef(name) {
 		return false
 	}
-	return isConventionalStackBookmark(name) || strings.HasPrefix(name, legacyGXStackBookmarkPrefix)
+	return isConventionalStackBookmark(name) || strings.HasPrefix(name, legacyTotalityStackBookmarkPrefix)
 }
 
-func legacyGXInternalCheckoutRef(name string) bool {
+func legacyTotalityInternalCheckoutRef(name string) bool {
 	name = strings.TrimSpace(name)
-	return name == "gx/base" || name == "gx/edit" ||
-		strings.HasPrefix(name, "gx/base/") ||
-		strings.HasPrefix(name, "gx/edit/")
+	return name == "tl/base" || name == "tl/edit" ||
+		strings.HasPrefix(name, "tl/base/") ||
+		strings.HasPrefix(name, "tl/edit/")
 }
 
 func baseCheckoutRef(baseRef string) string {
@@ -41,14 +41,14 @@ func baseCheckoutRef(baseRef string) string {
 	return baseRef
 }
 
-func gxAuthoringBaseFromCheckoutRef(name string) (string, bool) {
+func tlAuthoringBaseFromCheckoutRef(name string) (string, bool) {
 	return "", false
 }
 
 func stackBookmarkName(name, headChangeID string) string {
 	name = cleanRefName(name)
-	name = strings.TrimPrefix(name, legacyGXDraftBookmarkPrefix)
-	name = strings.TrimPrefix(name, legacyGXStackBookmarkPrefix)
+	name = strings.TrimPrefix(name, legacyTotalityDraftBookmarkPrefix)
+	name = strings.TrimPrefix(name, legacyTotalityStackBookmarkPrefix)
 	if kind, rest, ok := splitConventionalStackBookmark(name); ok {
 		slug := bookmarkSlug(rest)
 		if slug == "" {
@@ -65,8 +65,8 @@ func stackBookmarkName(name, headChangeID string) string {
 
 func stackNameFromBookmark(name string) string {
 	name = cleanRefName(name)
-	name = strings.TrimPrefix(name, legacyGXDraftBookmarkPrefix)
-	name = strings.TrimPrefix(name, legacyGXStackBookmarkPrefix)
+	name = strings.TrimPrefix(name, legacyTotalityDraftBookmarkPrefix)
+	name = strings.TrimPrefix(name, legacyTotalityStackBookmarkPrefix)
 	if _, rest, ok := splitConventionalStackBookmark(name); ok {
 		return rest
 	}
@@ -75,8 +75,8 @@ func stackNameFromBookmark(name string) string {
 
 func legacyStackBookmarkName(name string) bool {
 	name = cleanRefName(name)
-	return strings.HasPrefix(name, legacyGXDraftBookmarkPrefix) ||
-		strings.HasPrefix(name, legacyGXStackBookmarkPrefix)
+	return strings.HasPrefix(name, legacyTotalityDraftBookmarkPrefix) ||
+		strings.HasPrefix(name, legacyTotalityStackBookmarkPrefix)
 }
 
 func cleanRefName(name string) string {

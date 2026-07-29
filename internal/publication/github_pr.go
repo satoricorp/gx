@@ -3,12 +3,12 @@ package publication
 import (
 	"context"
 
-	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/totality/internal/reviewbundle"
 )
 
 // UpdateGitHubPullRequestBody used to rewrite the GitHub PR body with a rich
-// GX summary (and previously could seed a thin overview/"Summary" section).
-// Summaries are now owned by GX Cloud, which appends one rich block below any
+// Totality summary (and previously could seed a thin overview/"Summary" section).
+// Summaries are now owned by Totality Cloud, which appends one rich block below any
 // human PR description. The CLI never mutates PR bodies on publish.
 func UpdateGitHubPullRequestBody(ctx context.Context, artifact reviewbundle.Artifact) (bool, error) {
 	_ = ctx

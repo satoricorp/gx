@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 func TestValidateCommitMessage(t *testing.T) {
@@ -74,7 +74,7 @@ func TestStampRevisionTrailerReplacesStaleTrailer(t *testing.T) {
 		t.Fatalf("StampRevisionTrailer() kept stale trailer: %q", restamped)
 	}
 	if got := strings.Count(restamped, revisionTrailerPrefix()); got != 1 {
-		t.Fatalf("StampRevisionTrailer() = %q, want exactly 1 GX trailer, got %d", restamped, got)
+		t.Fatalf("StampRevisionTrailer() = %q, want exactly 1 Totality trailer, got %d", restamped, got)
 	}
 	if !strings.HasSuffix(restamped, RevisionTrailerLine(newID)) {
 		t.Fatalf("StampRevisionTrailer() = %q, want trailing %q", restamped, RevisionTrailerLine(newID))
@@ -108,7 +108,7 @@ func TestValidateRecordedChangeDescription(t *testing.T) {
 
 func TestRequireRecordedAddsForPublish(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 
 	db, err := storage.Open(ctx)
 	if err != nil {

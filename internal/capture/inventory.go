@@ -24,11 +24,11 @@ type ToolInventory struct {
 
 // FieldInventory is the WP-4 input artifact for session_events columns.
 type FieldInventory struct {
-	SchemaVersion              int                      `json:"schema_version"`
-	GeneratedAt                string                   `json:"generated_at"`
-	Tools                      map[string]ToolInventory `json:"tools"`
-	ProposedSessionEventsCols  []string                 `json:"proposed_session_events_columns"`
-	OverflowFields             []string                 `json:"overflow_fields"`
+	SchemaVersion             int                      `json:"schema_version"`
+	GeneratedAt               string                   `json:"generated_at"`
+	Tools                     map[string]ToolInventory `json:"tools"`
+	ProposedSessionEventsCols []string                 `json:"proposed_session_events_columns"`
+	OverflowFields            []string                 `json:"overflow_fields"`
 }
 
 // InventoryCollector records JSON field paths while parsing session files.

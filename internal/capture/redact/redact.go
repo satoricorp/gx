@@ -12,13 +12,13 @@ import (
 
 // Kind constants for redaction placeholders.
 const (
-	KindAWS       = "aws-key"
-	KindGitHub    = "github-token"
-	KindSlack     = "slack-token"
-	KindAPIKey    = "api-key"
-	KindBearer    = "bearer"
-	KindPassword  = "password"
-	KindPrivateKey = "private-key"
+	KindAWS         = "aws-key"
+	KindGitHub      = "github-token"
+	KindSlack       = "slack-token"
+	KindAPIKey      = "api-key"
+	KindBearer      = "bearer"
+	KindPassword    = "password"
+	KindPrivateKey  = "private-key"
 	KindHighEntropy = "high-entropy"
 )
 

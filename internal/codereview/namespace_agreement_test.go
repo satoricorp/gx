@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/semantic"
+	"github.com/satoricorp/totality/internal/semantic"
 )
 
 // TestReviewReadsTheNamespaceIndexWrites is the end-to-end half of the
-// namespace regression: the real `gx index` write path against the real
-// `gx review` read path, with nothing re-derived in between.
+// namespace regression: the real `tl index` write path against the real
+// `tl review` read path, with nothing re-derived in between.
 //
-// The observed failure: `gx index` in a checkout with no remote wrote
-// gx-local-yeet-8d862445e7e4-v2, while `gx review` in that same checkout probed
-// gx-local-satoricorp-yeet-v2 and repo-satoricorp-yeet, found neither, and
-// reported "GX Cloud has never indexed this repository" — over an index that
+// The observed failure: `tl index` in a checkout with no remote wrote
+// totality-local-yeet-8d862445e7e4-v2, while `tl review` in that same checkout probed
+// totality-local-satoricorp-yeet-v2 and repo-satoricorp-yeet, found neither, and
+// reported "Totality Cloud has never indexed this repository" — over an index that
 // existed, was current, and held every chunk the review needed.
 //
 // Both sides now go through semantic.ResolveRepoIdentity. This test is what
@@ -76,7 +76,7 @@ func TestReviewReadsTheNamespaceIndexWrites(t *testing.T) {
 				searched = append(searched, target.Namespace)
 			}
 			if targets[0].Namespace != written {
-				t.Fatalf("`gx index` wrote %q; review's first namespace is %q (searched %v)", written, targets[0].Namespace, searched)
+				t.Fatalf("`tl index` wrote %q; review's first namespace is %q (searched %v)", written, targets[0].Namespace, searched)
 			}
 		})
 	}

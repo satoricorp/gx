@@ -257,7 +257,7 @@ func TestUnparseableJudgeBatchKeepsItsFindings(t *testing.T) {
 // batch failed has to reach the human reading the review, or the review reads as
 // a clean one that simply found nothing.
 func TestReviewReportsTruncatedVerificationAsDegraded(t *testing.T) {
-	t.Setenv("GX_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	engine := judgeTestEngine(root, []Finding{

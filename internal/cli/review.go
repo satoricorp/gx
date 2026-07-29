@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/codereview"
-	"github.com/satoricorp/gx/internal/telemetry"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/totality/internal/codereview"
+	"github.com/satoricorp/totality/internal/telemetry"
+	"github.com/satoricorp/totality/internal/vcs"
 	"github.com/spf13/cobra"
 )
 
-// Exit codes for `gx review` as an automated gate. Both are distinct from the
+// Exit codes for `tl review` as an automated gate. Both are distinct from the
 // generic failure exit so a CI step can tell a policy failure from a crash.
 const (
 	// reviewFindingsExitCode means findings at or above --fail-on survived.
@@ -46,13 +46,13 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var noPublish bool
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
-		Aliases: []string{"gxr"},
+		Aliases: []string{"tlr"},
 		Short:   "Review changes based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Everything below runs under a context that forbids writing GX
+			// Everything below runs under a context that forbids writing Totality
 			// state, so review's own telemetry reports without minting a
-			// machine ID into a $GX_HOME that may not exist.
+			// machine ID into a $TOTALITY_HOME that may not exist.
 			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
@@ -68,8 +68,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			if len(args) > 0 {
 				prompt = strings.TrimSpace(args[0])
 			}
-			// Store-free on purpose: review must leave no GX state behind in a
-			// repo (or on a machine) that has never run `gx init`.
+			// Store-free on purpose: review must leave no Totality state behind in a
+			// repo (or on a machine) that has never run `tl init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
@@ -148,7 +148,7 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 		if target == "" {
 			target = "the working tree"
 		}
-		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("tl review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
 	}
 	// A degraded run is not a clean run with fewer findings. When no model ran,
 	// `findings` is whatever the deterministic checks produced — usually nothing
@@ -156,13 +156,13 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	// request merged reporting a review that never happened. The rendered report
 	// says so in a banner, but an exit code is the only thing a CI step reads.
 	if reason := gateDegradedReason(report); reason != "" {
-		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx review: %s; refusing to pass a gate on an incomplete review", reason))
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("tl review: %s; refusing to pass a gate on an incomplete review", reason))
 	}
 	failures := report.GateFailures(level)
 	if len(failures) == 0 {
 		return nil
 	}
-	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx review: %d finding(s) at or above %q", len(failures), string(level)))
+	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("tl review: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
 // gateDegradedReason states why this review cannot answer the gate's question,
@@ -215,7 +215,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 		props["reviewer"] = report.Reviewer
 	}
 	// Which wire the review ran over, so a fleet-wide latency or failure spike
-	// can be attributed to the GX Cloud hop or to direct AWS calls instead of
+	// can be attributed to the Totality Cloud hop or to direct AWS calls instead of
 	// being averaged across both. The models go with it: the panel is two
 	// competing legs plus a judge, and "review got slower" is a different
 	// investigation depending on which of them changed.
@@ -234,7 +234,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
 }
 
-// reviewRunMode labels a review run for GX Cloud history and telemetry. Both
+// reviewRunMode labels a review run for Totality Cloud history and telemetry. Both
 // call it so the two records of the same run cannot disagree.
 //
 // WholeRepo comes first because it names the subject: a run recorded as
@@ -268,7 +268,7 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		return
 	}
 	if _, err := cloud.CloudAPIToken(); err != nil {
-		// Signed out: history is an extra GX Cloud records for authenticated
+		// Signed out: history is an extra Totality Cloud records for authenticated
 		// users, not something a read-only review depends on.
 		return
 	}

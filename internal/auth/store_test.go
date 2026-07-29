@@ -8,9 +8,9 @@ import (
 
 func TestSaveLoadUploadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GX_HOME", dir)
-	t.Setenv("GX_UPLOAD_TOKEN", "")
-	t.Setenv("GX_API_URL", "")
+	t.Setenv("TOTALITY_HOME", dir)
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_API_URL", "")
 
 	want := UploadCredentials{
 		APIURL: "http://localhost:3201",
@@ -38,7 +38,7 @@ func TestSaveLoadUploadRoundTrip(t *testing.T) {
 		t.Fatalf("LoadUpload = %+v, want %+v", got, want)
 	}
 
-	t.Setenv("GX_UPLOAD_TOKEN", "env-override")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "env-override")
 	got, ok = LoadUpload()
 	if !ok || got.Token != "env-override" {
 		t.Fatalf("env override token = %+v ok=%v", got, ok)
@@ -47,8 +47,8 @@ func TestSaveLoadUploadRoundTrip(t *testing.T) {
 
 func TestLoadUploadMissing(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("GX_HOME", dir)
-	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_HOME", dir)
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
 	_, ok := LoadUpload()
 	if ok {
 		t.Fatal("expected missing credentials")

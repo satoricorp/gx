@@ -190,7 +190,7 @@ func TestReviewReturnsFindingsWithoutSummaryFields(t *testing.T) {
 
 func TestPatchFocusedReviewIgnoresNotableChanges(t *testing.T) {
 	findings, err := cannedAIReviewer{payload: `{
-		"notable_changes":[{"file":"main.go","line":3,"note":"Should not surface in gx review."}],
+		"notable_changes":[{"file":"main.go","line":3,"note":"Should not surface in tl review."}],
 		"recommendations":[{"title":"T","summary":"S","benefit":"B","recommendation":"R"}]
 	}`}.Review(context.Background(), ReviewBrief{ReviewProfile: "patch_focused"})
 	if err != nil {
@@ -200,7 +200,7 @@ func TestPatchFocusedReviewIgnoresNotableChanges(t *testing.T) {
 		t.Fatalf("findings = %#v", findings)
 	}
 	text := RenderMarkdown(Report{Findings: findings})
-	if strings.Contains(text, "Should not surface in gx review") {
+	if strings.Contains(text, "Should not surface in tl review") {
 		t.Fatalf("RenderMarkdown() leaked notable_changes:\n%s", text)
 	}
 }

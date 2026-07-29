@@ -1,4 +1,4 @@
-# GX Test Review
+# Totality Test Review
 
 This is a design- and architecture-oriented review of the current test suite.
 The suite spans CLI, authoring, cloud, storage, VCS, review bundle,
@@ -29,9 +29,9 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## Package Overview
 
-### `cmd/gx`
+### `cmd/tl`
 
-- `TestRootExposesAuthCommand`: ensures `gx auth` is visible from the root.
+- `TestRootExposesAuthCommand`: ensures `tl auth` is visible from the root.
 - `TestRootExposesShortcutCommands`: ensures shortcut aliases such as status/add
   shortcuts are registered.
 - `TestRootDoesNotExposeRemovedLegacyCommands`: protects the simplified CLI by
@@ -40,7 +40,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   visible CLI command.
 - `TestRootDoesNotExposeDaemonCommand`: ensures internal daemon mode remains
   hidden.
-- `TestRootDoesNotExposeGitOrJJPassthroughCommands`: ensures GX does not become
+- `TestRootDoesNotExposeGitOrJJPassthroughCommands`: ensures Totality does not become
   a generic Git/JJ passthrough CLI.
 - `TestRootPrintsInitNoteWhenIdentityMissing`: checks root execution guides an
   unconfigured user toward init/identity setup.
@@ -116,7 +116,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   revision to modify.
 - `TestPrintDemuxProposalIncludesFeasibilityWarnings`: checks human demux output
   includes feasibility warning details.
-- `TestPRHelpDoesNotPublish`: ensures `gx pr --help` is side-effect free.
+- `TestPRHelpDoesNotPublish`: ensures `tl pr --help` is side-effect free.
 - `TestConfirmBaseSwitchRequiresYes`: requires exact confirmation before a
   destructive base switch.
 
@@ -130,7 +130,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 - `TestLoginNotConfiguredInDevBuild`: checks login fails cleanly without config.
 - `TestLogoutRevokesAndClears`: verifies logout revokes and clears credentials.
 - `TestRequestGitHubDeviceCodeForm`: verifies GitHub device-code form payload.
-- `TestCloudBaseURLStripsGxPrSuffix`: normalizes cloud URLs used for stack
+- `TestCloudBaseURLStripsTlPrSuffix`: normalizes cloud URLs used for stack
   metadata.
 - `TestRepoFullNameFromRemoteURL`: parses owner/repo from remote URLs.
 - Endpoint/env tests: verify GitHub client id, Convex site URL, cloud URL, and
@@ -151,7 +151,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 ### `internal/ingest/cursor`
 
 - `TestSyncFromPathIngestsComposersAndBubbles`: ingests Cursor composer/bubble
-  records into GX session storage.
+  records into Totality session storage.
 - `TestSyncFromPathIsIdempotent`: repeated Cursor ingest does not duplicate
   session data.
 - `TestSyncFromPathMissingFile`: handles missing Cursor DB/file input.
@@ -217,7 +217,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ### `internal/vcs`
 
-- Stack tests verify GX stack naming, fallback slugs, JJ stack revsets,
+- Stack tests verify Totality stack naming, fallback slugs, JJ stack revsets,
   detached-HEAD recovery with JJ stack refs, git index lock detection, and retry
   behavior.
 - Bookmark tests verify edit revision selection for published/draft stacks and
@@ -234,30 +234,30 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ### `test/e2e`
 
-- `TestGXAddMaintainsBookmarkStateAndAttachesExplicitSession`: records a
+- `TestTotalityAddMaintainsBookmarkStateAndAttachesExplicitSession`: records a
   revision while preserving stack state and explicit session linkage.
-- `TestGXDemuxProposesAndAppliesFileLevelRevisions`: proposes file-level demux
+- `TestTotalityDemuxProposesAndAppliesFileLevelRevisions`: proposes file-level demux
   revisions, applies them, and verifies evidence/provenance.
-- `TestGXDemuxChangesWorkflowHappyPathAppliesValidatedProposal`: exercises the
+- `TestTotalityDemuxChangesWorkflowHappyPathAppliesValidatedProposal`: exercises the
   machine demux workflow packet, validation, and apply flow.
-- `TestGXDemuxAttachesRepoLocalSessionWithoutEnv`: proves ambient repo-local
+- `TestTotalityDemuxAttachesRepoLocalSessionWithoutEnv`: proves ambient repo-local
   sessions can attach without explicit env.
-- `TestGXDemuxValidatePlanReportsRepairableErrorsWithoutApplying`: validates
+- `TestTotalityDemuxValidatePlanReportsRepairableErrorsWithoutApplying`: validates
   bad plans, returns repairable errors, and avoids JJ side effects.
-- `TestGXDemuxApplyPlanResolvesHunkIDs`: applies an LLM-style plan using
+- `TestTotalityDemuxApplyPlanResolvesHunkIDs`: applies an LLM-style plan using
   catalog `hunk_ids`.
-- `TestGXDemuxProposesSymbolLevelRevisions`: proves deterministic symbol-level
+- `TestTotalityDemuxProposesSymbolLevelRevisions`: proves deterministic symbol-level
   demux can split one file into multiple revisions.
-- `TestGXPRWithMultipleBookmarksPushesAPIAndPreservesState`: pushes stack data,
+- `TestTotalityPRWithMultipleBookmarksPushesAPIAndPreservesState`: pushes stack data,
   uploads API context, and preserves local state across multiple stacks.
-- `TestGXSwitchBaseRequiresConfirmationAndReturnsToMain`: protects destructive
+- `TestTotalitySwitchBaseRequiresConfirmationAndReturnsToMain`: protects destructive
   base switch behavior.
-- `TestGXSwitchAcceptsImplicitStackAliases`: supports user-friendly stack aliases.
+- `TestTotalitySwitchAcceptsImplicitStackAliases`: supports user-friendly stack aliases.
 
 ## UX/Test Recommendations
 
-1. Add CLI snapshot tests for the final public design of `gx status`, `gx commit`,
-   `gx demux`, `gx demux apply`, `gx pr`, and capture status.
+1. Add CLI snapshot tests for the final public design of `tl status`, `tl commit`,
+   `tl demux`, `tl demux apply`, `tl pr`, and capture status.
 2. Add MCP tool tests for argument construction and repair-loop behavior.
 3. Add demux graph tests before multi-channel design: SCC grouping,
    weak-component fan-out, topological ordering, textual overlap edges, and

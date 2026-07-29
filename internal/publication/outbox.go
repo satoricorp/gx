@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/reviewbundle"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 const (
@@ -67,11 +67,11 @@ type QueueStatus struct {
 }
 
 type DrainResult struct {
-	Uploaded            int
-	Failed              int
-	Pending             int
-	PRSummariesUpdated  int
-	PRSummariesFailed   int
+	Uploaded           int
+	Failed             int
+	Pending            int
+	PRSummariesUpdated int
+	PRSummariesFailed  int
 }
 
 func EnqueuePush(ctx context.Context, push vcs.PushResult) (Result, error) {
@@ -94,7 +94,7 @@ func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact, attest
 	}
 	if existing, err := loadQueueItem(item.ID); err == nil {
 		// Re-enqueues for the same head carry newer data (the pre-push hook
-		// runs before gx push resolves the PR URL); the latest artifact must
+		// runs before tl push resolves the PR URL); the latest artifact must
 		// win or PR linkage is lost. Leave in-flight uploads alone.
 		if existing.Status == outboxStatusRunning && uploadLockActive() && !staleUpload(existing.LastAttemptAt) {
 			artifactPath, artErr := WriteLocalArtifact(artifact)
@@ -290,9 +290,9 @@ func shortHashPrefix(hash string) string {
 
 func queueItemID(artifact reviewbundle.Artifact, attestation QueueAttestation) string {
 	if head := strings.TrimSpace(artifact.Push.HeadCommitID); head != "" {
-		return "gx-context-" + shortClean(head)
+		return "totality-context-" + shortClean(head)
 	}
-	return "gx-context-" + shortHashPrefix(attestation.ContentHash)
+	return "totality-context-" + shortHashPrefix(attestation.ContentHash)
 }
 
 func loadQueueItem(id string) (QueueItem, error) {

@@ -207,8 +207,8 @@ func asyncBlockingPattern(language, line string, hasAsyncDef bool) bool {
 }
 
 var (
-	awsAccessKeyPattern  = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
-	quotedSecretPattern  = regexp.MustCompile(`(?i)(password|secret|api[_-]?key|token)\s*=\s*["'][^"']{4,}["']`)
+	awsAccessKeyPattern = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	quotedSecretPattern = regexp.MustCompile(`(?i)(password|secret|api[_-]?key|token)\s*=\s*["'][^"']{4,}["']`)
 )
 
 func unsafeRegexCompilePattern(language, line string) bool {

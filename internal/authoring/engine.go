@@ -4,13 +4,13 @@ import (
 	"context"
 	"os"
 
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
 
-// Engine is GX's authoring seam. CLI and MCP adapters call this module
+// Engine is Totality's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
 type Engine struct {
 	vcs *vcs.Service
@@ -41,4 +41,3 @@ func (e *Engine) EnsureReadyRepo(ctx context.Context) (EnsureReadyResult, error)
 func (e *Engine) PreservingGitIndex(ctx context.Context, fn func() error) error {
 	return e.vcs.PreservingGitIndexForCwd(ctx, fn)
 }
-

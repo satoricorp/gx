@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/capture/orchestrator"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/capture/orchestrator"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 func initGitRepo(t *testing.T, dir string) {
@@ -49,12 +49,12 @@ func TestRunPushRespectsPauseFlag(t *testing.T) {
 	repo := t.TempDir()
 	initGitRepo(t, repo)
 
-	gxHome := filepath.Join(home, ".gx")
-	t.Setenv("GX_HOME", gxHome)
-	if err := os.MkdirAll(gxHome, 0o700); err != nil {
+	totalityHome := filepath.Join(home, ".totality")
+	t.Setenv("TOTALITY_HOME", totalityHome)
+	if err := os.MkdirAll(totalityHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(gxHome, "pause-capture"), []byte("1\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(totalityHome, "pause-capture"), []byte("1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,9 +79,9 @@ func TestParseRefRangeSingleSHALeavesBaseForOrchestrator(t *testing.T) {
 
 func TestRunPushRecoversMissingRevision(t *testing.T) {
 	repoRoot := t.TempDir()
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	totalityHome := t.TempDir()
+	t.Setenv("TOTALITY_HOME", totalityHome)
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	t.Setenv(SuppressAdoptedPublicationEnv, "1")
 	initGitRepo(t, repoRoot)
 	service := vcs.NewService()
@@ -115,7 +115,7 @@ func TestRunPushRecoversMissingRevision(t *testing.T) {
 	if len(outcome.RevisionIDs) != 1 || outcome.RevisionIDs[0] != revisionID {
 		t.Fatalf("revision ids = %v, want %q", outcome.RevisionIDs, revisionID)
 	}
-	repo, err := service.ResolveGXRepoAtPath(context.Background(), repoRoot)
+	repo, err := service.ResolveTotalityRepoAtPath(context.Background(), repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestRunPushRecoversMissingRevision(t *testing.T) {
 
 func TestRunPushReportsRevisionScanFailure(t *testing.T) {
 	repoRoot := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	initGitRepo(t, repoRoot)
 
 	outcome, err := RunPush(context.Background(), PushOptions{
@@ -152,7 +152,7 @@ func TestRunPushReportsRevisionScanFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(outcome.RecoveryError, "scan GX revision trailers") {
+	if !strings.Contains(outcome.RecoveryError, "scan Totality revision trailers") {
 		t.Fatalf("recovery error = %q, want revision scan failure", outcome.RecoveryError)
 	}
 }
@@ -184,8 +184,8 @@ func gitOutputInHookTest(t *testing.T, dir string, args ...string) string {
 // nothing, and left the staged rows unmarked and therefore unuploadable.
 func TestRunPushKeepsResultFromPartialCaptureFailure(t *testing.T) {
 	repoRoot := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	t.Setenv(SuppressAdoptedPublicationEnv, "1")
 	initGitRepo(t, repoRoot)
 
@@ -242,16 +242,16 @@ func TestRunPushKeepsResultFromPartialCaptureFailure(t *testing.T) {
 }
 
 // TestRunPushKeepsPublishingWhenMarkingFails covers the failure mode the
-// shareable-marking pass is most likely to hit in the field: ~/.gx/gx.db is WAL
-// with a 5s busy timeout and the detached `gx capture sync` spawned by the
+// shareable-marking pass is most likely to hit in the field: ~/.totality/totality.db is WAL
+// with a 5s busy timeout and the detached `tl capture sync` spawned by the
 // previous push writes the same tables. Aborting the hook there discarded the
 // error entirely, skipped EnqueueAdoptedPublication and skipped the upload
 // kickoff — so the push produced no PR artifact, attempted no upload, and
 // printed `shareable=0/0` with no warning: indistinguishable from a clean run.
 func TestRunPushKeepsPublishingWhenMarkingFails(t *testing.T) {
 	repoRoot := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	initGitRepo(t, repoRoot)
 
 	restoreMark := markCaptureShareable
@@ -285,8 +285,8 @@ func TestRunPushKeepsPublishingWhenMarkingFails(t *testing.T) {
 // its publication and its upload kickoff.
 func TestRunPushKeepsPublishingWhenTrailerScanFails(t *testing.T) {
 	repoRoot := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	initGitRepo(t, repoRoot)
 	if err := os.WriteFile(filepath.Join(repoRoot, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -344,7 +344,7 @@ func TestRunPushKeepsPublishingWhenTrailerScanFails(t *testing.T) {
 }
 
 // TestRunPushNamesEveryReasonItDidNothing is the anti-ambiguity test. A paused
-// capture and a repo opted out with `git config gx.enabled false` both returned
+// capture and a repo opted out with `git config tl.enabled false` both returned
 // the same zero outcome as a genuine error, so all three printed the identical
 // `capture staged extract= sessions=0` line and only one of them was a problem.
 func TestRunPushNamesEveryReasonItDidNothing(t *testing.T) {
@@ -352,12 +352,12 @@ func TestRunPushNamesEveryReasonItDidNothing(t *testing.T) {
 		home := t.TempDir()
 		repo := t.TempDir()
 		initGitRepo(t, repo)
-		gxHome := filepath.Join(home, ".gx")
-		t.Setenv("GX_HOME", gxHome)
-		if err := os.MkdirAll(gxHome, 0o700); err != nil {
+		totalityHome := filepath.Join(home, ".totality")
+		t.Setenv("TOTALITY_HOME", totalityHome)
+		if err := os.MkdirAll(totalityHome, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(gxHome, "pause-capture"), []byte("1\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(totalityHome, "pause-capture"), []byte("1\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		outcome, err := RunPush(context.Background(), PushOptions{RepoRoot: repo, HomeDir: home})
@@ -376,27 +376,27 @@ func TestRunPushNamesEveryReasonItDidNothing(t *testing.T) {
 		home := t.TempDir()
 		repo := t.TempDir()
 		initGitRepo(t, repo)
-		t.Setenv("GX_HOME", t.TempDir())
-		runGitInHookTest(t, repo, "config", "gx.enabled", "false")
+		t.Setenv("TOTALITY_HOME", t.TempDir())
+		runGitInHookTest(t, repo, "config", "tl.enabled", "false")
 
 		outcome, err := RunPush(context.Background(), PushOptions{RepoRoot: repo, HomeDir: home})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(outcome.SkipReason, "gx.enabled") {
+		if !strings.Contains(outcome.SkipReason, "tl.enabled") {
 			t.Fatalf("SkipReason = %q, want it to name the opt-out", outcome.SkipReason)
 		}
 	})
 }
 
 // TestRunPushReportsUploadFailuresFromEarlierPushes is the only path by which a
-// failing upload can reach a human. `gx capture sync` runs detached with stdout
+// failing upload can reach a human. `tl capture sync` runs detached with stdout
 // and stderr both on os.DevNull and nothing awaits it, so the push that starts
 // it can never report the result — the push after it must.
 func TestRunPushReportsUploadFailuresFromEarlierPushes(t *testing.T) {
 	repoRoot := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 	t.Setenv(SuppressAdoptedPublicationEnv, "1")
 	initGitRepo(t, repoRoot)
 

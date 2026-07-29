@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/totality/internal/capture"
 )
 
 // Parser normalizes one agent tool's session JSONL into SessionEvents.
@@ -403,7 +403,7 @@ func claudeSessionAt(path, sessionID string, since, until time.Time, needles [][
 // referenced a path inside repoRoot.
 //
 // The trailing separator matters: it keeps a sibling checkout such as
-// /Users/joe/git/gx-cloud from matching /Users/joe/git/gx, and every session
+// /Users/joe/git/totality-cloud from matching /Users/joe/git/tl, and every session
 // that actually edited the repo records at least one absolute path beneath the
 // root. Windows transcripts store backslashes JSON-escaped, so both the raw and
 // escaped spellings are included.
@@ -717,4 +717,3 @@ func ParseAllPerSource(sessions []DiscoveredSession, repoRoot string, parsers []
 	}
 	return out, nil
 }
-

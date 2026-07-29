@@ -16,13 +16,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/satoricorp/gx/internal/semantic"
+	"github.com/satoricorp/totality/internal/semantic"
 )
 
 // indexProbe describes a TurboPuffer namespace well enough to query it without
 // guessing. Every reader in this repository has at some point assumed a field
 // name or a vector width that the namespace did not have — the console code
-// index is 1536-dimensional with a `content` column, the gx code index is
+// index is 1536-dimensional with a `content` column, the tl code index is
 // 3072-dimensional with a `text` column, and the session namespaces are 512 —
 // and the failures were silent: a wrong width is an HTTP 400 and a wrong field
 // name is an empty result set. Reading the schema first turns both into facts.
@@ -197,7 +197,7 @@ type indexSchemaField struct {
 }
 
 // bodyFieldPreference is the order in which a full-text column is treated as
-// "the chunk body". `content` is the console code index, `text` is every gx
+// "the chunk body". `content` is the console code index, `text` is every tl
 // writer, `body` is the curated review corpus.
 var bodyFieldPreference = []string{"content", "text", "body"}
 
@@ -447,21 +447,21 @@ func embedErrorText(err error, count int) string {
 // from two different models are not comparable even at equal width, so querying
 // a 1536-dimension index built with text-embedding-3-small using a truncated
 // text-embedding-3-large vector returns confident nonsense rather than an
-// error. The widths below are the ones gx and GX Cloud have actually written:
-// 3072 is the current gx code index, 1536 is the console/Convex code index, and
+// error. The widths below are the ones tl and Totality Cloud have actually written:
+// 3072 is the current tl code index, 1536 is the console/Convex code index, and
 // 512 is the older publish and session namespaces.
 func defaultEmbedderFactory(dimensions int) (reviewResourceEmbedder, string, bool) {
 	model, ok := embedModelForDimensions(dimensions)
 	if !ok {
 		return nil, "", false
 	}
-	apiKey := strings.TrimSpace(firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("GX_OPENAI_API_KEY")))
+	apiKey := strings.TrimSpace(firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("TOTALITY_OPENAI_API_KEY")))
 	if apiKey == "" {
 		return nil, "", false
 	}
 	return semantic.NewOpenAIEmbedder(semantic.Config{
 		OpenAIAPIKey:         apiKey,
-		OpenAIBaseURL:        normalizeReviewOpenAIBaseURL(firstNonEmpty(os.Getenv("GX_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL"), "https://api.openai.com")),
+		OpenAIBaseURL:        normalizeReviewOpenAIBaseURL(firstNonEmpty(os.Getenv("TOTALITY_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL"), "https://api.openai.com")),
 		OpenAIEmbeddingModel: model,
 		EmbeddingDimensions:  dimensions,
 	}), fmt.Sprintf("%s@%d", model, dimensions), true
@@ -471,7 +471,7 @@ func embedModelForDimensions(dimensions int) (string, bool) {
 	if dimensions <= 0 {
 		return "", false
 	}
-	if override := strings.TrimSpace(os.Getenv("GX_REVIEW_INDEX_EMBED_MODEL")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_INDEX_EMBED_MODEL")); override != "" {
 		return override, true
 	}
 	configured := semantic.CodeIndexConfigFromEnv()

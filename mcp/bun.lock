@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "@gx/mcp",
+      "name": "@satoricorp/totality",
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.29.0",
         "xmcp": "0.6.10",

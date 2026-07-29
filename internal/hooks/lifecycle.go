@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 // PrepareCommitMsgOptions configures the prepare-commit-msg hook handler.
@@ -19,7 +19,7 @@ type PrepareCommitMsgOptions struct {
 	MessagePath string
 }
 
-// PrepareCommitMsg preserves or adds exactly one GX revision trailer.
+// PrepareCommitMsg preserves or adds exactly one Totality revision trailer.
 func PrepareCommitMsg(opts PrepareCommitMsgOptions) error {
 	repoRoot := strings.TrimSpace(opts.RepoRoot)
 	messagePath := strings.TrimSpace(opts.MessagePath)
@@ -48,7 +48,7 @@ type PostCommitOptions struct {
 	RepoRoot string
 }
 
-// RunPostCommit records the new HEAD commit in GX metadata.
+// RunPostCommit records the new HEAD commit in Totality metadata.
 func RunPostCommit(ctx context.Context, opts PostCommitOptions) error {
 	repoRoot := strings.TrimSpace(opts.RepoRoot)
 	if repoRoot == "" {

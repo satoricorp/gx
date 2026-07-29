@@ -1,4 +1,4 @@
-// Eval suite for gx review end-to-end behavior.
+// Eval suite for tl review end-to-end behavior.
 //
 // Each TestEval* scenario builds a synthetic git repository, applies a realistic
 // change, and runs the review engine with scripted reviewers/judges (never real
@@ -16,12 +16,12 @@ import (
 
 func evalDisableAllGates(t *testing.T) {
 	t.Helper()
-	t.Setenv("GX_REVIEW_AI", "0")
-	t.Setenv("GX_REVIEW_JUDGE", "0")
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_REVIEW_RESOURCES", "0")
-	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
-	t.Setenv("GX_REVIEW_HISTORY_CONTEXT", "0")
+	t.Setenv("TOTALITY_REVIEW_AI", "0")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "0")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("TOTALITY_REVIEW_RESOURCES", "0")
+	t.Setenv("TOTALITY_REVIEW_INDEXED_CONTEXT", "0")
+	t.Setenv("TOTALITY_REVIEW_HISTORY_CONTEXT", "0")
 }
 
 func evalEngineWithReviewer(t *testing.T, reviewer AIReviewer, retriever ContextRetriever) *Engine {
@@ -300,9 +300,9 @@ func TestEvalHardcodedCredential(t *testing.T) {
 }
 
 func TestEvalConfigOnlyLockfileCI(t *testing.T) {
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
 	evalDisableAllGates(t)
-	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
 
 	root := initRepo(t)
 	evalCommitChange(t, root, map[string]string{
@@ -333,11 +333,11 @@ func TestEvalConfigOnlyLockfileCI(t *testing.T) {
 }
 
 func TestEvalCapEnforcementWithBlockingToolFinding(t *testing.T) {
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 	evalDisableAllGates(t)
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 
 	root := initRepo(t)
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
@@ -439,11 +439,11 @@ func TestEvalCapEnforcementWithBlockingToolFinding(t *testing.T) {
 }
 
 func TestEvalZeroFindingsHonesty(t *testing.T) {
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 	evalDisableAllGates(t)
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 
 	root := initRepo(t)
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
@@ -546,11 +546,11 @@ func TestEvalPromptDirectedDocsOnlyBypass(t *testing.T) {
 }
 
 func TestEvalNearDuplicateMerging(t *testing.T) {
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 	evalDisableAllGates(t)
-	t.Setenv("GX_REVIEW_JUDGE", "1")
-	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_REVIEW_JUDGE", "1")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
 
 	root := initRepo(t)
 	writeFile(t, root, "internal/auth/session.go", "package auth\nfunc Save() {}\n")

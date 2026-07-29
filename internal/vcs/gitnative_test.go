@@ -79,7 +79,7 @@ func TestNormalizeGitCommonDir(t *testing.T) {
 
 func TestPostCommitHookRecordsPlainGitCommit(t *testing.T) {
 	repo := initGitNativeTestRepo(t)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	service := NewService()
 	if _, err := service.InitAtPath(context.Background(), repo, InitOptions{}); err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestPostCommitHookRecordsPlainGitCommit(t *testing.T) {
 		t.Fatalf("commit message ids = %v, want exactly one valid revision id", ids)
 	}
 	headOID := strings.TrimSpace(runGitNativeTestGit(t, repo, "rev-parse", "HEAD"))
-	repoInfo, err := service.ResolveGXRepoAtPath(context.Background(), repo)
+	repoInfo, err := service.ResolveTotalityRepoAtPath(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestPendingContextIsolatedByLinkedWorktree(t *testing.T) {
 
 func TestRecoverGitCommitByOIDUpdatesExistingRevision(t *testing.T) {
 	repoRoot := initGitNativeTestRepo(t)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	service := NewService()
 	if _, err := service.InitAtPath(context.Background(), repoRoot, InitOptions{}); err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestRecoverGitCommitByOIDUpdatesExistingRevision(t *testing.T) {
 	message := StampRevisionTrailer("feature", revisionID)
 	runGitNativeTestGit(t, repoRoot, "commit", "-m", message)
 	oldOID := strings.TrimSpace(runGitNativeTestGit(t, repoRoot, "rev-parse", "HEAD"))
-	repo, err := service.ResolveGXRepoAtPath(context.Background(), repoRoot)
+	repo, err := service.ResolveTotalityRepoAtPath(context.Background(), repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,8 +226,8 @@ func initGitNativeTestRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	runGitNativeTestGit(t, repo, "init", "-b", "main")
-	runGitNativeTestGit(t, repo, "config", "user.name", "GX Test")
-	runGitNativeTestGit(t, repo, "config", "user.email", "gx@example.com")
+	runGitNativeTestGit(t, repo, "config", "user.name", "Totality Test")
+	runGitNativeTestGit(t, repo, "config", "user.email", "tl@example.com")
 	writeGitNativeTestFile(t, repo, "README.md", "base\n")
 	runGitNativeTestGit(t, repo, "add", "README.md")
 	runGitNativeTestGit(t, repo, "commit", "-m", "base")

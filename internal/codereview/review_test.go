@@ -9,24 +9,24 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/totality/internal/totalitytest"
 )
 
 // TestMain disables the model paths and cuts the package off from the network.
 //
 // The three kill switches below only ever covered the paths that call a model.
-// Retrieval is reached from BuildReviewBrief regardless of GX_REVIEW_AI, so on
+// Retrieval is reached from BuildReviewBrief regardless of TOTALITY_REVIEW_AI, so on
 // a developer's machine — where OPENAI_API_KEY and TURBOPUFFER_API_KEY are
 // exported — every test here that reviewed a non-empty repository embedded that
 // repository through the real embeddings API and upserted it into the
-// production TurboPuffer account. gxtest.DenyNetwork closes that by clearing
+// production TurboPuffer account. totalitytest.DenyNetwork closes that by clearing
 // the credentials, and reports anything that dials out anyway.
 func TestMain(m *testing.M) {
-	egress := gxtest.DenyNetwork()
-	_ = os.Setenv("GX_REVIEW_AI", "0")
-	_ = os.Setenv("GX_REVIEW_JUDGE", "0")
-	_ = os.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	os.Exit(gxtest.FailOnEgress(m.Run(), egress()))
+	egress := totalitytest.DenyNetwork()
+	_ = os.Setenv("TOTALITY_REVIEW_AI", "0")
+	_ = os.Setenv("TOTALITY_REVIEW_JUDGE", "0")
+	_ = os.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
+	os.Exit(totalitytest.FailOnEgress(m.Run(), egress()))
 }
 
 func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
@@ -180,7 +180,7 @@ func TestRenderMarkdownDefaultsToFindingsOnly(t *testing.T) {
 			t.Fatalf("RenderMarkdown() missing %q in:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"# GX Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
+	for _, unwanted := range []string{"# Totality Review", "Scope:", "Depth:", "Focus:", "## Repo Facts", "## Changed Files", "Dependency manifests", "Strength:", "Test files: 0", "## Sources", "## Context Sources"} {
 		if strings.Contains(text, unwanted) {
 			t.Fatalf("RenderMarkdown() should not include %q by default:\n%s", unwanted, text)
 		}
@@ -204,7 +204,7 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 			{ID: "custom-source", Title: "Custom Reference", Publisher: "Custom Reference"},
 		},
 		SourceRefs: []SourceRef{
-			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:gx"},
+			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:tl"},
 			{ID: "L1", Kind: "local", File: "CONTEXT.md", StartLine: 12, Source: "local"},
 		},
 	}
@@ -216,7 +216,7 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 		"- [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)",
 		"- Custom Reference (`custom-source`)",
 		"## Context Sources",
-		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:gx",
+		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:tl",
 		"`L1` `CONTEXT.md:12`",
 	} {
 		if !strings.Contains(text, want) {
@@ -508,8 +508,8 @@ func TestEnginePassesReviewPromptToAIReviewer(t *testing.T) {
 // regression to guard is the opposite of the old one: an OpenAI key must not
 // conjure a reviewer now that Bedrock is the only provider.
 func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
-	t.Setenv("GX_REVIEW_AI", "1")
-	t.Setenv("GX_CLOUD_URL", "off")
+	t.Setenv("TOTALITY_REVIEW_AI", "1")
+	t.Setenv("TOTALITY_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
@@ -690,7 +690,7 @@ func TestBuildReviewBriefLabelsRetrievedContext(t *testing.T) {
 		RepoFacts{},
 		nil,
 		fakeRetriever{snippets: []ContextSnippet{
-			{Kind: "review_resource", Ref: "owasp#1", Source: "turbopuffer:gx-review-knowledge", Text: "Parameterized queries prevent injection."},
+			{Kind: "review_resource", Ref: "owasp#1", Source: "turbopuffer:totality-review-knowledge", Text: "Parameterized queries prevent injection."},
 			{Kind: "repo_doc", Ref: "REVIEW.md", Source: "local", Text: "Review auth changes carefully."},
 		}},
 	)

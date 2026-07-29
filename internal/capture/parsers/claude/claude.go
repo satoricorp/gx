@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/repopath"
+	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/totality/internal/capture/repopath"
 )
 
 // Parser normalizes Claude Code session JSONL into SessionEvents.

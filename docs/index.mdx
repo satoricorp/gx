@@ -1,36 +1,36 @@
 ---
-title: "GX: Git for agents — session-aware code review"
+title: "Totality: Git for agents — session-aware code review"
 description: "Capture agent coding sessions as reviewable revisions on ordinary Git branches, and open pull requests with rich review context."
 ---
 
-GX captures coding sessions and attaches that context to reviewable revisions — ordinary Git commits on ordinary branches — then uses those revisions to generate better review artifacts for your pull requests.
+Totality captures coding sessions and attaches that context to reviewable revisions — ordinary Git commits on ordinary branches — then uses those revisions to generate better review artifacts for your pull requests.
 
 ## Download
 
 ```bash
-curl -fsSL https://download.gx.run/install.sh | sh
+curl -fsSL https://download.totality.sh/install.sh | sh
 ```
 
 To uninstall the CLI and menu-bar app:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gx-mcp
-rm -rf /Applications/GX.app ~/Applications/GX.app
+rm -f ~/.local/bin/tl ~/.local/bin/tlr ~/.local/bin/tl-mcp
+rm -rf /Applications/Totality.app ~/Applications/Totality.app
 ```
 
-This removes the installed binaries and app bundle only. Local GX data remains
-in `~/.gx`.
+This removes the installed binaries and app bundle only. Local Totality data remains
+in `~/.totality`.
 
 ## Core Workflow
 
-You work in plain Git. Once `gx init` installs the hooks, your normal `git` commands do
-the GX work automatically — there is no GX save verb to learn.
+You work in plain Git. Once `tl init` installs the hooks, your normal `git` commands do
+the Totality work automatically — there is no Totality save verb to learn.
 
 ```bash
 git add <files>                        # choose the scope of one logical change
-git commit -m "describe this change"   # a GX hook records it as a revision
+git commit -m "describe this change"   # a Totality hook records it as a revision
 git push                               # the pre-push hook captures the session and publishes
-gh pr create                           # open the PR (GX Cloud posts the summary)
+gh pr create                           # open the PR (Totality Cloud posts the summary)
 ```
 
 A commit looks like any other:
@@ -42,20 +42,20 @@ $ git commit -m "add retry helper with attempt limit"
  1 file changed, 12 insertions(+)
 ```
 
-Behind that ordinary commit, GX's `prepare-commit-msg` and `post-commit` hooks record a
-GX **revision** — a Git commit plus the review context that explains how it was produced:
+Behind that ordinary commit, Totality's `prepare-commit-msg` and `post-commit` hooks record a
+Totality **revision** — a Git commit plus the review context that explains how it was produced:
 which captured session made it, and where it sits among your branches. Inspect state with
-plain Git; there is no separate GX model to learn:
+plain Git; there is no separate Totality model to learn:
 
 ```bash
 git status              # working-tree state
 git log --oneline -10   # the revisions on this branch
 ```
 
-Plain `git push` publishes the branch; the GX pre-push hook captures the session, matches
+Plain `git push` publishes the branch; the Totality pre-push hook captures the session, matches
 it to the hunks each revision changed, and uploads the review bundle. Open the PR with
-`gh pr create` — GX Cloud posts the rich summary comment below your description. Do not
-run `gx push`; it has been removed — publish with `git push`.
+`gh pr create` — Totality Cloud posts the rich summary comment below your description. Do not
+run `tl push`; it has been removed — publish with `git push`.
 
 To update the latest revision, use `git commit --amend`; the `post-rewrite` hook follows
 the amended commit so its context stays linked.
@@ -65,60 +65,60 @@ the amended commit so its context stays linked.
 For open-source inference, run:
 
 ```bash
-gx set key
+tl set key
 ```
 
-Choose Anthropic or OpenAI, then paste the API key. GX stores one key in `~/.gx/inference.json` or `$GX_HOME/inference.json` and injects it for local inference proxying and MCP-launched gx commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks; the stored key wins when present.
+Choose Anthropic or OpenAI, then paste the API key. Totality stores one key in `~/.totality/inference.json` or `$TOTALITY_HOME/inference.json` and injects it for local inference proxying and MCP-launched tl commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks; the stored key wins when present.
 
 ## Agent Setup
 
 <Note>
-  Add GX instructions to the start or end of your `AGENTS.md` or `CLAUDE.md` so agents
-  know GX is active. Agents work in plain Git; GX's hooks record and publish
-  automatically. GX MCP exposes `gx_review` only.
+  Add Totality instructions to the start or end of your `AGENTS.md` or `CLAUDE.md` so agents
+  know Totality is active. Agents work in plain Git; Totality's hooks record and publish
+  automatically. Totality MCP exposes `tl_review` only.
 </Note>
 
 ```md
-Version control: use plain Git. GX's hooks record and publish your work automatically —
-there is no GX save verb, and there is no `gx commit` / `gx status` / `gx push`.
+Version control: use plain Git. Totality's hooks record and publish your work automatically —
+there is no Totality save verb, and there is no `tl commit` / `tl status` / `tl push`.
 
 Save changes with Git:
 - `git add <files>` to choose the scope of one logical change.
-- `git commit -m "..."` — a GX hook records the commit as a reviewable revision.
+- `git commit -m "..."` — a Totality hook records the commit as a reviewable revision.
 - Start a new line of work with `git checkout -b <branch>` before committing.
 
 To amend the latest revision, use `git commit --amend`; the post-rewrite hook follows it.
 
-Publish with plain `git push` (the GX pre-push hook captures the session and publishes),
-then open the PR with `gh pr create`. Do not run `gx push` — it is removed; use `git push`.
-Do not seed a `## Summary` section in the PR body; GX Cloud appends the summary itself.
+Publish with plain `git push` (the Totality pre-push hook captures the session and publishes),
+then open the PR with `gh pr create`. Do not run `tl push` — it is removed; use `git push`.
+Do not seed a `## Summary` section in the PR body; Totality Cloud appends the summary itself.
 
-When the user says "save work", "save using gx", or "save with gx", run the plain-Git
+When the user says "save work", "save using tl", or "save with tl", run the plain-Git
 save workflow: stage with `git add`, record with `git commit`, inspect with `git status`,
 and publish with `git push` unless the user asks to keep the work local.
 
-For AI review, use `gx review` (or the `gx_review` MCP tool).
+For AI review, use `tl review` (or the `tl_review` MCP tool).
 
-GX PR summaries are posted by GX Cloud for PRs whose branch was pushed through GX
+Totality PR summaries are posted by Totality Cloud for PRs whose branch was pushed through Totality
 with `git push` while the pre-push hook is installed.
 ```
 
 <Info>
-  Installing the GX menu-bar app installs the bundled `gx` CLI and `gx-mcp`.
-  When a repo is initialized with `gx init` or by MCP auto-initialization, GX
-  installs Git lifecycle hooks: `prepare-commit-msg` stamps the GX trailer,
+  Installing the Totality menu-bar app installs the bundled `tl` CLI and `tl-mcp`.
+  When a repo is initialized with `tl init` or by MCP auto-initialization, Totality
+  installs Git lifecycle hooks: `prepare-commit-msg` stamps the Totality trailer,
   `post-commit` records commit metadata, `post-rewrite` follows amended or
   rebased commit OIDs, and `pre-push` captures Claude/Codex/Cursor session
-  context into `~/.gx/gx.db` and publishes when credentials are configured.
+  context into `~/.totality/totality.db` and publishes when credentials are configured.
 </Info>
 
 ## Product Model
 
-GX centers the reviewable revision:
+Totality centers the reviewable revision:
 
 - **Session**: captured context from agent prompts, responses, commands, tests, and files touched.
 - **Revision**: one logical change — a Git commit plus the captured context that explains how it was produced.
 - **Branch**: the ordered line of revisions reviewed together — a plain Git branch, opened as one PR.
 
 These are ordinary Git objects: a revision is a Git commit, and the branch is the Git
-branch it sits on — GX records the review context around them, so you never leave Git.
+branch it sits on — Totality records the review context around them, so you never leave Git.

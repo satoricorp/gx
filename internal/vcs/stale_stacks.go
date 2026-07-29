@@ -38,7 +38,7 @@ func (s *Service) staleStacks(ctx context.Context, repair bool) (StaleStackClean
 	if err != nil {
 		return StaleStackCleanupResult{}, err
 	}
-	repo, err := s.ResolveGXRepoAtPath(ctx, cwd)
+	repo, err := s.ResolveTotalityRepoAtPath(ctx, cwd)
 	if err != nil {
 		return StaleStackCleanupResult{}, err
 	}

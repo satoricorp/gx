@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/totality/internal/reviewbundle"
 )
 
 func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "token-one")
-	prURL := "https://github.com/satoricorp/gx/pull/11"
+	prURL := "https://github.com/satoricorp/totality/pull/11"
 	var patchedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -36,7 +36,7 @@ func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T)
 		}
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 
 	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
@@ -62,9 +62,9 @@ func TestEnqueueArtifactQueuesWithoutUpdatingGitHubPullRequestBody(t *testing.T)
 }
 
 func TestDrainQueuedUploadsDoesNotRewriteGitHubPullRequestBody(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "token-one")
-	prURL := "https://github.com/satoricorp/gx/pull/11"
+	prURL := "https://github.com/satoricorp/totality/pull/11"
 	var patchedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPatch {
@@ -75,7 +75,7 @@ func TestDrainQueuedUploadsDoesNotRewriteGitHubPullRequestBody(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"html_url": prURL, "number": 11, "body": ""})
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 
 	if _, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)), QueueAttestation{}); err != nil {
 		t.Fatalf("EnqueueArtifact() error = %v", err)
@@ -94,7 +94,7 @@ func TestDrainQueuedUploadsDoesNotRewriteGitHubPullRequestBody(t *testing.T) {
 
 func TestUpdateGitHubPullRequestBodyIsNoOp(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token-one")
-	prURL := "https://github.com/satoricorp/gx/pull/11"
+	prURL := "https://github.com/satoricorp/totality/pull/11"
 	var patched bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPatch {
@@ -107,7 +107,7 @@ func TestUpdateGitHubPullRequestBodyIsNoOp(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
+	t.Setenv("TOTALITY_GITHUB_API_URL", server.URL)
 
 	updated, err := UpdateGitHubPullRequestBody(context.Background(), reviewbundle.NewArtifact(prSummaryTestBundle(prURL)))
 	if err != nil {
@@ -123,7 +123,7 @@ func TestUpdateGitHubPullRequestBodyIsNoOp(t *testing.T) {
 
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
 	return reviewbundle.Bundle{
-		Event:         "gx.pr",
+		Event:         "tl.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push: reviewbundle.PushPayload{

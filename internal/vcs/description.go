@@ -9,9 +9,9 @@ import (
 
 const (
 	PlaceholderDescription      = "(no description set)"
-	PendingRemainderDescription = "gx: pending remainder"
-	// RevisionTrailerFormat is the GX identity trailer line template.
-	RevisionTrailerFormat = "GX: https://gx.run/r/%s"
+	PendingRemainderDescription = "tl: pending remainder"
+	// RevisionTrailerFormat is the Totality identity trailer line template.
+	RevisionTrailerFormat = "Totality: https://totality.sh/r/%s"
 )
 
 var (
@@ -46,8 +46,8 @@ func RevisionTrailerLine(revisionID string) string {
 	return fmt.Sprintf(RevisionTrailerFormat, revisionID)
 }
 
-// StampRevisionTrailer returns message carrying exactly one GX identity
-// trailer for revisionID. GX trailers from a prior revision identity are
+// StampRevisionTrailer returns message carrying exactly one Totality identity
+// trailer for revisionID. Totality trailers from a prior revision identity are
 // replaced, never accumulated.
 func StampRevisionTrailer(message, revisionID string) string {
 	revisionID = strings.TrimSpace(revisionID)
@@ -75,7 +75,7 @@ func isRevisionTrailerLine(line string) bool {
 }
 
 // revisionTrailerPresent reports whether message already carries the canonical
-// GX trailer for revisionID and no stale trailers, i.e. re-stamping would be a
+// Totality trailer for revisionID and no stale trailers, i.e. re-stamping would be a
 // no-op.
 func revisionTrailerPresent(message, revisionID string) bool {
 	return StampRevisionTrailer(message, revisionID) == strings.TrimRight(message, "\n")

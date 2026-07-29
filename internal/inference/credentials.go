@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 const fileName = "inference.json"
@@ -45,7 +45,7 @@ func Save(creds Credentials) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create gx home dir: %w", err)
+		return fmt.Errorf("create tl home dir: %w", err)
 	}
 	file := Credentials{Provider: provider, APIKey: key}
 	data, err := json.MarshalIndent(file, "", "  ")

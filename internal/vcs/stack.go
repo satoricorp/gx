@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 var bookmarkSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)

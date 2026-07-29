@@ -6,11 +6,11 @@ import (
 )
 
 func TestReportRedactsSensitiveValues(t *testing.T) {
-	raw := "Authorization: Bearer gxcs_secret\nGITHUB_TOKEN=gho_secret\napi_key=sk-secret"
+	raw := "Authorization: Bearer tlcs_secret\nGITHUB_TOKEN=gho_secret\napi_key=sk-secret"
 
 	redacted := redactSensitive(raw)
 
-	if strings.Contains(redacted, "gxcs_secret") || strings.Contains(redacted, "gho_secret") || strings.Contains(redacted, "sk-secret") {
+	if strings.Contains(redacted, "tlcs_secret") || strings.Contains(redacted, "gho_secret") || strings.Contains(redacted, "sk-secret") {
 		t.Fatalf("redactSensitive() leaked secret: %q", redacted)
 	}
 	if got := strings.Count(redacted, "[REDACTED]"); got < 3 {

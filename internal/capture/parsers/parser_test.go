@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/totality/internal/capture"
 )
 
 func TestDiscoverFindsCursorAgentTranscripts(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "Users", "joe", "git", "gx")
-	root := filepath.Join(home, ".cursor", "projects", "Users-joe-git-gx", "agent-transcripts", "parent-1")
+	repoRoot := filepath.Join(string(filepath.Separator), "Users", "joe", "git", "tl")
+	root := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tl", "agent-transcripts", "parent-1")
 	mainPath := filepath.Join(root, "parent-1.jsonl")
 	subPath := filepath.Join(root, "subagents", "sub-1.jsonl")
-	oldPath := filepath.Join(home, ".cursor", "projects", "Users-joe-git-gx", "agent-transcripts", "old", "old.jsonl")
+	oldPath := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tl", "agent-transcripts", "old", "old.jsonl")
 	for _, path := range []string{mainPath, subPath, oldPath} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
@@ -90,9 +90,9 @@ func discoveredPaths(sessions []DiscoveredSession) []string {
 
 func TestDiscoverFindsClaudeSessionsFiledUnderAnotherProject(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo")
-	sibling := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo-cloud")
-	other := filepath.Join(string(filepath.Separator), "gx-xrepo", "elsewhere")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-xrepo", "repo")
+	sibling := filepath.Join(string(filepath.Separator), "totality-xrepo", "repo-cloud")
+	other := filepath.Join(string(filepath.Separator), "totality-xrepo", "elsewhere")
 	projects := filepath.Join(home, ".claude", "projects")
 	ownDir := filepath.Join(projects, repoSlug(repoRoot))
 	otherDir := filepath.Join(projects, repoSlug(other))
@@ -145,8 +145,8 @@ func TestDiscoverFindsClaudeSessionsFiledUnderAnotherProject(t *testing.T) {
 
 func TestDiscoverDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo")
-	other := filepath.Join(string(filepath.Separator), "gx-xrepo", "elsewhere")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-xrepo", "repo")
+	other := filepath.Join(string(filepath.Separator), "totality-xrepo", "elsewhere")
 	projects := filepath.Join(home, ".claude", "projects")
 
 	now := time.Now()
@@ -177,7 +177,7 @@ func TestDiscoverDeduplicatesClaudeSessionsAcrossProjects(t *testing.T) {
 
 func TestFileMentionsRepoSpansChunkBoundary(t *testing.T) {
 	dir := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-xrepo", "repo")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-xrepo", "repo")
 	needles := repoPathNeedles(repoRoot)
 	if len(needles) == 0 {
 		t.Fatal("no needles for repo root")
@@ -287,7 +287,7 @@ func makeUnreadable(t *testing.T, dir string) {
 // whole sweep, so Claude and Codex transcripts were never discovered either.
 func TestDiscoverSurvivesUnreadableCursorTranscripts(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-nocursor", "repo")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-nocursor", "repo")
 	now := time.Now()
 
 	claudePath := filepath.Join(home, ".claude", "projects", repoSlug(repoRoot), "claude-1.jsonl")
@@ -337,7 +337,7 @@ func TestDiscoverSurvivesUnreadableCursorTranscripts(t *testing.T) {
 // reachable because the legs can fail at all.
 func TestDiscoverReportsUnreadableClaudeAndCodexRoots(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-unreadable", "repo")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-unreadable", "repo")
 	now := time.Now()
 
 	claudeDir := filepath.Join(home, ".claude", "projects")
@@ -380,7 +380,7 @@ func TestDiscoverReportsUnreadableClaudeAndCodexRoots(t *testing.T) {
 // must discover nothing, and must not warn about tools that are merely absent.
 func TestDiscoverStaysInsideRequestedHome(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-empty-home", "repo")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-empty-home", "repo")
 	now := time.Now()
 
 	discovery, err := Discover(DiscoverOptions{
@@ -415,7 +415,7 @@ func TestDiscoverStaysInsideRequestedHome(t *testing.T) {
 // be discovered like any other, with no problem reported.
 func TestDiscoverAcceptsMultiGigabyteCursorDatabase(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "gx-bigcursor", "repo")
+	repoRoot := filepath.Join(string(filepath.Separator), "totality-bigcursor", "repo")
 	now := time.Now()
 
 	vscdb := filepath.Join(home, "state.vscdb")

@@ -9,7 +9,7 @@ import (
 func TestRepoIndexStateRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	state := &RepoIndexState{
-		Namespace:      "gx-org-acme-widgets-v2",
+		Namespace:      "totality-org-acme-widgets-v2",
 		RepoFullName:   "acme/widgets",
 		EmbeddingModel: "text-embedding-3-large",
 		Dimensions:     3072,
@@ -94,14 +94,14 @@ func TestLoadRepoIndexStateToleratesGarbage(t *testing.T) {
 	}
 }
 
-func TestRepoIndexStatePathUsesGXHome(t *testing.T) {
+func TestRepoIndexStatePathUsesTotalityHome(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("GX_HOME", home)
-	path, err := RepoIndexStatePath("gx-org-acme-widgets-v2")
+	t.Setenv("TOTALITY_HOME", home)
+	path, err := RepoIndexStatePath("totality-org-acme-widgets-v2")
 	if err != nil {
 		t.Fatalf("path: %v", err)
 	}
-	want := filepath.Join(home, "index", "gx-org-acme-widgets-v2.json")
+	want := filepath.Join(home, "index", "totality-org-acme-widgets-v2.json")
 	if path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}

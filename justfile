@@ -4,38 +4,38 @@ set dotenv-load := true
 repo_root := `pwd`
 
 # `just build` / `just build-release` / `just install` bake public auth/client endpoints from .env into buildconfig.
-gx_ldflags := "\
-  -X github.com/satoricorp/gx/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
-  -X github.com/satoricorp/gx/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
-  -X github.com/satoricorp/gx/internal/buildconfig.CloudURL=${GX_CLOUD_URL:-} \
-  -X github.com/satoricorp/gx/internal/buildconfig.PostHogKey=${GX_POSTHOG_KEY:-} \
-  -X github.com/satoricorp/gx/internal/buildconfig.PostHogHost=${GX_POSTHOG_HOST:-} \
-  -X github.com/satoricorp/gx/internal/version.Version=${VERSION:-dev}"
+tl_ldflags := "\
+  -X github.com/satoricorp/totality/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
+  -X github.com/satoricorp/totality/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
+  -X github.com/satoricorp/totality/internal/buildconfig.CloudURL=${TOTALITY_CLOUD_URL:-} \
+  -X github.com/satoricorp/totality/internal/buildconfig.PostHogKey=${TOTALITY_POSTHOG_KEY:-} \
+  -X github.com/satoricorp/totality/internal/buildconfig.PostHogHost=${TOTALITY_POSTHOG_HOST:-} \
+  -X github.com/satoricorp/totality/internal/version.Version=${VERSION:-dev}"
 
 build:
-  go build -ldflags "{{gx_ldflags}}" -o gx ./cmd/gx
+  go build -ldflags "{{tl_ldflags}}" -o tl ./cmd/tl
 
 build-release:
-  go build -ldflags "{{gx_ldflags}}" -o gx ./cmd/gx
+  go build -ldflags "{{tl_ldflags}}" -o tl ./cmd/tl
 
 package-cli:
   scripts/package-cli.sh
 
 install-completions:
   mkdir -p ~/.local/share/bash-completion/completions ~/.zfunc
-  go run ./cmd/gx-gen-completions ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
+  go run ./cmd/tl-gen-completions ~/.local/share/bash-completion/completions/tl ~/.zfunc/_tl
 
 install:
   mkdir -p ~/.local/bin
   just build
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./gx || true
-  cp ./gx ~/.local/bin/gx
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/gx || true
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./tl || true
+  cp ./tl ~/.local/bin/tl
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/tl || true
   just install-completions
-  just verify-bake ./gx
-  just verify-bake ~/.local/bin/gx
+  just verify-bake ./tl
+  just verify-bake ~/.local/bin/tl
 
-verify-bake bin="gx":
+verify-bake bin="tl":
   #!/usr/bin/env bash
   set -euo pipefail
   bin="{{bin}}"
@@ -55,9 +55,9 @@ verify-bake bin="gx":
   }
   check GITHUB_CLIENT_ID "${GITHUB_CLIENT_ID:-}"
   check CONVEX_SITE_URL "${CONVEX_SITE_URL:-}"
-  check GX_CLOUD_URL "${GX_CLOUD_URL:-}"
-  check GX_POSTHOG_KEY "${GX_POSTHOG_KEY:-}"
-  check GX_POSTHOG_HOST "${GX_POSTHOG_HOST:-}"
+  check TOTALITY_CLOUD_URL "${TOTALITY_CLOUD_URL:-}"
+  check TOTALITY_POSTHOG_KEY "${TOTALITY_POSTHOG_KEY:-}"
+  check TOTALITY_POSTHOG_HOST "${TOTALITY_POSTHOG_HOST:-}"
   if [[ "$missing" -ne 0 ]]; then
     exit 1
   fi
@@ -66,6 +66,15 @@ verify-bake bin="gx":
 test:
   go test ./...
 
+# Build the MCP: xmcp JS output plus the standalone dist/tl-mcp binary.
+mcp-build:
+  cd mcp && bun install && bun run build
+
+# Publish @satoricorp/totality to npm. prepublishOnly rebuilds and tests first.
+# CI equivalent: push a tag like mcp-v0.1.0 (see .github/workflows/mcp.yml).
+mcp-publish:
+  cd mcp && bun install --frozen-lockfile && npm publish
+
 run *args:
-  {{repo_root}}/gx {{args}}
+  {{repo_root}}/tl {{args}}
 

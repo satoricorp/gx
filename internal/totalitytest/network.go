@@ -1,4 +1,4 @@
-package gxtest
+package totalitytest
 
 import (
 	"fmt"
@@ -17,11 +17,11 @@ import (
 // Those tests skip themselves when credentials are absent, which reads as a
 // guard but is the opposite of one: it means they arm themselves automatically
 // on the machine of anyone who has exported the keys, which is every developer
-// working on GX. Requiring this variable makes reaching the network a decision
+// working on Totality. Requiring this variable makes reaching the network a decision
 // someone typed rather than a property of their shell:
 //
-//	GX_TEST_ALLOW_NETWORK=1 go test ./internal/codereview -run TestLive
-const AllowNetworkEnv = "GX_TEST_ALLOW_NETWORK"
+//	TOTALITY_TEST_ALLOW_NETWORK=1 go test ./internal/codereview -run TestLive
+const AllowNetworkEnv = "TOTALITY_TEST_ALLOW_NETWORK"
 
 // DenyNetwork cuts a test binary off from the internet and returns an accessor
 // for whatever still tried to get out. It is meant to be called from TestMain,
@@ -31,7 +31,7 @@ const AllowNetworkEnv = "GX_TEST_ALLOW_NETWORK"
 //
 // It closes two doors, because either one alone leaves a gap:
 //
-// Clearing credentials is what stops the traffic. Every network path in GX is
+// Clearing credentials is what stops the traffic. Every network path in Totality is
 // gated on a key being present, so a cleared key makes the code take the same
 // branch it takes in CI — which is also the branch these tests mean to be
 // testing. This is the door that matters, and it is why the fix is not a list
@@ -47,7 +47,7 @@ const AllowNetworkEnv = "GX_TEST_ALLOW_NETWORK"
 // The returned function reports the attempts, so TestMain can fail the package:
 //
 //	func TestMain(m *testing.M) {
-//		egress := gxtest.DenyNetwork()
+//		egress := totalitytest.DenyNetwork()
 //		code := m.Run()
 //		if attempts := egress(); len(attempts) > 0 {
 //			// report and fail
@@ -75,31 +75,31 @@ func DenyNetwork() func() []string {
 		mu.Lock()
 		seen[r.Method+" "+target]++
 		mu.Unlock()
-		http.Error(w, "network is denied in tests; see gxtest.DenyNetwork", http.StatusForbidden)
+		http.Error(w, "network is denied in tests; see totalitytest.DenyNetwork", http.StatusForbidden)
 	}))
 
 	for _, key := range NetworkCredentialEnv {
 		_ = os.Setenv(key, "")
 	}
-	// On-disk credentials are credentials too. A developer's ~/.gx holds a
+	// On-disk credentials are credentials too. A developer's ~/.totality holds a
 	// live CLI session (credentials.json) and upload auth (upload.json), and a
 	// path that authenticates from disk — cloud-mode review retrieval does —
 	// would take the network branch here while taking the offline branch in
 	// CI, which is exactly the local-red/CI-green split this guard exists to
-	// prevent. An empty scratch GX_HOME makes the disk answer the way CI does;
-	// tests that need real state set their own GX_HOME afterwards.
-	if dir, err := os.MkdirTemp("", "gx-test-home-"); err == nil {
-		_ = os.Setenv("GX_HOME", dir)
+	// prevent. An empty scratch TOTALITY_HOME makes the disk answer the way CI does;
+	// tests that need real state set their own TOTALITY_HOME afterwards.
+	if dir, err := os.MkdirTemp("", "totality-test-home-"); err == nil {
+		_ = os.Setenv("TOTALITY_HOME", dir)
 	}
 	for _, key := range []string{
 		"HTTP_PROXY", "http_proxy",
 		"HTTPS_PROXY", "https_proxy",
-		// GX's own endpoint overrides, so a path that honours them fails
+		// Totality's own endpoint overrides, so a path that honours them fails
 		// against the tripwire rather than against a real service.
-		"GX_OPENAI_BASE_URL", "GX_TPUF_BASE_URL", "GX_API_URL", "GX_CLOUD_URL",
+		"TOTALITY_OPENAI_BASE_URL", "TOTALITY_TPUF_BASE_URL", "TOTALITY_API_URL", "TOTALITY_CLOUD_URL",
 		// GitHub is reached through two independent overrides, and setting only
 		// the API one leaves token validation pointed at api.github.com.
-		"GX_GITHUB_API_URL", "GX_GITHUB_USER_URL",
+		"TOTALITY_GITHUB_API_URL", "TOTALITY_GITHUB_USER_URL",
 	} {
 		_ = os.Setenv(key, tripwire.URL)
 	}
@@ -122,17 +122,17 @@ func DenyNetwork() func() []string {
 }
 
 // NetworkCredentialEnv are the keys that arm a real network call. A test binary
-// inherits the developer's shell, and on a GX developer's machine these are all
+// inherits the developer's shell, and on a Totality developer's machine these are all
 // exported, so leaving any of them set is what turns an offline test into a
 // billable one.
 var NetworkCredentialEnv = []string{
 	"OPENAI_API_KEY",
-	"GX_OPENAI_API_KEY",
+	"TOTALITY_OPENAI_API_KEY",
 	"TURBOPUFFER_API_KEY",
 	"ANTHROPIC_API_KEY",
-	"GX_TPUF_NAMESPACE",
-	"GX_API_KEY",
-	"GX_UPLOAD_TOKEN",
+	"TOTALITY_TPUF_NAMESPACE",
+	"TOTALITY_API_KEY",
+	"TOTALITY_UPLOAD_TOKEN",
 	"GITHUB_TOKEN",
 	"GH_TOKEN",
 	"AWS_ACCESS_KEY_ID",

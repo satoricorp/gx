@@ -7,7 +7,7 @@ import (
 )
 
 // FailOnLevel is the severity threshold an automated gate fails at. The levels
-// are the finding strengths gx already speaks ("Blocking", "Strong", "Worth
+// are the finding strengths tl already speaks ("Blocking", "Strong", "Worth
 // exploring", "Speculative"), plus "none" to disable the gate and "any" to
 // catch every surviving finding.
 type FailOnLevel string

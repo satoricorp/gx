@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/hooks"
-	"github.com/satoricorp/gx/internal/reviewbundle"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/totality/internal/hooks"
+	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/vcs"
 )
 
 const coldStartConversation = "11111111-2222-3333-4444-555555555555"
@@ -40,8 +40,8 @@ const coldStartContent = "package alpha\n\nfunc AlphaOne() int {\n\treturn 41\n}
 func TestRunPushAttachesSessionsFromColdStart(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 
 	repo, base, head := coldStartRepo(t, map[string]string{"alpha.go": coldStartContent})
 	refRange := base + ".." + head
@@ -127,8 +127,8 @@ func TestRunPushAttachesSessionsFromColdStart(t *testing.T) {
 func TestRunPushAttachIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 
 	repo, base, head := coldStartRepo(t, map[string]string{"alpha.go": coldStartContent})
 	refRange := base + ".." + head
@@ -174,8 +174,8 @@ func TestRunPushAttachIsIdempotent(t *testing.T) {
 func TestRunPushAttachesSubagentsAsDistinctSessions(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 
 	const otherConversation = "99999999-8888-7777-6666-555555555555"
 	const alpha = "package alpha\n\nfunc AlphaOne() int {\n\treturn 41\n}\n"
@@ -247,8 +247,8 @@ func TestRunPushAttachesSubagentsAsDistinctSessions(t *testing.T) {
 func TestRunPushAttachesLinksToTheirOwnCommits(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 
 	const secondConversation = "abababab-cdcd-efef-0101-232323232323"
 	const alpha = "package alpha\n\nfunc AlphaOne() int {\n\treturn 41\n}\n"
@@ -309,13 +309,13 @@ func TestRunPushAttachesLinksToTheirOwnCommits(t *testing.T) {
 // change_sessions under the MAIN repo's row while the worktree's own path never
 // appears in `repos` at all. reviewbundle read those rows back by root_path,
 // found nothing, and published `sessions: []` with no error on any surface —
-// on a brand new database, for every push from a worktree. gx's own
+// on a brand new database, for every push from a worktree. tl's own
 // demux-worktree flow and the yeet harness both push from linked worktrees.
 func TestRunPushFromLinkedWorktreePublishesSessions(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
 
 	const worktreeConversation = "99999999-8888-7777-6666-555555555555"
 	const gamma = "package gamma\n\nfunc GammaThree() int {\n\treturn 3\n}\n"
@@ -328,7 +328,7 @@ func TestRunPushFromLinkedWorktreePublishesSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	commitWithTrailer(t, main, map[string]string{"seed.go": "package seed\n"}, "seed")
-	if _, err := vcs.NewService().ResolveGXRepoAtPath(ctx, main); err != nil {
+	if _, err := vcs.NewService().ResolveTotalityRepoAtPath(ctx, main); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,7 +412,7 @@ func initBareGitRepo(t *testing.T, repo string) {
 	runGit(t, repo, "commit", "--no-verify", "-m", "initial")
 }
 
-// commitWithTrailer writes files and commits them with a GX revision trailer,
+// commitWithTrailer writes files and commits them with a Totality revision trailer,
 // so RecoverMissingRevisions can create the `changes` row the sessions attach to.
 func commitWithTrailer(t *testing.T, repo string, files map[string]string, subject string) string {
 	t.Helper()

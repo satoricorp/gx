@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/totality/internal/telemetry"
 )
 
 type authStatusJSON struct {
@@ -59,7 +59,7 @@ func buildAuthStatusJSON(ctx context.Context) (authStatusJSON, error) {
 func newAuthCommand(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Authenticate with gx cloud",
+		Short: "Authenticate with tl cloud",
 	}
 	cmd.AddCommand(
 		newAuthLoginCommand(ctx),
@@ -74,7 +74,7 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 	var machineName string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log into gx cloud",
+		Short: "Log into tl cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			creds, err := cloud.Login(ctx, cloud.LoginOptions{
 				MachineName: machineName,
@@ -92,14 +92,14 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the gx console")
+	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the tl console")
 	return cmd
 }
 
 func newAuthLogoutCommand(ctx context.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Logout of gx cloud",
+		Short: "Logout of tl cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			props := map[string]any{
 				"status":    "success",
@@ -134,7 +134,7 @@ func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show gx cloud login status",
+		Short: "Show tl cloud login status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOut {
 				status, err := buildAuthStatusJSON(ctx)
@@ -159,11 +159,11 @@ func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Login", creds.Login))
 				}
 				if status.APIValid != nil && !*status.APIValid {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", danger("warn")+": "+status.APIError))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Totality API", danger("warn")+": "+status.APIError))
 				} else if status.APIValid != nil && *status.APIValid {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", success("ok")))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Totality API", success("ok")))
 				} else if status.APIError != "" {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GX API", danger("warn")+": "+status.APIError))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Totality API", danger("warn")+": "+status.APIError))
 				}
 				if status.AuthValid != nil && !*status.AuthValid {
 					fmt.Fprintln(cmd.OutOrStdout(), labelValue("GitHub token", danger("warn")+": "+status.AuthError))
@@ -203,7 +203,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 		} else {
 			validation, err := cloud.ValidateCloudAPISession(verifyCtx, nil, token)
 			if err != nil {
-				status.APIError = "could not verify GX API session: " + err.Error()
+				status.APIError = "could not verify Totality API session: " + err.Error()
 			} else {
 				status.APIValid = &validation.Valid
 				if validation.Valid {
@@ -213,9 +213,9 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 				} else {
 					status.APIError = strings.TrimSpace(validation.Error)
 					if status.APIError == "" {
-						status.APIError = "GX API rejected stored session"
+						status.APIError = "Totality API rejected stored session"
 					}
-					status.APIError += "; run `gx auth logout` then `gx auth login`"
+					status.APIError += "; run `tl auth logout` then `tl auth login`"
 				}
 			}
 		}
@@ -245,7 +245,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 		if status.AuthError == "" {
 			status.AuthError = "GitHub rejected stored token"
 		}
-		status.AuthError += "; run `gx auth logout` then `gx auth login`"
+		status.AuthError += "; run `tl auth logout` then `tl auth login`"
 	}
 	return status
 }
@@ -253,7 +253,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 func newAuthTokenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "token",
-		Short:  "Print the resolved gx cloud bearer token",
+		Short:  "Print the resolved tl cloud bearer token",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, kind, err := cloud.CloudAPITokenWithKind()
@@ -277,7 +277,7 @@ func authKindForCredentials(creds *cloud.CloudCredentials) string {
 		return "none"
 	}
 	if strings.TrimSpace(creds.CLISessionToken) != "" {
-		return "gx-cli"
+		return "totality-cli"
 	}
 	if strings.TrimSpace(creds.GitHubAccessToken) != "" {
 		return "github"

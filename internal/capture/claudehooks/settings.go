@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-const hookMarker = "gx capture transcript"
+const hookMarker = "tl capture transcript"
 
-// MergeSettings registers GX transcript capture hooks in .claude/settings.json
+// MergeSettings registers Totality transcript capture hooks in .claude/settings.json
 // without replacing existing user hook entries.
-func MergeSettings(repoRoot, gxPath string) error {
+func MergeSettings(repoRoot, tlPath string) error {
 	if strings.TrimSpace(repoRoot) == "" {
 		return fmt.Errorf("repo root required")
 	}
-	if strings.TrimSpace(gxPath) == "" {
+	if strings.TrimSpace(tlPath) == "" {
 		var err error
-		gxPath, err = os.Executable()
+		tlPath, err = os.Executable()
 		if err != nil {
 			return err
 		}
@@ -48,7 +48,7 @@ func MergeSettings(repoRoot, gxPath string) error {
 		hooks = map[string]json.RawMessage{}
 	}
 
-	command := shellQuote(portableGxPath(gxPath)) + " capture transcript"
+	command := shellQuote(portableTlPath(tlPath)) + " capture transcript"
 	for _, event := range []string{"Stop", "SessionEnd"} {
 		merged, err := mergeHookEvent(hooks[event], command)
 		if err != nil {
@@ -121,7 +121,7 @@ func hookGroupContainsMarker(group map[string]any) bool {
 	return false
 }
 
-// portableGxPath substitutes the user's home-directory prefix with $HOME.
+// portableTlPath substitutes the user's home-directory prefix with $HOME.
 //
 // .claude/settings.json is repo-shared and conventionally committed, and the
 // hook command used to embed the absolute binary path — /Users/<name>/… — so
@@ -129,16 +129,16 @@ func hookGroupContainsMarker(group map[string]any) bool {
 // directory. Claude Code runs hook commands through a shell, so a
 // double-quoted $HOME expands per machine. A path outside the home directory
 // is left as-is: there is nothing portable to substitute.
-func portableGxPath(gxPath string) string {
+func portableTlPath(tlPath string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
-		return gxPath
+		return tlPath
 	}
 	home = strings.TrimRight(home, string(filepath.Separator))
-	if gxPath == home || !strings.HasPrefix(gxPath, home+string(filepath.Separator)) {
-		return gxPath
+	if tlPath == home || !strings.HasPrefix(tlPath, home+string(filepath.Separator)) {
+		return tlPath
 	}
-	return "$HOME" + strings.TrimPrefix(gxPath, home)
+	return "$HOME" + strings.TrimPrefix(tlPath, home)
 }
 
 func shellQuote(value string) string {

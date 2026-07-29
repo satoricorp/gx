@@ -14,7 +14,7 @@ func TestTurboPufferClientUpsertsRows(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-tpuf" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		if r.URL.Path != "/v2/namespaces/gx-test" {
+		if r.URL.Path != "/v2/namespaces/totality-test" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -27,11 +27,11 @@ func TestTurboPufferClientUpsertsRows(t *testing.T) {
 	client := NewTurboPufferClient(Config{
 		TurboPufferAPIKey:    "test-tpuf",
 		TurboPufferBaseURL:   server.URL,
-		TurboPufferNamespace: "gx-test",
+		TurboPufferNamespace: "totality-test",
 		EmbeddingDimensions:  2,
 	})
 	err := client.Upsert(context.Background(), []VectorRow{{
-		ID:     "gx-row",
+		ID:     "totality-row",
 		Vector: []float32{0.1, 0.2},
 		Attributes: map[string]any{
 			"text":         "alpha transcript",
@@ -51,7 +51,7 @@ func TestTurboPufferClientUpsertsRows(t *testing.T) {
 		t.Fatalf("upsert_rows = %#v", got["upsert_rows"])
 	}
 	row := rows[0].(map[string]any)
-	if row["id"] != "gx-row" || row["text"] != "alpha transcript" || row["session_id"] != "session-one" {
+	if row["id"] != "totality-row" || row["text"] != "alpha transcript" || row["session_id"] != "session-one" {
 		t.Fatalf("row = %#v", row)
 	}
 	schema := got["schema"].(map[string]any)
@@ -84,7 +84,7 @@ func TestTurboPufferClientRejectsWrongDimension(t *testing.T) {
 func TestTurboPufferClientDeletesStaleCodeRows(t *testing.T) {
 	var got map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/namespaces/gx-test" {
+		if r.URL.Path != "/v2/namespaces/totality-test" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -97,7 +97,7 @@ func TestTurboPufferClientDeletesStaleCodeRows(t *testing.T) {
 	client := NewTurboPufferClient(Config{
 		TurboPufferAPIKey:    "test-tpuf",
 		TurboPufferBaseURL:   server.URL,
-		TurboPufferNamespace: "gx-test",
+		TurboPufferNamespace: "totality-test",
 		EmbeddingDimensions:  2,
 	})
 	if err := client.DeleteStaleCodeDocuments(context.Background(), "acme/widgets", "abc123"); err != nil {

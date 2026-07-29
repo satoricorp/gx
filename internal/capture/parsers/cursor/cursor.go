@@ -10,8 +10,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/repopath"
+	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/totality/internal/capture/repopath"
 )
 
 // Parser normalizes Cursor composer bubbles from state.vscdb into SessionEvents.

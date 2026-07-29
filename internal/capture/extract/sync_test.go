@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/auth"
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/extract"
-	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/totality/internal/auth"
+	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/totality/internal/capture/extract"
+	"github.com/satoricorp/totality/internal/capture/matcher"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/telemetry"
 )
 
 func TestSyncPending(t *testing.T) {
@@ -54,7 +54,7 @@ func TestSyncPending(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -138,7 +138,7 @@ func TestSyncPendingReadsSourceFiles(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -185,7 +185,7 @@ func TestSyncPendingReadsSourceFiles(t *testing.T) {
 	if result.SessionsUploaded != 2 || result.SessionErrors != 1 {
 		t.Fatalf("result = %+v, want 2 uploads and 1 error for the missing source", result)
 	}
-	// The wire format is GX's own line-oriented transcript, never the raw
+	// The wire format is Totality's own line-oriented transcript, never the raw
 	// transcript JSONL: the server promoter only parses "[tool] kind …" lines
 	// and drops everything else, so raw bytes promote zero events.
 	if got := received["on-disk"]; !strings.HasPrefix(got, "[claude] edit /repo/on-disk.go\n") {
@@ -258,7 +258,7 @@ func claudeEditLine(sessionID, filePath, content string) string {
 // Three things must hold at once, and shipping raw transcript bytes satisfied
 // only the first:
 //   - content is non-empty, so the server stops rejecting the body;
-//   - content is GX's line format, because the server promoter parses only
+//   - content is Totality's line format, because the server promoter parses only
 //     "[tool] kind …" lines and DELETEs the session's existing events before
 //     inserting what it parsed — raw JSONL promotes zero events and destroys
 //     whatever context was already there;
@@ -286,7 +286,7 @@ func TestSyncPendingUploadsPromotableRedactedContentForEventlessRow(t *testing.T
 	}))
 	defer srv.Close()
 
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -396,7 +396,7 @@ func TestSyncPendingCapsSessionContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -430,7 +430,7 @@ func TestSyncPendingCapsSessionContent(t *testing.T) {
 	if len(uploaded) > 2<<20 {
 		t.Fatalf("uploaded %d bytes, want a bounded body", len(uploaded))
 	}
-	if !strings.Contains(uploaded, "[gx] truncated") {
+	if !strings.Contains(uploaded, "[tl] truncated") {
 		t.Fatalf("uploaded body was cut without saying so: %q", uploaded[max(0, len(uploaded)-120):])
 	}
 }
@@ -439,7 +439,7 @@ func TestSyncPendingCapsSessionContent(t *testing.T) {
 // a failing upload visible: the 32 rows that 400'd in production were re-sent on
 // every single push, forever, with nothing anywhere reporting it.
 func TestShareableSessionsStopRetryingAfterMaxAttempts(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {

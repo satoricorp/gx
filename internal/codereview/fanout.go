@@ -42,11 +42,11 @@ const (
 	// of what just happened; large ones get their own shards instead.
 	maxChangeInFocusBytes = 40000
 	// maxReviewShards bounds the fan-out. It is a guard against a repository
-	// far larger than anything gx reviews today, not a coverage decision: if it
+	// far larger than anything tl reviews today, not a coverage decision: if it
 	// ever binds, the shards it dropped are counted and reported.
 	maxReviewShards = 256
 	// defaultFanOutConcurrency is how many shards are in flight at once.
-	// Overridable with GX_REVIEW_FANOUT_CONCURRENCY.
+	// Overridable with TOTALITY_REVIEW_FANOUT_CONCURRENCY.
 	defaultFanOutConcurrency = 6
 )
 
@@ -471,7 +471,7 @@ func namespaceShardFindings(findings []Finding, shard ReviewShard) []Finding {
 
 func fanOutConcurrency(shards int) int {
 	limit := defaultFanOutConcurrency
-	if raw := strings.TrimSpace(os.Getenv("GX_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			limit = parsed
 		}

@@ -13,22 +13,22 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/authoring"
-	"github.com/satoricorp/gx/internal/gxconfig"
-	"github.com/satoricorp/gx/internal/inference"
-	"github.com/satoricorp/gx/internal/postlist"
-	"github.com/satoricorp/gx/internal/telemetry"
-	"github.com/satoricorp/gx/internal/vcs"
-	"github.com/satoricorp/gx/internal/version"
+	"github.com/satoricorp/totality/internal/authoring"
+	"github.com/satoricorp/totality/internal/inference"
+	"github.com/satoricorp/totality/internal/postlist"
+	"github.com/satoricorp/totality/internal/telemetry"
+	"github.com/satoricorp/totality/internal/totalityconfig"
+	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/totality/internal/version"
 )
 
 func NewRoot(ctx context.Context) *cobra.Command {
 	engine := authoring.NewEngine()
 
 	root := &cobra.Command{
-		Use:           "gx",
-		Short:         "GX CLI for Git-native capture, commits, and review",
-		Long:          gxTagline,
+		Use:           "tl",
+		Short:         "Totality CLI for Git-native capture, commits, and review",
+		Long:          tlTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -103,12 +103,12 @@ func printInitNoteIfNeeded(cmd *cobra.Command) {
 	if err != nil {
 		return
 	}
-	cfg, err := gxconfig.LoadAt(cwd)
+	cfg, err := totalityconfig.LoadAt(cwd)
 	if err != nil || cfg.HasIdentity() {
 		return
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, danger("Run `gx init` first."))
+	fmt.Fprintln(out, danger("Run `tl init` first."))
 	fmt.Fprintln(out)
 }
 
@@ -116,7 +116,7 @@ func newVersionCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "gx version",
+		Short: "tl version",
 		Run: func(cmd *cobra.Command, args []string) {
 			if jsonOut {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(version.BuildInfo()); err != nil {
@@ -138,12 +138,12 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up gx in the current repository",
+		Short: "Set up tl in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cleanupLegacyAmbientCaptureFromInit(ctx, cmd, yes)
 			if global {
 				if !yes {
-					fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init --global", true))
+					fmt.Fprintln(cmd.OutOrStdout(), commandLine("tl init --global", true))
 					fmt.Fprintln(cmd.OutOrStdout())
 				}
 				err := runGlobalInit(ctx, cmd, yes)
@@ -155,7 +155,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				return err
 			}
 			if !yes {
-				fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
+				fmt.Fprintln(cmd.OutOrStdout(), commandLine("tl init", true))
 				fmt.Fprintln(cmd.OutOrStdout())
 			}
 			result, err := engine.Init(ctx, authoring.InitOptions{
@@ -174,18 +174,18 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}
 			if !yes && result.IdentityName != "" && result.IdentityEmail != "" {
 				if result.IdentityApplied {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Configured", fmt.Sprintf("gx identity as %s <%s>", result.IdentityName, result.IdentityEmail)))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Configured", fmt.Sprintf("tl identity as %s <%s>", result.IdentityName, result.IdentityEmail)))
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Using", fmt.Sprintf("gx identity %s <%s>", result.IdentityName, result.IdentityEmail)))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Using", fmt.Sprintf("tl identity %s <%s>", result.IdentityName, result.IdentityEmail)))
 				}
 				if client := postlist.NewFromEnv(); client != nil {
 					err := client.UpsertIdentity(ctx, postlist.Identity{
 						Name:      result.IdentityName,
 						Email:     result.IdentityEmail,
-						GXVersion: version.Current(),
+						TLVersion: version.Current(),
 					})
 					if err != nil {
-						fmt.Fprintln(cmd.ErrOrStderr(), danger(fmt.Sprintf("gx signup upload failed: %v", err)))
+						fmt.Fprintln(cmd.ErrOrStderr(), danger(fmt.Sprintf("tl signup upload failed: %v", err)))
 					}
 				}
 			}
@@ -213,10 +213,10 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "user name to store in GX config")
-	cmd.Flags().StringVar(&email, "email", "", "user email to store in GX config")
+	cmd.Flags().StringVar(&name, "name", "", "user name to store in Totality config")
+	cmd.Flags().StringVar(&email, "email", "", "user email to store in Totality config")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
-	cmd.Flags().BoolVar(&global, "global", false, "install machine-wide git hooks (~/.gx/hooks) so GX works in every repo; skips per-repo setup")
+	cmd.Flags().BoolVar(&global, "global", false, "install machine-wide git hooks (~/.totality/hooks) so Totality works in every repo; skips per-repo setup")
 	return cmd
 }
 
@@ -271,7 +271,7 @@ func firstNonEmptyString(values ...string) string {
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
-	case "gxr":
+	case "tlr":
 		args = append([]string{"review"}, args...)
 	}
 	root := NewRoot(ctx)

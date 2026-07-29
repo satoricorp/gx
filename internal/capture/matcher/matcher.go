@@ -3,7 +3,7 @@ package matcher
 import (
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/totality/internal/capture"
 )
 
 const (
@@ -80,7 +80,7 @@ type Result struct {
 	// ran rather than from a file-edit event. See TierCommand.
 	CommandHunkIndexes map[int]struct{}
 	Tier3Pairs         int
-	MatchedEvents    map[int]int // event index -> best tier (1 or 2)
+	MatchedEvents      map[int]int // event index -> best tier (1 or 2)
 	// RelevantEvents records every event whose content matched some hunk
 	// (tier 1 or 2), before hunk-claim dedup. MatchedEvents only keeps the
 	// single claiming event per hunk, which under-reports a session whose

@@ -1,31 +1,31 @@
 #!/bin/sh
 set -eu
 
-base_url="${GX_INSTALL_BASE_URL:-https://download.gx.run}"
-install_dir="${GX_INSTALL_DIR:-$HOME/.local/bin}"
-tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t gx-install)"
+base_url="${TOTALITY_INSTALL_BASE_URL:-https://download.totality.sh}"
+install_dir="${TOTALITY_INSTALL_DIR:-$HOME/.local/bin}"
+tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t totality-install)"
 
 fail() {
-  echo "gx install: $*" >&2
+  echo "tl install: $*" >&2
   exit 1
 }
 
 usage() {
   cat <<EOF
-GX installer
+Totality installer
 
-Default install: gx CLI, gx-mcp, shell completions.
-Repo git hooks are installed later by gx init.
+Default install: tl CLI, tl-mcp, shell completions.
+Repo git hooks are installed later by tl init.
 
 Usage:
-  curl -fsSL https://download.gx.run/install.sh | sh
+  curl -fsSL https://download.totality.sh/install.sh | sh
 
 Options:
   -h, --help       Show this help
 
 Environment:
-  GX_INSTALL_BASE_URL   Download base URL (default: https://download.gx.run)
-  GX_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
+  TOTALITY_INSTALL_BASE_URL   Download base URL (default: https://download.totality.sh)
+  TOTALITY_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
 EOF
 }
 
@@ -80,7 +80,7 @@ need awk
 need mkdir
 
 base_url="${base_url%/}"
-archive="gx_${os}_${arch}.tar.gz"
+archive="tl_${os}_${arch}.tar.gz"
 archive_url="$base_url/cli/latest/$archive"
 checksum_url="$archive_url.sha256"
 archive_path="$tmp_dir/$archive"
@@ -104,36 +104,36 @@ if [ "$expected" != "$actual" ]; then
 fi
 
 tar -xzf "$archive_path" -C "$tmp_dir"
-test -x "$tmp_dir/gx/bin/gx" || fail "archive is missing gx"
-test -x "$tmp_dir/gx/bin/gx-mcp" || fail "archive is missing gx-mcp"
+test -x "$tmp_dir/tl/bin/tl" || fail "archive is missing tl"
+test -x "$tmp_dir/tl/bin/tl-mcp" || fail "archive is missing tl-mcp"
 
 mkdir -p "$install_dir"
-install -m 755 "$tmp_dir/gx/bin/gx" "$install_dir/gx"
-install -m 755 "$tmp_dir/gx/bin/gx-mcp" "$install_dir/gx-mcp"
-ln -sf gx "$install_dir/gxr"
+install -m 755 "$tmp_dir/tl/bin/tl" "$install_dir/tl"
+install -m 755 "$tmp_dir/tl/bin/tl-mcp" "$install_dir/tl-mcp"
+ln -sf tl "$install_dir/tlr"
 
-if [ -f "$tmp_dir/gx/completions/gx.bash" ]; then
+if [ -f "$tmp_dir/tl/completions/tl.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"
-  install -m 644 "$tmp_dir/gx/completions/gx.bash" "$HOME/.local/share/bash-completion/completions/gx"
+  install -m 644 "$tmp_dir/tl/completions/tl.bash" "$HOME/.local/share/bash-completion/completions/tl"
 fi
-if [ -f "$tmp_dir/gx/completions/_gx" ]; then
+if [ -f "$tmp_dir/tl/completions/_tl" ]; then
   mkdir -p "$HOME/.zfunc"
-  install -m 644 "$tmp_dir/gx/completions/_gx" "$HOME/.zfunc/_gx"
+  install -m 644 "$tmp_dir/tl/completions/_tl" "$HOME/.zfunc/_tl"
 fi
 
-echo "Installed gx to $install_dir/gx"
+echo "Installed tl to $install_dir/tl"
 echo "Installed MCP and aliases"
-if ! command -v gx >/dev/null 2>&1; then
-  echo "Add $install_dir to PATH before running gx."
+if ! command -v tl >/dev/null 2>&1; then
+  echo "Add $install_dir to PATH before running tl."
 fi
-# Cyan ANSI 6 + bold matches gx version / logo (internal/cli/logo.go).
-gx_auth_login="gx auth login"
-gx_init="gx init"
+# Cyan ANSI 6 + bold matches tl version / logo (internal/cli/logo.go).
+tl_auth_login="tl auth login"
+tl_init="tl init"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  gx_auth_login="$(printf '\033[1;36mgx auth login\033[0m')"
-  gx_init="$(printf '\033[1;36mgx init\033[0m')"
+  tl_auth_login="$(printf '\033[1;36mtl auth login\033[0m')"
+  tl_init="$(printf '\033[1;36mtl init\033[0m')"
 fi
 echo ""
-printf '\tRun %s to login.\n' "$gx_auth_login"
-printf '\tRun %s in each repo to initialize gx.\n' "$gx_init"
-"$install_dir/gx" version
+printf '\tRun %s to login.\n' "$tl_auth_login"
+printf '\tRun %s in each repo to initialize tl.\n' "$tl_init"
+"$install_dir/tl" version

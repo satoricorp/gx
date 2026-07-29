@@ -1,0 +1,3 @@
+interface:
+  display_name: "Totality"
+  short_description: "Record with tl commit/MCP, publish only with plain git push (not tl push), then gh pr create."

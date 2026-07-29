@@ -1,4 +1,4 @@
-# ADR 0001: Use GX Product Language At Public Seams
+# ADR 0001: Use Totality Product Language At Public Seams
 
 ## Status
 
@@ -6,13 +6,13 @@ Accepted
 
 ## Context
 
-GX has three layers that talk about the same work:
+Totality has three layers that talk about the same work:
 
 - the product layer, where users think in Sessions, Revisions, Stacks, Compose,
   and Publish
 - the local implementation layer, where JJ change IDs, Git commits, bookmarks,
   and storage rows make those objects durable
-- the adapter layer, where CLI and MCP expose GX behavior to humans and agents
+- the adapter layer, where CLI and MCP expose Totality behavior to humans and agents
 
 Early authoring code used "demux" for the algorithm that splits messy
 working-copy changes into reviewable slices. That term is still useful inside
@@ -20,7 +20,7 @@ the implementation, but it is not the product concept users should learn.
 
 ## Decision
 
-Public GX seams use product language:
+Public Totality seams use product language:
 
 - Session
 - Revision
@@ -32,7 +32,7 @@ Public GX seams use product language:
 - Review Bundle
 - Review Context
 
-The stable product identity for a change is the GX Revision. Locally, a Revision
+The stable product identity for a change is the Totality Revision. Locally, a Revision
 is backed by a JJ change ID. A Git commit is the current exported snapshot, not
 the durable identity.
 
@@ -47,7 +47,7 @@ review output should prefer Compose, Compose Proposal, Revision, and Stack.
   public seams when `CONTEXT.md` marks them as internal.
 - CLI and MCP adapters should converge on compose-named request and response
   shapes, even if the underlying implementation still calls demux helpers.
-- Tests and docs should describe product behavior in GX terms, not JJ or Git
+- Tests and docs should describe product behavior in Totality terms, not JJ or Git
   implementation details unless the behavior depends on those details.
-- ADRs should record future cases where GX intentionally exposes implementation
+- ADRs should record future cases where Totality intentionally exposes implementation
   language because the trade-off is worth it.

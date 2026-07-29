@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { commandEnvironment, resolveGxBinary } from "./gx";
+import { commandEnvironment, resolveTlBinary } from "./tl";
 
 type VersionInfo = {
   version?: string;
@@ -29,8 +29,8 @@ let cachedNotice: UpdateNotice | undefined;
 let inFlight: Promise<UpdateNotice | undefined> | undefined;
 
 const cacheTTL = 60 * 60 * 1000;
-const defaultManifestURL = "https://download.gx.run/cli/manifest.json";
-const defaultInstallCommand = "curl -fsSL https://download.gx.run/install.sh | sh";
+const defaultManifestURL = "https://download.totality.sh/cli/manifest.json";
+const defaultInstallCommand = "curl -fsSL https://download.totality.sh/install.sh | sh";
 
 export async function withUpdateNotice(value: unknown): Promise<unknown> {
   const notice = await updateNotice().catch(() => undefined);
@@ -53,13 +53,13 @@ export async function withUpdateNotice(value: unknown): Promise<unknown> {
   output.update = notice;
   output.next_actions = prependNextAction(
     Array.isArray(output.next_actions) ? output.next_actions.filter((item): item is string => typeof item === "string") : undefined,
-    `Update GX with \`${notice.install_command}\`.`,
+    `Update Totality with \`${notice.install_command}\`.`,
   );
   return JSON.stringify(output, null, 2);
 }
 
 async function updateNotice(): Promise<UpdateNotice | undefined> {
-  if (process.env.GX_MCP_UPDATE_CHECK === "0" || process.env.GX_MOCK_LOG) {
+  if (process.env.TOTALITY_MCP_UPDATE_CHECK === "0" || process.env.TOTALITY_MOCK_LOG) {
     return undefined;
   }
   const now = Date.now();
@@ -99,7 +99,7 @@ async function checkForUpdate(): Promise<UpdateNotice | undefined> {
     latest_version: manifest.version,
     latest_revision: manifest.git_sha,
     install_command: installCommand,
-    message: `GX ${latest} is available. Run \`${installCommand}\`.`,
+    message: `Totality ${latest} is available. Run \`${installCommand}\`.`,
   };
 }
 
@@ -125,7 +125,7 @@ function sameRevision(left: string, right: string): boolean {
 async function currentVersion(): Promise<VersionInfo | undefined> {
   return new Promise((resolve) => {
     execFile(
-      resolveGxBinary(),
+      resolveTlBinary(),
       ["version", "--json"],
       {
         env: commandEnvironment(),
@@ -148,7 +148,7 @@ async function currentVersion(): Promise<VersionInfo | undefined> {
 }
 
 async function latestManifest(): Promise<Manifest | undefined> {
-  const url = process.env.GX_UPDATE_MANIFEST_URL?.trim() || defaultManifestURL;
+  const url = process.env.TOTALITY_UPDATE_MANIFEST_URL?.trim() || defaultManifestURL;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1500);
   try {

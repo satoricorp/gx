@@ -18,16 +18,16 @@ const agentsMDSnippetMarker = "Version control: plain Git"
 
 const agentsMDSnippet = `# Agents
 
-Version control: plain Git. Once ` + "`gx init`" + ` installs the hooks, GX records and publishes automatically — there is no GX save verb.
+Version control: plain Git. Once ` + "`tl init`" + ` installs the hooks, Totality records and publishes automatically — there is no Totality save verb.
 
 Default flow:
 - Run ` + "`git add`" + ` to stage the files for this revision.
-- Run ` + "`git commit -m \"...\"`" + ` to save. A GX hook records the commit as a reviewable revision.
-- Run plain ` + "`git push`" + ` to publish. The GX pre-push hook captures the session and publishes code changes, sessions, and GX metadata to GX Cloud automatically — do not run ` + "`gx push`" + ` or ` + "`gx capture push`" + ` yourself; they bypass the hook.
-- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; GX Cloud appends the rich summary below once the PR exists.
-- To amend, use ` + "`git commit --amend`" + ` and preserve the GX revision trailer in the message.
+- Run ` + "`git commit -m \"...\"`" + ` to save. A Totality hook records the commit as a reviewable revision.
+- Run plain ` + "`git push`" + ` to publish. The Totality pre-push hook captures the session and publishes code changes, sessions, and Totality metadata to Totality Cloud automatically — do not run ` + "`tl push`" + ` or ` + "`tl capture push`" + ` yourself; they bypass the hook.
+- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; Totality Cloud appends the rich summary below once the PR exists.
+- To amend, use ` + "`git commit --amend`" + ` and preserve the Totality revision trailer in the message.
 
-For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.
+For AI review, run the ` + "`tl_review`" + ` MCP tool (or the ` + "`tl review`" + ` CLI) on the current change.
 `
 
 type initSetupOptions struct {
@@ -39,17 +39,17 @@ type initSetupOptions struct {
 }
 
 func runInitRepoSetup(opts initSetupOptions) error {
-	gxPath, err := os.Executable()
+	tlPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	mcpPath, err := resolveMCPBinary(gxPath)
+	mcpPath, err := resolveMCPBinary(tlPath)
 	if err != nil {
 		if !opts.Quiet && opts.Err != nil {
 			fmt.Fprintln(opts.Err, labelWarningValue("MCP", err.Error()))
 		}
 	} else {
-		registered := registerMCPClients(context.Background(), gxPath, mcpPath)
+		registered := registerMCPClients(context.Background(), tlPath, mcpPath)
 		if !opts.Quiet && opts.Out != nil {
 			if len(registered) == 0 {
 				fmt.Fprintln(opts.Out, labelValue("MCP", muted("skipped (no supported agent CLI found)")))
@@ -69,31 +69,31 @@ func runInitRepoSetup(opts initSetupOptions) error {
 	return nil
 }
 
-func resolveMCPBinary(gxPath string) (string, error) {
-	dir := filepath.Dir(gxPath)
-	candidate := filepath.Join(dir, "gx-mcp")
+func resolveMCPBinary(tlPath string) (string, error) {
+	dir := filepath.Dir(tlPath)
+	candidate := filepath.Join(dir, "tl-mcp")
 	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 		return candidate, nil
 	}
-	if mcpPath, err := exec.LookPath("gx-mcp"); err == nil && mcpPath != "" {
+	if mcpPath, err := exec.LookPath("tl-mcp"); err == nil && mcpPath != "" {
 		return mcpPath, nil
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		candidate = filepath.Join(home, ".local", "bin", "gx-mcp")
+		candidate = filepath.Join(home, ".local", "bin", "tl-mcp")
 		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("gx-mcp not found; install GX CLI package first")
+	return "", fmt.Errorf("tl-mcp not found; install Totality CLI package first")
 }
 
-func mcpLaunchCommand(gxPath, mcpPath string) []string {
-	return []string{"env", "GX_BINARY=" + gxPath, mcpPath}
+func mcpLaunchCommand(tlPath, mcpPath string) []string {
+	return []string{"env", "TOTALITY_BINARY=" + tlPath, mcpPath}
 }
 
-func registerMCPClients(ctx context.Context, gxPath, mcpPath string) []string {
-	args := mcpLaunchCommand(gxPath, mcpPath)
+func registerMCPClients(ctx context.Context, tlPath, mcpPath string) []string {
+	args := mcpLaunchCommand(tlPath, mcpPath)
 	var registered []string
 	for _, spec := range []struct {
 		name    string
@@ -103,12 +103,12 @@ func registerMCPClients(ctx context.Context, gxPath, mcpPath string) []string {
 		{
 			name:    "Cursor",
 			binary:  "cursor",
-			command: append([]string{"mcp", "add", "gx", "--"}, args...),
+			command: append([]string{"mcp", "add", "tl", "--"}, args...),
 		},
 		{
 			name:    "Claude Code",
 			binary:  "claude",
-			command: append([]string{"mcp", "add", "gx", "--"}, args...),
+			command: append([]string{"mcp", "add", "tl", "--"}, args...),
 		},
 	} {
 		if _, err := exec.LookPath(spec.binary); err != nil {
@@ -126,7 +126,7 @@ func registerMCPClients(ctx context.Context, gxPath, mcpPath string) []string {
 		}
 		registered = append(registered, spec.name)
 	}
-	if updated, err := mergeCodexMCPServer(gxPath, mcpPath); err == nil && updated {
+	if updated, err := mergeCodexMCPServer(tlPath, mcpPath); err == nil && updated {
 		registered = append(registered, "Codex")
 	}
 	return registered
@@ -138,7 +138,7 @@ func runCombined(ctx context.Context, name string, args ...string) (string, erro
 	return string(out), err
 }
 
-func mergeCodexMCPServer(gxPath, mcpPath string) (bool, error) {
+func mergeCodexMCPServer(tlPath, mcpPath string) (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, err
@@ -152,14 +152,14 @@ func mergeCodexMCPServer(gxPath, mcpPath string) (bool, error) {
 		return false, err
 	}
 	content := string(data)
-	if strings.Contains(content, "[mcp_servers.gx]") {
+	if strings.Contains(content, "[mcp_servers.totality]") {
 		return false, nil
 	}
 	block := strings.Join([]string{
 		"",
-		"[mcp_servers.gx]",
+		"[mcp_servers.totality]",
 		`command = "env"`,
-		fmt.Sprintf(`args = ["GX_BINARY=%s", %q]`, gxPath, mcpPath),
+		fmt.Sprintf(`args = ["TOTALITY_BINARY=%s", %q]`, tlPath, mcpPath),
 		"",
 	}, "\n")
 	if err := os.WriteFile(configPath, append(data, []byte(block)...), 0o644); err != nil {
@@ -176,7 +176,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	}
 	if agentsMDContainsSnippet(string(existing)) {
 		if !opts.Quiet && opts.Out != nil {
-			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": GX instructions already present"))
+			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": Totality instructions already present"))
 		}
 		return nil
 	}
@@ -192,7 +192,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	fmt.Fprintf(out, "%s ", muted("Add GX workflow instructions to AGENTS.md? [Y/n]"))
+	fmt.Fprintf(out, "%s ", muted("Add Totality workflow instructions to AGENTS.md? [Y/n]"))
 	reader := bufio.NewReader(in)
 	raw, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -210,7 +210,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 		return err
 	}
 	if appended && out != nil {
-		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added GX workflow instructions"))
+		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added Totality workflow instructions"))
 	}
 	return nil
 }

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/inference"
+	"github.com/satoricorp/totality/internal/inference"
 )
 
 func TestSetKeyStoresInteractiveInferenceKey(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -39,7 +39,7 @@ func TestSetKeyStoresInteractiveInferenceKey(t *testing.T) {
 }
 
 func TestSetKeyRejectsEmptyKey(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	root := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -55,7 +55,7 @@ func TestSetKeyRejectsEmptyKey(t *testing.T) {
 }
 
 func TestRootHelpShowsInferenceKeyStatus(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	const apiKey = "apikey_openai-secret"
 	if err := inference.Save(inference.Credentials{Provider: "openai", APIKey: apiKey}); err != nil {
@@ -81,7 +81,7 @@ func TestRootHelpShowsInferenceKeyStatus(t *testing.T) {
 }
 
 func TestRootHelpShowsAnthropicInferenceKeyStatus(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	const apiKey = "apikey_anthropic-secret"
 	if err := inference.Save(inference.Credentials{Provider: "anthropic", APIKey: apiKey}); err != nil {
@@ -123,7 +123,7 @@ func TestMaskedAPIKeyNeverShowsFullKey(t *testing.T) {
 }
 
 func TestRootHelpShowsMissingInferenceKeyStatus(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
@@ -138,7 +138,7 @@ func TestRootHelpShowsMissingInferenceKeyStatus(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "API Key required. Run `gx set key` to set an API Key.") {
+	if !strings.Contains(text, "API Key required. Run `tl set key` to set an API Key.") {
 		t.Fatalf("root help missing API key required status:\n%s", text)
 	}
 }

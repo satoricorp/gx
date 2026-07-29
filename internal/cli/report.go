@@ -14,24 +14,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/publication"
-	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
-	"github.com/satoricorp/gx/internal/vcs"
-	"github.com/satoricorp/gx/internal/version"
+	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/totality/internal/publication"
+	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/totality/internal/telemetry"
+	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/totality/internal/version"
 )
 
 const reportLogByteLimit = 32 * 1024
 
-// newReportCommand keeps `gx report` resolvable for one release after the
-// behavior moved to `gx doctor --report`. Hidden and ungrouped: existing muscle
+// newReportCommand keeps `tl report` resolvable for one release after the
+// behavior moved to `tl doctor --report`. Hidden and ungrouped: existing muscle
 // memory and doc links keep working, but the public surface has one spelling.
 func newReportCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:    "report",
-		Short:  "Send logs to support (alias for gx doctor --report)",
+		Short:  "Send logs to support (alias for tl doctor --report)",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,14 +50,14 @@ func newReportCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-// sendSupportReport packages the local support bundle — recent gx logs, cloud
-// identity, and the publish-outbox error — and posts it to GX Cloud. Callers
-// pass anything they gathered first as attachments; `gx doctor --report` sends
+// sendSupportReport packages the local support bundle — recent tl logs, cloud
+// identity, and the publish-outbox error — and posts it to Totality Cloud. Callers
+// pass anything they gathered first as attachments; `tl doctor --report` sends
 // its diagnosis that way, so both entry points share this one implementation.
 func sendSupportReport(ctx context.Context, attachments []cloud.ReportLogFile) (cloud.ReportLogResult, error) {
 	client := cloud.NewClient()
 	if client == nil {
-		return cloud.ReportLogResult{}, fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
+		return cloud.ReportLogResult{}, fmt.Errorf("tl cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	report := buildReportLogRequest(ctx, "")
 	report.Logs = append(report.Logs, attachments...)
@@ -102,24 +102,24 @@ func stripANSI(text string) string {
 	return ansiEscapePattern.ReplaceAllString(text, "")
 }
 
-// Reporting logs to GX Cloud is a deliberate act: `gx report` and `gx doctor
+// Reporting logs to Totality Cloud is a deliberate act: `tl report` and `tl doctor
 // --report` send them because the user asked. Nothing uploads on its own.
 //
-// `gx review` used to auto-report its failures, and it was the only command
+// `tl review` used to auto-report its failures, and it was the only command
 // that did. That put a read-only command — one built to run as a CI gate and
 // on checkouts the reviewer does not own — in the position of shipping log
-// tails and repo identity to GX Cloud on every failing run, including the
+// tails and repo identity to Totality Cloud on every failing run, including the
 // ordinary "N findings at or above high" that means the gate is working. The
 // upload is gone rather than narrowed: a review that fails is the user's
 // business, not telemetry.
 
 func buildReportLogRequest(ctx context.Context, overrideError string) cloud.ReportLogRequest {
 	report := cloud.ReportLogRequest{
-		GXVersion: version.Current(),
+		TLVersion: version.Current(),
 		OS:        runtime.GOOS,
 		Arch:      runtime.GOARCH,
 		CloudURL:  cloud.CloudBaseURL(),
-		Logs:      recentGXLogs(),
+		Logs:      recentTotalityLogs(),
 	}
 	if creds, err := cloud.LoadCloudCredentials(); err == nil && creds != nil {
 		report.UserID = strings.TrimSpace(creds.UserID)
@@ -128,9 +128,9 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 	}
 	if report.MachineID == "" {
 		// Read the machine ID, never mint one. Minting writes machine_id.json,
-		// which creates $GX_HOME as a side effect — so a command that only
-		// reports a failure would leave GX state on a machine that has never
-		// run gx. A report without a machine ID is worth more than that.
+		// which creates $TOTALITY_HOME as a side effect — so a command that only
+		// reports a failure would leave Totality state on a machine that has never
+		// run tl. A report without a machine ID is worth more than that.
 		if machineID, err := cloud.ExistingMachineID(); err == nil {
 			report.MachineID = strings.TrimSpace(machineID)
 		}
@@ -154,7 +154,7 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 	return report
 }
 
-func recentGXLogs() []cloud.ReportLogFile {
+func recentTotalityLogs() []cloud.ReportLogFile {
 	dir, err := storage.DefaultDir()
 	if err != nil {
 		return nil
@@ -221,7 +221,7 @@ var reportRedactors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,]+`),
 	regexp.MustCompile(`(?i)((token|api[_-]?key|password|secret)\s*[:=]\s*)[^\s,]+`),
 	regexp.MustCompile(`gh[opsu]_[A-Za-z0-9_]+`),
-	regexp.MustCompile(`gxcs_[A-Za-z0-9._-]+`),
+	regexp.MustCompile(`tlcs_[A-Za-z0-9._-]+`),
 }
 
 func redactSensitive(text string) string {

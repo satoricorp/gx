@@ -100,4 +100,3 @@ func splitOrigin(raw string) (host, path string) {
 	}
 	return "", ""
 }
-

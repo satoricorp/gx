@@ -97,7 +97,7 @@ func (m CodeRowMetadata) Attributes() map[string]any {
 // commit-independent id means a re-index overwrites rows in place, and only
 // chunks that genuinely disappeared need deleting.
 func CodeRowID(repoFullName, filePath string, chunkIndex int) string {
-	return "gxc-" + shortHash(fmt.Sprintf("%s\x00%s\x00%d", repoFullName, filePath, chunkIndex))
+	return "tlc-" + shortHash(fmt.Sprintf("%s\x00%s\x00%d", repoFullName, filePath, chunkIndex))
 }
 
 func codeSourceID(repoFullName, filePath string, chunkIndex int) string {

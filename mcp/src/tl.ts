@@ -3,14 +3,14 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-export type GxRunOptions = {
+export type TlRunOptions = {
   cwd?: string;
   sessionId?: string;
   sessionIds?: string[];
   timeoutMs?: number;
 };
 
-export type GxRunResult = {
+export type TlRunResult = {
   command: string[];
   cwd: string;
   exitCode: number;
@@ -27,16 +27,16 @@ export type FormatOptions = {
   extra?: Record<string, unknown>;
 };
 
-export function resolveGxBinary() {
-  const override = (process.env.GX_BINARY || "").trim();
+export function resolveTlBinary() {
+  const override = (process.env.TOTALITY_BINARY || "").trim();
   if (override) {
     return override;
   }
-  const installed = join(homedir(), ".local", "bin", "gx");
+  const installed = join(homedir(), ".local", "bin", "tl");
   if (existsSync(installed)) {
     return installed;
   }
-  return "gx";
+  return "tl";
 }
 
 function resolveCwd(raw?: string) {
@@ -56,8 +56,8 @@ function resolveCwd(raw?: string) {
 
 export function commandEnvironment() {
   const env = { ...process.env };
-  env.GX_REVIEW_AI = "1";
-  env.GX_MCP = "1";
+  env.TOTALITY_REVIEW_AI = "1";
+  env.TOTALITY_MCP = "1";
   const pathEntries = [
     join(homedir(), ".local", "bin"),
     env.PATH || "",
@@ -71,19 +71,19 @@ export function commandEnvironment() {
   return env;
 }
 
-export function runGx(args: string[], options: GxRunOptions = {}): Promise<GxRunResult> {
+export function runTt(args: string[], options: TlRunOptions = {}): Promise<TlRunResult> {
   const cwd = resolveCwd(options.cwd);
   const env = commandEnvironment();
-  const binary = resolveGxBinary();
+  const binary = resolveTlBinary();
   const sessionIds = [...(options.sessionIds || [])];
   if (options.sessionId) {
     sessionIds.unshift(options.sessionId);
   }
   const cleanedSessionIds = [...new Set(sessionIds.map((id) => id.trim()).filter(Boolean))];
   if (cleanedSessionIds.length === 1) {
-    env.GX_SESSION_ID = cleanedSessionIds[0];
+    env.TOTALITY_SESSION_ID = cleanedSessionIds[0];
   } else if (cleanedSessionIds.length > 1) {
-    env.GX_SESSION_IDS = cleanedSessionIds.join(",");
+    env.TOTALITY_SESSION_IDS = cleanedSessionIds.join(",");
   }
 
   return new Promise((resolve, reject) => {
@@ -124,9 +124,9 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
   let out = value;
   const names = [
     "OPENAI_API_KEY",
-    "GX_OPENAI_API_KEY",
+    "TOTALITY_OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "GX_UPLOAD_TOKEN",
+    "TOTALITY_UPLOAD_TOKEN",
     "AWS_SECRET_ACCESS_KEY",
   ];
   for (const name of names) {
@@ -138,7 +138,7 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
   return out;
 }
 
-function envelope(result: GxRunResult, options: FormatOptions = {}) {
+function envelope(result: TlRunResult, options: FormatOptions = {}) {
   return {
     ok: result.exitCode === 0,
     action: options.action,
@@ -153,12 +153,12 @@ function envelope(result: GxRunResult, options: FormatOptions = {}) {
   };
 }
 
-export function formatResult(result: GxRunResult, options: FormatOptions = {}): string {
+export function formatResult(result: TlRunResult, options: FormatOptions = {}): string {
   return JSON.stringify(envelope(result, options), null, 2);
 }
 
 export function formatError(error: unknown, options: FormatOptions = {}): string {
-  const maybeResult = (error as { result?: GxRunResult }).result;
+  const maybeResult = (error as { result?: TlRunResult }).result;
   if (maybeResult) {
     return formatResult(maybeResult, withAuthGuidance(`${maybeResult.stderr}\n${maybeResult.stdout}`, options));
   }
@@ -203,21 +203,21 @@ function authGuidance(message: string): { display: string; nextAction: string } 
   if (!text.trim()) {
     return undefined;
   }
-  const mentionsLogin = text.includes("gx auth login");
+  const mentionsLogin = text.includes("tl auth login");
   const missingToken = text.includes("github token is not configured") || text.includes("not logged in");
   if (!mentionsLogin && !missingToken) {
     return undefined;
   }
-  if (text.includes("gx auth logout") || text.includes("session expired")) {
-    const nextAction = "Run `gx auth logout` then `gx auth login` in a terminal, then retry the MCP tool.";
+  if (text.includes("tl auth logout") || text.includes("session expired")) {
+    const nextAction = "Run `tl auth logout` then `tl auth login` in a terminal, then retry the MCP tool.";
     return {
-      display: `GX cloud authentication needs to be refreshed. ${nextAction}`,
+      display: `Totality cloud authentication needs to be refreshed. ${nextAction}`,
       nextAction,
     };
   }
-  const nextAction = "Run `gx auth login` in a terminal, then retry the MCP tool.";
+  const nextAction = "Run `tl auth login` in a terminal, then retry the MCP tool.";
   return {
-    display: `GX cloud authentication is required. ${nextAction}`,
+    display: `Totality cloud authentication is required. ${nextAction}`,
     nextAction,
   };
 }

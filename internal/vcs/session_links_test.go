@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/capture/matcher"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 func newSessionLinkStore(t *testing.T) (*storage.Store, *sql.DB, context.Context) {
 	t.Helper()
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := storage.Open(ctx)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestAttachSessionsPreservesExistingSessionMetadata(t *testing.T) {
 		CreatedAt: 500,
 		Command:   "cursor: Refactor the auth middleware",
 		Cwd:       "/repo",
-		GXVersion: "test",
+		TLVersion: "test",
 		Source:    &ingestSource,
 		RepoRoot:  &ingestRoot,
 	}); err != nil {

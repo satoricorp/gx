@@ -1,14 +1,14 @@
-# GX CLI Authoring Contract
+# Totality CLI Authoring Contract
 
-> **Note (2026):** `gx compose`, `gx stacks`, and `gx add` were removed. Normal
-> work uses `git add` + `gx commit`, `gx status`, and the hidden `gx generate`.
+> **Note (2026):** `tl compose`, `tl stacks`, and `tl add` were removed. Normal
+> work uses `git add` + `tl commit`, `tl status`, and the hidden `tl generate`.
 
-This document captures the intended behavior for GX authoring, compose, stacks,
+This document captures the intended behavior for Totality authoring, compose, stacks,
 and publish workflows.
 
 ## Mental Model
 
-GX is a product layer over JJ and Git.
+Totality is a product layer over JJ and Git.
 
 The user-facing objects are:
 
@@ -16,7 +16,7 @@ The user-facing objects are:
    files, prompts, responses, and tests.
 2. **Revision**: one reviewable logical change. Locally this is a JJ change,
    identified by JJ `change_id`.
-3. **Stack**: an ordered line of revisions. Locally this is GX metadata plus a
+3. **Stack**: an ordered line of revisions. Locally this is Totality metadata plus a
    JJ/Git-compatible bookmark or branch ref.
 4. **Published stack**: the remote GitHub/review representation of that local
    stack.
@@ -24,13 +24,13 @@ The user-facing objects are:
 The important mapping is:
 
 ```text
-GX revision = JJ change = stable product identity
+Totality revision = JJ change = stable product identity
 Git commit = current exported snapshot of that revision
-GX stack = ordered container of revisions
+Totality stack = ordered container of revisions
 Git branch/bookmark = transport/ref for that stack
 ```
 
-JJ gives GX stable change IDs while commits can be rewritten. Git exists so the
+JJ gives Totality stable change IDs while commits can be rewritten. Git exists so the
 outside world can receive branches and PRs.
 
 ## Normal Flow
@@ -39,21 +39,21 @@ The normal workflow should be:
 
 ```bash
 git add <files>
-gx commit -m "describe this revision"
-gx status
+tl commit -m "describe this revision"
+tl status
 git push
 gh pr create
 ```
 
-`git add` + `gx commit` records staged work as a GX revision. The hidden
-`gx generate` command can organize a large working copy into smaller revisions
+`git add` + `tl commit` records staged work as a Totality revision. The hidden
+`tl generate` command can organize a large working copy into smaller revisions
 when needed.
 
-`gx status` shows local features, revisions, and remote state.
+`tl status` shows local features, revisions, and remote state.
 
-Publish with plain `git push` (the GX pre-push hook captures the session and
-publishes). Open the PR with `gh pr create`. Do not run `gx push` or
-`gx publish` — those paths are disabled or removed; plain `git push` is the
+Publish with plain `git push` (the Totality pre-push hook captures the session and
+publishes). Open the PR with `gh pr create`. Do not run `tl push` or
+`tl publish` — those paths are disabled or removed; plain `git push` is the
 user-facing publish path.
 
 The user should stay on a normal branch checkout after commit and push.
@@ -61,7 +61,7 @@ Detached HEAD is not an acceptable steady state.
 
 ## Compose
 
-`gx compose` is the core authoring command. It should take messy working-copy
+`tl compose` is the core authoring command. It should take messy working-copy
 changes and turn them into reviewable revisions grouped into stacks.
 
 The intended compose pipeline is:
@@ -81,7 +81,7 @@ The intended compose pipeline is:
 11. Present only a proposal that should apply successfully.
 
 Compose must not silently degrade to "I applied one valid piece; run me again."
-If the user accepts all, GX should create all proposed stacks and revisions. If
+If the user accepts all, Totality should create all proposed stacks and revisions. If
 the user accepts one stack, that stack should be created and visible
 immediately, and the remaining unaccepted changes should stay available for the
 next compose run.
@@ -94,13 +94,13 @@ The preflight message:
 Checking compose apply in disposable attempt 1/3...
 ```
 
-means GX is testing the proposal before presenting or applying it. It should not
+means Totality is testing the proposal before presenting or applying it. It should not
 mutate the real worktree. If it fails, the proposal should be repaired before
 the user sees it as ready.
 
 ## Stacks
 
-`gx stacks` is the local truth view for accepted work.
+`tl stacks` is the local truth view for accepted work.
 
 It should show:
 
@@ -115,23 +115,23 @@ It should show:
 - remote ref if published
 
 It should not require being on that stack. In the normal flow, the user is on
-`main`, and `gx stacks` still shows accepted local stacks and published stacks
+`main`, and `tl stacks` still shows accepted local stacks and published stacks
 that are still under review. Merged or closed stacks are removed from the
 working stack surface.
 
-A stack record and its bookmark must agree. If GX metadata says a stack head is
+A stack record and its bookmark must agree. If Totality metadata says a stack head is
 change `A`, but the bookmark points at change `B`, that is a bug. Stack
 metadata, JJ bookmark state, and Git branch refs must be kept in sync.
 
 ## Revisions And Change IDs
 
-GX should store JJ change IDs for every GX revision.
+Totality should store JJ change IDs for every Totality revision.
 
 That is the right design because JJ change IDs survive edits better than Git
 commit hashes. Git commit hashes are still useful, but they are current
 snapshots, not durable identities.
 
-For each revision GX needs:
+For each revision Totality needs:
 
 - JJ `change_id`
 - current Git `commit_id`
@@ -143,16 +143,16 @@ For each revision GX needs:
 - provenance/session links
 - demux/compose evidence
 
-Editing should work by change ID. If a user runs `gx edit <revision>`, GX should
+Editing should work by change ID. If a user runs `tl edit <revision>`, Totality should
 find the stack containing that JJ change, enter the correct revision, and
 preserve the relationship after the edit rewrites the commit.
 
 ## Branches And Bookmarks
 
-GX should hide JJ's awkward checkout state.
+Totality should hide JJ's awkward checkout state.
 
-Normal users should see real Git branches, not detached HEAD. Internally GX can
-use JJ bookmarks and GX-owned refs, but the visible checkout should be attached
+Normal users should see real Git branches, not detached HEAD. Internally Totality can
+use JJ bookmarks and Totality-owned refs, but the visible checkout should be attached
 to a branch.
 
 The intended visible-branch rules are:
@@ -163,16 +163,16 @@ The intended visible-branch rules are:
 - Publish may create or update branch refs for stacks.
 - After publish, visible Git checkout returns to `main`.
 - Edit surgery should attach visible Git to the real stack branch when one
-  exists. GX must not create `gx/...` checkout branches for edit/base state.
+  exists. Totality must not create `tl/...` checkout branches for edit/base state.
 
 Branches/bookmarks created by compose should match the stack names shown in
 compose. If compose proposes `feature/stack-management`, then accepting it
-should create a stack whose visible name/ref in `gx stacks` is
+should create a stack whose visible name/ref in `tl stacks` is
 `feature/stack-management`.
 
 ## Publish
 
-Publish with plain `git push`. The GX pre-push hook captures the session and
+Publish with plain `git push`. The Totality pre-push hook captures the session and
 registers publish metadata as the branch goes up. Open the PR separately with
 `gh pr create`.
 
@@ -190,7 +190,7 @@ means:
 - upload review context when cloud/GitHub integration is enabled
 - open or update the PR with `gh pr create` (do not seed `## Summary`)
 
-Do not run `gx push` or `gx publish`. Those are not the agent/user publish path.
+Do not run `tl push` or `tl publish`. Those are not the agent/user publish path.
 
 ## MCP And Agent Flow
 
@@ -199,16 +199,16 @@ MCP should call the same authoring engine behavior as the CLI.
 The ideal agent loop is:
 
 1. `git add` staged files
-2. `gx commit`
-3. `gx status`
+2. `tl commit`
+3. `tl status`
 4. plain `git push` when ready
 5. `gh pr create`
-6. `git commit --amend` when updating the latest revision, preserving its GX trailer
-7. `gx_review` when review context is needed
+6. `git commit --amend` when updating the latest revision, preserving its Totality trailer
+7. `tl_review` when review context is needed
 
-MCP exposes `gx_review` only — there is no `gx_commit` / `gx_status` / `gx_publish` /
-`gx_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
-(never `gx push` or `gx capture push`).
+MCP exposes `tl_review` only — there is no `tl_commit` / `tl_status` / `tl_publish` /
+`tl_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
+(never `tl push` or `tl capture push`).
 
 The important invariant is shared: agent commits must create the same revisions
 that the human CLI path would create.
@@ -217,9 +217,9 @@ that the human CLI path would create.
 
 Merge only changes that support this contract:
 
-- `git add` + `gx commit` (and hidden `gx generate` when needed) record reviewable revisions
+- `git add` + `tl commit` (and hidden `tl generate` when needed) record reviewable revisions
 - stack/revision metadata stores JJ change IDs and current commit IDs
-- agents publish with plain `git push` only (never `gx push` / `gx publish` / MCP push tools)
+- agents publish with plain `git push` only (never `tl push` / `tl publish` / MCP push tools)
 - the pre-push hook captures session data and records publish metadata
 - PRs are opened with `gh pr create` without seeding `## Summary`
 
@@ -239,12 +239,12 @@ Then run a manual dogfood:
 
 ```bash
 git add <files>
-gx commit -m "describe this revision"
-gx status
+tl commit -m "describe this revision"
+tl status
 git push
 gh pr create
 git branch --show-current
 ```
 
-The result should be boring: staged work becomes a GX revision, `git push`
+The result should be boring: staged work becomes a Totality revision, `git push`
 publishes the branch through the pre-push hook, and the PR opens cleanly.

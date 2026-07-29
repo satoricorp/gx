@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
@@ -20,7 +20,7 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 	runGit(t, repoRoot, "branch", "feature/healthy")
 	runGit(t, repoRoot, "checkout", "main")
 
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := storage.Open(ctx)
 	if err != nil {

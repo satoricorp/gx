@@ -8,18 +8,18 @@ import "testing"
 // session somewhere it does not belong.
 func TestNormalizeOriginCanonicalizesEverySpelling(t *testing.T) {
 	same := []string{
-		"git@github.com:satoricorp/gx.git",
-		"git@github.com:satoricorp/gx",
-		"https://github.com/satoricorp/gx.git",
-		"https://github.com/satoricorp/gx",
-		"https://github.com/satoricorp/gx/",
-		"ssh://git@github.com/satoricorp/gx.git",
-		"ssh://git@github.com:22/satoricorp/gx.git",
-		"git://github.com/satoricorp/gx.git",
-		"https://GitHub.com/SatoriCorp/GX.git",
-		"github.com/satoricorp/gx",
+		"git@github.com:satoricorp/totality.git",
+		"git@github.com:satoricorp/totality",
+		"https://github.com/satoricorp/totality.git",
+		"https://github.com/satoricorp/totality",
+		"https://github.com/satoricorp/totality/",
+		"ssh://git@github.com/satoricorp/totality.git",
+		"ssh://git@github.com:22/satoricorp/totality.git",
+		"git://github.com/satoricorp/totality.git",
+		"https://GitHub.com/SatoriCorp/Totality.git",
+		"github.com/satoricorp/totality",
 	}
-	const want = "github.com/satoricorp/gx"
+	const want = "github.com/satoricorp/totality"
 	for _, raw := range same {
 		if got := NormalizeOrigin(raw); got != want {
 			t.Errorf("NormalizeOrigin(%q) = %q, want %q", raw, got, want)
@@ -31,12 +31,12 @@ func TestNormalizeOriginCanonicalizesEverySpelling(t *testing.T) {
 // so credentials have to be gone by then.
 func TestNormalizeOriginDropsCredentials(t *testing.T) {
 	for _, raw := range []string{
-		"https://x-access-token:ghs_supersecrettoken@github.com/satoricorp/gx.git",
-		"https://joe:hunter2@github.com/satoricorp/gx.git",
-		"ssh://git@github.com/satoricorp/gx.git",
+		"https://x-access-token:ghs_supersecrettoken@github.com/satoricorp/totality.git",
+		"https://joe:hunter2@github.com/satoricorp/totality.git",
+		"ssh://git@github.com/satoricorp/totality.git",
 	} {
 		got := NormalizeOrigin(raw)
-		if got != "github.com/satoricorp/gx" {
+		if got != "github.com/satoricorp/totality" {
 			t.Errorf("NormalizeOrigin(%q) = %q", raw, got)
 		}
 		for _, secret := range []string{"ghs_supersecrettoken", "hunter2", "x-access-token", "joe:"} {
@@ -52,7 +52,7 @@ func TestNormalizeOriginKeepsTheHost(t *testing.T) {
 	cases := map[string]string{
 		"git@gitlab.company.com:platform/api.git":     "gitlab.company.com/platform/api",
 		"https://bitbucket.org/team/thing.git":        "bitbucket.org/team/thing",
-		"git@github.com:satoricorp/gx.git":            "github.com/satoricorp/gx",
+		"git@github.com:satoricorp/totality.git":      "github.com/satoricorp/totality",
 		"https://ghe.internal.example/org/repo.git":   "ghe.internal.example/org/repo",
 		"git@github.com:satoricorp/nested/deep/x.git": "github.com/satoricorp/nested/deep/x",
 	}
@@ -67,11 +67,11 @@ func TestNormalizeOriginKeepsTheHost(t *testing.T) {
 // same identity for two repos is how a session reaches the wrong index.
 func TestNormalizeOriginKeepsDifferentReposApart(t *testing.T) {
 	distinct := []string{
-		"git@github.com:satoricorp/gx.git",
+		"git@github.com:satoricorp/totality.git",
 		"git@github.com:satoricorp/console.git",
-		"git@github.com:joe/gx.git",
-		"git@gitlab.com:satoricorp/gx.git",
-		"git@github.com:satoricorp/gx-internal.git",
+		"git@github.com:joe/tl.git",
+		"git@gitlab.com:satoricorp/totality.git",
+		"git@github.com:satoricorp/totality-internal.git",
 	}
 	seen := map[string]string{}
 	for _, raw := range distinct {
@@ -89,7 +89,7 @@ func TestNormalizeOriginKeepsDifferentReposApart(t *testing.T) {
 // Empty means "not identifiable" and must never behave as a wildcard: a local
 // repo with no remote has to stay unbound rather than match something.
 func TestNormalizeOriginRejectsUnusableInput(t *testing.T) {
-	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/joe/git/gx"} {
+	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/joe/git/tl"} {
 		if got := NormalizeOrigin(raw); got != "" {
 			t.Errorf("NormalizeOrigin(%q) = %q, want empty", raw, got)
 		}

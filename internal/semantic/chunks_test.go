@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/totality/internal/reviewbundle"
 )
 
 func TestBuildSessionChunksUsesRevisionTranscriptSources(t *testing.T) {

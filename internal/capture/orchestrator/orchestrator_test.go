@@ -8,17 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/matcher"
-	"github.com/satoricorp/gx/internal/capture/orchestrator"
-	"github.com/satoricorp/gx/internal/capture/redact"
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/totality/internal/capture/matcher"
+	"github.com/satoricorp/totality/internal/capture/orchestrator"
+	"github.com/satoricorp/totality/internal/capture/redact"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 func TestOrchestrator_StagesExtract(t *testing.T) {
 	repo := initTestGitRepo(t)
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
+	totalityHome := t.TempDir()
+	t.Setenv("TOTALITY_HOME", totalityHome)
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -50,11 +50,11 @@ func TestOrchestrator_StagesExtract(t *testing.T) {
 
 func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 	repo := initTestGitRepo(t)
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("GX_UPLOAD_TOKEN", "")
-	t.Setenv("GX_CLOUD_URL", "")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_CLOUD_URL", "")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -82,13 +82,13 @@ func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 
 func TestOrchestrator_StagesWhenUploadIsUnauthorized(t *testing.T) {
 	repo := initTestGitRepo(t)
-	gxHome := t.TempDir()
-	t.Setenv("GX_HOME", gxHome)
+	totalityHome := t.TempDir()
+	t.Setenv("TOTALITY_HOME", totalityHome)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("GX_CLOUD_URL", "")
-	t.Setenv("GX_UPLOAD_TOKEN", "bad-token")
-	t.Setenv("GX_API_URL", "http://127.0.0.1:1")
+	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "bad-token")
+	t.Setenv("TOTALITY_API_URL", "http://127.0.0.1:1")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{

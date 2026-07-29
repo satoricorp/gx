@@ -12,7 +12,7 @@ var revisionTrailerLinePattern = regexp.MustCompile(
 	`(?m)^` + regexp.QuoteMeta(strings.TrimSuffix(RevisionTrailerFormat, "%s")) + `(\S+)\s*$`,
 )
 
-// ParseRevisionIDsFromMessage returns GX revision IDs embedded in a commit message.
+// ParseRevisionIDsFromMessage returns Totality revision IDs embedded in a commit message.
 func ParseRevisionIDsFromMessage(message string) []string {
 	seen := map[string]struct{}{}
 	var out []string
@@ -38,7 +38,7 @@ func RevisionTrailerValue(revisionID string) string {
 	return RevisionTrailerLine(revisionID)
 }
 
-// RevisionIDsInGitRange lists unique GX revision IDs from commit messages in a ref range.
+// RevisionIDsInGitRange lists unique Totality revision IDs from commit messages in a ref range.
 func RevisionIDsInGitRange(ctx context.Context, repoRoot, refRange string) ([]string, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	refRange = strings.TrimSpace(refRange)
@@ -51,7 +51,7 @@ func RevisionIDsInGitRange(ctx context.Context, repoRoot, refRange string) ([]st
 	args := []string{"-C", repoRoot, "log", "--format=%B", refRange}
 	if !strings.Contains(refRange, "..") {
 		// A bare rev means a new-branch push with no remote base; without a
-		// bound the walk collects every GX revision in repo history. Only
+		// bound the walk collects every Totality revision in repo history. Only
 		// commits that are not already on a remote are being pushed.
 		args = append(args, "--not", "--remotes")
 	}

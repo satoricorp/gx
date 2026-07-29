@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/totality/internal/cloud"
 )
 
 // bedrockTransport is how a review leg's bytes reach bedrock-runtime.
@@ -22,7 +22,7 @@ import (
 // Both legs and the judge share one request shape and one response parser (see
 // bedrockAnthropicReviewer.completeJSON); only the wire differs. Keeping that
 // difference behind this interface is what lets the same reviewer run against a
-// developer's own AWS credentials and against GX Cloud without a second
+// developer's own AWS credentials and against Totality Cloud without a second
 // implementation of prompt construction, parsing, or failure reporting.
 type bedrockTransport interface {
 	// complete performs one model call and returns the model's reply.
@@ -55,7 +55,7 @@ const (
 	bedrockTransportKindCloud  = "cloud"
 
 	// bedrockAnthropicVersion is the Anthropic API version bedrock-runtime
-	// expects in an InvokeModel body. GX Cloud accepts and ignores it.
+	// expects in an InvokeModel body. Totality Cloud accepts and ignores it.
 	bedrockAnthropicVersion = "bedrock-2023-05-31"
 
 	// bedrockDirectTimeout bounds one direct model call. Flagship models
@@ -86,13 +86,13 @@ func (p bedrockTransportPlan) newTransport() bedrockTransport {
 }
 
 // resolveBedrockTransportPlan picks the wire: local AWS credentials if they are
-// present, GX Cloud otherwise.
+// present, Totality Cloud otherwise.
 //
 // That order is deliberate. A developer who has exported AWS credentials is
 // asking for their own account and their own quota, and silently routing them
-// through GX Cloud would spend GX's budget and hide their misconfiguration.
+// through Totality Cloud would spend Totality's budget and hide their misconfiguration.
 // Everyone else — the common case, a user with no AWS account at all — reaches
-// the same models through GX Cloud.
+// the same models through Totality Cloud.
 //
 // When neither is available the error names the local fix, because that is the
 // one the caller can act on without an account. It is returned rather than
@@ -110,7 +110,7 @@ func resolveBedrockTransportPlan() (bedrockTransportPlan, error) {
 	if _, err := cloud.CloudAPIToken(); err != nil {
 		// Cloud is reachable but this machine is not signed in. Say both, so
 		// the reader can pick whichever is cheaper for them to fix.
-		return bedrockTransportPlan{}, fmt.Errorf("%v; or sign in with `gx auth login` to review through GX Cloud (%v)", credsErr, err)
+		return bedrockTransportPlan{}, fmt.Errorf("%v; or sign in with `tl auth login` to review through Totality Cloud (%v)", credsErr, err)
 	}
 	return bedrockTransportPlan{Kind: bedrockTransportKindCloud, client: client, cloudURL: cloud.CloudURL()}, nil
 }
@@ -122,14 +122,14 @@ func bedrockTransportShortName(kind string) string {
 	case bedrockTransportKindDirect:
 		return "AWS"
 	case bedrockTransportKindCloud:
-		return "GX Cloud"
+		return "Totality Cloud"
 	default:
 		return ""
 	}
 }
 
 // bedrockRequestBody is the Anthropic messages shape bedrock-runtime's
-// InvokeModel takes, and the shape GX Cloud's /gx/bedrock/fight normalizes.
+// InvokeModel takes, and the shape Totality Cloud's /tl/bedrock/fight normalizes.
 type bedrockRequestBody struct {
 	AnthropicVersion string           `json:"anthropic_version"`
 	MaxTokens        int              `json:"max_tokens"`
@@ -177,7 +177,7 @@ func bedrockRequestPayload(system, input string, maxOutputTokens int) bedrockReq
 
 // directBedrockTransport signs and posts InvokeModel itself.
 //
-// gx depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
+// tl depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
 // is a deliberate trade: the signing is thirty lines and fully covered by the
 // canned-response tests, against an SDK that would pull in dozens of modules
 // for one endpoint.
@@ -410,7 +410,7 @@ func hmacSHA256(key []byte, data string) []byte {
 	return mac.Sum(nil)
 }
 
-// cloudBedrockTransport posts the same request to GX Cloud, which holds the AWS
+// cloudBedrockTransport posts the same request to Totality Cloud, which holds the AWS
 // credentials. It is the path for everyone without an AWS account, which is
 // almost everyone.
 type cloudBedrockTransport struct {
@@ -420,9 +420,9 @@ type cloudBedrockTransport struct {
 
 func (t *cloudBedrockTransport) detail() string {
 	if strings.TrimSpace(t.url) == "" {
-		return "GX Cloud"
+		return "Totality Cloud"
 	}
-	return "GX Cloud (" + t.url + ")"
+	return "Totality Cloud (" + t.url + ")"
 }
 
 func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
@@ -438,11 +438,11 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 		Messages:         []cloud.BedrockMessage{{Role: "user", Content: input}},
 	})
 	if err != nil {
-		return bedrockCompletion{}, fmt.Errorf("GX Cloud Bedrock call for %s failed: %w", model, err)
+		return bedrockCompletion{}, fmt.Errorf("Totality Cloud Bedrock call for %s failed: %w", model, err)
 	}
 	text := strings.TrimSpace(resp.Text())
 	if text == "" {
-		return bedrockCompletion{}, fmt.Errorf("GX Cloud returned no content for Bedrock model %s", model)
+		return bedrockCompletion{}, fmt.Errorf("Totality Cloud returned no content for Bedrock model %s", model)
 	}
 	return bedrockCompletion{Text: text, StopReason: resp.StopReason}, nil
 }

@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// installGXPath resolves the gx binary to pin into a hook script, and declines
+// installTotalityPath resolves the tl binary to pin into a hook script, and declines
 // to pin one that lives in a temporary directory.
 //
-// Hooks pin the install-time path and fall back to gx on PATH when it is gone.
+// Hooks pin the install-time path and fall back to tl on PATH when it is gone.
 // That fallback handles a path going stale, but pinning a temp path is worse
 // than pinning nothing: the operating system reuses those directories, so a
 // path that is missing today can be a different executable tomorrow, and the
@@ -18,9 +18,9 @@ import (
 // /var/folders/.../T/go-build123/b381/cli.test — and any test that installs
 // hooks into a real repository leaves that behind in it.
 //
-// Returning empty means the hook resolves gx from PATH every time, which is
+// Returning empty means the hook resolves tl from PATH every time, which is
 // the correct behavior when the running binary has no durable location.
-func installGXPath() (string, error) {
+func installTotalityPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err

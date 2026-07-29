@@ -15,15 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
-	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/totality/internal/totalitytest"
 )
 
-// recordingEndpoint stands in for GX Cloud and PostHog so the credential-gated
+// recordingEndpoint stands in for Totality Cloud and PostHog so the credential-gated
 // paths actually execute instead of returning early. A `go test` binary is
 // built without -ldflags, so the embedded buildconfig.PostHogKey and CloudURL
 // are empty and every telemetry- and cloud-gated branch is dead code under
-// test — which is exactly how a release binary came to create $GX_HOME during
+// test — which is exactly how a release binary came to create $TOTALITY_HOME during
 // a read-only review without any test noticing. Pointing both at a live
 // recorder makes those branches run and makes what they send observable.
 type recordingEndpoint struct {
@@ -64,17 +64,17 @@ func (r *recordingEndpoint) requested(path string) bool {
 }
 
 // setReviewCloudEnv wires cloud and telemetry to a recorder. Call it after
-// setReviewGateEnv, which owns GX_HOME.
+// setReviewGateEnv, which owns TOTALITY_HOME.
 func setReviewCloudEnv(t *testing.T, rec *recordingEndpoint) {
 	t.Helper()
-	t.Setenv("GX_CLOUD_URL", rec.URL)
-	t.Setenv("GX_POSTHOG_KEY", "phc-test-key")
-	t.Setenv("GX_POSTHOG_HOST", rec.URL)
+	t.Setenv("TOTALITY_CLOUD_URL", rec.URL)
+	t.Setenv("TOTALITY_POSTHOG_KEY", "phc-test-key")
+	t.Setenv("TOTALITY_POSTHOG_HOST", rec.URL)
 }
 
 // staleGitStatCache backdates the working tree's mtimes so the index's stat
 // cache no longer matches it. This is the ordinary state of a fresh clone or
-// checkout — the CI case gx review is built for — and it is the condition
+// checkout — the CI case tl review is built for — and it is the condition
 // under which git status and git diff rewrite .git/index. Without it the
 // cache is already current, git has nothing to refresh, and an index-guard
 // regression would sail past this test.
@@ -111,9 +111,9 @@ func gitIndexDigest(t *testing.T, root string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// `gx review` has to be usable as a CI gate and on a checkout the reviewer
-// does not own, so it must not auto-initialize anything: no git hooks, no GX
-// home, no repo state. This test reviews a repo that has never run `gx init`
+// `tl review` has to be usable as a CI gate and on a checkout the reviewer
+// does not own, so it must not auto-initialize anything: no git hooks, no Totality
+// home, no repo state. This test reviews a repo that has never run `tl init`
 // and asserts the repo and the machine come out untouched.
 func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	root := newReviewGateRepo(t)
@@ -131,16 +131,16 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	// pass because the network failed rather than because review kept its hands
 	// off the machine, which is exactly how this assertion came to be satisfied
 	// by accident.
-	backend := gxtest.NewIndexBackend(t)
+	backend := totalitytest.NewIndexBackend(t)
 	backend.Use(t)
 
-	// Point GX_HOME and HOME at paths that do not exist yet: anything that
+	// Point TOTALITY_HOME and HOME at paths that do not exist yet: anything that
 	// opens the store or writes config has to create them, which makes the
 	// mutation visible instead of silently landing in an existing directory.
 	sandbox := t.TempDir()
-	gxHome := filepath.Join(sandbox, "gx-home")
+	totalityHome := filepath.Join(sandbox, "totality-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("TOTALITY_HOME", totalityHome)
 	t.Setenv("HOME", fakeHome)
 
 	hooksDir := filepath.Join(root, ".git", "hooks")
@@ -152,49 +152,49 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--base", "main")
 	if err != nil {
-		t.Fatalf("gx review error = %v\n%s", err, out)
+		t.Fatalf("tl review error = %v\n%s", err, out)
 	}
 	if strings.TrimSpace(out) == "" {
-		t.Fatalf("gx review produced no report in an uninitialized repo")
+		t.Fatalf("tl review produced no report in an uninitialized repo")
 	}
-	// Indexing is GX Cloud's job, done on merge from the GitHub App. A review on
-	// a machine with no GX home reads that index; it must not write one, which
+	// Indexing is Totality Cloud's job, done on merge from the GitHub App. A review on
+	// a machine with no Totality home reads that index; it must not write one, which
 	// would mean both re-embedding the whole checkout and leaving a manifest
 	// behind.
 	if backend.Upserted() {
-		t.Fatalf("gx review indexed from a checkout with no GX home.\nrequests: %v", backend.Requests())
+		t.Fatalf("tl review indexed from a checkout with no Totality home.\nrequests: %v", backend.Requests())
 	}
 
 	if after := hookDirEntries(t, hooksDir); !equalStrings(before, after) {
-		t.Fatalf("gx review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
+		t.Fatalf("tl review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
 	}
 	for _, name := range before {
 		data, readErr := os.ReadFile(filepath.Join(hooksDir, name))
 		if readErr != nil {
 			t.Fatalf("read hook %s: %v", name, readErr)
 		}
-		if strings.Contains(string(data), "gx ") || strings.Contains(string(data), "GX_") {
-			t.Fatalf("gx review left a GX marker in .git/hooks/%s:\n%s", name, data)
+		if strings.Contains(string(data), "tl ") || strings.Contains(string(data), "TOTALITY_") {
+			t.Fatalf("tl review left a Totality marker in .git/hooks/%s:\n%s", name, data)
 		}
 	}
-	for _, path := range []string{gxHome, fakeHome, filepath.Join(root, ".gx")} {
+	for _, path := range []string{totalityHome, fakeHome, filepath.Join(root, ".totality")} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("gx review created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("tl review created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 	if after := gitIndexDigest(t, root); after != indexBefore {
-		t.Fatalf("gx review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
+		t.Fatalf("tl review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a successful gx review uploaded a failure report: %v", recorder.requestedPaths())
+		t.Fatalf("a successful tl review uploaded a failure report: %v", recorder.requestedPaths())
 	}
 }
 
-// A gate that fails is the tool working, not a crash. `gx review --fail-on`
-// returning findings must not ship log tails and repo identity to GX Cloud,
+// A gate that fails is the tool working, not a crash. `tl review --fail-on`
+// returning findings must not ship log tails and repo identity to Totality Cloud,
 // and must not mint a machine ID — a CI job that fails the gate on every run
-// would otherwise upload on every run, from a machine that never ran gx.
-func TestReviewGateFailureNeverAutoReportsOrWritesGXHome(t *testing.T) {
+// would otherwise upload on every run, from a machine that never ran tl.
+func TestReviewGateFailureNeverAutoReportsOrWritesTotalityHome(t *testing.T) {
 	root := newReviewGateRepo(t)
 	writeTestFile(t, root, "package.json", "{\n  \"name\": \"example\"\n}\n")
 	gitAddTestFiles(t, root, "package.json")
@@ -205,9 +205,9 @@ func TestReviewGateFailureNeverAutoReportsOrWritesGXHome(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	gxHome := filepath.Join(sandbox, "gx-home")
+	totalityHome := filepath.Join(sandbox, "totality-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("TOTALITY_HOME", totalityHome)
 	t.Setenv("HOME", fakeHome)
 
 	staleGitStatCache(t, root)
@@ -215,16 +215,16 @@ func TestReviewGateFailureNeverAutoReportsOrWritesGXHome(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("tl review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
 	}
 
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing gate auto-reported to GX Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing gate auto-reported to Totality Cloud: %v", recorder.requestedPaths())
 	}
-	for _, path := range []string{gxHome, fakeHome, filepath.Join(root, ".gx")} {
+	for _, path := range []string{totalityHome, fakeHome, filepath.Join(root, ".totality")} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("a failing gate created %s (stat error = %v), want it untouched", path, statErr)
 		}
@@ -234,15 +234,15 @@ func TestReviewGateFailureNeverAutoReportsOrWritesGXHome(t *testing.T) {
 	}
 }
 
-// signIn writes credentials into an existing GX_HOME. Uploading a failure
+// signIn writes credentials into an existing TOTALITY_HOME. Uploading a failure
 // report needs a cloud token — without one ReportLogs fails before it sends
 // anything, which would make an "it did not upload" assertion pass for the
 // wrong reason. A signed-in machine is where the auto-report actually fires,
 // so that is where the gate has to be proven silent.
-func signIn(t *testing.T, gxHome string) {
+func signIn(t *testing.T, totalityHome string) {
 	t.Helper()
-	if err := os.MkdirAll(gxHome, 0o755); err != nil {
-		t.Fatalf("create gx home: %v", err)
+	if err := os.MkdirAll(totalityHome, 0o755); err != nil {
+		t.Fatalf("create tl home: %v", err)
 	}
 	// credentials.json nests the cloud section under "cloud"; a flat object
 	// parses without error and leaves the token empty, which would quietly
@@ -261,7 +261,7 @@ func signIn(t *testing.T, gxHome string) {
 	if err != nil {
 		t.Fatalf("marshal credentials: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(gxHome, "credentials.json"), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(totalityHome, "credentials.json"), data, 0o600); err != nil {
 		t.Fatalf("write credentials: %v", err)
 	}
 	// Prove the machine really is signed in. Without this, a change to the
@@ -285,27 +285,27 @@ func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 	recorder := newRecordingEndpoint(t)
 	setReviewCloudEnv(t, recorder)
 
-	gxHome := filepath.Join(t.TempDir(), "gx-home")
-	t.Setenv("GX_HOME", gxHome)
-	signIn(t, gxHome)
+	totalityHome := filepath.Join(t.TempDir(), "totality-home")
+	t.Setenv("TOTALITY_HOME", totalityHome)
+	signIn(t, totalityHome)
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("tl review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing gate uploaded logs and repo identity to GX Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing gate uploaded logs and repo identity to Totality Cloud: %v", recorder.requestedPaths())
 	}
 }
 
-// `gx version` answers one question about the binary. A Dockerfile or CI step
+// `tl version` answers one question about the binary. A Dockerfile or CI step
 // that runs it to check what it installed should not thereby acquire a machine
-// ID and a $GX_HOME — the install event is not worth creating state on a
-// machine that has not yet decided to use gx.
-func TestVersionNeverWritesGXState(t *testing.T) {
+// ID and a $TOTALITY_HOME — the install event is not worth creating state on a
+// machine that has not yet decided to use tl.
+func TestVersionNeverWritesTotalityState(t *testing.T) {
 	root := newReviewGateRepo(t)
 	t.Chdir(root)
 	setReviewGateEnv(t)
@@ -313,9 +313,9 @@ func TestVersionNeverWritesGXState(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	gxHome := filepath.Join(sandbox, "gx-home")
+	totalityHome := filepath.Join(sandbox, "totality-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("TOTALITY_HOME", totalityHome)
 	t.Setenv("HOME", fakeHome)
 
 	cmd := NewRoot(context.Background())
@@ -324,14 +324,14 @@ func TestVersionNeverWritesGXState(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"version"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("gx version error = %v", err)
+		t.Fatalf("tl version error = %v", err)
 	}
 	if strings.TrimSpace(out.String()) == "" {
-		t.Fatalf("gx version printed nothing")
+		t.Fatalf("tl version printed nothing")
 	}
-	for _, path := range []string{gxHome, fakeHome} {
+	for _, path := range []string{totalityHome, fakeHome} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("gx version created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("tl version created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 }
@@ -345,19 +345,19 @@ func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
 	recorder := newRecordingEndpoint(t)
 	setReviewCloudEnv(t, recorder)
 
-	gxHome := filepath.Join(t.TempDir(), "gx-home")
-	t.Setenv("GX_HOME", gxHome)
-	signIn(t, gxHome)
+	totalityHome := filepath.Join(t.TempDir(), "totality-home")
+	t.Setenv("TOTALITY_HOME", totalityHome)
+	signIn(t, totalityHome)
 
 	// Somewhere that is not a git repo at all.
 	notARepo := t.TempDir()
 	t.Chdir(notARepo)
 
 	if _, err := runReviewCommand(t, "--no-publish"); err == nil {
-		t.Fatalf("gx review succeeded outside a git repository")
+		t.Fatalf("tl review succeeded outside a git repository")
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing gx review uploaded logs to GX Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing tl review uploaded logs to Totality Cloud: %v", recorder.requestedPaths())
 	}
 }
 
@@ -371,18 +371,18 @@ func TestReviewNothingToReviewGateNeverAutoReports(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	t.Setenv("GX_HOME", filepath.Join(sandbox, "gx-home"))
+	t.Setenv("TOTALITY_HOME", filepath.Join(sandbox, "totality-home"))
 	t.Setenv("HOME", filepath.Join(sandbox, "home"))
 
 	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
-		t.Fatalf("gx review --fail-on any exited 0 without reviewing anything:\n%s", out)
+		t.Fatalf("tl review --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, err)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("the nothing-to-review gate auto-reported to GX Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("the nothing-to-review gate auto-reported to Totality Cloud: %v", recorder.requestedPaths())
 	}
 }
 

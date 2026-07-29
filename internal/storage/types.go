@@ -8,7 +8,7 @@ type Session struct {
 	Cwd              string
 	ClientPID        *int
 	ExitCode         *int
-	GXVersion        string
+	TLVersion        string
 	Source           *string
 	ProcessName      *string
 	ParentPID        *int
@@ -106,7 +106,7 @@ type StackChange struct {
 	StackID  int64
 	ChangeID int64
 	// JJChangeID and CommitID mirror the referenced change row so a stack
-	// entry carries both the legacy-named GX revision identity and its current Git target.
+	// entry carries both the legacy-named Totality revision identity and its current Git target.
 	JJChangeID string
 	CommitID   string
 	Position   int

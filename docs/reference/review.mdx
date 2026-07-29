@@ -1,14 +1,14 @@
 ---
-title: "gx review"
+title: "tl review"
 description: "Review the current change with AI reviewers and repo context, use it as a CI gate, and rely on it leaving the repository untouched."
 ---
 
-`gx review` reads the current change and reports what it found. It is the one
-GX command built to run anywhere — your machine, CI, or a checkout you do not
+`tl review` reads the current change and reports what it found. It is the one
+Totality command built to run anywhere — your machine, CI, or a checkout you do not
 own — because it writes nothing.
 
 ```bash
-gx review
+tl review
 ```
 
 By default it reviews the current change: uncommitted work if the tree is
@@ -16,7 +16,7 @@ dirty, otherwise the branch's commits against the base branch. Pass a prompt to
 direct it:
 
 ```bash
-gx review "check the auth rollback path"
+tl review "check the auth rollback path"
 ```
 
 ## What it reads
@@ -31,7 +31,7 @@ The subject is resolved in this order:
 is what questions about the codebase need when the working tree is dirty. Any
 diff that was found stays in focus rather than being discarded.
 
-If nothing was found at all, `gx review` says so. "Nothing was reviewed" is its
+If nothing was found at all, `tl review` says so. "Nothing was reviewed" is its
 own outcome and never counts as a clean pass.
 
 ## Options
@@ -48,7 +48,7 @@ own outcome and never counts as a clean pass.
 | `--fail-on <level>` | Exit non-zero when findings at or above this level survive |
 | `--no-publish` | Skip posting the PR review comment and recording review history |
 
-`gxr` is an alias for `gx review`.
+`tlr` is an alias for `tl review`.
 
 ## Using it as a CI gate
 
@@ -58,7 +58,7 @@ fails). The levels run most permissive first: `any` fails on anything the
 review raised, `blocking` only on findings that should stop a merge.
 
 ```bash
-gx review --base origin/main --fail-on strong --no-publish
+tl review --base origin/main --fail-on strong --no-publish
 ```
 
 Exit codes:
@@ -74,24 +74,24 @@ opened is the silent false pass `--fail-on` exists to catch, so an explicit
 gate fails rather than reporting success. Without `--fail-on`, both cases still
 exit `0` so interactive use is unaffected.
 
-A failing gate is the tool working, not an error. GX uploads nothing when a
-gate fails — no logs, no repo identity. Use `gx doctor --report` if you
+A failing gate is the tool working, not an error. Totality uploads nothing when a
+gate fails — no logs, no repo identity. Use `tl doctor --report` if you
 actually want to send diagnostics to support.
 
 ## What it does not touch
 
-`gx review` is read-only, and that is enforced by tests rather than intended by
+`tl review` is read-only, and that is enforced by tests rather than intended by
 convention:
 
-- **No repository state.** It does not run `gx init`, install Git hooks, or
-  create `.gx/` in the repo being reviewed.
+- **No repository state.** It does not run `tl init`, install Git hooks, or
+  create `.totality/` in the repo being reviewed.
 - **No `.git/index`.** Plain `git status` and `git diff` rewrite the index stat
   cache and take `.git/index.lock`, which can collide with a concurrent Git
   command in CI. Review points its Git calls at a throwaway copy of the index,
   so your staged work and the real index are never touched.
-- **No `$GX_HOME`.** It does not create `~/.gx`, mint a machine ID, or write
-  telemetry state on a machine that has never run `gx`.
-- **No uploads on failure.** Nothing is sent to GX Cloud when a review fails.
+- **No `$TOTALITY_HOME`.** It does not create `~/.totality`, mint a machine ID, or write
+  telemetry state on a machine that has never run `tl`.
+- **No uploads on failure.** Nothing is sent to Totality Cloud when a review fails.
 
 Publishing is the one thing it does reach out for, and only on success: when a
 matching pull request exists and you are authenticated, it posts the review
@@ -100,9 +100,9 @@ want in CI.
 
 ## From an agent
 
-The `gx_review` MCP tool runs the same command with `--no-publish` always set,
+The `tl_review` MCP tool runs the same command with `--no-publish` always set,
 so an agent asking for review context never comments on a pull request.
 
 ```
-gx_review(prompt: "check the auth rollback path", deep: true)
+tl_review(prompt: "check the auth rollback path", deep: true)
 ```

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/satoricorp/gx/internal/agentprovenance"
+	"github.com/satoricorp/totality/internal/agentprovenance"
 )
 
 func (s *Store) UpsertChange(ctx context.Context, change Change) (int64, error) {

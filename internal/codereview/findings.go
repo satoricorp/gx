@@ -415,7 +415,7 @@ func staticToolFailureFindings(ctx ReviewContext) []Finding {
 		Summary:        fmt.Sprintf("`%s` failed, so the review found concrete correctness or best-practice diagnostics before speculative structure work.", first.Command),
 		Benefit:        "Restores a clean correctness baseline so later architecture recommendations are judged against working code instead of compile, vet, or test failures.",
 		Evidence:       evidence,
-		Recommendation: "Start by fixing the failing tool output, then rerun `gx review` so the reviewer can judge structure on a clean baseline.",
+		Recommendation: "Start by fixing the failing tool output, then rerun `tl review` so the reviewer can judge structure on a clean baseline.",
 		Strength:       "Blocking",
 		SourceIDs:      []string{"google-eng-practices"},
 	}}
@@ -653,7 +653,7 @@ func missingAgentsFinding(facts RepoFacts) Finding {
 		Scopes:  []string{"onboarding", "maintainability"},
 		Title:   "Missing agent instructions",
 		Summary: "Agents do not have a repo-local instruction file for command, review, and version-control conventions.",
-		Benefit: "Reduces failed agent runs and accidental workflow drift by making build, test, and GX/JJ conventions explicit.",
+		Benefit: "Reduces failed agent runs and accidental workflow drift by making build, test, and Totality/JJ conventions explicit.",
 		Evidence: []Evidence{
 			{Label: "File", Value: "`AGENTS.md` is missing"},
 		},
@@ -831,7 +831,7 @@ func noDependencyManifestFinding(facts RepoFacts) Finding {
 		Scopes:  []string{"dependencies", "maintainability"},
 		Title:   "No dependency manifest detected",
 		Summary: "The local scan did not find a standard dependency manifest, which limits dependency and supply-chain review.",
-		Benefit: "Improves dependency review and reproducibility by making the build inputs visible to GX, CI, and teammates.",
+		Benefit: "Improves dependency review and reproducibility by making the build inputs visible to Totality, CI, and teammates.",
 		Evidence: []Evidence{
 			{Label: "Dependency manifests", Value: "none detected"},
 		},

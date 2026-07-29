@@ -7,7 +7,7 @@ import (
 func TestRenderStaticLogoPlainWithoutColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	got := renderStaticLogo()
-	if got != gxLogoRaw {
+	if got != tlLogoRaw {
 		t.Fatalf("renderStaticLogo() = %q, want raw logo", got)
 	}
 }

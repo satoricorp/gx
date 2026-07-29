@@ -1,17 +1,17 @@
-# GX Context
+# Totality Context
 
-This file defines the domain language GX reviews and agent workflows should use.
+This file defines the domain language Totality reviews and agent workflows should use.
 It is a glossary, not an implementation spec.
 
 ## Core Terms
 
-### GX
+### Totality
 
-The product layer over JJ and Git. GX owns the workflow for capturing coding
+The product layer over JJ and Git. Totality owns the workflow for capturing coding
 context, shaping reviewable revisions, publishing stacks, and preparing review
 evidence.
 
-GX is not a generic Git wrapper, a JJ teaching tool, or a generic VCS
+Totality is not a generic Git wrapper, a JJ teaching tool, or a generic VCS
 abstraction.
 
 ### Session
@@ -24,7 +24,7 @@ Revision.
 
 ### Revision
 
-One reviewable logical change. A Revision is the GX product identity for a
+One reviewable logical change. A Revision is the Totality product identity for a
 change.
 
 Locally, a Revision is backed by a JJ change ID. A Git commit is only the
@@ -33,16 +33,16 @@ edited.
 
 ### Stack
 
-An ordered line of Revisions. Locally, a Stack is GX metadata plus a JJ/Git
+An ordered line of Revisions. Locally, a Stack is Totality metadata plus a JJ/Git
 compatible ref. Remotely, it can be published as stacked Git branches and PRs.
 
 ### Published Stack
 
-A Stack that GX has exported to the remote Git or review surface.
+A Stack that Totality has exported to the remote Git or review surface.
 
 ### Compose
 
-The normal GX authoring flow that turns messy working-copy changes into
+The normal Totality authoring flow that turns messy working-copy changes into
 reviewable Revisions grouped into Stacks.
 
 Compose should present only proposals that are ready to apply or have explicit
@@ -75,7 +75,7 @@ requiring the reader to parse opaque implementation records.
 
 ### Authoring Engine
 
-The Go module that owns GX authoring behavior such as compose, edit, status,
+The Go module that owns Totality authoring behavior such as compose, edit, status,
 stacks, sync, and publish.
 
 ### CLI Adapter
@@ -112,4 +112,4 @@ and migration notes when the implementation history matters.
   after compose or publish.
 - Accepted Compose proposals create visible Stacks and Revisions.
 - Publishing scans accepted Stacks; it must not depend on the current checkout.
-- Review output should use GX product terms before implementation terms.
+- Review output should use Totality product terms before implementation terms.

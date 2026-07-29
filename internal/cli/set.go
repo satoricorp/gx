@@ -13,13 +13,13 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/gx/internal/inference"
+	"github.com/satoricorp/totality/internal/inference"
 )
 
 func newSetCommand(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set",
-		Short: "Configure local gx settings",
+		Short: "Configure local tl settings",
 	}
 	cmd.AddCommand(newSetKeyCommand(ctx))
 	return cmd
@@ -30,11 +30,11 @@ func newSetKeyCommand(ctx context.Context) *cobra.Command {
 	var key string
 	cmd := &cobra.Command{
 		Use:   "key",
-		Short: "Set the API key gx uses for local inference",
+		Short: "Set the API key tl uses for local inference",
 		Long: strings.Join([]string{
-			"Set the API key gx uses for local inference.",
+			"Set the API key tl uses for local inference.",
 			"",
-			"The key is stored in ~/.gx/inference.json or $GX_HOME/inference.json and replaces any previous inference key.",
+			"The key is stored in ~/.totality/inference.json or $TOTALITY_HOME/inference.json and replaces any previous inference key.",
 		}, "\n"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = ctx

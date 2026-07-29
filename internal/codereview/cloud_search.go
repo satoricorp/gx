@@ -7,17 +7,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/totality/internal/cloud"
 )
 
 // Cloud-mode retrieval: the review's TurboPuffer-backed sources served through
-// GX Cloud instead of raw provider keys.
+// Totality Cloud instead of raw provider keys.
 //
 // The direct path below each retriever (raw TURBOPUFFER_API_KEY in the
 // environment) predates this and remains for development, where querying the
 // store without a server in the loop is worth the extra keys. Everyone else
-// authenticates with `gx auth login` and retrieves through POST
-// /v1/review/search, the same trade the /gx/openai and /gx/bedrock proxies
+// authenticates with `tl auth login` and retrieves through POST
+// /v1/review/search, the same trade the /tl/openai and /tl/bedrock proxies
 // made for inference: the provider keys live server-side, and the server
 // resolves the org and namespace with the same function every indexer writes
 // through — which also retires the CLI's guess at the console's namespace
@@ -87,13 +87,13 @@ func cloudFreshnessDetail(lastWriteAt string) string {
 // cloudUnavailableDetail normalizes a failed cloud search into one evidence
 // line detail.
 func cloudUnavailableDetail(err error) string {
-	return "gx cloud retrieval failed: " + err.Error()
+	return "tl cloud retrieval failed: " + err.Error()
 }
 
 // signInRemedy is what a user does when neither cloud credentials nor raw
 // keys are present. The direct-key alternative is deliberately not offered:
 // raw provider keys are a development setup, not a remedy.
-const signInRemedy = "Run `gx auth login` so review retrieval can use GX Cloud"
+const signInRemedy = "Run `tl auth login` so review retrieval can use Totality Cloud"
 
 // retrieveCodeIndexViaCloud is CodeIndexRetriever.Retrieve for the cloud path.
 func retrieveCodeIndexViaCloud(
@@ -107,8 +107,8 @@ func retrieveCodeIndexViaCloud(
 		in.Evidence.Record(EvidenceStatus{
 			Source: codeIndexEvidenceSource,
 			State:  EvidenceMissing,
-			Detail: "this checkout has no GitHub remote, so GX Cloud has no repository to search",
-			Remedy: "Add a GitHub remote, then connect this repository at https://gx.run/repositories",
+			Detail: "this checkout has no GitHub remote, so Totality Cloud has no repository to search",
+			Remedy: "Add a GitHub remote, then connect this repository at https://totality.sh/repositories",
 		})
 		return nil, nil
 	}
@@ -136,13 +136,13 @@ func retrieveCodeIndexViaCloud(
 	switch {
 	case !result.Available:
 		status.State = EvidenceUnavailable
-		status.Detail = "gx cloud retrieval is not configured server-side"
+		status.Detail = "tl cloud retrieval is not configured server-side"
 		if result.Reason != "" {
-			status.Detail = "gx cloud: " + result.Reason
+			status.Detail = "tl cloud: " + result.Reason
 		}
 	case !result.Exists:
 		status.State = EvidenceMissing
-		status.Detail = "GX Cloud has not indexed this repository"
+		status.Detail = "Totality Cloud has not indexed this repository"
 		status.Remedy = connectRepositoryRemedy
 	case len(result.Rows) == 0:
 		status.State = EvidenceEmpty
@@ -164,7 +164,7 @@ func retrieveCodeIndexViaCloud(
 	snippets := codeIndexSnippets(rows, limit, namespaceFor, noteFor)
 	status.State = EvidenceOK
 	status.Snippets = len(snippets)
-	status.Detail = joinDetail(note, "via gx cloud")
+	status.Detail = joinDetail(note, "via tl cloud")
 	in.Evidence.Record(status)
 	return snippets, nil
 }
@@ -182,7 +182,7 @@ func retrieveSessionsViaCloud(
 		in.Evidence.Record(EvidenceStatus{
 			Source: sessionEvidenceSource,
 			State:  EvidenceMissing,
-			Detail: "this checkout has no GitHub remote, so GX Cloud has no repository to search",
+			Detail: "this checkout has no GitHub remote, so Totality Cloud has no repository to search",
 		})
 		return nil, nil
 	}
@@ -209,9 +209,9 @@ func retrieveSessionsViaCloud(
 	switch {
 	case !result.Available:
 		status.State = EvidenceUnavailable
-		status.Detail = "gx cloud retrieval is not configured server-side"
+		status.Detail = "tl cloud retrieval is not configured server-side"
 		if result.Reason != "" {
-			status.Detail = "gx cloud: " + result.Reason
+			status.Detail = "tl cloud: " + result.Reason
 		}
 	case !result.Exists:
 		status.State = EvidenceMissing
@@ -232,7 +232,7 @@ func retrieveSessionsViaCloud(
 	snippets := sessionSnippets(rows, limit, namespaceFor)
 	status.State = EvidenceOK
 	status.Snippets = len(snippets)
-	status.Detail = "via gx cloud"
+	status.Detail = "via tl cloud"
 	in.Evidence.Record(status)
 	return snippets, nil
 }

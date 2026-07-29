@@ -12,7 +12,7 @@ import (
 // reached over. It owns prompt construction and response parsing; how the bytes
 // get to bedrock-runtime is bedrockTransport's problem (see
 // bedrock_transport.go), which is what lets the same leg run against local AWS
-// credentials or through gx-cloud without a second implementation.
+// credentials or through totality-cloud without a second implementation.
 type bedrockAnthropicReviewer struct {
 	model     string
 	transport bedrockTransport
@@ -94,16 +94,16 @@ func bedrockRegionFromEnv() string {
 // Precedence per leg is env > default. Which model reviews is the operator's
 // call: a REVIEW.md line used to win over both, which let the repository under
 // review choose the reviewer that judged it — including choosing a weaker one.
-// Leg A additionally honours the legacy GX_REVIEW_ANTHROPIC_MODEL so existing
+// Leg A additionally honours the legacy TOTALITY_REVIEW_ANTHROPIC_MODEL so existing
 // setups keep working.
 func resolveBedrockReviewModels() (string, string) {
 	modelA := normalizeBedrockModelID(firstNonEmpty(
-		os.Getenv("GX_REVIEW_BEDROCK_MODEL_A"),
-		os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"),
+		os.Getenv("TOTALITY_REVIEW_BEDROCK_MODEL_A"),
+		os.Getenv("TOTALITY_REVIEW_ANTHROPIC_MODEL"),
 		defaultBedrockReviewModelA,
 	))
 	modelB := normalizeBedrockModelID(firstNonEmpty(
-		os.Getenv("GX_REVIEW_BEDROCK_MODEL_B"),
+		os.Getenv("TOTALITY_REVIEW_BEDROCK_MODEL_B"),
 		defaultBedrockReviewModelB,
 	))
 	return modelA, modelB
@@ -111,7 +111,7 @@ func resolveBedrockReviewModels() (string, string) {
 
 // normalizeBedrockModelID upgrades a bare Anthropic model ID to its `us.`
 // inference profile. bedrock-runtime rejects bare IDs for on-demand invocation,
-// and an operator setting GX_REVIEW_BEDROCK_MODEL_A to a bare ID is easy to do,
+// and an operator setting TOTALITY_REVIEW_BEDROCK_MODEL_A to a bare ID is easy to do,
 // so an unnormalized ID is a
 // guaranteed ValidationException rather than a preference.
 //
@@ -163,7 +163,7 @@ func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief R
 // completeJSON is the single model call. Both reviewer legs and the judge go
 // through it, so the request shape and the response parsing live in one place;
 // the transport underneath decides whether that request is signed locally or
-// posted to gx-cloud.
+// posted to totality-cloud.
 func (r *bedrockAnthropicReviewer) completeJSON(ctx context.Context, system string, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if r == nil || r.transport == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
@@ -192,11 +192,11 @@ func describeBedrockFailure(statusCode int, status string, body []byte, model, r
 	lower := strings.ToLower(detail)
 	switch {
 	case strings.Contains(lower, "on-demand throughput") || strings.Contains(lower, "inference profile"):
-		return fmt.Errorf("Bedrock model %q cannot be invoked on demand; use the inference profile ID %q instead (set GX_REVIEW_BEDROCK_MODEL_A/_B)", model, normalizeBedrockModelID(model))
+		return fmt.Errorf("Bedrock model %q cannot be invoked on demand; use the inference profile ID %q instead (set TOTALITY_REVIEW_BEDROCK_MODEL_A/_B)", model, normalizeBedrockModelID(model))
 	case strings.Contains(lower, "not available for this account"):
-		return fmt.Errorf("Bedrock model %q is not enabled for this AWS account in %s; request access in the Bedrock console or point GX_REVIEW_BEDROCK_MODEL_A/_B at a model you can call", model, region)
+		return fmt.Errorf("Bedrock model %q is not enabled for this AWS account in %s; request access in the Bedrock console or point TOTALITY_REVIEW_BEDROCK_MODEL_A/_B at a model you can call", model, region)
 	case strings.Contains(lower, "model identifier is invalid") || strings.Contains(lower, "could not resolve the model"):
-		return fmt.Errorf("Bedrock model %q does not exist in region %s; set AWS_REGION to a region where it is offered (gx defaults to %s)", model, region, defaultBedrockRegion)
+		return fmt.Errorf("Bedrock model %q does not exist in region %s; set AWS_REGION to a region where it is offered (tl defaults to %s)", model, region, defaultBedrockRegion)
 	case strings.Contains(lower, "security token") || strings.Contains(lower, "signature") || strings.Contains(lower, "unrecognizedclient") || statusCode == http.StatusForbidden || statusCode == http.StatusUnauthorized:
 		return fmt.Errorf("AWS rejected the Bedrock credentials for %s in %s: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN if they are temporary (%s)", model, region, detail)
 	case statusCode == http.StatusTooManyRequests || strings.Contains(lower, "throttl"):

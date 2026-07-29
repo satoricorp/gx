@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/gx/internal/capture"
-	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/totality/internal/capture/orchestrator"
 )
 
 // An agent works in a linked worktree and the push runs from the main
@@ -41,9 +41,9 @@ func TestOrchestrator_AttributesEditsMadeInALinkedWorktree(t *testing.T) {
 	claudeDir := t.TempDir()
 	writeWorktreeTranscript(t, claudeDir, worktree, filepath.Join(worktree, "internal", "cli", "x.go"), added)
 
-	t.Setenv("GX_HOME", t.TempDir())
-	t.Setenv("GX_CLOUD_URL", "")
-	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
 
 	// Push from the main checkout, which is where `git push` runs.
 	result, err := orchestrator.Run(context.Background(), orchestrator.RunOptions{

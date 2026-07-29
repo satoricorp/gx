@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Client uploads capture payloads to the GX server.
+// Client uploads capture payloads to the Totality server.
 type Client struct {
 	BaseURL string
 	Token   string

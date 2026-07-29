@@ -1,31 +1,31 @@
 ---
-title: "GX changelog: new features, updates, and fixes"
-description: "Weekly changelog for GX covering new features, product updates, CLI and menubar improvements, review workflow changes, and bug fixes."
+title: "Totality changelog: new features, updates, and fixes"
+description: "Weekly changelog for Totality covering new features, product updates, CLI and menubar improvements, review workflow changes, and bug fixes."
 ---
 
 <Update label="July 2, 2026">
 
 ## New features
 
-**`gx report` for stack summaries** — A new `gx report` command surfaces a quick overview of your stack state, and stack terminal UIs now scroll cleanly through longer revision lists. See the [GitHub PR summaries reference](/reference/github-pr-summaries) for related context on how stacks are published.
+**`tl report` for stack summaries** — A new `tl report` command surfaces a quick overview of your stack state, and stack terminal UIs now scroll cleanly through longer revision lists. See the [GitHub PR summaries reference](/reference/github-pr-summaries) for related context on how stacks are published.
 
-**Generated GitHub PR summaries** — After you publish with plain `git push` (GX pre-push hook) and open a PR, GX Cloud posts a generated review summary highlighting revisions, blast radius, and up to 10 high-impact review targets. Anything you write in the PR description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries) for the full behavior. (`gx push` is disabled; do not use it.)
+**Generated GitHub PR summaries** — After you publish with plain `git push` (Totality pre-push hook) and open a PR, Totality Cloud posts a generated review summary highlighting revisions, blast radius, and up to 10 high-impact review targets. Anything you write in the PR description is preserved under an **Author Notes** section. See [GitHub PR summaries](/reference/github-pr-summaries) for the full behavior. (`tl push` is disabled; do not use it.)
 
-**Code review history memory** — `gx review` now pulls in indexed context from your past reviews and GitHub comment history, and attaches review policy context so findings stay consistent with how your team reviews code. Attribution on findings has also been improved so you can tell whether a note came from a GX finding, indexed history, or a diff heuristic.
+**Code review history memory** — `tl review` now pulls in indexed context from your past reviews and GitHub comment history, and attaches review policy context so findings stay consistent with how your team reviews code. Attribution on findings has also been improved so you can tell whether a note came from a Totality finding, indexed history, or a diff heuristic.
 
-**Prompted `gx review`** — You can now trigger `gx review` with a targeted prompt to focus the review on a specific concern instead of the full default sweep.
+**Prompted `tl review`** — You can now trigger `tl review` with a targeted prompt to focus the review on a specific concern instead of the full default sweep.
 
-**Local inference API key setup** — GX now supports configuring an API key for a local inference provider during setup, so you can run reviews against a self-hosted model.
+**Local inference API key setup** — Totality now supports configuring an API key for a local inference provider during setup, so you can run reviews against a self-hosted model.
 
-**Menubar shortcuts and version info** — The macOS menubar app now installs a `gxr` shortcut for one-tap review and shows both the menubar tag and CLI versions inline.
+**Menubar shortcuts and version info** — The macOS menubar app now installs a `tlr` shortcut for one-tap review and shows both the menubar tag and CLI versions inline.
 
 ## Updates
 
-**Simpler `gx generate` and publish via `git push`** — The generate and publish flow has been reworked for a smoother end-to-end path, including better preflight routing when demuxing changes into revisions. Publish with plain `git push`; do not run `gx push`.
+**Simpler `tl generate` and publish via `git push`** — The generate and publish flow has been reworked for a smoother end-to-end path, including better preflight routing when demuxing changes into revisions. Publish with plain `git push`; do not run `tl push`.
 
 **Cleaner stack views** — Merged published stacks and empty stored revisions are now hidden by default, and closed or merged PR stacks are pruned automatically so your stack list stays focused on active work. Stack read performance is also noticeably faster on large repositories.
 
-**Simpler menubar and CLI surface** — The menubar menu, `gx doctor` output, and CLI help have all been tightened. The auth status view no longer surfaces internal Convex site details.
+**Simpler menubar and CLI surface** — The menubar menu, `tl doctor` output, and CLI help have all been tightened. The auth status view no longer surfaces internal Convex site details.
 
 **Auth reliability** — GitHub auth tokens now refresh automatically before they expire, and login verifies your console API session before completing so you're not left in a half-authenticated state.
 

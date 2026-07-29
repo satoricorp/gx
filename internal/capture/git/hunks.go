@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/totality/internal/capture"
 )
 
 // HunkOptions configures commit hunk extraction.
@@ -193,4 +193,3 @@ func parseUnifiedDiff(sha string, commitTime int64, diff string) []capture.Commi
 	flush()
 	return hunks
 }
-

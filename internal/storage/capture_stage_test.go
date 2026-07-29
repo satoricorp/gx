@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/totality/internal/storage"
 )
 
 func TestCaptureStageRoundTrip(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestCaptureStageRoundTrip(t *testing.T) {
 // row uploaded, restaging changed content (a grown transcript) makes the same
 // row pending again.
 func TestStageSessionRestagePreservesUploadStateOnSameContent(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestStageSessionRestagePreservesUploadStateOnSameContent(t *testing.T) {
 // unreachable by revision (its revision is already in pushed history). Every
 // such row would stay shareable_at NULL for the rest of time.
 func TestMarkSessionsShareableForSourcesOfAdoptsLegacyRows(t *testing.T) {
-	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
