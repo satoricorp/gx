@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
-import { formatError, formatResult, runTt } from "../tl";
+import { formatError, formatResult, runTt } from "../tx";
 
 const reviewScope = z.enum([
   "architecture",
@@ -15,9 +15,9 @@ const reviewScope = z.enum([
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
-  scope: reviewScope.optional().describe("Optional focused review scope. Omit for tl review's patch-focused default."),
+  scope: reviewScope.optional().describe("Optional focused review scope. Omit for tx review's patch-focused default."),
   focus: z.string().optional().describe("Limit review to files under this path prefix."),
-  prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional tl review prompt."),
+  prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional tx review prompt."),
   repo: z
     .boolean()
     .optional()
@@ -29,9 +29,9 @@ export const schema = {
 };
 
 export const metadata: ToolMetadata = {
-  name: "tl_review",
+  name: "tx_review",
   description:
-    "Run tl review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Defaults to reviewing the current change; pass repo=true to review the whole repository instead, which is what questions about the codebase need when the working tree is dirty. Pass deep=true for full-spectrum review. MCP forces TOTALITY_REVIEW_AI=1 for this command.",
+    "Run tx review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Defaults to reviewing the current change; pass repo=true to review the whole repository instead, which is what questions about the codebase need when the working tree is dirty. Pass deep=true for full-spectrum review. MCP forces TOTALITY_REVIEW_AI=1 for this command.",
   annotations: {
     title: "Totality Review",
     readOnlyHint: true,
@@ -40,8 +40,8 @@ export const metadata: ToolMetadata = {
   },
 };
 
-export default async function tlReview(params: InferSchema<typeof schema>) {
-  // --no-publish is not optional here. Without it `tl review` posts a review
+export default async function txReview(params: InferSchema<typeof schema>) {
+  // --no-publish is not optional here. Without it `tx review` posts a review
   // comment on the matching GitHub PR and records the run to Totality Cloud, so a
   // tool annotated readOnlyHint would write to a pull request other people
   // read — and an agent calling it for context mid-codegen would comment on
@@ -68,7 +68,7 @@ export default async function tlReview(params: InferSchema<typeof schema>) {
     args.push(prompt);
   }
   try {
-    // No init, no hooks, no Totality state, and nothing published: `tl review
+    // No init, no hooks, no Totality state, and nothing published: `tx review
     // --no-publish` reads the repo and reports back, which is what
     // readOnlyHint promises the caller.
     return formatResult(await runTt(args, { cwd: params.cwd, timeoutMs: 300_000 }), {

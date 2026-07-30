@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { commandEnvironment, resolveTlBinary } from "./tl";
+import { commandEnvironment, resolveTlBinary } from "./tx";
 
 type VersionInfo = {
   version?: string;

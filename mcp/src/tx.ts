@@ -3,14 +3,14 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-export type TlRunOptions = {
+export type TxRunOptions = {
   cwd?: string;
   sessionId?: string;
   sessionIds?: string[];
   timeoutMs?: number;
 };
 
-export type TlRunResult = {
+export type TxRunResult = {
   command: string[];
   cwd: string;
   exitCode: number;
@@ -32,11 +32,11 @@ export function resolveTlBinary() {
   if (override) {
     return override;
   }
-  const installed = join(homedir(), ".local", "bin", "tl");
+  const installed = join(homedir(), ".local", "bin", "tx");
   if (existsSync(installed)) {
     return installed;
   }
-  return "tl";
+  return "tx";
 }
 
 function resolveCwd(raw?: string) {
@@ -71,7 +71,7 @@ export function commandEnvironment() {
   return env;
 }
 
-export function runTt(args: string[], options: TlRunOptions = {}): Promise<TlRunResult> {
+export function runTt(args: string[], options: TxRunOptions = {}): Promise<TxRunResult> {
   const cwd = resolveCwd(options.cwd);
   const env = commandEnvironment();
   const binary = resolveTlBinary();
@@ -138,7 +138,7 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
   return out;
 }
 
-function envelope(result: TlRunResult, options: FormatOptions = {}) {
+function envelope(result: TxRunResult, options: FormatOptions = {}) {
   return {
     ok: result.exitCode === 0,
     action: options.action,
@@ -153,12 +153,12 @@ function envelope(result: TlRunResult, options: FormatOptions = {}) {
   };
 }
 
-export function formatResult(result: TlRunResult, options: FormatOptions = {}): string {
+export function formatResult(result: TxRunResult, options: FormatOptions = {}): string {
   return JSON.stringify(envelope(result, options), null, 2);
 }
 
 export function formatError(error: unknown, options: FormatOptions = {}): string {
-  const maybeResult = (error as { result?: TlRunResult }).result;
+  const maybeResult = (error as { result?: TxRunResult }).result;
   if (maybeResult) {
     return formatResult(maybeResult, withAuthGuidance(`${maybeResult.stderr}\n${maybeResult.stdout}`, options));
   }
@@ -203,19 +203,19 @@ function authGuidance(message: string): { display: string; nextAction: string } 
   if (!text.trim()) {
     return undefined;
   }
-  const mentionsLogin = text.includes("tl auth login");
+  const mentionsLogin = text.includes("tx auth login");
   const missingToken = text.includes("github token is not configured") || text.includes("not logged in");
   if (!mentionsLogin && !missingToken) {
     return undefined;
   }
-  if (text.includes("tl auth logout") || text.includes("session expired")) {
-    const nextAction = "Run `tl auth logout` then `tl auth login` in a terminal, then retry the MCP tool.";
+  if (text.includes("tx auth logout") || text.includes("session expired")) {
+    const nextAction = "Run `tx auth logout` then `tx auth login` in a terminal, then retry the MCP tool.";
     return {
       display: `Totality cloud authentication needs to be refreshed. ${nextAction}`,
       nextAction,
     };
   }
-  const nextAction = "Run `tl auth login` in a terminal, then retry the MCP tool.";
+  const nextAction = "Run `tx auth login` in a terminal, then retry the MCP tool.";
   return {
     display: `Totality cloud authentication is required. ${nextAction}`,
     nextAction,

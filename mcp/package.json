@@ -1,7 +1,7 @@
 {
   "name": "@satoricorp/totality",
-  "version": "0.1.0",
-  "description": "Totality MCP server (stdio): tl_review context from the local tl CLI.",
+  "version": "0.2.0",
+  "description": "Totality MCP server (stdio): tx_review context from the local tx CLI.",
   "license": "AGPL-3.0-only",
   "homepage": "https://totality.sh",
   "repository": {
@@ -10,7 +10,7 @@
     "directory": "mcp"
   },
   "bin": {
-    "tl-mcp": "dist/stdio.js"
+    "tx-mcp": "dist/stdio.js"
   },
   "files": [
     "dist/*.js",
@@ -26,8 +26,8 @@
     "dev": "xmcp dev",
     "build": "xmcp build && bun run build:binary",
     "build:xmcp": "xmcp build",
-    "build:binary": "bun build src/stdio.ts --compile --outfile dist/tl-mcp",
-    "start": "./dist/tl-mcp",
+    "build:binary": "bun build src/stdio.ts --compile --outfile dist/tx-mcp",
+    "start": "./dist/tx-mcp",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build:xmcp && bun test"
