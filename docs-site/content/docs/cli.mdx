@@ -3,9 +3,9 @@ title: CLI
 description: CLI Reference with flags, examples, and exit codes.
 ---
 
-The only required command is `tl init`, which initializes totality in your
-repository. This installs git hooks that capture your session context and pairs
-it with your code changes.
+Initialize any repository with `tl init`. This installs git hooks that capture
+your session context and pairs it with your code changes, giving totality
+better context for review.
 
 ## Totality CLI Overview
 
@@ -65,9 +65,9 @@ tl review --scope security                # focused pass
 tl review --focus src/auth --deep         # deep review of one directory
 ```
 
-Reviews the current change with AI reviewers plus repo context, and prints
-findings as markdown. Two reviewer models run independently; a judge verifies and
-dedupes their findings, and the report marks findings both reviewers raised.
+Reviews the current codebase state. `tl review` uses your indexed codebases,
+two separate models to identify the most important issues with a judge to
+dedupe findings. This can be run in the terminal or via [MCP](/docs/mcp).
 
 | Flag | Meaning |
 | --- | --- |
@@ -95,11 +95,8 @@ outcome and never counts as a clean pass.
 
 ### Read-only
 
-`tl review` writes nothing: no hooks, no `.totality/` in the repo, no
-`.git/index` mutation (its Git calls use a throwaway index copy), no
-`~/.totality` on machines that never ran `tl`, and no uploads when a gate fails.
-It does not require `tl init` — point it at any checkout, including one you do
-not own.
+`tl review` does not mutate any logic, and doesn't require `tl init`
+(`tl init` is required for PR summaries and chat).
 
 ### As a CI gate
 
@@ -107,8 +104,18 @@ not own.
 tl review --base origin/main --fail-on strong --no-publish
 ```
 
-`--fail-on` takes `none` (default), `any`, `speculative`, `worth-exploring`,
-`strong`, or `blocking`. Exit codes:
+`--fail-on` fails the review when findings at or above the level survive:
+
+| Level | Meaning |
+| --- | --- |
+| `none` | never fail (default) |
+| `any` | fail on anything the review raised |
+| `speculative` | findings at `speculative` strength or above |
+| `worth-exploring` | findings at `worth-exploring` strength or above |
+| `strong` | findings at `strong` strength or above |
+| `blocking` | only findings that should stop a merge |
+
+Exit codes:
 
 | Code | Meaning |
 | --- | --- |
