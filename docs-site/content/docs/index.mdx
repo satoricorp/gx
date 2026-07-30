@@ -11,13 +11,16 @@ Totality captures coding sessions and attaches that context to reviewable revisi
 curl -fsSL https://download.totality.sh/install.sh | sh
 ```
 
-To uninstall:
+To uninstall, remove the binaries and shell completions:
 
 ```bash
 rm -f ~/.local/bin/tl ~/.local/bin/tlr ~/.local/bin/tl-mcp
+rm -f ~/.local/share/bash-completion/completions/tl ~/.zfunc/_tl
 ```
 
-This removes the installed binaries only. Local Totality data remains in `~/.totality`.
+Any Git hooks Totality installed become inert once the binary is gone — they check
+for `tl` and exit silently when it is absent, so plain Git keeps working. Local
+Totality data remains in `~/.totality`.
 
 ## Core Workflow
 
