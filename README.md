@@ -132,7 +132,7 @@ tl review --base origin/main --fail-on strong --no-publish   # CI gate
 `tl review` is read-only: it never runs `tl init`, writes `~/.totality`, or touches
 `.git/index`, so it is safe in CI and on a checkout you do not own. Under
 `--fail-on` it exits `3` when findings survive and `4` when nothing was
-reviewed. See [the reference](docs-site/content/docs/reference/review.mdx) for the full surface.
+reviewed. See [the reference](docs-site/content/docs/cli.mdx) for the full surface.
 
 ## MCP
 

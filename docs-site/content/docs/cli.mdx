@@ -1,0 +1,175 @@
+---
+title: CLI
+description: Reference for the tl CLI — tl init, tl review, tl auth, tl set key, tl doctor — with flags, examples, and exit codes.
+---
+
+`tl` is the local CLI. You work in plain Git; once `tl init` installs the hooks,
+your normal commands do the Totality work on the way through:
+
+```bash
+git add <files>                        # choose the scope of the change
+git commit -m "describe this change"   # a hook records it as a revision
+git push                               # the pre-push hook captures the session and publishes
+```
+
+`tl` adds these commands and nothing that duplicates Git:
+
+```bash
+tl init      # set up hooks in a repo (run once)
+tl review    # AI review of the current change (alias: tlr)
+tl auth      # sign in to Totality Cloud
+tl set key   # store an API key for local inference
+tl doctor    # diagnose capture, hooks, and publishing
+tl version   # print the version
+```
+
+## tl init
+
+```bash
+tl init
+```
+
+Installs the Git hooks (`prepare-commit-msg`, `post-commit`, `post-rewrite`,
+`pre-push`), registers the MCP server with agent CLIs found on your `PATH`
+(Claude Code, Cursor, Codex), and offers to add workflow instructions to
+`AGENTS.md`. Run it once per repository.
+
+| Flag | Meaning |
+| --- | --- |
+| `--name <name>` | user name to store in Totality config (defaults to Git identity) |
+| `--email <email>` | user email to store in Totality config |
+| `-y`, `--yes` | accept defaults and suppress prompts — use in scripts and agent sandboxes |
+| `--global` | install the hooks machine-wide instead of for one repository |
+
+### Machine-wide hooks
+
+```bash
+tl init --global
+```
+
+Installs the hooks once for every repository via `git config --global
+core.hooksPath`. The scripts chain to each repository's own hooks of the same
+name, so husky, lefthook, and hand-written hooks keep working. If a global hooks
+path is already set to something else, `tl init --global` stops rather than
+overwriting it.
+
+Opt a single repository out, from inside it:
+
+```bash
+git config tl.enabled false
+```
+
+Undo the machine-wide install:
+
+```bash
+git config --global --unset core.hooksPath
+```
+
+## tl review
+
+```bash
+tl review                                 # alias: tlr
+tl review "check the auth rollback path"
+tl review --scope security                # focused pass
+tl review --focus src/auth --deep         # deep review of one directory
+```
+
+Reviews the current change with AI reviewers plus repo context, and prints
+findings as markdown. Two reviewer models run independently; a judge verifies and
+dedupes their findings, and the report marks findings both reviewers raised.
+
+| Flag | Meaning |
+| --- | --- |
+| `[prompt]` | optional positional prompt to steer the review |
+| `--base <ref>` | review the commit range `<ref>...HEAD` instead of the working tree |
+| `--scope <name>` | focused lens: `architecture`, `security`, `performance`, `onboarding`, `docs`, `dependencies`, `testing`, `maintainability` |
+| `--focus <path>` | limit the review to files under a path prefix |
+| `--repo` | review the whole repository rather than the current change |
+| `--deep` | full-spectrum review with more local and indexed context |
+| `--verbose` | include repo facts, docs, and changed files |
+| `--json` | print the report as JSON |
+| `--fail-on <level>` | exit non-zero when findings at or above this level survive |
+| `--no-publish` | skip posting the PR review comment and recording review history |
+
+### What gets reviewed
+
+1. `--base <ref>` when given — the range `<ref>...HEAD`
+2. Otherwise a dirty working tree
+3. Otherwise the branch's commits against an auto-detected base (`main`,
+   `master`, `origin/main`, `origin/master`), or the last commit when HEAD is
+   the base branch
+
+If nothing was found, `tl review` says so. "Nothing was reviewed" is its own
+outcome and never counts as a clean pass.
+
+### Read-only
+
+`tl review` writes nothing: no hooks, no `.totality/` in the repo, no
+`.git/index` mutation (its Git calls use a throwaway index copy), no
+`~/.totality` on machines that never ran `tl`, and no uploads when a gate fails.
+It does not require `tl init` — point it at any checkout, including one you do
+not own.
+
+### As a CI gate
+
+```bash
+tl review --base origin/main --fail-on strong --no-publish
+```
+
+`--fail-on` takes `none` (default), `any`, `speculative`, `worth-exploring`,
+`strong`, or `blocking`. Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | reviewed, and nothing at or above the threshold survived |
+| `3` | findings at or above the threshold survived |
+| `4` | nothing was reviewed — a gate should not pass without inspecting code |
+
+Pair with `--no-publish` so CI never posts PR comments, and `--json` to parse
+findings yourself.
+
+## tl auth
+
+```bash
+tl auth login
+tl auth status
+tl auth logout
+```
+
+Signs the CLI into Totality Cloud through GitHub.
+
+## tl set key
+
+```bash
+tl set key                                                # interactive: pick provider, paste key
+tl set key --provider anthropic --key "$ANTHROPIC_API_KEY"
+```
+
+Stores one key in `~/.totality/inference.json` (or `$TOTALITY_HOME/inference.json`)
+and injects it for local inference and MCP-launched `tl` commands. Providers:
+`anthropic`, `openai`. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in the
+environment remain supported as fallbacks; the stored key wins when present.
+
+## tl doctor
+
+```bash
+tl doctor            # diagnose capture, hooks, auth, and the publish queue
+tl doctor --fix      # apply safe repairs
+tl doctor --json     # machine-readable report
+tl doctor --report   # send this diagnosis and recent logs to support
+```
+
+## tl version
+
+```bash
+tl version
+tl version --json
+```
+
+## Shortcuts
+
+The installer links `tlr` to the same binary:
+
+```bash
+tlr   # tl review
+```

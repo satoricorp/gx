@@ -1,140 +1,47 @@
 ---
-title: "Totality: Git for agents — session-aware code review"
-description: "Capture agent coding sessions as reviewable revisions on ordinary Git branches, and open pull requests with rich review context."
+title: Getting Started
+description: Install Totality, initialize a repository, and publish your first reviewed change.
 ---
 
-Totality captures coding sessions and attaches that context to reviewable revisions — ordinary Git commits on ordinary branches — then uses those revisions to generate better review artifacts for your pull requests.
+Totality records which agent session produced each Git commit and uses that context
+for AI code review and generated pull request summaries. You work in plain Git.
 
-## Download
+## Install
 
 ```bash
 curl -fsSL https://download.totality.sh/install.sh | sh
+tl auth login
 ```
 
-To uninstall, remove the binaries and shell completions:
+This installs `tl`, `tlr`, and `tl-mcp` to `~/.local/bin`, plus bash/zsh completions.
+
+## First change
+
+```bash
+cd your-repo
+tl init                                # once per repo: installs the Git hooks
+git add src/retry.js
+git commit -m "add retry helper"       # hook records the revision
+tl review                              # AI review before you push (optional)
+git push                               # hook captures the session and publishes
+gh pr create                           # Totality Cloud adds the summary to the PR
+```
+
+There is no `tl commit`, `tl status`, or `tl push` — the hooks do the Totality work
+inside your normal Git commands.
+
+## Uninstall
 
 ```bash
 rm -f ~/.local/bin/tl ~/.local/bin/tlr ~/.local/bin/tl-mcp
 rm -f ~/.local/share/bash-completion/completions/tl ~/.zfunc/_tl
 ```
 
-Any Git hooks Totality installed become inert once the binary is gone — they check
-for `tl` and exit silently when it is absent, so plain Git keeps working. Local
-Totality data remains in `~/.totality`.
+Installed Git hooks exit silently when the binary is absent, so plain Git keeps
+working. Local data remains in `~/.totality`.
 
-## Core Workflow
+## Pages
 
-You work in plain Git. Once `tl init` installs the hooks, your normal `git` commands do
-the Totality work automatically — there is no Totality save verb to learn.
-
-```bash
-git add <files>                        # choose the scope of one logical change
-git commit -m "describe this change"   # a Totality hook records it as a revision
-git push                               # the pre-push hook captures the session and publishes
-gh pr create                           # open the PR (Totality Cloud adds the summary)
-```
-
-A commit looks like any other:
-
-```text
-$ git add src/retry.js
-$ git commit -m "add retry helper with attempt limit"
-[main b694d3be] add retry helper with attempt limit
- 1 file changed, 12 insertions(+)
-```
-
-Behind that ordinary commit, Totality's `prepare-commit-msg` and `post-commit` hooks record a
-Totality **revision** — a Git commit plus the review context that explains how it was produced:
-which captured session made it, and where it sits among your branches. Inspect state with
-plain Git; there is no separate Totality model to learn:
-
-```bash
-git status              # working-tree state
-git log --oneline -10   # the revisions on this branch
-```
-
-Plain `git push` publishes the branch; the Totality pre-push hook captures the session, matches
-it to the hunks each revision changed, and uploads the review bundle. Open the PR with
-`gh pr create` — Totality Cloud writes the rich summary into the PR description, below
-anything you wrote. There is no `tl push`; publish with `git push`.
-
-To update the latest revision, use `git commit --amend`; the `post-rewrite` hook follows
-the amended commit so its context stays linked.
-
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `tl init` | Initialize a repository: install the Git hooks that capture and publish |
-| `tl auth login` | Authenticate with Totality Cloud |
-| `tl set key` | Store an Anthropic or OpenAI API key for local inference |
-| `tl review` | AI-review the current change — see the [reference](/reference/review) |
-| `tlr` | Alias for `tl review` |
-| `tl doctor` | Diagnose capture, hooks, auth, and publishing (`--report` sends logs to support) |
-| `tl version` | Print the CLI version |
-
-Agents get one MCP tool: `tl_review`, which runs the same review without ever
-posting to a pull request.
-
-## Local Inference
-
-For open-source inference, run:
-
-```bash
-tl set key
-```
-
-Choose Anthropic or OpenAI, then paste the API key. Totality stores one key in `~/.totality/inference.json` or `$TOTALITY_HOME/inference.json` and injects it for local inference proxying and MCP-launched tl commands. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` remain supported as fallbacks; the stored key wins when present.
-
-## Agent Setup
-
-<Callout title="Tell your agents Totality is active">
-  Add Totality instructions to the start or end of your `AGENTS.md` or `CLAUDE.md` so agents
-  know Totality is active. Agents work in plain Git; Totality's hooks record and publish
-  automatically. Totality MCP exposes `tl_review` only.
-</Callout>
-
-```md
-Version control: use plain Git. Totality's hooks record and publish your work automatically —
-there is no Totality save verb, and there is no `tl commit` / `tl status` / `tl push`.
-
-Save changes with Git:
-- `git add <files>` to choose the scope of one logical change.
-- `git commit -m "..."` — a Totality hook records the commit as a reviewable revision.
-- Start a new line of work with `git checkout -b <branch>` before committing.
-
-To amend the latest revision, use `git commit --amend`; the post-rewrite hook follows it.
-
-Publish with plain `git push` (the Totality pre-push hook captures the session and publishes),
-then open the PR with `gh pr create`. Do not run `tl push` — it does not exist; use `git push`.
-Do not seed a `## Summary` section in the PR body; Totality Cloud appends the summary itself.
-
-When the user says "save work", "save using tl", or "save with tl", run the plain-Git
-save workflow: stage with `git add`, record with `git commit`, inspect with `git status`,
-and publish with `git push` unless the user asks to keep the work local.
-
-For AI review, use `tl review` (or the `tl_review` MCP tool).
-
-Totality PR summaries are posted by Totality Cloud for PRs whose branch was pushed through Totality
-with `git push` while the pre-push hook is installed.
-```
-
-<Callout type="info" title="What tl init installs">
-  The install script installs the `tl`, `tlr`, and `tl-mcp` binaries. When a repo is
-  initialized with `tl init` (or by MCP auto-initialization), Totality installs Git
-  lifecycle hooks: `prepare-commit-msg` stamps the Totality trailer, `post-commit`
-  records commit metadata, `post-rewrite` follows amended or rebased commit OIDs, and
-  `pre-push` captures Claude/Codex/Cursor session context into `~/.totality/totality.db`
-  and publishes when credentials are configured.
-</Callout>
-
-## Product Model
-
-Totality centers the reviewable revision:
-
-- **Session**: captured context from agent prompts, responses, commands, tests, and files touched.
-- **Revision**: one logical change — a Git commit plus the captured context that explains how it was produced.
-- **Branch**: the ordered line of revisions reviewed together — a plain Git branch, opened as one PR.
-
-These are ordinary Git objects: a revision is a Git commit, and the branch is the Git
-branch it sits on — Totality records the review context around them, so you never leave Git.
+- [CLI](/docs/cli) — every command: `tl init`, `tl review`, `tl auth`, `tl set key`, `tl doctor`
+- [MCP](/docs/mcp) — connect `tl_review` to Claude Code, Cursor, and Codex
+- [Pull Requests](/docs/pull-requests) — generated PR summaries and `@gx` chat on GitHub

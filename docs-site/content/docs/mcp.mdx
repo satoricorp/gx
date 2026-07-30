@@ -1,0 +1,109 @@
+---
+title: MCP
+description: Connect the tl-mcp server to Claude Code, Cursor, Codex, and other MCP clients. One tool - tl_review.
+---
+
+The MCP server ships with the CLI as a local stdio binary (`tl-mcp`). It shells
+out to your `tl` binary, so repo state stays on your machine. It exposes one
+tool: `tl_review`.
+
+## Install
+
+```bash
+curl -fsSL https://download.totality.sh/install.sh | sh
+tl auth login
+```
+
+That places `tl` and `tl-mcp` in `~/.local/bin`.
+
+## Register with your agent
+
+`tl init` registers the server automatically with agent CLIs found on your
+`PATH` — Claude Code and Cursor via `<agent> mcp add`, Codex via
+`~/.codex/config.toml` — and reports something like `MCP ok: Claude Code, Cursor`.
+
+Manual registration uses the same stdio shape everywhere:
+
+### Claude Code
+
+```bash
+claude mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
+```
+
+### Cursor
+
+```bash
+cursor mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
+```
+
+### Codex
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.tl]
+command = "/Users/YOU/.local/bin/tl-mcp"
+
+[mcp_servers.tl.env]
+TOTALITY_BINARY = "/Users/YOU/.local/bin/tl"
+```
+
+### Other MCP clients
+
+```json
+{
+  "mcpServers": {
+    "tl": {
+      "command": "/Users/YOU/.local/bin/tl-mcp",
+      "env": {
+        "TOTALITY_BINARY": "/Users/YOU/.local/bin/tl"
+      }
+    }
+  }
+}
+```
+
+If `TOTALITY_BINARY` is unset, `tl-mcp` looks for `tl` next to itself, then in
+`~/.local/bin`, then on `PATH`. Most clients load MCP servers at startup —
+restart the client or open a new chat after registering.
+
+If a repo is not initialized, the MCP server runs `tl init` non-interactively
+before `tl_review` runs.
+
+## tl_review
+
+| Parameter | Type | Meaning |
+| --- | --- | --- |
+| `prompt` | string | optional reviewer prompt, e.g. `"check auth rollback risks"` |
+| `scope` | enum | focused lens: `architecture`, `security`, `performance`, `onboarding`, `docs`, `dependencies`, `testing`, `maintainability` |
+| `focus` | string | limit review to files under this path prefix |
+| `deep` | boolean | full-spectrum review with more local and indexed context |
+| `verbose` | boolean | include repo facts, docs, and changed files |
+| `repo` | boolean | review the whole repository instead of the current change |
+| `cwd` | string | repository working directory (defaults to the MCP server process cwd) |
+
+Runs `tl review` with `--no-publish` always set, so an agent asking for review
+context never comments on a pull request. May run up to 5 minutes.
+
+Saving and publishing are plain Git, not MCP calls: `git add` + `git commit`
+record the revision through the hooks, `git push` captures and publishes.
+
+## AGENTS.md instructions
+
+`tl init` offers to append these instructions to your repo's `AGENTS.md`. If you
+skipped that step, add them manually:
+
+```markdown
+Version control: plain Git. Once `tl init` installs the hooks, Totality records
+and publishes automatically — there is no Totality save verb.
+
+Default flow:
+- Run `git add` to stage the files for this revision.
+- Run `git commit -m "..."` to save. A Totality hook records the commit as a reviewable revision.
+- Run plain `git push` to publish. The Totality pre-push hook captures the session and
+  publishes automatically — do not run `tl push` or `tl capture push` yourself.
+- Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the
+  PR body — leave human notes only; Totality Cloud appends the rich summary below.
+- To amend, use `git commit --amend` and preserve the Totality revision trailer in the message.
+
+For AI review, run the `tl_review` MCP tool (or the `tl review` CLI) on the current change.
+```

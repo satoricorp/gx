@@ -1,3 +1,3 @@
 {
-  "pages": ["index", "reference", "changelog"]
+  "pages": ["index", "cli", "mcp", "pull-requests", "changelog"]
 }
