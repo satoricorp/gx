@@ -1,11 +1,10 @@
 ---
 title: MCP
-description: Connect the tl-mcp server to Claude Code, Cursor, Codex, and other MCP clients. One tool - tl_review.
+description: Connect the Totality MCP server to Claude Code, Cursor, Codex, and other MCP clients.
 ---
 
-The MCP server ships with the CLI as a local stdio binary (`tl-mcp`). It shells
-out to your `tl` binary, so repo state stays on your machine. It exposes one
-tool: `tl_review`.
+The MCP server ships with the CLI as a local stdio binary. It shells out to the
+CLI, so repo state stays on your machine. It exposes one tool: `tl_review`.
 
 ## Install
 
@@ -14,40 +13,29 @@ curl -fsSL https://download.totality.sh/install.sh | sh
 tl auth login
 ```
 
-That places `tl` and `tl-mcp` in `~/.local/bin`.
-
 ## Register with your agent
 
 `tl init` registers the server automatically with agent CLIs found on your
-`PATH` — Claude Code and Cursor via `<agent> mcp add`, Codex via
-`~/.codex/config.toml` — and reports something like `MCP ok: Claude Code, Cursor`.
+`PATH` (Claude Code, Cursor, Codex) and reports something like
+`MCP ok: Claude Code, Cursor`.
 
-Manual registration uses the same stdio shape everywhere:
-
-### Claude Code
-
-```bash
-claude mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
-```
-
-### Cursor
+To register with every MCP client on your machine in one command, use
+[`add-mcp`](https://www.npmjs.com/package/add-mcp):
 
 ```bash
-cursor mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
+npx add-mcp "$HOME/.local/bin/tl-mcp" --name tl --env "TOTALITY_BINARY=$HOME/.local/bin/tl" -g -y
 ```
 
-### Codex
+| Flag | Effect |
+| --- | --- |
+| `-g` | install user-level so Totality is available in every project; omit for project-level config |
+| `-y` | non-interactive (skip prompts) |
+| `-a <agent>` | target a specific agent (repeatable), e.g. `-a cursor` |
 
-```toml
-# ~/.codex/config.toml
-[mcp_servers.tl]
-command = "/Users/YOU/.local/bin/tl-mcp"
+Most clients load MCP servers at startup — restart the client or open a new
+chat after registering.
 
-[mcp_servers.tl.env]
-TOTALITY_BINARY = "/Users/YOU/.local/bin/tl"
-```
-
-### Other MCP clients
+For clients neither path covers, the stdio shape is:
 
 ```json
 {
@@ -62,12 +50,8 @@ TOTALITY_BINARY = "/Users/YOU/.local/bin/tl"
 }
 ```
 
-If `TOTALITY_BINARY` is unset, `tl-mcp` looks for `tl` next to itself, then in
-`~/.local/bin`, then on `PATH`. Most clients load MCP servers at startup —
-restart the client or open a new chat after registering.
-
-If a repo is not initialized, the MCP server runs `tl init` non-interactively
-before `tl_review` runs.
+If `TOTALITY_BINARY` is unset, the server looks for `tl` next to itself, then
+in `~/.local/bin`, then on `PATH`.
 
 ## tl_review
 
@@ -82,7 +66,8 @@ before `tl_review` runs.
 | `cwd` | string | repository working directory (defaults to the MCP server process cwd) |
 
 Runs `tl review` with `--no-publish` always set, so an agent asking for review
-context never comments on a pull request. May run up to 5 minutes.
+context never comments on a pull request. It is read-only and never initializes
+a repository. May run up to 5 minutes.
 
 Saving and publishing are plain Git, not MCP calls: `git add` + `git commit`
 record the revision through the hooks, `git push` captures and publishes.
