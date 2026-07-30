@@ -7,7 +7,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       // JSX supported
       title: (
-        <span className={`${basementGrotesque.className} uppercase tracking-wide text-[15px]`}>
+        <span className={`${basementGrotesque.className} uppercase tracking-wide text-xl`}>
           {appName}
         </span>
       ),
