@@ -1,6 +1,6 @@
 # Review Knowledge Index
 
-This directory builds the versioned TurboPuffer corpora used by `tl review
+This directory builds the versioned TurboPuffer corpora used by `tx review
 --deep` and GitHub PR review generation.
 
 The corpus is retrieval context, not a replacement for Totality heuristics. Keep the
@@ -76,11 +76,11 @@ The default namespace is intentionally separate from `TOTALITY_TPUF_NAMESPACE`
 (`totality-sessions`) so review knowledge does not mix with session transcripts and
 repository code chunks.
 
-`tl review` queries this namespace when both `OPENAI_API_KEY` and
+`tx review` queries this namespace when both `OPENAI_API_KEY` and
 `TURBOPUFFER_API_KEY` are available. Set `TOTALITY_REVIEW_RESOURCES=0` to disable
 review-resource retrieval for a run. `TOTALITY_REVIEW_RESOURCES_TOP_K` controls the
 shallow retrieval limit; the default is 8 so repo-local policy files can remain
-in the model context alongside review resources. `tl review --deep` raises the
+in the model context alongside review resources. `tx review --deep` raises the
 minimum resource limit to 24.
 
 The v2 index stores filterable metadata including `tier`, `languages`,

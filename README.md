@@ -20,19 +20,19 @@ curl -fsSL https://download.totality.sh/install.sh | sh
 ```
 
 Re-run the same command to upgrade or repair an existing installation. The
-installer replaces only the Totality-managed `tl` and `tl-mcp` binaries and refreshes
-the `tlr` alias. It does not remove `~/.totality`, repository metadata, or
+installer replaces only the Totality-managed `tx` and `tx-mcp` binaries and refreshes
+the `txr` alias. It does not remove `~/.totality`, repository metadata, or
 hooks.
 
 ```bash
-tl version
-tl doctor
+tx version
+tx doctor
 ```
 
 From your repo:
 
 ```bash
-tl init
+tx init
 ```
 
 This configures your Totality identity, installs Git lifecycle hooks to identify and
@@ -42,7 +42,7 @@ MCP server, and offers to add Totality workflow instructions to `AGENTS.md`.
 To uninstall the CLI:
 
 ```bash
-rm -f ~/.local/bin/tl ~/.local/bin/tlr ~/.local/bin/tl-mcp
+rm -f ~/.local/bin/tx ~/.local/bin/txr ~/.local/bin/tx-mcp
 ```
 
 This removes the installed binaries only. Local Totality data remains in `~/.totality`.
@@ -59,8 +59,8 @@ OPENAI_API_KEY
 ## Auth
 
 ```bash
-tl auth login
-tl auth status
+tx auth login
+tx auth status
 ```
 
 Logging into Totality allows you to push metadata and captured context to Totality Cloud.
@@ -69,25 +69,25 @@ This is required to use Totality code review.
 ## Add Instructions To Your AGENTS.md
 
 ```md
-Version control: plain Git. Once `tl init` installs the hooks, Totality records and
+Version control: plain Git. Once `tx init` installs the hooks, Totality records and
 publishes automatically — there is no Totality save verb.
 
 Save work:
 - `git add` to stage.
 - `git commit -m "..."` to save. A Totality hook records the commit as a reviewable revision.
-- `git status` to inspect; `tl review` for AI review of the current change.
+- `git status` to inspect; `tx review` for AI review of the current change.
 
 Publish with plain `git push` (the Totality pre-push hook captures the session and publishes),
-then open the PR with `gh pr create`. Do not run `tl push` or `tl capture push` — they
+then open the PR with `gh pr create`. Do not run `tx push` or `tx capture push` — they
 bypass or suppress the hook.
 
-When the user says "save work", "save using tl", or "save with tl", stage with
+When the user says "save work", "save using tx", or "save with tx", stage with
 `git add`, save with `git commit`, and publish with plain `git push` unless the user
 asks to keep the work local.
 
 To amend, use `git commit --amend` and preserve the Totality revision trailer.
 
-Use `tl_review` (MCP) or `tl review` (CLI) for review context on the current change.
+Use `tx_review` (MCP) or `tx review` (CLI) for review context on the current change.
 
 Totality PR summaries are posted for PRs whose branch was pushed through Totality with `git push`
 while the pre-push hook is installed. A PR opened before that push will not get a summary
@@ -97,8 +97,8 @@ If your agent client supports tool policies, require approval for destructive re
 branch deletion.
 ```
 
-The installer gives you the `tl` CLI and `tl-mcp`.
-When a repo is initialized with `tl init`, Totality
+The installer gives you the `tx` CLI and `tx-mcp`.
+When a repo is initialized with `tx init`, Totality
 installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
 hooks. They preserve durable Totality revision IDs across normal Git commits and
 rewrites, capture Claude/Codex/Cursor session context into `~/.totality/totality.db`, mark
@@ -117,12 +117,12 @@ git push                               # push code; Totality hook publishes sess
 Useful review commands:
 
 ```bash
-tlr                                              # tl review, patch-focused
-tl review --repo "how does capture work?"        # ask about the codebase
-tl review --base origin/main --fail-on strong --no-publish   # CI gate
+txr                                              # tx review, patch-focused
+tx review --repo "how does capture work?"        # ask about the codebase
+tx review --base origin/main --fail-on strong --no-publish   # CI gate
 ```
 
-`tl review` is read-only: it never runs `tl init`, writes `~/.totality`, or touches
+`tx review` is read-only: it never runs `tx init`, writes `~/.totality`, or touches
 `.git/index`, so it is safe in CI and on a checkout you do not own. Under
 `--fail-on` it exits `3` when findings survive and `4` when nothing was
 reviewed. See [the reference](docs-site/content/docs/cli.mdx) for the full surface.
@@ -131,30 +131,30 @@ reviewed. See [the reference](docs-site/content/docs/cli.mdx) for the full surfa
 
 Totality ships with a stdio MCP server.
 
-Install includes `tl-mcp`:
+Install includes `tx-mcp`:
 
 ```bash
-command -v tl-mcp
+command -v tx-mcp
 ```
 
 Cursor:
 
 ```bash
-cursor mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
+cursor mcp add tx -- env TOTALITY_BINARY=$HOME/.local/bin/tx $HOME/.local/bin/tx-mcp
 ```
 
 Claude Code:
 
 ```bash
-claude mcp add tl -- env TOTALITY_BINARY=$HOME/.local/bin/tl $HOME/.local/bin/tl-mcp
+claude mcp add tx -- env TOTALITY_BINARY=$HOME/.local/bin/tx $HOME/.local/bin/tx-mcp
 ```
 
 Then ask your agent:
 
 ```text
 save work
-save using tl
-save with tl
+save using tx
+save with tx
 ```
 
 Expected flow:
@@ -163,6 +163,6 @@ Expected flow:
 git add -> git commit -> git push -> gh pr create
 ```
 
-MCP exposes `tl_review` only; saving and publishing are plain Git.
+MCP exposes `tx_review` only; saving and publishing are plain Git.
 
-Publish with plain `git push` only. Do not run `tl push` or `tl capture push`.
+Publish with plain `git push` only. Do not run `tx push` or `tx capture push`.

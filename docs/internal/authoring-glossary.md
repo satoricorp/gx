@@ -57,9 +57,9 @@ Published stack = remote wire format for that stack
   Revision plans should refer to entries by `hunk_ids` instead of copying patch
   payloads into each revision.
 - **Demux plan packet**: the MCP-facing planning object returned by
-  `tl demux --json` / `tl_demux_changes`. It contains the demux
+  `tx demux --json` / `tx_demux_changes`. It contains the demux
   proposal, the hunk catalog, and the schema the host model should pass to
-  `tl_apply_revision_plan`. The Authoring Engine also runs the first validation
+  `tx_apply_revision_plan`. The Authoring Engine also runs the first validation
   pass and reports whether the plan is ready to apply, has recommended repairs,
   or requires repair before apply.
 - **Review plan**: normalize and check an LLM-authored revision plan without

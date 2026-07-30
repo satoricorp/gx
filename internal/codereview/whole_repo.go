@@ -34,7 +34,7 @@ const (
 	// files and reporting "no material issues found in the repository" is a
 	// sentence about a repository that was not read. Coverage is the point of
 	// `--repo`, so the number is now large enough to mean "all of it" for any
-	// repository tl reviews, and the files are spread across shards rather than
+	// repository tx reviews, and the files are spread across shards rather than
 	// crammed into one prompt. It survives only as a guard against a repository
 	// far larger than that, and whatever it drops is counted and reported.
 	maxWholeRepoSourceFiles = 5000

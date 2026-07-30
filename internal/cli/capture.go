@@ -54,7 +54,7 @@ func runCaptureSync(ctx context.Context, out interface{ Write([]byte) (int, erro
 		if quiet {
 			return nil
 		}
-		return fmt.Errorf("not logged in for capture upload — run `tl auth login`")
+		return fmt.Errorf("not logged in for capture upload — run `tx auth login`")
 	}
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -136,7 +136,7 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 				// the staging line reads as a verdict on the change.
 				if result.AttributionSuspect {
 					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Warning", fmt.Sprintf(
-						"found agent sessions but linked none of %d changed hunk(s); session data was likely still being written. Re-run once the session settles: tl capture push --repo %s --ref-range %s",
+						"found agent sessions but linked none of %d changed hunk(s); session data was likely still being written. Re-run once the session settles: tx capture push --repo %s --ref-range %s",
 						result.EligibleHunks, repoRoot, result.RefRange,
 					)))
 				}
@@ -211,11 +211,11 @@ func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSucc
 			return err
 		}
 	}
-	tlPath, err := os.Executable()
+	txPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repoRoot, TotalityPath: tlPath}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repoRoot, TotalityPath: txPath}); err != nil {
 		return err
 	}
 	if printSuccess {
@@ -225,11 +225,11 @@ func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSucc
 }
 
 func installClaudeCaptureHooks(cmd *cobra.Command, repoRoot string, quiet bool) error {
-	tlPath, err := os.Executable()
+	txPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if err := claudehooks.MergeSettings(repoRoot, tlPath); err != nil {
+	if err := claudehooks.MergeSettings(repoRoot, txPath); err != nil {
 		return err
 	}
 	if !quiet {

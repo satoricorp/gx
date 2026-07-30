@@ -27,7 +27,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	var sendReport bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Fix current tl state",
+		Short: "Fix current tx state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var repair vcs.RepairResult
 			var repairErr error
@@ -136,8 +136,8 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe tl workflow state issues")
-	cmd.Flags().BoolVar(&sendReport, "report", false, "send this diagnosis and recent tl logs to support")
+	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe tx workflow state issues")
+	cmd.Flags().BoolVar(&sendReport, "report", false, "send this diagnosis and recent tx logs to support")
 	return cmd
 }
 
@@ -152,7 +152,7 @@ func marshalDoctorDiagnosis(payload map[string]any) string {
 }
 
 // reportAndDrainPublishOutbox surfaces the publish-outbox backlog and, when
-// anything is pending or failed, retries the uploads right here. With `tl sync`
+// anything is pending or failed, retries the uploads right here. With `tx sync`
 // retired, doctor is the manual retry path; the pre-push hook is the automatic
 // one.
 func reportAndDrainPublishOutbox(ctx context.Context, w io.Writer) {
@@ -240,7 +240,7 @@ func printDoctorMissingStackBaseRefs(w io.Writer, fixed bool, status vcs.Missing
 	for _, issue := range status.Issues {
 		names = append(names, firstNonEmptyString(issue.BookmarkName, issue.Name))
 	}
-	fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("%d stack(s) with missing parent base refs: %s (run tl doctor)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("%d stack(s) with missing parent base refs: %s (run tx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanupResult, err error) {
@@ -263,7 +263,7 @@ func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanu
 	for _, stack := range result.Stale {
 		names = append(names, stack.BookmarkName)
 	}
-	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run tl doctor)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run tx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 type doctorJSON struct {
@@ -507,7 +507,7 @@ func formatLedgerLast(lastSeenAt *int64) string {
 func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
 	stats := statsJSON{
 		Agents:        agentStatsRows(status),
-		DiskUsedBytes: tlStorageDiskUsedBytes(),
+		DiskUsedBytes: txStorageDiskUsedBytes(),
 	}
 
 	db, err := storage.Open(ctx)
@@ -578,7 +578,7 @@ func doctorRepoStackStats(ctx context.Context, store *storage.Store, repoID int6
 }
 
 func isTotalityOwnedStack(stack storage.Stack) bool {
-	return strings.HasPrefix(strings.TrimSpace(stack.BookmarkName), "tl/")
+	return strings.HasPrefix(strings.TrimSpace(stack.BookmarkName), "tx/")
 }
 
 func agentStatsRows(status doctorJSON) []agentStatsJSON {
@@ -645,7 +645,7 @@ func parseLedgerSessions(value string) int {
 	return out
 }
 
-func tlStorageDiskUsedBytes() int64 {
+func txStorageDiskUsedBytes() int64 {
 	root, err := storage.DefaultDir()
 	if err != nil {
 		return 0
@@ -764,7 +764,7 @@ func writeJSON(cmd *cobra.Command, value any) error {
 // reportCodeIndexFreshness surfaces how far the local code index has drifted
 // from the checkout.
 //
-// `tl review` retrieves from this index, and a stale one fails silently: the
+// `tx review` retrieves from this index, and a stale one fails silently: the
 // query succeeds, returns chunks for code that has since changed, and the
 // review reads as fully informed. Measured on this repository, an index 30 days
 // behind HEAD scored 0.000 recall on every query targeting code written after
@@ -789,7 +789,7 @@ func reportCodeIndexFreshness(ctx context.Context, w io.Writer, repoRoot string)
 	state := semantic.LoadRepoIndexState(statePath)
 	if state == nil {
 		fmt.Fprintln(w, labelWarningValue("Code index",
-			"not indexed ("+identity.Namespace+"); run `tl index` so review can retrieve from this repository"))
+			"not indexed ("+identity.Namespace+"); run `tx index` so review can retrieve from this repository"))
 		return
 	}
 
@@ -807,7 +807,7 @@ func reportCodeIndexFreshness(ctx context.Context, w io.Writer, repoRoot string)
 	if state.CommitID != "" && head != "" {
 		detail += ": indexed at " + shortCommit(state.CommitID) + ", HEAD is " + shortCommit(head)
 	}
-	detail += age + "; run `tl index` to refresh"
+	detail += age + "; run `tx index` to refresh"
 	fmt.Fprintln(w, labelWarningValue("Code index", detail))
 }
 

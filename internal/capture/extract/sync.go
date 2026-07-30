@@ -101,7 +101,7 @@ func uploadStagedExtract(ctx context.Context, client *Client, row storage.Staged
 		RepoRoot:   row.RepoRoot,
 		RefRange:   row.RefRange,
 		HeadCommit: head,
-		TlVersion:  version.Current(),
+		TxVersion:  version.Current(),
 		HunkLinks:  staged.HunkLinks,
 		FileStats:  staged.FileStats,
 	}
@@ -269,7 +269,7 @@ func capSessionContent(content string) string {
 		cut = maxSessionContentBytes
 	}
 	omitted := len(content) - cut
-	return content[:cut] + fmt.Sprintf("\n[tl] truncated %d bytes omitted", omitted)
+	return content[:cut] + fmt.Sprintf("\n[tx] truncated %d bytes omitted", omitted)
 }
 
 func sourceLabel(row storage.StagedSession) string {

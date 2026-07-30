@@ -430,7 +430,7 @@ func TestSyncPendingCapsSessionContent(t *testing.T) {
 	if len(uploaded) > 2<<20 {
 		t.Fatalf("uploaded %d bytes, want a bounded body", len(uploaded))
 	}
-	if !strings.Contains(uploaded, "[tl] truncated") {
+	if !strings.Contains(uploaded, "[tx] truncated") {
 		t.Fatalf("uploaded body was cut without saying so: %q", uploaded[max(0, len(uploaded)-120):])
 	}
 }

@@ -82,7 +82,7 @@ func (s *Service) gitStackEntries(ctx context.Context, repo RepoInfo) ([]stackEn
 	}
 	branch = cleanRefName(strings.TrimSpace(branch))
 	if branch == "" {
-		return nil, fmt.Errorf("%w; check out a branch before running tl", ErrDetachedHEAD)
+		return nil, fmt.Errorf("%w; check out a branch before running tx", ErrDetachedHEAD)
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 	rangeSpec := fmt.Sprintf("%s..HEAD", baseCheckoutRef(baseRef))
@@ -127,6 +127,6 @@ func withRepoIdentityLock(commonDir string, fn func() error) error {
 	if commonDir == "" {
 		return fn()
 	}
-	lockPath := filepath.Join(commonDir, "tl", "repo.lock")
+	lockPath := filepath.Join(commonDir, "tx", "repo.lock")
 	return withLockFile(lockPath, fn)
 }

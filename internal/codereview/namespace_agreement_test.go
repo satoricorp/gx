@@ -9,11 +9,11 @@ import (
 )
 
 // TestReviewReadsTheNamespaceIndexWrites is the end-to-end half of the
-// namespace regression: the real `tl index` write path against the real
-// `tl review` read path, with nothing re-derived in between.
+// namespace regression: the real `tx index` write path against the real
+// `tx review` read path, with nothing re-derived in between.
 //
-// The observed failure: `tl index` in a checkout with no remote wrote
-// totality-local-yeet-8d862445e7e4-v2, while `tl review` in that same checkout probed
+// The observed failure: `tx index` in a checkout with no remote wrote
+// totality-local-yeet-8d862445e7e4-v2, while `tx review` in that same checkout probed
 // totality-local-satoricorp-yeet-v2 and repo-satoricorp-yeet, found neither, and
 // reported "Totality Cloud has never indexed this repository" — over an index that
 // existed, was current, and held every chunk the review needed.
@@ -76,7 +76,7 @@ func TestReviewReadsTheNamespaceIndexWrites(t *testing.T) {
 				searched = append(searched, target.Namespace)
 			}
 			if targets[0].Namespace != written {
-				t.Fatalf("`tl index` wrote %q; review's first namespace is %q (searched %v)", written, targets[0].Namespace, searched)
+				t.Fatalf("`tx index` wrote %q; review's first namespace is %q (searched %v)", written, targets[0].Namespace, searched)
 			}
 		})
 	}

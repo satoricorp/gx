@@ -87,7 +87,7 @@ func TestCaptureHookStatusResolvesGitRoot(t *testing.T) {
 
 	installed, applicable, resolvedRoot := captureHookStatus(context.Background(), subdir)
 	if installed {
-		t.Fatal("expected hook not installed before tl init")
+		t.Fatal("expected hook not installed before tx init")
 	}
 	if !applicable {
 		t.Fatal("expected hook check applicable inside a git repo")
@@ -96,7 +96,7 @@ func TestCaptureHookStatusResolvesGitRoot(t *testing.T) {
 		t.Fatalf("resolvedRoot = %q, want %q", resolvedRoot, wantRepo)
 	}
 
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	installed, applicable, resolvedRoot = captureHookStatus(context.Background(), subdir)
@@ -110,7 +110,7 @@ func TestCaptureRegisteredRepoHooksReportsInstalledAndMissingHooks(t *testing.T)
 	ctx := context.Background()
 	installedRepo := initDoctorGitRepo(t)
 	missingRepo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, TotalityPath: "/usr/local/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	store := openTestStore(t, ctx)
@@ -145,7 +145,7 @@ func TestCaptureDoctorStatusFallsBackToInitializedRepoRegistry(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	repo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	wantRepo, err := filepath.EvalSymlinks(repo)
@@ -185,7 +185,7 @@ func TestCaptureDoctorStatusFallsBackToKnownRepoRegistryWhenInitializedReposEmpt
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 	ctx := context.Background()
 	repo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	wantRepo, err := filepath.EvalSymlinks(repo)
@@ -232,7 +232,7 @@ func TestCaptureRegisteredRepoHooksFallsBackToReachableKnownRepos(t *testing.T) 
 	installedRepo := initDoctorGitRepo(t)
 	missingRepo := initDoctorGitRepo(t)
 	staleRepo := filepath.Join(t.TempDir(), "stale")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, TotalityPath: "/usr/local/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	store := openTestStore(t, ctx)
@@ -337,7 +337,7 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 		t.Fatalf("UpsertRepo() error = %v", err)
 	}
 	draftChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "draft-change")
-	draftStackID := insertDoctorStatsStack(t, ctx, store, repoID, "tl/draft-stack", "draft")
+	draftStackID := insertDoctorStatsStack(t, ctx, store, repoID, "tx/draft-stack", "draft")
 	if err := store.AddChangeToStack(ctx, draftStackID, draftChangeID, 2); err != nil {
 		t.Fatalf("AddChangeToStack(draft) error = %v", err)
 	}
@@ -356,7 +356,7 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 	if err := store.AddChangeToStack(ctx, mergedStackID, mergedChangeID, 5); err != nil {
 		t.Fatalf("AddChangeToStack(merged) error = %v", err)
 	}
-	_ = insertDoctorStatsStack(t, ctx, store, repoID, "tl/empty-stack", "draft")
+	_ = insertDoctorStatsStack(t, ctx, store, repoID, "tx/empty-stack", "draft")
 	if err := store.Close(); err != nil {
 		t.Fatalf("store.Close() error = %v", err)
 	}

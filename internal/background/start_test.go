@@ -15,8 +15,8 @@ func TestStartDetachedTotalityRefusesTestBinaries(t *testing.T) {
 	if !hasTestBinaryName("/tmp/go-build123/b001/hooks.test") {
 		t.Fatal(`hasTestBinaryName("…/hooks.test") = false, want true`)
 	}
-	if hasTestBinaryName("/usr/local/bin/tl") {
-		t.Fatal(`hasTestBinaryName("/usr/local/bin/tl") = true, want false`)
+	if hasTestBinaryName("/usr/local/bin/tx") {
+		t.Fatal(`hasTestBinaryName("/usr/local/bin/tx") = true, want false`)
 	}
 	// The running executable is itself a test binary, so the real call must
 	// refuse rather than fork.

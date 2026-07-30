@@ -102,7 +102,7 @@ func liveJudgeVerdicts(t *testing.T) (bedrockCompletion, []judgeResult, judgeReq
 // a reply that opens with paragraphs of reasoning, quotes braces from source
 // code, and buries its JSON in a ```json fence — and whether a prompt still
 // works is a fact about the model, not about this repository. A model update can
-// withdraw that behavior without a line of tl changing.
+// withdraw that behavior without a line of tx changing.
 //
 // Measured before and after the contract landed, replaying a real 24-candidate
 // batch against us.anthropic.claude-sonnet-4-6 twenty times each: before, every

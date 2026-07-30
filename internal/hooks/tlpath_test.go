@@ -17,12 +17,12 @@ func TestInstallTotalityPathRefusesTemporaryLocations(t *testing.T) {
 	if isTemporaryPath(filepath.Join(os.TempDir(), "go-build123", "b381", "cli.test")) != true {
 		t.Fatal("a binary under TMPDIR was not recognized as temporary")
 	}
-	for _, path := range []string{"/tmp/tl", "/var/tmp/tl"} {
+	for _, path := range []string{"/tmp/tx", "/var/tmp/tx"} {
 		if !isTemporaryPath(path) {
 			t.Fatalf("%s was not recognized as temporary", path)
 		}
 	}
-	for _, path := range []string{"/usr/local/bin/tl", filepath.Join(os.Getenv("HOME"), ".local", "bin", "tl")} {
+	for _, path := range []string{"/usr/local/bin/tx", filepath.Join(os.Getenv("HOME"), ".local", "bin", "tx")} {
 		if isTemporaryPath(path) {
 			t.Fatalf("%s was wrongly treated as temporary", path)
 		}
@@ -34,7 +34,7 @@ func TestInstallTotalityPathRefusesTemporaryLocations(t *testing.T) {
 }
 
 // Under `go test` the running binary is itself temporary, so the resolver
-// declines to pin anything and the hook resolves tl from PATH.
+// declines to pin anything and the hook resolves tx from PATH.
 func TestInstallTotalityPathDeclinesTheTestBinary(t *testing.T) {
 	got, err := installTotalityPath()
 	if err != nil {
@@ -45,16 +45,16 @@ func TestInstallTotalityPathDeclinesTheTestBinary(t *testing.T) {
 	}
 }
 
-// And an empty path renders a hook that resolves tl from PATH rather than one
+// And an empty path renders a hook that resolves tx from PATH rather than one
 // that pins the empty string.
 func TestHookResolveTotalityWithoutAPinnedPath(t *testing.T) {
 	script := hookResolveTotality("")
-	if !strings.Contains(script, `command -v tl`) {
+	if !strings.Contains(script, `command -v tx`) {
 		t.Fatalf("resolver does not fall back to PATH:\n%s", script)
 	}
 	// Whatever it pins must not be an absolute path, so the script's own
-	// `case "$tl_bin" in /*)` guard clears it and PATH decides.
-	if strings.Contains(script, `tl_bin="/`) {
+	// `case "$tx_bin" in /*)` guard clears it and PATH decides.
+	if strings.Contains(script, `tx_bin="/`) {
 		t.Fatalf("resolver pinned an absolute path when given none:\n%s", script)
 	}
 }

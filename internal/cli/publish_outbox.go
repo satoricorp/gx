@@ -30,7 +30,7 @@ func newPublishUploadCommand(ctx context.Context) *cobra.Command {
 func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, limit int) error {
 	client := cloud.NewClient()
 	if client == nil {
-		return fmt.Errorf("tl cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
+		return fmt.Errorf("tx cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	result, err := publication.DrainQueuedUploads(ctx, client, limit)
 	if err != nil {

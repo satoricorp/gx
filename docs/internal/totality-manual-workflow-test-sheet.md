@@ -1,7 +1,7 @@
 # Totality Manual Workflow Test Sheet
 
-> **Note (2026):** Replace `tl compose` / `tl stacks` / `tl add` / `tl publish`
-> in this sheet with `git add` + `tl commit`, `tl status`, `tl generate` where
+> **Note (2026):** Replace `tx compose` / `tx stacks` / `tx add` / `tx publish`
+> in this sheet with `git add` + `tx commit`, `tx status`, `tx generate` where
 > bulk split is needed, and plain `git push` + `gh pr create` to publish.
 
 Use this sheet against a disposable GitHub repository. The goal is to test the
@@ -22,8 +22,8 @@ real flow, not mocked services.
 export TOTALITY_HOME="$(mktemp -d)"
 git clone git@github.com:<owner>/<fixture-repo>.git
 cd <fixture-repo>
-tl auth status || tl auth login
-tl init --name "Totality Flow Tester" --email "totality-flow@example.com"
+tx auth status || tx auth login
+tx init --name "Totality Flow Tester" --email "totality-flow@example.com"
 git fetch origin
 git switch main
 git pull origin main
@@ -45,10 +45,10 @@ Purpose: prove code change to compose to publish to desktop merge to GitHub
 ```bash
 printf "counter %s\n" "$(date +%s)" >> counter.txt
 printf "message %s\n" "$(date +%s)" >> src/message.txt
-tl status
+tx status
 git add counter.txt src/message.txt
-tl commit -m "dummy counter and message update"
-tl status
+tx commit -m "dummy counter and message update"
+tx status
 git push
 gh pr create
 ```
@@ -65,7 +65,7 @@ Then:
 ```bash
 git fetch origin
 git log --oneline origin/main -5
-tl doctor
+tx doctor
 git status
 ```
 
@@ -76,7 +76,7 @@ git status
 - Totality Desktop shows the published stack.
 - Merge from Totality Desktop succeeds.
 - `origin/main` contains the dummy changes.
-- `tl status` agrees with the merged/published state.
+- `tx status` agrees with the merged/published state.
 
 Result: PASS / FAIL
 
@@ -91,12 +91,12 @@ Purpose: prove editing a published Totality revision updates the same GitHub PR.
 Start from an open published PR.
 
 ```bash
-tl status
-tl edit <revision-or-change-id>
+tx status
+tx edit <revision-or-change-id>
 printf "republish %s\n" "$(date +%s)" >> counter.txt
 git add counter.txt
-tl commit -m "republish counter update"
-tl status
+tx commit -m "republish counter update"
+tx status
 git push
 ```
 
@@ -124,9 +124,9 @@ disconnected replacement PR.
 Publish a PR that changes `shared.txt`:
 
 ```bash
-printf "tl change %s\n" "$(date +%s)" > shared.txt
+printf "tx change %s\n" "$(date +%s)" > shared.txt
 git add shared.txt
-tl commit -m "change shared text"
+tx commit -m "change shared text"
 git push
 gh pr create
 ```
@@ -147,7 +147,7 @@ Back in the Totality repo:
 
 ```bash
 git fetch origin
-tl doctor
+tx doctor
 git status
 ```
 
@@ -182,8 +182,8 @@ printf "alpha %s\n" "$(date +%s)" >> counter.txt
 printf "beta %s\n" "$(date +%s)" >> src/message.txt
 printf "gamma %s\n" "$(date +%s)" >> shared.txt
 git add counter.txt src/message.txt shared.txt
-tl generate
-tl status
+tx generate
+tx status
 git push
 gh pr create
 ```
@@ -192,8 +192,8 @@ Then verify GitHub and Totality Desktop.
 
 ### Pass Criteria
 
-- `tl generate` / `tl commit` creates the expected revision structure.
-- `tl status` shows all revisions in the intended order.
+- `tx generate` / `tx commit` creates the expected revision structure.
+- `tx status` shows all revisions in the intended order.
 - GitHub PR contains all changes.
 - Totality Desktop displays the stack/revisions coherently.
 - Merge from Totality Desktop updates `main`.
@@ -212,7 +212,7 @@ and leaves a normal branch checkout.
 ```bash
 printf "review only %s\n" "$(date +%s)" >> counter.txt
 git add counter.txt
-tl commit -m "review only counter update"
+tx commit -m "review only counter update"
 git push
 git branch --show-current
 ```

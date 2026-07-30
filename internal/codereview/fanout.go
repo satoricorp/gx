@@ -42,7 +42,7 @@ const (
 	// of what just happened; large ones get their own shards instead.
 	maxChangeInFocusBytes = 40000
 	// maxReviewShards bounds the fan-out. It is a guard against a repository
-	// far larger than anything tl reviews today, not a coverage decision: if it
+	// far larger than anything tx reviews today, not a coverage decision: if it
 	// ever binds, the shards it dropped are counted and reported.
 	maxReviewShards = 256
 	// defaultFanOutConcurrency is how many shards are in flight at once.

@@ -102,10 +102,10 @@ type completeAuthRequest struct {
 	GitHubAccessToken string `json:"github_access_token"`
 	MachineID         string `json:"machine_id"`
 	MachineName       string `json:"machine_name"`
-	TLVersion         string `json:"tl_version"`
+	TLVersion         string `json:"tx_version"`
 }
 
-// LoginOptions configures tl auth login.
+// LoginOptions configures tx auth login.
 type LoginOptions struct {
 	MachineName string
 	Endpoints   AuthEndpoints
@@ -114,7 +114,7 @@ type LoginOptions struct {
 }
 
 // Login runs GitHub device flow, stores the GitHub token with Convex via
-// POST /cx/auth/complete, and saves the token locally for tl cloud API calls.
+// POST /cx/auth/complete, and saves the token locally for tx cloud API calls.
 func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	clientID := GitHubClientID()
 	if clientID == "" {
@@ -208,7 +208,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 				if detail == "" {
 					detail = "console API rejected CLI session"
 				}
-				return CloudCredentials{}, fmt.Errorf("verify tl console session: %s", detail)
+				return CloudCredentials{}, fmt.Errorf("verify tx console session: %s", detail)
 			}
 		}
 	}
@@ -321,7 +321,7 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		case "slow_down":
 			interval++
 		case "incorrect_device_code", "expired_token":
-			return accessTokenResponse{}, fmt.Errorf("github device authorization was rejected or expired; run `tl auth login` again and use the newest code")
+			return accessTokenResponse{}, fmt.Errorf("github device authorization was rejected or expired; run `tx auth login` again and use the newest code")
 		case "":
 			return accessTokenResponse{}, fmt.Errorf("github access token response missing access_token")
 		default:
@@ -355,7 +355,7 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "tl/"+version.Current())
+	req.Header.Set("User-Agent", "tx/"+version.Current())
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	resp, err := client.Do(req)
@@ -408,22 +408,22 @@ func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, clou
 	}
 	meURL := cloudURLWithPath(cloudURL, "/v1/auth/me")
 	if meURL == "" {
-		return CloudAPISessionValidation{Valid: false, Error: "tl cloud URL is not configured"}, nil
+		return CloudAPISessionValidation{Valid: false, Error: "tx cloud URL is not configured"}, nil
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, meURL, nil)
 	if err != nil {
-		return CloudAPISessionValidation{}, fmt.Errorf("create tl api auth validation request: %w", err)
+		return CloudAPISessionValidation{}, fmt.Errorf("create tx api auth validation request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "tl/"+version.Current())
+	req.Header.Set("User-Agent", "tx/"+version.Current())
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return CloudAPISessionValidation{}, fmt.Errorf("validate tl api token: %w", err)
+		return CloudAPISessionValidation{}, fmt.Errorf("validate tx api token: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -474,7 +474,7 @@ func completeConvexAuth(ctx context.Context, client *http.Client, convexURL stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "tl/"+version.Current())
+	req.Header.Set("User-Agent", "tx/"+version.Current())
 
 	resp, err := client.Do(req)
 	if err != nil {

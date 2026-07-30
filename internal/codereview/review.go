@@ -105,7 +105,7 @@ type Report struct {
 	ReviewMode  string `json:"review_mode,omitempty"`
 	ReviewBase  string `json:"review_base,omitempty"`
 	ReviewRange string `json:"review_range,omitempty"`
-	// ReviewTarget is the human phrase naming what was inspected, or where tl
+	// ReviewTarget is the human phrase naming what was inspected, or where tx
 	// looked when it found nothing.
 	ReviewTarget string `json:"review_target,omitempty"`
 }

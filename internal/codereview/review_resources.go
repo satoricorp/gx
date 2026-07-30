@@ -141,9 +141,9 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	switch {
 	case !result.Available:
 		status.State = EvidenceUnavailable
-		status.Detail = "tl cloud retrieval is not configured server-side"
+		status.Detail = "tx cloud retrieval is not configured server-side"
 		if result.Reason != "" {
-			status.Detail = "tl cloud: " + result.Reason
+			status.Detail = "tx cloud: " + result.Reason
 		}
 	case !result.Exists:
 		status.State = EvidenceMissing
@@ -162,7 +162,7 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	snippets := reviewResourceSnippets(rows, limit, result.Namespace)
 	status.State = EvidenceOK
 	status.Snippets = len(snippets)
-	status.Detail = "via tl cloud"
+	status.Detail = "via tx cloud"
 	in.Evidence.Record(status)
 	return snippets, nil
 }

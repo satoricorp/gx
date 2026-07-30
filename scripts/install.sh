@@ -6,7 +6,7 @@ install_dir="${TOTALITY_INSTALL_DIR:-$HOME/.local/bin}"
 tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t totality-install)"
 
 fail() {
-  echo "tl install: $*" >&2
+  echo "tx install: $*" >&2
   exit 1
 }
 
@@ -14,8 +14,8 @@ usage() {
   cat <<EOF
 Totality installer
 
-Default install: tl CLI, tl-mcp, shell completions.
-Repo git hooks are installed later by tl init.
+Default install: tx CLI, tx-mcp, shell completions.
+Repo git hooks are installed later by tx init.
 
 Usage:
   curl -fsSL https://download.totality.sh/install.sh | sh
@@ -80,7 +80,7 @@ need awk
 need mkdir
 
 base_url="${base_url%/}"
-archive="tl_${os}_${arch}.tar.gz"
+archive="tx_${os}_${arch}.tar.gz"
 archive_url="$base_url/cli/latest/$archive"
 checksum_url="$archive_url.sha256"
 archive_path="$tmp_dir/$archive"
@@ -104,36 +104,36 @@ if [ "$expected" != "$actual" ]; then
 fi
 
 tar -xzf "$archive_path" -C "$tmp_dir"
-test -x "$tmp_dir/tl/bin/tl" || fail "archive is missing tl"
-test -x "$tmp_dir/tl/bin/tl-mcp" || fail "archive is missing tl-mcp"
+test -x "$tmp_dir/tx/bin/tx" || fail "archive is missing tx"
+test -x "$tmp_dir/tx/bin/tx-mcp" || fail "archive is missing tx-mcp"
 
 mkdir -p "$install_dir"
-install -m 755 "$tmp_dir/tl/bin/tl" "$install_dir/tl"
-install -m 755 "$tmp_dir/tl/bin/tl-mcp" "$install_dir/tl-mcp"
-ln -sf tl "$install_dir/tlr"
+install -m 755 "$tmp_dir/tx/bin/tx" "$install_dir/tx"
+install -m 755 "$tmp_dir/tx/bin/tx-mcp" "$install_dir/tx-mcp"
+ln -sf tx "$install_dir/txr"
 
-if [ -f "$tmp_dir/tl/completions/tl.bash" ]; then
+if [ -f "$tmp_dir/tx/completions/tx.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"
-  install -m 644 "$tmp_dir/tl/completions/tl.bash" "$HOME/.local/share/bash-completion/completions/tl"
+  install -m 644 "$tmp_dir/tx/completions/tx.bash" "$HOME/.local/share/bash-completion/completions/tx"
 fi
-if [ -f "$tmp_dir/tl/completions/_tl" ]; then
+if [ -f "$tmp_dir/tx/completions/_tx" ]; then
   mkdir -p "$HOME/.zfunc"
-  install -m 644 "$tmp_dir/tl/completions/_tl" "$HOME/.zfunc/_tl"
+  install -m 644 "$tmp_dir/tx/completions/_tx" "$HOME/.zfunc/_tx"
 fi
 
-echo "Installed tl to $install_dir/tl"
+echo "Installed tx to $install_dir/tx"
 echo "Installed MCP and aliases"
-if ! command -v tl >/dev/null 2>&1; then
-  echo "Add $install_dir to PATH before running tl."
+if ! command -v tx >/dev/null 2>&1; then
+  echo "Add $install_dir to PATH before running tx."
 fi
-# Cyan ANSI 6 + bold matches tl version / logo (internal/cli/logo.go).
-tl_auth_login="tl auth login"
-tl_init="tl init"
+# Cyan ANSI 6 + bold matches tx version / logo (internal/cli/logo.go).
+tx_auth_login="tx auth login"
+tx_init="tx init"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  tl_auth_login="$(printf '\033[1;36mtl auth login\033[0m')"
-  tl_init="$(printf '\033[1;36mtl init\033[0m')"
+  tx_auth_login="$(printf '\033[1;36mtl auth login\033[0m')"
+  tx_init="$(printf '\033[1;36mtl init\033[0m')"
 fi
 echo ""
-printf '\tRun %s to login.\n' "$tl_auth_login"
-printf '\tRun %s in each repo to initialize tl.\n' "$tl_init"
-"$install_dir/tl" version
+printf '\tRun %s to login.\n' "$tx_auth_login"
+printf '\tRun %s in each repo to initialize tx.\n' "$tx_init"
+"$install_dir/tx" version

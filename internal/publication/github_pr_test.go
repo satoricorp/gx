@@ -123,7 +123,7 @@ func TestUpdateGitHubPullRequestBodyIsNoOp(t *testing.T) {
 
 func prSummaryTestBundle(prURL string) reviewbundle.Bundle {
 	return reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Push: reviewbundle.PushPayload{

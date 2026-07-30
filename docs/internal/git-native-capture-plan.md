@@ -1,6 +1,6 @@
 # Plan: Git-native capture — bound staging, reference sessions, drop stack metadata
 
-> Status: **Workstream A implemented** on `tl-review-and-plain-git` (2026-07-26);
+> Status: **Workstream A implemented** on `tx-review-and-plain-git` (2026-07-26);
 > B and C remain. The open reference-vs-blob question below was decided in A's
 > favor of references: staged rows store a source pointer plus fingerprint
 > (sha256 + size + mtime), staging happens only after match, one row per source
@@ -8,9 +8,9 @@
 > disk (cloud retains raw transcripts). raw_blob is legacy-read-only.
 > Originally written 2026-07-26 from a session that shipped the
 > capture-discovery fixes and hit the staging regression described below.
-> Branch context: `tl-review-and-plain-git` (PR satoricorp/totality#110).
+> Branch context: `tx-review-and-plain-git` (PR satoricorp/totality#110).
 
-Totality no longer has jj, no longer has `tl commit`/`tl status`, and publishes only
+Totality no longer has jj, no longer has `tx commit`/`tx status`, and publishes only
 through Git hooks. What it stores locally has not caught up. The destination is:
 
 > **Git is the source of truth for what changed. Totality stores only the captured
@@ -23,8 +23,8 @@ go first.** B and C are independent of each other.
 
 ## Before you start: state of the world
 
-**Installed binary is deliberately older than the branch.** `~/.local/bin/tl` is
-`8e823c20`; a backup sits at `~/.local/bin/tl.bak-20260725`. The branch has
+**Installed binary is deliberately older than the branch.** `~/.local/bin/tx` is
+`8e823c20`; a backup sits at `~/.local/bin/tx.bak-20260725`. The branch has
 capture fixes that are correct but **must not be installed until Workstream A
 lands** — installing them hung `git push` past 5 minutes and grew `~/.totality/totality.db`
 to 251 MB.
@@ -44,11 +44,11 @@ to 251 MB.
   `/Users/joe/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.8.darwin-arm64/bin/go`
   (and `gofmt` beside it). `just build` fails for this reason; replicate its
   ldflags manually or the binary loses its cloud/PostHog config.
-- **Git hooks pin an absolute tl path.** Running a tl binary from a temp dir
+- **Git hooks pin an absolute tx path.** Running a tx binary from a temp dir
   triggers autoinit and rewrites that repo's hooks to point at the temp path.
-  `~/git/tl/.git/hooks/pre-push` ended up pointing at `/tmp/totality-smoke/tl`. Fix with
-  `tl init -y` using the real installed binary; check
-  `grep -o '"[^"]*/tl"' .git/hooks/pre-push` when capture behaves strangely.
+  `~/git/tx/.git/hooks/pre-push` ended up pointing at `/tmp/totality-smoke/tx`. Fix with
+  `tx init -y` using the real installed binary; check
+  `grep -o '"[^"]*/tx"' .git/hooks/pre-push` when capture behaves strangely.
 - **`extract=` empty in the capture line means the run errored**, not that nothing
   matched. That single character of output is the fastest diagnostic there is.
 - Verify capture changes by calling `orchestrator.Run` from a throwaway probe test
@@ -225,9 +225,9 @@ exists** — rename it (with a compatibility window) as part of this work.
 4. **Then** delete the local stack/change tables and their readers, and let
    `RecoverMissingRevisions` (which already rebuilds revisions from trailers) be
    the only reconstruction path.
-5. **Decide `tl sync`'s fate here, not before.** It is *not* what pushes sessions —
-   the pre-push hook runs `tl capture sync` plus the outbox worker for that.
-   Top-level `tl sync` reconciles stack/bookmark metadata with the remote and
+5. **Decide `tx sync`'s fate here, not before.** It is *not* what pushes sessions —
+   the pre-push hook runs `tx capture sync` plus the outbox worker for that.
+   Top-level `tx sync` reconciles stack/bookmark metadata with the remote and
    Cloud, so it becomes meaningless exactly when this workstream lands. Removing
    it earlier is safe for capture but leaves the manual retry path for queued
    uploads with no replacement — check the outbox drain story first
@@ -252,7 +252,7 @@ accepts both shapes.
 
 ## Leftovers not covered above
 
-- `internal/cli` dead-code sweep — removing `tl commit`/`tl status` orphaned a
+- `internal/cli` dead-code sweep — removing `tx commit`/`tx status` orphaned a
   cascade (`promptSwitchSelection`, `diff_tui.go`, `daemonHealthy`, `progressBar`,
   and the `orderedStacks`/`stackMeta` chain they keep alive).
 - Five stale internal docs still document removed commands:

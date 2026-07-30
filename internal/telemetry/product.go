@@ -19,10 +19,10 @@ type stateWritesKeyType struct{}
 var stateWritesKey stateWritesKeyType
 
 // WithoutStateWrites marks ctx as read-only for the machine. Telemetry still
-// reports under it; it just never writes anything down to do so. `tl review`
+// reports under it; it just never writes anything down to do so. `tx review`
 // runs as a CI gate and on checkouts the reviewer does not own, and minting a
 // machine ID to label an event would leave $TOTALITY_HOME behind on a machine that
-// never ran tl — buying an analytics dimension with the promise the command
+// never ran tx — buying an analytics dimension with the promise the command
 // makes.
 func WithoutStateWrites(ctx context.Context) context.Context {
 	return context.WithValue(ctx, stateWritesKey, true)
@@ -73,7 +73,7 @@ func EmitInstallOnce(ctx context.Context) {
 
 func ProductProperties(ctx context.Context, properties map[string]any) map[string]any {
 	out := map[string]any{
-		"tl_version": version.Current(),
+		"tx_version": version.Current(),
 		"entrypoint": Entrypoint(),
 	}
 	if properties != nil {

@@ -20,7 +20,7 @@ import (
 	"github.com/satoricorp/totality/internal/vcs"
 )
 
-// SuppressAdoptedPublicationEnv tells the pre-push hook that tl push owns
+// SuppressAdoptedPublicationEnv tells the pre-push hook that tx push owns
 // this push and will enqueue the publication itself.
 const SuppressAdoptedPublicationEnv = "TOTALITY_SUPPRESS_ADOPTED_PUBLICATION"
 
@@ -55,7 +55,7 @@ type PushOptions struct {
 // PushOutcome summarizes a non-blocking pre-push hook run.
 //
 // SkipReason is set whenever the hook deliberately did no work. Without it a
-// paused capture, a repo opted out with `git config tl.enabled false`, and a
+// paused capture, a repo opted out with `git config tx.enabled false`, and a
 // failure to resolve the working directory all returned the same zero outcome,
 // so all three rendered as the identical `capture staged extract= sessions=0`
 // line — the same line a genuine error prints. An empty extract id has to mean
@@ -121,10 +121,10 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 		outcome.CaptureError = outcome.SkipReason
 		return outcome, nil
 	}
-	// Per-repo opt-out: `git config tl.enabled false` excludes one repository
-	// from Totality, including from a machine-wide `tl init --global` install.
+	// Per-repo opt-out: `git config tx.enabled false` excludes one repository
+	// from Totality, including from a machine-wide `tx init --global` install.
 	if !EnabledForRepo(ctx, repoRoot) {
-		outcome.SkipReason = "this repository opted out (git config tl.enabled false)"
+		outcome.SkipReason = "this repository opted out (git config tx.enabled false)"
 		return outcome, nil
 	}
 
@@ -191,7 +191,7 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	// `changes` rows this links to exist, and EnqueueAdoptedPublication below
 	// runs reviewbundle.BuildPush synchronously in this same process — so the
 	// artifact this very push writes already carries the sessions. Running it
-	// before the SuppressAdoptedPublication early return covers `tl push`,
+	// before the SuppressAdoptedPublication early return covers `tx push`,
 	// which builds its own artifact from the same rows.
 	if attached, err := attachPushSessions(ctx, repoRoot, outcome.Result.HunkLinks); err != nil {
 		outcome.AttachError = err.Error()
@@ -215,7 +215,7 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	}
 
 	if os.Getenv(SuppressAdoptedPublicationEnv) != "" {
-		// tl push drives this git push and enqueues its own artifact with
+		// tx push drives this git push and enqueues its own artifact with
 		// the PR URL attached; a hook publication here would race it with
 		// a PR-less artifact for the same head.
 		if backgroundWorkersEnabled() {
@@ -316,7 +316,7 @@ func markShareable(ctx context.Context, repoRoot string, outcome *PushOutcome, r
 
 // shouldStartOutboxWorker decides whether this push spawns the publish-outbox
 // worker. It is not gated on the current push having enqueued something: with
-// `tl sync` retired, the pre-push hook is the retry path for items that failed
+// `tx sync` retired, the pre-push hook is the retry path for items that failed
 // or were left pending by an earlier push, so any backlog also spawns the
 // worker.
 func shouldStartOutboxWorker(queuedThisPush bool) bool {

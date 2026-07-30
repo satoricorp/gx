@@ -94,7 +94,7 @@ func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testin
 		t.Fatal("expected expired token error")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "tl auth login") {
+	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "tx auth login") {
 		t.Fatalf("error = %q, want re-login instruction", message)
 	}
 }

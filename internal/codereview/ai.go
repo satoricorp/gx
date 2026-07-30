@@ -50,7 +50,7 @@ const (
 	maxAIWholeRepoContextSnippets = 128
 	// maxAIRepoInventoryBytes is the file listing's own budget. A map of the
 	// repository is worth its bytes: at ~45 bytes a path this holds roughly
-	// 4,000 files, which is every file in both repositories tl reviews today.
+	// 4,000 files, which is every file in both repositories tx reviews today.
 	maxAIRepoInventoryBytes = 180000
 	// Diff snippets are the primary evidence for what changed, so they get their
 	// own budget rather than sharing the retrieved-context one. A PR summary

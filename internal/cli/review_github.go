@@ -12,7 +12,7 @@ import (
 	"github.com/satoricorp/totality/internal/vcs"
 )
 
-const reviewCommentMarker = "<!-- tl review summary -->"
+const reviewCommentMarker = "<!-- tx review summary -->"
 
 func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)

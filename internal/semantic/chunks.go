@@ -185,7 +185,7 @@ func transcriptChunkKey(changeID string, source reviewbundle.ReviewTranscriptSou
 		responseID = *source.ResponseID
 	}
 	return strings.Join([]string{
-		"tl",
+		"tx",
 		"change", changeID,
 		"session", source.SessionID,
 		"request", source.RequestID,

@@ -49,7 +49,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.UploadReviewArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: t.TempDir(), Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -61,7 +61,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 	if gotAuth != "Bearer tlcs_sync" {
 		t.Fatalf("authorization = %q", gotAuth)
 	}
-	if gotPayload.SchemaVersion != reviewbundle.SchemaVersion || gotPayload.Event != "tl.pr" || gotPayload.Push.HeadCommitID != "abc123" {
+	if gotPayload.SchemaVersion != reviewbundle.SchemaVersion || gotPayload.Event != "tx.pr" || gotPayload.Push.HeadCommitID != "abc123" {
 		t.Fatalf("payload = %#v, want canonical artifact shape", gotPayload)
 	}
 	if gotPayload.ReviewID != "" || gotPayload.ReviewURL != "" {
@@ -86,7 +86,7 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 	}
 
 	response := reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -107,7 +107,7 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.UploadReviewArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -133,14 +133,14 @@ func TestSyncPushRequiresTokenWhenCloudURLSet(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without credentials")
 	}
-	if !strings.Contains(err.Error(), "tl auth login") {
+	if !strings.Contains(err.Error(), "tx auth login") {
 		t.Fatalf("error = %v, want login hint", err)
 	}
 }
 
 func TestNewClientUsesCloudURL(t *testing.T) {
 	os.Unsetenv("TOTALITY_CLOUD_URL")
-	buildconfig.CloudURL = "https://api.example.com/tl/pr"
+	buildconfig.CloudURL = "https://api.example.com/tx/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	client := NewClient()
@@ -154,7 +154,7 @@ func TestNewClientUsesCloudURL(t *testing.T) {
 
 func TestNewClientEnvOverridesBakedDefault(t *testing.T) {
 	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3201")
-	buildconfig.CloudURL = "https://api.example.com/tl/pr"
+	buildconfig.CloudURL = "https://api.example.com/tx/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	client := NewClient()

@@ -1,7 +1,7 @@
 # Totality CLI Authoring Contract
 
-> **Note (2026):** `tl compose`, `tl stacks`, and `tl add` were removed. Normal
-> work uses `git add` + `tl commit`, `tl status`, and the hidden `tl generate`.
+> **Note (2026):** `tx compose`, `tx stacks`, and `tx add` were removed. Normal
+> work uses `git add` + `tx commit`, `tx status`, and the hidden `tx generate`.
 
 This document captures the intended behavior for Totality authoring, compose, stacks,
 and publish workflows.
@@ -39,21 +39,21 @@ The normal workflow should be:
 
 ```bash
 git add <files>
-tl commit -m "describe this revision"
-tl status
+tx commit -m "describe this revision"
+tx status
 git push
 gh pr create
 ```
 
-`git add` + `tl commit` records staged work as a Totality revision. The hidden
-`tl generate` command can organize a large working copy into smaller revisions
+`git add` + `tx commit` records staged work as a Totality revision. The hidden
+`tx generate` command can organize a large working copy into smaller revisions
 when needed.
 
-`tl status` shows local features, revisions, and remote state.
+`tx status` shows local features, revisions, and remote state.
 
 Publish with plain `git push` (the Totality pre-push hook captures the session and
-publishes). Open the PR with `gh pr create`. Do not run `tl push` or
-`tl publish` — those paths are disabled or removed; plain `git push` is the
+publishes). Open the PR with `gh pr create`. Do not run `tx push` or
+`tx publish` — those paths are disabled or removed; plain `git push` is the
 user-facing publish path.
 
 The user should stay on a normal branch checkout after commit and push.
@@ -61,7 +61,7 @@ Detached HEAD is not an acceptable steady state.
 
 ## Compose
 
-`tl compose` is the core authoring command. It should take messy working-copy
+`tx compose` is the core authoring command. It should take messy working-copy
 changes and turn them into reviewable revisions grouped into stacks.
 
 The intended compose pipeline is:
@@ -100,7 +100,7 @@ the user sees it as ready.
 
 ## Stacks
 
-`tl stacks` is the local truth view for accepted work.
+`tx stacks` is the local truth view for accepted work.
 
 It should show:
 
@@ -115,7 +115,7 @@ It should show:
 - remote ref if published
 
 It should not require being on that stack. In the normal flow, the user is on
-`main`, and `tl stacks` still shows accepted local stacks and published stacks
+`main`, and `tx stacks` still shows accepted local stacks and published stacks
 that are still under review. Merged or closed stacks are removed from the
 working stack surface.
 
@@ -143,7 +143,7 @@ For each revision Totality needs:
 - provenance/session links
 - demux/compose evidence
 
-Editing should work by change ID. If a user runs `tl edit <revision>`, Totality should
+Editing should work by change ID. If a user runs `tx edit <revision>`, Totality should
 find the stack containing that JJ change, enter the correct revision, and
 preserve the relationship after the edit rewrites the commit.
 
@@ -163,11 +163,11 @@ The intended visible-branch rules are:
 - Publish may create or update branch refs for stacks.
 - After publish, visible Git checkout returns to `main`.
 - Edit surgery should attach visible Git to the real stack branch when one
-  exists. Totality must not create `tl/...` checkout branches for edit/base state.
+  exists. Totality must not create `tx/...` checkout branches for edit/base state.
 
 Branches/bookmarks created by compose should match the stack names shown in
 compose. If compose proposes `feature/stack-management`, then accepting it
-should create a stack whose visible name/ref in `tl stacks` is
+should create a stack whose visible name/ref in `tx stacks` is
 `feature/stack-management`.
 
 ## Publish
@@ -190,7 +190,7 @@ means:
 - upload review context when cloud/GitHub integration is enabled
 - open or update the PR with `gh pr create` (do not seed `## Summary`)
 
-Do not run `tl push` or `tl publish`. Those are not the agent/user publish path.
+Do not run `tx push` or `tx publish`. Those are not the agent/user publish path.
 
 ## MCP And Agent Flow
 
@@ -199,16 +199,16 @@ MCP should call the same authoring engine behavior as the CLI.
 The ideal agent loop is:
 
 1. `git add` staged files
-2. `tl commit`
-3. `tl status`
+2. `tx commit`
+3. `tx status`
 4. plain `git push` when ready
 5. `gh pr create`
 6. `git commit --amend` when updating the latest revision, preserving its Totality trailer
-7. `tl_review` when review context is needed
+7. `tx_review` when review context is needed
 
-MCP exposes `tl_review` only — there is no `tl_commit` / `tl_status` / `tl_publish` /
-`tl_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
-(never `tl push` or `tl capture push`).
+MCP exposes `tx_review` only — there is no `tx_commit` / `tx_status` / `tx_publish` /
+`tx_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
+(never `tx push` or `tx capture push`).
 
 The important invariant is shared: agent commits must create the same revisions
 that the human CLI path would create.
@@ -217,9 +217,9 @@ that the human CLI path would create.
 
 Merge only changes that support this contract:
 
-- `git add` + `tl commit` (and hidden `tl generate` when needed) record reviewable revisions
+- `git add` + `tx commit` (and hidden `tx generate` when needed) record reviewable revisions
 - stack/revision metadata stores JJ change IDs and current commit IDs
-- agents publish with plain `git push` only (never `tl push` / `tl publish` / MCP push tools)
+- agents publish with plain `git push` only (never `tx push` / `tx publish` / MCP push tools)
 - the pre-push hook captures session data and records publish metadata
 - PRs are opened with `gh pr create` without seeding `## Summary`
 
@@ -239,8 +239,8 @@ Then run a manual dogfood:
 
 ```bash
 git add <files>
-tl commit -m "describe this revision"
-tl status
+tx commit -m "describe this revision"
+tx status
 git push
 gh pr create
 git branch --show-current

@@ -9,7 +9,7 @@ import (
 
 const (
 	PlaceholderDescription      = "(no description set)"
-	PendingRemainderDescription = "tl: pending remainder"
+	PendingRemainderDescription = "tx: pending remainder"
 	// RevisionTrailerFormat is the Totality identity trailer line template.
 	RevisionTrailerFormat = "Totality: https://totality.sh/r/%s"
 )

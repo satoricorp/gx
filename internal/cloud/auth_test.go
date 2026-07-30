@@ -184,7 +184,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected login to reject unverified console session")
 	}
-	if !strings.Contains(err.Error(), "verify tl console session") || !strings.Contains(err.Error(), "wrong environment") {
+	if !strings.Contains(err.Error(), "verify tx console session") || !strings.Contains(err.Error(), "wrong environment") {
 		t.Fatalf("error = %v, want console verification failure", err)
 	}
 	if creds, loadErr := LoadCloudCredentials(); loadErr != nil || creds != nil {

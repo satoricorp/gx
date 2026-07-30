@@ -1,14 +1,14 @@
 ---
-name: tl
+name: tx
 description: >-
-  Version-control workflow for repos that use Totality (the tl CLI). Use this skill whenever
+  Version-control workflow for repos that use Totality (the tx CLI). Use this skill whenever
   the user asks to commit, save, record, amend, land, publish, ship, or open a PR for
   work in a repo that has Totality initialized (Totality hooks/metadata present, Totality instructions in
-  AGENTS.md, or the user mentions "tl") — even if they only say "save my work" or
+  AGENTS.md, or the user mentions "tx") — even if they only say "save my work" or
   "commit this". In a Totality repo you work in plain Git: save with `git add` + `git commit`
   (Totality's hooks record the commit as a reviewable revision), inspect with `git status`, and
-  publish with `git push` (never `tl push`), then `gh pr create`. Totality adds AI review via
-  `tl review`; use it for review, not for saving.
+  publish with `git push` (never `tx push`), then `gh pr create`. Totality adds AI review via
+  `tx review`; use it for review, not for saving.
 ---
 
 # Totality workflow
@@ -20,15 +20,15 @@ GitHub on `git push`.
 
 You work in plain Git — `git add`, `git commit`, `git push`, `git checkout -b`. There is
 no Totality save verb; the hooks do the recording and publishing automatically. Totality MCP exposes
-`tl_review` only — save and publish with Git, and use `tl review` for AI review.
+`tx_review` only — save and publish with Git, and use `tx review` for AI review.
 
 ## First: make sure the repo is initialized
 
-Totality is initialized when `tl init` has registered the repository (hooks + local metadata).
-If Git or tl commands fail with init errors, initialize non-interactively first:
+Totality is initialized when `tx init` has registered the repository (hooks + local metadata).
+If Git or tx commands fail with init errors, initialize non-interactively first:
 
 ```bash
-tl init -y
+tx init -y
 ```
 
 Identity defaults to the repo's Git config; pass `--name` / `--email` only when Git
@@ -61,7 +61,7 @@ If nothing is staged, `git commit` reports "nothing to commit" — run `git add 
 
 ### Provenance is captured automatically
 
-`tl init` installs a pre-push hook that runs capture/publication on `git push`: it records
+`tx init` installs a pre-push hook that runs capture/publication on `git push`: it records
 the coding session and matches it to the hunks each revision changed, so the review bundle
 knows which session produced each change. Just `git push` — the provenance rides along.
 There is no manual attach or self-report step; do not try to declare provenance by hand.
@@ -100,42 +100,42 @@ publish/CI status as the branch goes up. Open the pull request with `gh pr creat
 **not** seed a `## Summary` section in the PR body (leave human notes only). Totality Cloud
 appends the rich summary below the existing body once the PR exists.
 
-Do not run `tl push` — the command has been removed. Publish with plain `git push`; the
+Do not run `tx push` — the command has been removed. Publish with plain `git push`; the
 pre-push hook is the only publish path.
 
-## Review: tl review
+## Review: tx review
 
 ```bash
-tl review                                    # patch-focused default
-tl review "did we break the retry contract?" # steer with a prompt
-tl review --repo                             # review the codebase, not just the current change
-tl review --scope security                   # architecture, security, performance, etc.
-tl review --focus src/auth --deep            # deep pass limited to a path prefix
-tl review --verbose                          # include repo facts, docs, changed files
+tx review                                    # patch-focused default
+tx review "did we break the retry contract?" # steer with a prompt
+tx review --repo                             # review the codebase, not just the current change
+tx review --scope security                   # architecture, security, performance, etc.
+tx review --focus src/auth --deep            # deep pass limited to a path prefix
+tx review --verbose                          # include repo facts, docs, changed files
 ```
 
-Without `--repo`, a dirty working tree is the review subject: tl reviews the diff. Use
+Without `--repo`, a dirty working tree is the review subject: tx reviews the diff. Use
 `--repo` to review the repository itself — the reviewer is given an inventory of the
 repository and its source files, in any language, and findings are no longer filtered
 down to changed lines. The uncommitted work stays in focus, so the review still sees
 what you just edited, and static checks run over the repository when there is no diff.
 `--repo` also wins over `--base`.
 
-The `tlr` alias runs `tl review`. The `tl_review` MCP tool is the same review from an
+The `txr` alias runs `tx review`. The `tx_review` MCP tool is the same review from an
 agent client.
 
 ## Do not
 
-- `tl commit` / `tl status` / `tl push` / `tl edit` — removed. Use `git commit`,
+- `tx commit` / `tx status` / `tx push` / `tx edit` — removed. Use `git commit`,
   `git status`, `git push`, and `git commit --amend`; Totality's hooks record revisions for you.
-- `tl capture push` or any manual capture/attach step — the pre-push hook captures and
+- `tx capture push` or any manual capture/attach step — the pre-push hook captures and
   publishes on `git push`, and provenance is inferred automatically.
-- Hidden utilities such as `tl base`, `tl generate`, or `tl sync` — removed; use plain
+- Hidden utilities such as `tx base`, `tx generate`, or `tx sync` — removed; use plain
   Git (`git pull --rebase`, `git checkout -b`) instead. Queued uploads retry on the next
-  `git push`, and `tl doctor` shows and drains the upload outbox.
-- `tl demo` and `tl ops` — removed. There is no walkthrough, and `tl ops diagnose doctor`
-  was only ever `tl doctor` under another name; run `tl doctor`.
-- `tl report` — folded into `tl doctor --report`, which diagnoses first and then sends
+  `git push`, and `tx doctor` shows and drains the upload outbox.
+- `tx demo` and `tx ops` — removed. There is no walkthrough, and `tx ops diagnose doctor`
+  was only ever `tx doctor` under another name; run `tx doctor`.
+- `tx report` — folded into `tx doctor --report`, which diagnoses first and then sends
   that diagnosis with recent logs to support.
 - Declaring provenance by hand (self-reports, task summaries) — there is no such channel;
   sessions are matched to changed hunks automatically.
@@ -145,10 +145,10 @@ agent client.
 | Symptom | Fix |
 | --- | --- |
 | `git commit` says "nothing to commit" | Nothing staged — run `git add <files>` first |
-| Error mentions `tl auth login` or "not logged in" | Ask the user to run `tl auth login`, then retry |
-| Error mentions session expired / `tl auth logout` | Ask the user to run `tl auth logout` then `tl auth login`, then retry |
+| Error mentions `tx auth login` or "not logged in" | Ask the user to run `tx auth login`, then retry |
+| Error mentions session expired / `tx auth logout` | Ask the user to run `tx auth logout` then `tx auth login`, then retry |
 | `git push` fails: no `origin` / not a GitHub remote | `git remote -v`; point `origin` at GitHub, or skip publishing |
 | `git push` rejected (remote moved) | `git pull --rebase`, then retry `git push` |
-| No PR summary on the PR | Confirm the branch was pushed with `git push` while hooks are installed; run `tl doctor` |
-| Repo not initialized errors | `tl init -y`, then retry |
-| Something is broken and the user wants support to see it | `tl doctor --report` sends the diagnosis plus recent tl logs |
+| No PR summary on the PR | Confirm the branch was pushed with `git push` while hooks are installed; run `tx doctor` |
+| Repo not initialized errors | `tx init -y`, then retry |
+| Something is broken and the user wants support to see it | `tx doctor --report` sends the diagnosis plus recent tx logs |

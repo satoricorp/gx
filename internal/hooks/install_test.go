@@ -19,7 +19,7 @@ func TestInstallPrePushHook(t *testing.T) {
 	}
 	if err := hooks.Install(hooks.InstallOptions{
 		RepoRoot:     repo,
-		TotalityPath: "/usr/local/bin/tl",
+		TotalityPath: "/usr/local/bin/tx",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,9 +36,9 @@ func TestInstallPrePushHook(t *testing.T) {
 	}
 }
 
-// TestPerRepoHooksResolveTotalityAtRunTime pins the run-time tl resolution of the
+// TestPerRepoHooksResolveTotalityAtRunTime pins the run-time tx resolution of the
 // per-repo scripts: the pinned path when it is still an executable file, else
-// tl from PATH, else a silent exit 0 so a missing binary never breaks a
+// tx from PATH, else a silent exit 0 so a missing binary never breaks a
 // commit or push.
 func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 	repo := t.TempDir()
@@ -46,10 +46,10 @@ func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 	work := t.TempDir()
 	pinnedLog := filepath.Join(work, "pinned.log")
 	pathLog := filepath.Join(work, "path.log")
-	pinnedTotality := filepath.Join(work, "pinned", "tl")
+	pinnedTotality := filepath.Join(work, "pinned", "tx")
 	writeExecutable(t, pinnedTotality, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pinnedLog+"\"\n")
 	pathDir := filepath.Join(work, "pathbin")
-	writeExecutable(t, filepath.Join(pathDir, "tl"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pathLog+"\"\n")
+	writeExecutable(t, filepath.Join(pathDir, "tx"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pathLog+"\"\n")
 	// The pre-push loop shells out to git; nothing else on PATH is needed.
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -60,13 +60,13 @@ func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 	}
 	stdin := "refs/heads/main aaaa111 refs/heads/main bbbb222\n"
 
-	install := func(tlPath string) string {
+	install := func(txPath string) string {
 		t.Helper()
 		hookPath := filepath.Join(repo, ".git", "hooks", "pre-push")
 		if err := os.RemoveAll(hookPath); err != nil {
 			t.Fatal(err)
 		}
-		if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: tlPath}); err != nil {
+		if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: txPath}); err != nil {
 			t.Fatal(err)
 		}
 		return hookPath
@@ -87,15 +87,15 @@ func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 			t.Fatalf("pre-push: %v\n%s", err, out)
 		}
 		if got := readFile(t, pinnedLog); !strings.Contains(got, "capture push") {
-			t.Fatalf("pinned tl not invoked:\n%s", got)
+			t.Fatalf("pinned tx not invoked:\n%s", got)
 		}
 		if _, err := os.Stat(pathLog); err == nil {
-			t.Fatal("PATH tl invoked despite a valid pinned path")
+			t.Fatal("PATH tx invoked despite a valid pinned path")
 		}
 	})
 
 	t.Run("falls back to PATH when pinned path is gone", func(t *testing.T) {
-		hookPath := install(filepath.Join(work, "missing", "tl"))
+		hookPath := install(filepath.Join(work, "missing", "tx"))
 		out, err := runPrePush(hookPath, pathDir)
 		if err != nil {
 			t.Fatalf("pre-push: %v\n%s", err, out)
@@ -103,28 +103,28 @@ func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 		got := readFile(t, pathLog)
 		for _, want := range []string{"capture push", "--ref-range bbbb222..aaaa111", "--local-ref refs/heads/main"} {
 			if !strings.Contains(got, want) {
-				t.Fatalf("PATH tl args missing %q:\n%s", want, got)
+				t.Fatalf("PATH tx args missing %q:\n%s", want, got)
 			}
 		}
 	})
 
-	t.Run("exits zero silently when no tl exists", func(t *testing.T) {
-		hookPath := install(filepath.Join(work, "missing", "tl"))
+	t.Run("exits zero silently when no tx exists", func(t *testing.T) {
+		hookPath := install(filepath.Join(work, "missing", "tx"))
 		emptyDir := filepath.Join(work, "empty")
 		if err := os.MkdirAll(emptyDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		out, err := runPrePush(hookPath, emptyDir)
 		if err != nil {
-			t.Fatalf("pre-push without tl must exit 0, got %v\n%s", err, out)
+			t.Fatalf("pre-push without tx must exit 0, got %v\n%s", err, out)
 		}
 		if strings.TrimSpace(out) != "" {
-			t.Fatalf("pre-push without tl must be silent, got:\n%s", out)
+			t.Fatalf("pre-push without tx must be silent, got:\n%s", out)
 		}
 	})
 
-	t.Run("prepare-commit-msg exits zero without tl", func(t *testing.T) {
-		install(filepath.Join(work, "missing", "tl"))
+	t.Run("prepare-commit-msg exits zero without tx", func(t *testing.T) {
+		install(filepath.Join(work, "missing", "tx"))
 		hookPath := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
 		messagePath := filepath.Join(repo, ".git", "COMMIT_EDITMSG")
 		if err := os.WriteFile(messagePath, []byte("subject\n"), 0o644); err != nil {
@@ -139,10 +139,10 @@ func TestPerRepoHooksResolveTotalityAtRunTime(t *testing.T) {
 		cmd.Env = append(os.Environ(), "PATH="+emptyDir)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("prepare-commit-msg without tl must exit 0 (a failing hook aborts the commit), got %v\n%s", err, out)
+			t.Fatalf("prepare-commit-msg without tx must exit 0 (a failing hook aborts the commit), got %v\n%s", err, out)
 		}
 		if strings.TrimSpace(string(out)) != "" {
-			t.Fatalf("prepare-commit-msg without tl must be silent, got:\n%s", out)
+			t.Fatalf("prepare-commit-msg without tx must be silent, got:\n%s", out)
 		}
 	})
 }

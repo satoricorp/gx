@@ -20,14 +20,14 @@ func TestPublishBundleUploadsAndIndexes(t *testing.T) {
 		fakeEmbedder{vectors: [][]float32{{0.1, 0.2}}},
 		&fakeVectorStore{},
 	)
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/1"}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/1"}
 	publisher := NewPublisherWithIndexer(uploader, indexer)
 
 	result, err := publisher.PublishBundle(context.Background(), bundleWithTranscriptSource())
 	if err != nil {
 		t.Fatalf("PublishBundle() error = %v", err)
 	}
-	if !result.Uploaded || result.ReviewURL != "http://tl.test/review/1" {
+	if !result.Uploaded || result.ReviewURL != "http://tx.test/review/1" {
 		t.Fatalf("result = %#v, want upload result", result)
 	}
 	if result.ArtifactPath == "" || result.Artifact.ReviewID != "review-test" {
@@ -65,7 +65,7 @@ func TestPublishBundleSemanticErrorDoesNotBlockUpload(t *testing.T) {
 		fakeEmbedder{err: errors.New("embedding unavailable")},
 		&fakeVectorStore{},
 	)
-	publisher := NewPublisherWithIndexer(&fakeUploader{reviewURL: "http://tl.test/review/1"}, indexer)
+	publisher := NewPublisherWithIndexer(&fakeUploader{reviewURL: "http://tx.test/review/1"}, indexer)
 
 	result, err := publisher.PublishBundle(context.Background(), bundleWithTranscriptSource())
 	if err != nil {
@@ -83,7 +83,7 @@ func TestEnqueueArtifactQueuesAndDrainUploads(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 
 	result, err := EnqueueArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		TLVersion:     "test",
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
@@ -126,7 +126,7 @@ func TestQueuedUploadStatusTreatsDeadUploaderAsPending(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 
 	artifact := reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		TLVersion:     "test",
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
@@ -161,7 +161,7 @@ func TestQueuedUploadStatusTreatsDeadUploaderAsPending(t *testing.T) {
 
 func TestPublishStackPreparesUploadsAndRecords(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/stack"}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/stack"}
 	publisher := NewPublisherWithIndexer(uploader, nil)
 	push := vcs.PushResult{
 		Repo:         vcs.RepoInfo{RootPath: t.TempDir(), Backend: "jj"},
@@ -176,7 +176,7 @@ func TestPublishStackPreparesUploadsAndRecords(t *testing.T) {
 	if !engine.prepareCalled || !engine.recordCalled {
 		t.Fatalf("engine prepareCalled=%t recordCalled=%t, want both true", engine.prepareCalled, engine.recordCalled)
 	}
-	if !uploader.called || !result.Review.Uploaded || result.Review.ReviewURL != "http://tl.test/review/stack" {
+	if !uploader.called || !result.Review.Uploaded || result.Review.ReviewURL != "http://tx.test/review/stack" {
 		t.Fatalf("result review = %#v uploader.called=%t", result.Review, uploader.called)
 	}
 	if result.Push.HeadCommitID != "abc123" {
@@ -209,7 +209,7 @@ func TestPublishStackUploadErrorReturnsPreparedPush(t *testing.T) {
 func TestPublishStackRecordErrorReturnsReviewResult(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 	recordErr := errors.New("db unavailable")
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/stack"}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/stack"}
 	publisher := NewPublisherWithIndexer(uploader, nil)
 	push := vcs.PushResult{
 		Repo:         vcs.RepoInfo{RootPath: t.TempDir(), Backend: "jj"},
@@ -231,7 +231,7 @@ func TestPublishStackRecordErrorReturnsReviewResult(t *testing.T) {
 
 func TestPublishAllStacksPreparesUploadsAndRecordsEachStack(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/stack"}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/stack"}
 	publisher := NewPublisherWithIndexer(uploader, nil)
 	engine := &fakeStackPublisher{allPushes: []vcs.PushResult{
 		{Repo: vcs.RepoInfo{RootPath: t.TempDir(), Backend: "jj"}, HeadCommitID: "abc123"},
@@ -259,7 +259,7 @@ func TestPublishAllStacksPreparesUploadsAndRecordsEachStack(t *testing.T) {
 func TestPublishAllStacksUploadErrorReturnsCompletedResults(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 	uploadErr := errors.New("upload unavailable")
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/stack", errAfterCalls: 2, err: uploadErr}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/stack", errAfterCalls: 2, err: uploadErr}
 	publisher := NewPublisherWithIndexer(uploader, nil)
 	engine := &fakeStackPublisher{allPushes: []vcs.PushResult{
 		{Repo: vcs.RepoInfo{RootPath: t.TempDir(), Backend: "jj"}, HeadCommitID: "abc123"},
@@ -281,7 +281,7 @@ func TestPublishAllStacksUploadErrorReturnsCompletedResults(t *testing.T) {
 func TestPublishAllStacksRecordsPreparedStacksBeforeReturningPrepareError(t *testing.T) {
 	t.Setenv("TOTALITY_HOME", t.TempDir())
 	prepareErr := errors.New("one stack failed")
-	uploader := &fakeUploader{reviewURL: "http://tl.test/review/stack"}
+	uploader := &fakeUploader{reviewURL: "http://tx.test/review/stack"}
 	publisher := NewPublisherWithIndexer(uploader, nil)
 	engine := &fakeStackPublisher{
 		allPushes: []vcs.PushResult{
@@ -379,7 +379,7 @@ func (f *fakeVectorStore) Upsert(_ context.Context, _ []semantic.VectorRow) erro
 func bundleWithTranscriptSource() reviewbundle.Bundle {
 	responseID := "response-one"
 	return reviewbundle.Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo"},
 		Revisions: []reviewbundle.RevisionPayload{{

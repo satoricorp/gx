@@ -7,7 +7,7 @@ import (
 )
 
 // TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue covers the retry
-// path that used to belong to `tl sync`: a push that enqueues nothing must
+// path that used to belong to `tx sync`: a push that enqueues nothing must
 // still spawn the outbox worker when failed or pending items are sitting in
 // the outbox from an earlier push.
 func TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue(t *testing.T) {
@@ -25,7 +25,7 @@ func TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue(t *testing.T) {
 	if err := os.MkdirAll(outboxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	failedItem := []byte(`{"id":"totality-context-deadbeef","status":"failed","attempts":1,"last_error":"upload tl cloud payload: status 500","created_at":1}`)
+	failedItem := []byte(`{"id":"totality-context-deadbeef","status":"failed","attempts":1,"last_error":"upload tx cloud payload: status 500","created_at":1}`)
 	if err := os.WriteFile(filepath.Join(outboxDir, "totality-context-deadbeef.json"), failedItem, 0o600); err != nil {
 		t.Fatal(err)
 	}

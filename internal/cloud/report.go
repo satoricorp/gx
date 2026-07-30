@@ -18,7 +18,7 @@ type ReportLogFile struct {
 }
 
 type ReportLogRequest struct {
-	TLVersion    string          `json:"tl_version"`
+	TLVersion    string          `json:"tx_version"`
 	OS           string          `json:"os"`
 	Arch         string          `json:"arch"`
 	UserID       string          `json:"user_id,omitempty"`
@@ -39,23 +39,23 @@ type ReportLogResult struct {
 
 func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (ReportLogResult, error) {
 	if c == nil || c.url == "" {
-		return ReportLogResult{}, fmt.Errorf("tl cloud base URL is not configured")
+		return ReportLogResult{}, fmt.Errorf("tx cloud base URL is not configured")
 	}
 	reportURL := cloudURLWithPath(c.url, "/v1/reported-logs")
 	if reportURL == "" {
-		return ReportLogResult{}, fmt.Errorf("tl cloud base URL is not configured")
+		return ReportLogResult{}, fmt.Errorf("tx cloud base URL is not configured")
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("marshal tl report: %w", err)
+		return ReportLogResult{}, fmt.Errorf("marshal tx report: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reportURL, bytes.NewReader(body))
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("create tl report request: %w", err)
+		return ReportLogResult{}, fmt.Errorf("create tx report request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "tl/"+version.Current())
+	req.Header.Set("User-Agent", "tx/"+version.Current())
 	token, err := CloudAPIToken()
 	if err != nil {
 		return ReportLogResult{}, err
@@ -64,7 +64,7 @@ func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (Repor
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("send tl report: %w", err)
+		return ReportLogResult{}, fmt.Errorf("send tx report: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -72,19 +72,19 @@ func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (Repor
 		detail := strings.TrimSpace(string(raw))
 		if resp.StatusCode == http.StatusUnauthorized {
 			if detail != "" {
-				return ReportLogResult{}, fmt.Errorf("send tl report: status %s: %s (run `tl auth login`)", resp.Status, detail)
+				return ReportLogResult{}, fmt.Errorf("send tx report: status %s: %s (run `tx auth login`)", resp.Status, detail)
 			}
-			return ReportLogResult{}, fmt.Errorf("send tl report: status %s (run `tl auth login`)", resp.Status)
+			return ReportLogResult{}, fmt.Errorf("send tx report: status %s (run `tx auth login`)", resp.Status)
 		}
 		if detail != "" {
-			return ReportLogResult{}, fmt.Errorf("send tl report: status %s: %s", resp.Status, detail)
+			return ReportLogResult{}, fmt.Errorf("send tx report: status %s: %s", resp.Status, detail)
 		}
-		return ReportLogResult{}, fmt.Errorf("send tl report: status %s", resp.Status)
+		return ReportLogResult{}, fmt.Errorf("send tx report: status %s", resp.Status)
 	}
 	var result ReportLogResult
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &result); err != nil {
-			return ReportLogResult{}, fmt.Errorf("decode tl report response: %w", err)
+			return ReportLogResult{}, fmt.Errorf("decode tx report response: %w", err)
 		}
 	}
 	return result, nil

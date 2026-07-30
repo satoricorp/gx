@@ -104,7 +104,7 @@ func buildGoldenVSCDB(t *testing.T) string {
 	}{
 		{
 			key:   "composerData:c1",
-			value: `{"composerId":"c1","name":"tl spike","createdAt":1700000000000,"lastUpdatedAt":1700000005000}`,
+			value: `{"composerId":"c1","name":"tx spike","createdAt":1700000000000,"lastUpdatedAt":1700000005000}`,
 		},
 		{
 			key: "bubbleId:c1:b1",

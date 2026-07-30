@@ -49,8 +49,8 @@ type ReviewSearchResult struct {
 
 // SearchReviewIndex retrieves review context through Totality Cloud with the
 // caller's login. This is the path every onboarded user takes: the TurboPuffer
-// and OpenAI keys live on the server, the same way the /tl/openai and
-// /tl/bedrock proxies gate inference.
+// and OpenAI keys live on the server, the same way the /tx/openai and
+// /tx/bedrock proxies gate inference.
 func (c *Client) SearchReviewIndex(ctx context.Context, reqBody ReviewSearchRequest) (ReviewSearchResult, error) {
 	var result ReviewSearchResult
 	if c == nil || c.url == "" || strings.TrimSpace(reqBody.Query) == "" {

@@ -11,8 +11,8 @@ type gitBranchTarget struct {
 }
 
 const (
-	legacyTotalityStackBookmarkPrefix = "tl/"
-	legacyTotalityDraftBookmarkPrefix = "tl/draft/"
+	legacyTotalityStackBookmarkPrefix = "tx/"
+	legacyTotalityDraftBookmarkPrefix = "tx/draft/"
 )
 
 func isTotalityStackBookmark(name string) bool {
@@ -25,9 +25,9 @@ func isTotalityStackBookmark(name string) bool {
 
 func legacyTotalityInternalCheckoutRef(name string) bool {
 	name = strings.TrimSpace(name)
-	return name == "tl/base" || name == "tl/edit" ||
-		strings.HasPrefix(name, "tl/base/") ||
-		strings.HasPrefix(name, "tl/edit/")
+	return name == "tx/base" || name == "tx/edit" ||
+		strings.HasPrefix(name, "tx/base/") ||
+		strings.HasPrefix(name, "tx/edit/")
 }
 
 func baseCheckoutRef(baseRef string) string {
@@ -41,7 +41,7 @@ func baseCheckoutRef(baseRef string) string {
 	return baseRef
 }
 
-func tlAuthoringBaseFromCheckoutRef(name string) (string, bool) {
+func txAuthoringBaseFromCheckoutRef(name string) (string, bool) {
 	return "", false
 }
 

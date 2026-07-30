@@ -227,7 +227,7 @@ func initGitNativeTestRepo(t *testing.T) string {
 	repo := t.TempDir()
 	runGitNativeTestGit(t, repo, "init", "-b", "main")
 	runGitNativeTestGit(t, repo, "config", "user.name", "Totality Test")
-	runGitNativeTestGit(t, repo, "config", "user.email", "tl@example.com")
+	runGitNativeTestGit(t, repo, "config", "user.email", "tx@example.com")
 	writeGitNativeTestFile(t, repo, "README.md", "base\n")
 	runGitNativeTestGit(t, repo, "add", "README.md")
 	runGitNativeTestGit(t, repo, "commit", "-m", "base")

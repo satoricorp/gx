@@ -1,4 +1,4 @@
-// Eval suite for tl review end-to-end behavior.
+// Eval suite for tx review end-to-end behavior.
 //
 // Each TestEval* scenario builds a synthetic git repository, applies a realistic
 // change, and runs the review engine with scripted reviewers/judges (never real

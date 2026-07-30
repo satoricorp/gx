@@ -143,7 +143,7 @@ func TestCleanupLegacyAmbientCaptureRemovesArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "tl ambient capture") {
+	if strings.Contains(string(data), "tx ambient capture") {
 		t.Fatalf(".zshrc still contains managed block:\n%s", data)
 	}
 	if !strings.Contains(string(data), "# mine") {

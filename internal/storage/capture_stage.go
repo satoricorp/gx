@@ -64,7 +64,7 @@ type StagedSession struct {
 
 // MaxUploadAttempts bounds how many times one staged row is re-sent.
 //
-// Uploads run in a detached `tl capture sync` whose output goes to /dev/null,
+// Uploads run in a detached `tx capture sync` whose output goes to /dev/null,
 // so a row that fails deterministically — a payload the server rejects with
 // 400, say — used to be re-sent on every push forever, failing silently every
 // time. Attempts are counted so a permanently broken row stops consuming
@@ -121,7 +121,7 @@ type CaptureStage struct {
 	db *sql.DB
 }
 
-// OpenCaptureStager opens the default tl database with capture tables.
+// OpenCaptureStager opens the default tx database with capture tables.
 func OpenCaptureStager(ctx context.Context) (*CaptureStage, error) {
 	db, err := Open(ctx)
 	if err != nil {

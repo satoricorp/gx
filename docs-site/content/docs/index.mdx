@@ -10,19 +10,19 @@ for AI code review and generated pull request summaries. You work in plain Git.
 
 ```bash
 curl -fsSL https://download.totality.sh/install.sh | sh
-tl auth login
+tx auth login
 ```
 
-This installs bash/zsh completions and aliases, like `tlr`, for `tl review`.
+This installs bash/zsh completions and aliases, like `txr`, for `tx review`.
 
 ## Basic Usage
 
 ```bash
 cd your-repo
-tl init                                # once per repo: installs the Git hooks
+tx init                                # once per repo: installs the Git hooks
 git add src/retry.js
 git commit -m "add retry helper"       # hook records the revision
-tl review                              # AI review before you push (optional)
+tx review                              # AI review before you push (optional)
 git push                               # hook captures the session and publishes
 gh pr create                           # Totality Cloud adds the summary to the PR
 ```
@@ -30,8 +30,8 @@ gh pr create                           # Totality Cloud adds the summary to the 
 ## Uninstall
 
 ```bash
-rm -f ~/.local/bin/tl ~/.local/bin/tlr ~/.local/bin/tl-mcp
-rm -f ~/.local/share/bash-completion/completions/tl ~/.zfunc/_tl
+rm -f ~/.local/bin/tx ~/.local/bin/txr ~/.local/bin/tx-mcp
+rm -f ~/.local/share/bash-completion/completions/tx ~/.zfunc/_tx
 ```
 
 Installed Git hooks exit silently when the binary is absent, so plain Git keeps
@@ -39,6 +39,6 @@ working. Local data remains in `~/.totality`.
 
 ## Pages
 
-- [CLI](/docs/cli) — every command: `tl init`, `tl review`, `tl auth`, `tl doctor`
-- [MCP](/docs/mcp) — connect `tl_review` to Claude Code, Cursor, and Codex
-- [Pull Requests](/docs/pull-requests) — generated PR summaries and `@gx` chat on GitHub
+- [CLI](/docs/cli) — every command: `tx init`, `tx review`, `tx auth`, `tx doctor`
+- [MCP](/docs/mcp) — connect `tx_review` to Claude Code, Cursor, and Codex
+- [Pull Requests](/docs/pull-requests) — generated PR summaries and `@tx` chat on GitHub

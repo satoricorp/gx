@@ -1,6 +1,6 @@
 name: Release CLI
 
-# Builds the tl CLI + tl-mcp for darwin/linux, publishes the archives,
+# Builds the tx CLI + tx-mcp for darwin/linux, publishes the archives,
 # manifest, and install.sh to the downloads bucket (fronted by
 # download.totality.sh), and attaches assets to a GitHub release on v* tags.
 # Pushes to main publish a "latest" build versioned by commit SHA; v* tags
@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish the tl CLI
+    name: Build and publish the tx CLI
     runs-on: macos-latest
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -83,17 +83,17 @@ jobs:
 
       - name: Verify artifacts
         run: |
-          test -f dist/cli/tl_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-          test -f dist/cli/tl_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
-          test -f dist/cli/tl_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
-          test -f dist/cli/tl_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+          test -f dist/cli/tx_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+          test -f dist/cli/tx_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+          test -f dist/cli/tx_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
+          test -f dist/cli/tx_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
           test -f dist/cli/manifest.json
           test -f scripts/install.sh
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tl-cli
+          name: tx-cli
           path: |
             dist/cli/*
             scripts/install.sh
@@ -136,7 +136,7 @@ jobs:
             --content-type application/json \
             --cache-control "public, max-age=300"
 
-          for archive in dist/cli/tl_"$VERSION"_*.tar.gz; do
+          for archive in dist/cli/tx_"$VERSION"_*.tar.gz; do
             test -f "$archive" || continue
             base="$(basename "$archive")"
             checksum="$archive.sha256"
@@ -144,11 +144,11 @@ jobs:
               echo "missing checksum for $archive" >&2
               exit 1
             }
-            rest="${base#tl_${VERSION}_}"
+            rest="${base#tx_${VERSION}_}"
             platform="${rest%.tar.gz}"
             goos="${platform%_*}"
             goarch="${platform##*_}"
-            latest="tl_${goos}_${goarch}.tar.gz"
+            latest="tx_${goos}_${goarch}.tar.gz"
 
             aws s3 cp "$archive" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/latest/$latest" \
               --content-type application/gzip \
@@ -184,8 +184,8 @@ jobs:
           assets=(
             scripts/install.sh
             dist/cli/manifest.json
-            dist/cli/tl_*.tar.gz
-            dist/cli/tl_*.tar.gz.sha256
+            dist/cli/tx_*.tar.gz
+            dist/cli/tx_*.tar.gz.sha256
           )
 
           if gh release view "$tag" >/dev/null 2>&1; then

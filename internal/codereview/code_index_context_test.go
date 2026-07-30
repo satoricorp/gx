@@ -109,7 +109,7 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "totality-org-repo-v2", Origin: "tl code index"},
+			{Namespace: "totality-org-repo-v2", Origin: "tx code index"},
 			{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"},
 		},
 		Limit:       10,
@@ -123,10 +123,10 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	// Each namespace is queried with the field names its own schema declares.
 	totalityQuery := store.query("totality-org-repo-v2")
 	if totalityQuery.BodyField != "text" || totalityQuery.SymbolField != "symbol" || len(totalityQuery.Vector) != 3072 {
-		t.Fatalf("tl query = %+v, want text/symbol legs and a 3072-wide vector", totalityQuery)
+		t.Fatalf("tx query = %+v, want text/symbol legs and a 3072-wide vector", totalityQuery)
 	}
 	if totalityQuery.Legs() != 3 {
-		t.Fatalf("tl query legs = %d, want 3", totalityQuery.Legs())
+		t.Fatalf("tx query legs = %d, want 3", totalityQuery.Legs())
 	}
 	consoleQuery := store.query("repo-owner-repo")
 	if consoleQuery.BodyField != "content" || len(consoleQuery.Vector) != 1536 {
@@ -138,10 +138,10 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	if !strings.Contains(consoleQuery.SymbolQuery, "contextRetrieverFromEnv") {
 		t.Fatalf("symbol query = %q, want the changed identifier", consoleQuery.SymbolQuery)
 	}
-	// The tl namespace holds more than code, so it is filtered; the console one
+	// The tx namespace holds more than code, so it is filtered; the console one
 	// does not declare source_kind and must not be filtered on it.
 	if totalityQuery.Filters == nil {
-		t.Fatal("tl query has no source_kind filter")
+		t.Fatal("tx query has no source_kind filter")
 	}
 	if consoleQuery.Filters != nil {
 		t.Fatalf("console query filters = %v, want none for a namespace without source_kind", consoleQuery.Filters)
@@ -182,7 +182,7 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "totality-local-yeet-v2", Origin: "tl code index"},
+			{Namespace: "totality-local-yeet-v2", Origin: "tx code index"},
 			{Namespace: "repo-owner-yeet", Origin: "Totality Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
@@ -202,15 +202,15 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 		t.Fatalf("warnings = %v, want one warning for the code index as a whole", warnings)
 	}
 	// The warning has to say how to fix it, and the fix is the website. It used
-	// to name `tl index`, which is a hidden maintenance command that fills one
+	// to name `tx index`, which is a hidden maintenance command that fills one
 	// developer's namespace from one developer's checkout — a worse, manual
 	// copy of the index Totality Cloud maintains from the GitHub App on merge.
 	joined := strings.Join(warnings, " ")
 	if !strings.Contains(joined, "https://totality.sh/repositories") {
 		t.Fatalf("warnings = %v, want the missing index to say where to get it built", warnings)
 	}
-	if strings.Contains(joined, "tl index") {
-		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `tl index`", warnings)
+	if strings.Contains(joined, "tx index") {
+		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `tx index`", warnings)
 	}
 	if len(in.Evidence.Statuses()) != 2 {
 		t.Fatalf("statuses = %#v, want one per namespace so the verbose listing still names each", in.Evidence.Statuses())
@@ -337,7 +337,7 @@ func TestCodeIndexRetrieverDistinguishesUnqueryableFromEmpty(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "unqueryable", Origin: "tl code index"},
+			{Namespace: "unqueryable", Origin: "tx code index"},
 			{Namespace: "answered", Origin: "Totality Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },

@@ -135,8 +135,8 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 	return status
 }
 
-// captureGlobalHookStatus reports the machine-wide `tl init --global` state.
-// It only reads git config; repairs stay behind an explicit `tl init --global`.
+// captureGlobalHookStatus reports the machine-wide `tx init --global` state.
+// It only reads git config; repairs stay behind an explicit `tx init --global`.
 func captureGlobalHookStatus(ctx context.Context) globalHookDoctorJSON {
 	state, err := hooks.GlobalStatus(ctx)
 	if err != nil {
@@ -170,7 +170,7 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload", success("ok")+": "+status.UploadAPI))
 	} else {
-		hint := "run `tl auth login`"
+		hint := "run `tx auth login`"
 		if strings.TrimSpace(status.UploadAuthError) != "" {
 			hint = status.UploadAuthError
 		}
@@ -197,12 +197,12 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 		}
 		fmt.Fprintln(out, labelValue("Upload errors", danger("warn")+": "+detail))
 	}
-	fmt.Fprintln(out, labelValue("Disk used", formatDiskUsedGB(tlStorageDiskUsedBytes())))
+	fmt.Fprintln(out, labelValue("Disk used", formatDiskUsedGB(txStorageDiskUsedBytes())))
 }
 
 func captureHooksDoctorValue(status captureDoctorJSON) string {
 	if status.HookApplicable && !status.HookInstalled {
-		return danger("warn") + ": run `tl init` in this repo"
+		return danger("warn") + ": run `tx init` in this repo"
 	}
 	if !status.RepoHooksOK {
 		return danger("warn") + fmt.Sprintf(": %d missing, %d unreachable of %d repos", status.RepoHooksMissing, status.RepoHooksUnreachable, status.RepoHooksTotal)
@@ -210,17 +210,17 @@ func captureHooksDoctorValue(status captureDoctorJSON) string {
 	if status.HookApplicable || status.RepoHooksTotal > 0 {
 		return success("ok")
 	}
-	return "not checked: run `tl doctor` inside a git repo"
+	return "not checked: run `tx doctor` inside a git repo"
 }
 
 // captureGlobalHooksDoctorValue renders the machine-wide hook row, or "" when
-// the user never opted into `tl init --global` (nothing worth a line then).
+// the user never opted into `tx init --global` (nothing worth a line then).
 func captureGlobalHooksDoctorValue(global globalHookDoctorJSON) string {
 	switch {
 	case global.Conflict != "":
-		return danger("warn") + ": core.hooksPath points at " + global.Conflict + "; run `tl init --global` to restore"
+		return danger("warn") + ": core.hooksPath points at " + global.Conflict + "; run `tx init --global` to restore"
 	case global.NeedsRepair:
-		return danger("warn") + ": incomplete; run `tl init --global`"
+		return danger("warn") + ": incomplete; run `tx init --global`"
 	case global.Enabled:
 		return success("ok") + ": " + global.Dir
 	default:
@@ -375,7 +375,7 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Code:     "hook_missing",
 			Severity: "fail",
 			Message:  "Totality lifecycle hooks missing",
-			Action:   "run `tl init` in this repo",
+			Action:   "run `tx init` in this repo",
 		})
 	}
 	if status.GlobalHooks.Conflict != "" {
@@ -383,14 +383,14 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Code:     "global_hooks_overridden",
 			Severity: "fail",
 			Message:  "global core.hooksPath points at " + status.GlobalHooks.Conflict + " instead of Totality",
-			Action:   "run `tl init --global` (Totality chains to each repo's own hooks)",
+			Action:   "run `tx init --global` (Totality chains to each repo's own hooks)",
 		})
 	} else if status.GlobalHooks.NeedsRepair {
 		issues = append(issues, captureIssueJSON{
 			Code:     "global_hooks_incomplete",
 			Severity: "fail",
 			Message:  "machine-wide Totality hooks are incomplete",
-			Action:   "run `tl init --global`",
+			Action:   "run `tx init --global`",
 		})
 	}
 	if status.RepoHooksUnreachable > 0 {
@@ -406,13 +406,13 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Code:     "repo_hooks_missing",
 			Severity: "fail",
 			Message:  fmt.Sprintf("%d registered repo lifecycle hook sets missing", status.RepoHooksMissing),
-			Action:   "run `tl init` in each registered repo",
+			Action:   "run `tx init` in each registered repo",
 		})
 	}
 	if !status.UploadAuthed {
 		code := "upload_auth_missing"
 		message := "upload auth missing"
-		action := "run `tl auth login`"
+		action := "run `tx auth login`"
 		if strings.TrimSpace(status.UploadAuthError) != "" {
 			code = "upload_auth_invalid"
 			message = "upload auth invalid"
@@ -438,7 +438,7 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 		})
 	}
 	if status.FailedUploads > 0 {
-		action := "run `tl capture sync` to see the failure"
+		action := "run `tx capture sync` to see the failure"
 		if strings.TrimSpace(status.UploadError) != "" {
 			action = status.UploadError
 		}
@@ -483,7 +483,7 @@ func validateCaptureUploadToken(ctx context.Context, token string) (bool, string
 	if message == "" {
 		message = "GitHub rejected stored token"
 	}
-	return false, message + "; run `tl auth logout` then `tl auth login`"
+	return false, message + "; run `tx auth logout` then `tx auth login`"
 }
 
 func validateCaptureCloudSession(ctx context.Context, token string) (bool, string) {
@@ -500,7 +500,7 @@ func validateCaptureCloudSession(ctx context.Context, token string) (bool, strin
 	if message == "" {
 		message = "Totality API rejected stored session"
 	}
-	return false, message + "; run `tl auth logout` then `tl auth login`"
+	return false, message + "; run `tx auth logout` then `tx auth login`"
 }
 
 type fmtWriter interface {

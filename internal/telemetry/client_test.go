@@ -82,8 +82,8 @@ func TestClientSendsCaptureEventWithIdentity(t *testing.T) {
 	if properties["machine_id"] == "" {
 		t.Fatal("properties.machine_id is empty")
 	}
-	if properties["tl_version"] == "" {
-		t.Fatal("properties.tl_version is empty")
+	if properties["tx_version"] == "" {
+		t.Fatal("properties.tx_version is empty")
 	}
 	if properties["entrypoint"] != "cli" {
 		t.Fatalf("properties.entrypoint = %v, want cli", properties["entrypoint"])

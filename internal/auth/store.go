@@ -76,7 +76,7 @@ func SaveUpload(creds UploadCredentials) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create tl dir: %w", err)
+		return fmt.Errorf("create tx dir: %w", err)
 	}
 	creds.APIURL = strings.TrimRight(strings.TrimSpace(creds.APIURL), "/")
 	if creds.APIURL == "" {

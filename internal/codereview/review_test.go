@@ -204,7 +204,7 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 			{ID: "custom-source", Title: "Custom Reference", Publisher: "Custom Reference"},
 		},
 		SourceRefs: []SourceRef{
-			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:tl"},
+			{ID: "R1", Kind: "indexed_code", Title: "app.go", URL: "https://example.com/snippet", Source: "turbopuffer:tx"},
 			{ID: "L1", Kind: "local", File: "CONTEXT.md", StartLine: 12, Source: "local"},
 		},
 	}
@@ -216,7 +216,7 @@ func TestRenderMarkdownIncludesAttributionSections(t *testing.T) {
 		"- [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)",
 		"- Custom Reference (`custom-source`)",
 		"## Context Sources",
-		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:tl",
+		"`R1` [app.go](https://example.com/snippet) · source=turbopuffer:tx",
 		"`L1` `CONTEXT.md:12`",
 	} {
 		if !strings.Contains(text, want) {

@@ -22,7 +22,7 @@ import (
 // ones, which is exactly where a shared fixture has to stay cheap or nobody
 // uses it.
 //
-// The layering is: internal/totalitytest imports nothing from tl at all (which is why
+// The layering is: internal/totalitytest imports nothing from tx at all (which is why
 // it carries its own copy of the revision trailer, pinned by
 // TestTotalityTestRevisionTrailerMatchesProduction in internal/hooks), and
 // internal/storage/storagetest imports only internal/storage and
@@ -44,7 +44,7 @@ func TestHarnessLayering(t *testing.T) {
 		for _, name := range tc.allowed {
 			allowed[name] = true
 		}
-		for _, imported := range tlImports(t, filepath.Join(root, tc.pkg), prefix) {
+		for _, imported := range txImports(t, filepath.Join(root, tc.pkg), prefix) {
 			if !allowed[imported] {
 				t.Errorf("%s imports %s, which the harness layering forbids; allowed: %v",
 					tc.pkg, imported, tc.allowed)
@@ -53,8 +53,8 @@ func TestHarnessLayering(t *testing.T) {
 	}
 }
 
-// tlImports returns the totality-internal packages a package's non-test files import.
-func tlImports(t *testing.T, dir, prefix string) []string {
+// txImports returns the totality-internal packages a package's non-test files import.
+func txImports(t *testing.T, dir, prefix string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {

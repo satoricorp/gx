@@ -10,7 +10,7 @@ import (
 	"github.com/satoricorp/totality/internal/storage"
 )
 
-const MissingStackBaseRepairCommand = "tl doctor"
+const MissingStackBaseRepairCommand = "tx doctor"
 
 // MissingStackBaseRef describes a stack whose stored parent base ref no longer exists.
 type MissingStackBaseRef struct {
@@ -210,7 +210,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 			return err
 		}
 		if repoRow == nil {
-			return fmt.Errorf("repo not registered in tl storage")
+			return fmt.Errorf("repo not registered in tx storage")
 		}
 		now := time.Now().UnixMilli()
 		missingBases := map[string]struct{}{}
@@ -316,7 +316,7 @@ func (s *Service) rebaseStackOntoDefaultUnlocked(ctx context.Context, store *sto
 		return err
 	}
 	if stack == nil {
-		return fmt.Errorf("stack %q not found in tl storage", bookmark)
+		return fmt.Errorf("stack %q not found in tx storage", bookmark)
 	}
 	stack.BaseRef = defaultBase
 	stack.BaseCommitID = s.stackBaseCommitID(ctx, repo.RootPath, defaultBase)

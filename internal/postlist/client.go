@@ -27,7 +27,7 @@ type Identity struct {
 	Name      string `json:"name"`
 	Email     string `json:"email"`
 	Source    string `json:"source"`
-	TLVersion string `json:"tl_version,omitempty"`
+	TLVersion string `json:"tx_version,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
@@ -58,7 +58,7 @@ func (c *Client) UpsertIdentity(ctx context.Context, identity Identity) error {
 	u.RawQuery = query.Encode()
 
 	if identity.Source == "" {
-		identity.Source = "tl"
+		identity.Source = "tx"
 	}
 	if identity.UpdatedAt == "" {
 		identity.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

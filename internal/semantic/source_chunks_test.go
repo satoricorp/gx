@@ -39,7 +39,7 @@ func Run() {
 		chunk.Attributes[codeFieldLanguage] != "go" {
 		t.Fatalf("attributes = %#v", chunk.Attributes)
 	}
-	// The publish path and `tl index` must mint the same id for the same
+	// The publish path and `tx index` must mint the same id for the same
 	// chunk, otherwise one namespace ends up holding two copies of every file.
 	if chunk.ID != CodeRowID("acme/widgets", "src/app.go", 0) {
 		t.Fatalf("chunk id = %q, want the shared content-addressed code row id", chunk.ID)

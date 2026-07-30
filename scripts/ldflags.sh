@@ -7,7 +7,7 @@ convex_site="${CONVEX_SITE_URL:-}"
 cloud_url="${TOTALITY_CLOUD_URL:-}"
 posthog_key="${TOTALITY_POSTHOG_KEY:-}"
 posthog_host="${TOTALITY_POSTHOG_HOST:-}"
-tl_version="${VERSION:-dev}"
+tx_version="${VERSION:-dev}"
 
 flags=()
 
@@ -26,8 +26,8 @@ fi
 if [[ -n "${posthog_host}" ]]; then
   flags+=("-X" "github.com/satoricorp/totality/internal/buildconfig.PostHogHost=${posthog_host}")
 fi
-if [[ -n "${tl_version}" ]]; then
-  flags+=("-X" "github.com/satoricorp/totality/internal/version.Version=${tl_version}")
+if [[ -n "${tx_version}" ]]; then
+  flags+=("-X" "github.com/satoricorp/totality/internal/version.Version=${tx_version}")
 fi
 
 printf 'export TOTALITY_LDFLAGS=%q\n' "${flags[*]}"

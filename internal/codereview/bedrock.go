@@ -196,7 +196,7 @@ func describeBedrockFailure(statusCode int, status string, body []byte, model, r
 	case strings.Contains(lower, "not available for this account"):
 		return fmt.Errorf("Bedrock model %q is not enabled for this AWS account in %s; request access in the Bedrock console or point TOTALITY_REVIEW_BEDROCK_MODEL_A/_B at a model you can call", model, region)
 	case strings.Contains(lower, "model identifier is invalid") || strings.Contains(lower, "could not resolve the model"):
-		return fmt.Errorf("Bedrock model %q does not exist in region %s; set AWS_REGION to a region where it is offered (tl defaults to %s)", model, region, defaultBedrockRegion)
+		return fmt.Errorf("Bedrock model %q does not exist in region %s; set AWS_REGION to a region where it is offered (tx defaults to %s)", model, region, defaultBedrockRegion)
 	case strings.Contains(lower, "security token") || strings.Contains(lower, "signature") || strings.Contains(lower, "unrecognizedclient") || statusCode == http.StatusForbidden || statusCode == http.StatusUnauthorized:
 		return fmt.Errorf("AWS rejected the Bedrock credentials for %s in %s: check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN if they are temporary (%s)", model, region, detail)
 	case statusCode == http.StatusTooManyRequests || strings.Contains(lower, "throttl"):

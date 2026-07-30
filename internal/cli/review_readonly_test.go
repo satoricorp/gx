@@ -74,7 +74,7 @@ func setReviewCloudEnv(t *testing.T, rec *recordingEndpoint) {
 
 // staleGitStatCache backdates the working tree's mtimes so the index's stat
 // cache no longer matches it. This is the ordinary state of a fresh clone or
-// checkout — the CI case tl review is built for — and it is the condition
+// checkout — the CI case tx review is built for — and it is the condition
 // under which git status and git diff rewrite .git/index. Without it the
 // cache is already current, git has nothing to refresh, and an index-guard
 // regression would sail past this test.
@@ -111,9 +111,9 @@ func gitIndexDigest(t *testing.T, root string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// `tl review` has to be usable as a CI gate and on a checkout the reviewer
+// `tx review` has to be usable as a CI gate and on a checkout the reviewer
 // does not own, so it must not auto-initialize anything: no git hooks, no Totality
-// home, no repo state. This test reviews a repo that has never run `tl init`
+// home, no repo state. This test reviews a repo that has never run `tx init`
 // and asserts the repo and the machine come out untouched.
 func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	root := newReviewGateRepo(t)
@@ -152,48 +152,48 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--base", "main")
 	if err != nil {
-		t.Fatalf("tl review error = %v\n%s", err, out)
+		t.Fatalf("tx review error = %v\n%s", err, out)
 	}
 	if strings.TrimSpace(out) == "" {
-		t.Fatalf("tl review produced no report in an uninitialized repo")
+		t.Fatalf("tx review produced no report in an uninitialized repo")
 	}
 	// Indexing is Totality Cloud's job, done on merge from the GitHub App. A review on
 	// a machine with no Totality home reads that index; it must not write one, which
 	// would mean both re-embedding the whole checkout and leaving a manifest
 	// behind.
 	if backend.Upserted() {
-		t.Fatalf("tl review indexed from a checkout with no Totality home.\nrequests: %v", backend.Requests())
+		t.Fatalf("tx review indexed from a checkout with no Totality home.\nrequests: %v", backend.Requests())
 	}
 
 	if after := hookDirEntries(t, hooksDir); !equalStrings(before, after) {
-		t.Fatalf("tl review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
+		t.Fatalf("tx review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
 	}
 	for _, name := range before {
 		data, readErr := os.ReadFile(filepath.Join(hooksDir, name))
 		if readErr != nil {
 			t.Fatalf("read hook %s: %v", name, readErr)
 		}
-		if strings.Contains(string(data), "tl ") || strings.Contains(string(data), "TOTALITY_") {
-			t.Fatalf("tl review left a Totality marker in .git/hooks/%s:\n%s", name, data)
+		if strings.Contains(string(data), "tx ") || strings.Contains(string(data), "TOTALITY_") {
+			t.Fatalf("tx review left a Totality marker in .git/hooks/%s:\n%s", name, data)
 		}
 	}
 	for _, path := range []string{totalityHome, fakeHome, filepath.Join(root, ".totality")} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("tl review created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("tx review created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 	if after := gitIndexDigest(t, root); after != indexBefore {
-		t.Fatalf("tl review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
+		t.Fatalf("tx review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a successful tl review uploaded a failure report: %v", recorder.requestedPaths())
+		t.Fatalf("a successful tx review uploaded a failure report: %v", recorder.requestedPaths())
 	}
 }
 
-// A gate that fails is the tool working, not a crash. `tl review --fail-on`
+// A gate that fails is the tool working, not a crash. `tx review --fail-on`
 // returning findings must not ship log tails and repo identity to Totality Cloud,
 // and must not mint a machine ID — a CI job that fails the gate on every run
-// would otherwise upload on every run, from a machine that never ran tl.
+// would otherwise upload on every run, from a machine that never ran tx.
 func TestReviewGateFailureNeverAutoReportsOrWritesTotalityHome(t *testing.T) {
 	root := newReviewGateRepo(t)
 	writeTestFile(t, root, "package.json", "{\n  \"name\": \"example\"\n}\n")
@@ -215,7 +215,7 @@ func TestReviewGateFailureNeverAutoReportsOrWritesTotalityHome(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("tl review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("tx review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
@@ -242,7 +242,7 @@ func TestReviewGateFailureNeverAutoReportsOrWritesTotalityHome(t *testing.T) {
 func signIn(t *testing.T, totalityHome string) {
 	t.Helper()
 	if err := os.MkdirAll(totalityHome, 0o755); err != nil {
-		t.Fatalf("create tl home: %v", err)
+		t.Fatalf("create tx home: %v", err)
 	}
 	// credentials.json nests the cloud section under "cloud"; a flat object
 	// parses without error and leaves the token empty, which would quietly
@@ -291,7 +291,7 @@ func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("tl review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("tx review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
@@ -301,10 +301,10 @@ func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 	}
 }
 
-// `tl version` answers one question about the binary. A Dockerfile or CI step
+// `tx version` answers one question about the binary. A Dockerfile or CI step
 // that runs it to check what it installed should not thereby acquire a machine
 // ID and a $TOTALITY_HOME — the install event is not worth creating state on a
-// machine that has not yet decided to use tl.
+// machine that has not yet decided to use tx.
 func TestVersionNeverWritesTotalityState(t *testing.T) {
 	root := newReviewGateRepo(t)
 	t.Chdir(root)
@@ -324,14 +324,14 @@ func TestVersionNeverWritesTotalityState(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"version"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tl version error = %v", err)
+		t.Fatalf("tx version error = %v", err)
 	}
 	if strings.TrimSpace(out.String()) == "" {
-		t.Fatalf("tl version printed nothing")
+		t.Fatalf("tx version printed nothing")
 	}
 	for _, path := range []string{totalityHome, fakeHome} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("tl version created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("tx version created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 }
@@ -354,10 +354,10 @@ func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
 	t.Chdir(notARepo)
 
 	if _, err := runReviewCommand(t, "--no-publish"); err == nil {
-		t.Fatalf("tl review succeeded outside a git repository")
+		t.Fatalf("tx review succeeded outside a git repository")
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing tl review uploaded logs to Totality Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing tx review uploaded logs to Totality Cloud: %v", recorder.requestedPaths())
 	}
 }
 
@@ -376,7 +376,7 @@ func TestReviewNothingToReviewGateNeverAutoReports(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
-		t.Fatalf("tl review --fail-on any exited 0 without reviewing anything:\n%s", out)
+		t.Fatalf("tx review --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, err)

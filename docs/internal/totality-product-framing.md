@@ -88,14 +88,14 @@ The user should not have to think about bookmarks, detached HEAD, or manual ref 
 The intended flow should look like:
 
 ```bash
-tl init
-tl codex
+tx init
+tx codex
 git add .
-tl commit -m "scaffold app"
+tx commit -m "scaffold app"
 git add .
-tl commit -m "add database schema"
+tx commit -m "add database schema"
 git add .
-tl commit -m "add secure email ingestion"
+tx commit -m "add secure email ingestion"
 git push
 gh pr create
 ```

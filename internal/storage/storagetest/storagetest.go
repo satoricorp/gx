@@ -1,4 +1,4 @@
-// Package storagetest builds tl databases that look like the ones on real
+// Package storagetest builds tx databases that look like the ones on real
 // machines instead of the pristine one a fresh migration produces.
 //
 // Why this exists. Two production defects shipped past a fully green suite for
@@ -7,10 +7,10 @@
 // in are not merely absent, they are unrepresentable.
 //
 //   - The `repos` table on the author's machine holds TWO rows for one
-//     repository: an old one with root_path=/Users/joe/git/tl and
-//     git_common_dir=/Users/joe/git/tl (the pre-git_common_dir backfill shape,
+//     repository: an old one with root_path=/Users/joe/git/tx and
+//     git_common_dir=/Users/joe/git/tx (the pre-git_common_dir backfill shape,
 //     48% of live rows), and a newer one with root_path="" and
-//     git_common_dir=/Users/joe/git/tl/.git carrying every recent change. The
+//     git_common_dir=/Users/joe/git/tx/.git carrying every recent change. The
 //     write path resolved the second, the read path resolved the first, and
 //     171 of 174 published bundles shipped `sessions: []`. Every bundle test
 //     seeded its repo without a GitCommonDir, so UpsertRepo backfilled
@@ -28,7 +28,7 @@
 // bug. TestSeedersAreProductionWriters enforces that rule mechanically.
 //
 // Layering. This package imports internal/storage and internal/totalitytest and
-// nothing else from tl. internal/vcs imports internal/storage, so importing
+// nothing else from tx. internal/vcs imports internal/storage, so importing
 // vcs here would both risk a cycle and drag vcs's package init into the fast
 // test binaries of internal/storage, internal/reviewbundle and
 // internal/provenance.
@@ -47,11 +47,11 @@ import (
 )
 
 // CommitSelfReportSessionID is the fossil session id left behind by the retired
-// `tl commit` self-report. storage.Open deletes it and its links on every open;
+// `tx commit` self-report. storage.Open deletes it and its links on every open;
 // nothing else in the tree covers that migration.
 const CommitSelfReportSessionID = "totality-commit-self-report"
 
-// Harness is an open tl database plus the ids the shapes created in it.
+// Harness is an open tx database plus the ids the shapes created in it.
 type Harness struct {
 	// Store is the production writer surface.
 	Store *storage.Store
@@ -74,13 +74,13 @@ type Harness struct {
 // real machine. Shapes are applied in the order they are passed.
 type Shape func(t *testing.T, h *Harness)
 
-// New opens an isolated tl database in its own totalitytest.World and applies shapes.
+// New opens an isolated tx database in its own totalitytest.World and applies shapes.
 func New(t *testing.T, shapes ...Shape) *Harness {
 	t.Helper()
 	return NewInWorld(t, totalitytest.NewWorld(t), shapes...)
 }
 
-// NewInWorld opens the tl database belonging to an existing world, so a test
+// NewInWorld opens the tx database belonging to an existing world, so a test
 // can create its git repositories first and then shape the database around
 // their real paths.
 func NewInWorld(t *testing.T, world *totalitytest.World, shapes ...Shape) *Harness {
@@ -219,8 +219,8 @@ func (h *Harness) SeedObservedSession(t *testing.T, changeID int64, sessionID, t
 // DriftedRepoIdentity reproduces the two-row `repos` state one repository
 // actually occupies on the author's machine.
 //
-//	id 1  root_path=/Users/joe/git/tl  git_common_dir=/Users/joe/git/tl
-//	id 16 root_path=""                 git_common_dir=/Users/joe/git/tl/.git
+//	id 1  root_path=/Users/joe/git/tx  git_common_dir=/Users/joe/git/tx
+//	id 16 root_path=""                 git_common_dir=/Users/joe/git/tx/.git
 //
 // Row one is what the git_common_dir backfill leaves when `git rev-parse` fails
 // (it falls back to the root path); 54 of 113 live rows are in that shape, and
@@ -363,7 +363,7 @@ func LegacyCaptureSessions(rows ...LegacyStagedSession) Shape {
 }
 
 // FossilCommitSelfReportSession writes the `totality-commit-self-report` sessions row
-// an older tl binary left behind.
+// an older tx binary left behind.
 //
 // It is the only fossil storage.Open actively deletes, the deletion runs on
 // every single open, and it has zero test coverage anywhere in the tree — the
@@ -378,7 +378,7 @@ func FossilCommitSelfReportSession() Shape {
 		if err := h.Store.UpsertObservedSession(context.Background(), storage.Session{
 			ID:        CommitSelfReportSessionID,
 			CreatedAt: 1,
-			Command:   "tl commit",
+			Command:   "tx commit",
 			// cwd='' and repo_root NULL are what makes it a fossil: it can
 			// never match a repository, so it only ever contributed noise.
 			Cwd:       empty,

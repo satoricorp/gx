@@ -90,12 +90,12 @@ func TestForDirectoryLeavesUnidentifiableDirectoriesUnbound(t *testing.T) {
 
 // Two repositories must never bind to the same identity.
 func TestForDirectoryKeepsRepositoriesApart(t *testing.T) {
-	tl := initRepo(t, "git@github.com:satoricorp/totality.git")
+	tx := initRepo(t, "git@github.com:satoricorp/totality.git")
 	yeet := initRepo(t, "git@github.com:joe/yeet.git")
 
 	r := repobind.NewResolver()
 	ctx := context.Background()
-	a := r.ForDirectory(ctx, tl)
+	a := r.ForDirectory(ctx, tx)
 	b := r.ForDirectory(ctx, yeet)
 	if a.Origin == b.Origin {
 		t.Fatalf("distinct repositories share an origin: %q", a.Origin)

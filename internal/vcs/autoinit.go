@@ -31,7 +31,7 @@ func (s *Service) isRepoInitialized(ctx context.Context, repoRoot string) (bool,
 	return s.isRepoInitializedByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
 }
 
-// EnsureReadyRepo initializes tl for the repository at startPath when needed.
+// EnsureReadyRepo initializes tx for the repository at startPath when needed.
 func (s *Service) EnsureReadyRepo(ctx context.Context, startPath string) (EnsureReadyResult, error) {
 	repoRoot, inRepo, err := s.repoRootFromPath(ctx, startPath)
 	if err != nil {

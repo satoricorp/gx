@@ -291,7 +291,7 @@ func (r CodeIndexRetriever) limitFor(opts Options) int {
 // source, most specific first.
 //
 // The names come from semantic.ResolveRepoIdentity — the same function
-// `tl index` writes through — so the reader and the writer cannot address
+// `tx index` writes through — so the reader and the writer cannot address
 // different namespaces. They used to derive the name separately and did not
 // agree; see the comment at the top of internal/semantic/repoidentity.go for
 // what that cost.
@@ -332,9 +332,9 @@ func reviewOrgID() string {
 
 // connectRepositoryRemedy is where a user goes to get their repository indexed.
 //
-// Every "no index" message ends here rather than at `tl index`. Indexing is Totality
+// Every "no index" message ends here rather than at `tx index`. Indexing is Totality
 // Cloud's job — it runs from the GitHub App on merge, so it stays current
-// without anyone remembering to re-run anything — and `tl index` is a hidden
+// without anyone remembering to re-run anything — and `tx index` is a hidden
 // maintenance command that indexes from one developer's checkout into one
 // developer's namespace. Sending users to it would have them build, by hand, a
 // worse copy of something the server maintains for them.
@@ -358,9 +358,9 @@ func codeIndexMissingDetail(target codeIndexTarget) string {
 // saw less than it could have and leaves them nowhere to go. This is the only
 // place that gap is visible to a user, so it carries the fix.
 //
-// Every case points at the website rather than at `tl index`. Indexing is Totality
+// Every case points at the website rather than at `tx index`. Indexing is Totality
 // Cloud's job — it runs from the GitHub App on merge, so it stays current
-// without anyone remembering to re-run anything — and `tl index` is a hidden
+// without anyone remembering to re-run anything — and `tx index` is a hidden
 // maintenance command that indexes one developer's checkout into one
 // developer's namespace. Sending users there would have them build by hand a
 // worse copy of something the server maintains for them.

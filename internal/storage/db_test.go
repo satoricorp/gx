@@ -249,7 +249,7 @@ func TestSessionContextRoundTrip(t *testing.T) {
 		SessionID:   "session-one",
 		Tool:        "codex",
 		Model:       &model,
-		Format:      "tl_session_events_v1",
+		Format:      "tx_session_events_v1",
 		ContentJSON: []byte(`[{"session_id":"session-one","new_text":"redacted"}]`),
 		CapturedAt:  2,
 	}); err != nil {
@@ -263,7 +263,7 @@ func TestSessionContextRoundTrip(t *testing.T) {
 	if got == nil {
 		t.Fatal("SessionContext() = nil")
 	}
-	if got.SessionID != "session-one" || got.Tool != "codex" || got.Model == nil || *got.Model != model || got.Format != "tl_session_events_v1" || string(got.ContentJSON) == "" || got.CapturedAt != 2 {
+	if got.SessionID != "session-one" || got.Tool != "codex" || got.Model == nil || *got.Model != model || got.Format != "tx_session_events_v1" || string(got.ContentJSON) == "" || got.CapturedAt != 2 {
 		t.Fatalf("SessionContext() = %#v", got)
 	}
 }
@@ -284,7 +284,7 @@ func TestOpenRepairsDanglingSessionLinks(t *testing.T) {
 		VALUES (1, '/repo', 'jj', 1, 1);
 		INSERT INTO changes (id, repo_id, jj_change_id, current_commit_id, description, parent_change_id, status, first_seen_at, updated_at)
 		VALUES (1, 1, 'change-one', 'commit-one', 'one', NULL, 'draft', 1, 1);
-		INSERT INTO sessions (id, created_at, command, cwd, tl_version)
+		INSERT INTO sessions (id, created_at, command, cwd, tx_version)
 		VALUES ('live-session', 1, 'codex', '/repo', 'test');
 		INSERT INTO change_sessions (change_id, session_id, created_at)
 		VALUES (1, 'live-session', 1), (999, 'live-session', 2), (1, 'missing-session', 3);

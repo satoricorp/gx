@@ -73,7 +73,7 @@ func (m TranscriptMetadata) Attributes() map[string]any {
 	}
 }
 
-// transcriptTurboPufferSchema is the single schema every tl writer declares.
+// transcriptTurboPufferSchema is the single schema every tx writer declares.
 // One namespace holds session transcripts, published diffs and code chunks, so
 // the schema is the union of their fields; TurboPuffer only stores attributes a
 // row actually sets, so unused columns cost nothing.

@@ -1,11 +1,11 @@
-// Package totalitytest builds the filesystem and git world a tl test runs in: a
+// Package totalitytest builds the filesystem and git world a tx test runs in: a
 // TOTALITY_HOME, real git repositories, linked worktrees, trailer-stamped commits and
 // agent transcripts.
 //
-// It imports nothing from tl beyond the standard library, and that is a
+// It imports nothing from tx beyond the standard library, and that is a
 // constraint rather than an accident. internal/storage/storagetest layers the
 // database state builder on top of this package, and internal/vcs already
-// imports internal/storage — so a tl import here would either cycle or drag
+// imports internal/storage — so a tx import here would either cycle or drag
 // internal/vcs and its git-probing package init into the fast test binaries of
 // internal/storage, internal/reviewbundle and internal/provenance.
 //
@@ -35,7 +35,7 @@ import (
 // silently passes vacuously.
 const RevisionTrailerFormat = "Totality: https://totality.sh/r/%s"
 
-// World is one isolated tl installation: a TOTALITY_HOME nothing else writes to and a
+// World is one isolated tx installation: a TOTALITY_HOME nothing else writes to and a
 // home directory to hang agent transcripts off.
 type World struct {
 	// TotalityHome is the value of TOTALITY_HOME for the duration of the test. Every
@@ -65,7 +65,7 @@ func NewWorld(t *testing.T) *World {
 
 // Repo is one git worktree plus the git metadata directories that identify it.
 //
-// GitCommonDir is the repository identity tl keys `repos` rows on, and for a
+// GitCommonDir is the repository identity tx keys `repos` rows on, and for a
 // linked worktree it is the MAIN checkout's common dir while Root and GitDir
 // are the worktree's own. Keeping the three separate is the whole point: a
 // harness that collapsed them could not express the state Bug B lived in.

@@ -10,7 +10,7 @@ import (
 )
 
 // Review modes name what a review actually looked at. They are the honest
-// answer to "what did tl read?", and the difference between "reviewed and
+// answer to "what did tx read?", and the difference between "reviewed and
 // clean" and "never looked" lives here rather than in the findings list.
 const (
 	// ReviewModeWorkingTree is the interactive case: uncommitted work.
@@ -98,7 +98,7 @@ func wholeRepoChangeSet(changes ChangeSet, explicitBase bool, repoHasContent boo
 }
 
 // wholeRepoTarget names the repository as the subject and, when a diff was
-// resolved, names that diff too, so the report never implies tl ignored it.
+// resolved, names that diff too, so the report never implies tx ignored it.
 func wholeRepoTarget(changes ChangeSet, explicitBase bool) string {
 	focus := ""
 	switch {
@@ -151,7 +151,7 @@ func rangeChangeSet(ctx context.Context, repoRoot, base, refRange string) Change
 	}
 }
 
-// noCommittedChangeTarget names everywhere tl looked, so a "nothing to review"
+// noCommittedChangeTarget names everywhere tx looked, so a "nothing to review"
 // result is actionable instead of mysterious.
 func noCommittedChangeTarget(ctx context.Context, repoRoot string) string {
 	tried := append([]string(nil), baseCandidates...)

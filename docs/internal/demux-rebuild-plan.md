@@ -16,7 +16,7 @@ Historical source baseline:
 ```text
 Repository: satoricorp/totality
 Commit: 1abd91d
-User command at that commit: tl generate
+User command at that commit: tx generate
 Internal names: demux, compose
 ```
 

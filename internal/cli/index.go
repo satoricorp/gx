@@ -87,7 +87,7 @@ func newIndexCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-// indexRepoRoot resolves the repository without requiring `tl init`, matching
+// indexRepoRoot resolves the repository without requiring `tx init`, matching
 // how review resolves it: indexing must work on a checkout Totality has never
 // touched, which is the entire point of on-demand indexing.
 func indexRepoRoot(ctx context.Context) (string, error) {

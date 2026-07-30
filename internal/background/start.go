@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// StartDetachedTotality launches the tl binary with args in a detached background process.
+// StartDetachedTotality launches the tx binary with args in a detached background process.
 //
-// It refuses to launch anything that is not the tl binary. os.Executable()
+// It refuses to launch anything that is not the tx binary. os.Executable()
 // resolves to the *test* binary under `go test`, so an unguarded spawn
 // re-executes the entire test suite as a detached child — which performs more
 // pushes, which spawn more copies. Observed in practice: one `go test ./...`
@@ -24,7 +24,7 @@ func StartDetachedTotality(args ...string) error {
 		return err
 	}
 	if runningUnderGoTest(exe) {
-		return fmt.Errorf("refusing to spawn %q: not the tl binary", filepath.Base(exe))
+		return fmt.Errorf("refusing to spawn %q: not the tx binary", filepath.Base(exe))
 	}
 	cmd := exec.Command(exe, args...)
 	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {

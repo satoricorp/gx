@@ -26,9 +26,9 @@ func NewRoot(ctx context.Context) *cobra.Command {
 	engine := authoring.NewEngine()
 
 	root := &cobra.Command{
-		Use:           "tl",
+		Use:           "tx",
 		Short:         "Totality CLI for Git-native capture, commits, and review",
-		Long:          tlTagline,
+		Long:          txTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -107,7 +107,7 @@ func printInitNoteIfNeeded(cmd *cobra.Command) {
 		return
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, danger("Run `tl init` first."))
+	fmt.Fprintln(out, danger("Run `tx init` first."))
 	fmt.Fprintln(out)
 }
 
@@ -115,7 +115,7 @@ func newVersionCommand() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "tl version",
+		Short: "tx version",
 		Run: func(cmd *cobra.Command, args []string) {
 			if jsonOut {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(version.BuildInfo()); err != nil {
@@ -137,12 +137,12 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up tl in the current repository",
+		Short: "Set up tx in the current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cleanupLegacyAmbientCaptureFromInit(ctx, cmd, yes)
 			if global {
 				if !yes {
-					fmt.Fprintln(cmd.OutOrStdout(), commandLine("tl init --global", true))
+					fmt.Fprintln(cmd.OutOrStdout(), commandLine("tx init --global", true))
 					fmt.Fprintln(cmd.OutOrStdout())
 				}
 				err := runGlobalInit(ctx, cmd, yes)
@@ -154,7 +154,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				return err
 			}
 			if !yes {
-				fmt.Fprintln(cmd.OutOrStdout(), commandLine("tl init", true))
+				fmt.Fprintln(cmd.OutOrStdout(), commandLine("tx init", true))
 				fmt.Fprintln(cmd.OutOrStdout())
 			}
 			result, err := engine.Init(ctx, authoring.InitOptions{
@@ -173,9 +173,9 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 			}
 			if !yes && result.IdentityName != "" && result.IdentityEmail != "" {
 				if result.IdentityApplied {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Configured", fmt.Sprintf("tl identity as %s <%s>", result.IdentityName, result.IdentityEmail)))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Configured", fmt.Sprintf("tx identity as %s <%s>", result.IdentityName, result.IdentityEmail)))
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Using", fmt.Sprintf("tl identity %s <%s>", result.IdentityName, result.IdentityEmail)))
+					fmt.Fprintln(cmd.OutOrStdout(), labelValue("Using", fmt.Sprintf("tx identity %s <%s>", result.IdentityName, result.IdentityEmail)))
 				}
 				if client := postlist.NewFromEnv(); client != nil {
 					err := client.UpsertIdentity(ctx, postlist.Identity{
@@ -184,7 +184,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 						TLVersion: version.Current(),
 					})
 					if err != nil {
-						fmt.Fprintln(cmd.ErrOrStderr(), danger(fmt.Sprintf("tl signup upload failed: %v", err)))
+						fmt.Fprintln(cmd.ErrOrStderr(), danger(fmt.Sprintf("tx signup upload failed: %v", err)))
 					}
 				}
 			}
@@ -270,7 +270,7 @@ func firstNonEmptyString(values ...string) string {
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
-	case "tlr":
+	case "txr":
 		args = append([]string{"review"}, args...)
 	}
 	root := NewRoot(ctx)

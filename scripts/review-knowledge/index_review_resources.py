@@ -411,7 +411,7 @@ def robots_allowed(url: str, robots: dict[str, urllib.robotparser.RobotFileParse
         except Exception:
             return True
         robots[root] = parser
-    return parser.can_fetch("tl-review-corpus-indexer/0.2", url)
+    return parser.can_fetch("tx-review-corpus-indexer/0.2", url)
 
 
 def throttle(url: str, last_by_domain: dict[str, float]) -> None:
@@ -426,7 +426,7 @@ def throttle(url: str, last_by_domain: dict[str, float]) -> None:
 def fetch_url(url: str, timeout: float) -> tuple[bytes, str, int, str]:
     headers = {
         "Accept": "text/html,text/markdown,text/plain,application/pdf;q=0.9,*/*;q=0.1",
-        "User-Agent": "tl-review-corpus-indexer/0.2",
+        "User-Agent": "tx-review-corpus-indexer/0.2",
     }
     last_error: Exception | None = None
     for attempt in range(3):

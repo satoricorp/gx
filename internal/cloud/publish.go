@@ -35,15 +35,15 @@ func (c *Client) RegisterPublish(ctx context.Context, registration PublishRegist
 	}
 	publishURL := cloudURLWithPath(c.url, "/v1/publish")
 	if publishURL == "" {
-		return PublishRegistrationResult{}, fmt.Errorf("tl cloud base URL is not configured")
+		return PublishRegistrationResult{}, fmt.Errorf("tx cloud base URL is not configured")
 	}
 	body, err := json.Marshal(registration)
 	if err != nil {
-		return PublishRegistrationResult{}, fmt.Errorf("marshal tl publish registration: %w", err)
+		return PublishRegistrationResult{}, fmt.Errorf("marshal tx publish registration: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, publishURL, bytes.NewReader(body))
 	if err != nil {
-		return PublishRegistrationResult{}, fmt.Errorf("create tl publish registration request: %w", err)
+		return PublishRegistrationResult{}, fmt.Errorf("create tx publish registration request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -55,20 +55,20 @@ func (c *Client) RegisterPublish(ctx context.Context, registration PublishRegist
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return PublishRegistrationResult{}, fmt.Errorf("register tl publish: %w", err)
+		return PublishRegistrationResult{}, fmt.Errorf("register tx publish: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(raw))
 		if detail != "" {
-			return PublishRegistrationResult{}, fmt.Errorf("register tl publish: status %s: %s", resp.Status, detail)
+			return PublishRegistrationResult{}, fmt.Errorf("register tx publish: status %s: %s", resp.Status, detail)
 		}
-		return PublishRegistrationResult{}, fmt.Errorf("register tl publish: status %s", resp.Status)
+		return PublishRegistrationResult{}, fmt.Errorf("register tx publish: status %s", resp.Status)
 	}
 	var result PublishRegistrationResult
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return PublishRegistrationResult{}, fmt.Errorf("decode tl publish registration: %w", err)
+		return PublishRegistrationResult{}, fmt.Errorf("decode tx publish registration: %w", err)
 	}
 	return result, nil
 }

@@ -48,11 +48,11 @@ func Load() (Config, error) {
 		if os.IsNotExist(err) {
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("read tl config: %w", err)
+		return Config{}, fmt.Errorf("read tx config: %w", err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse tl config: %w", err)
+		return Config{}, fmt.Errorf("parse tx config: %w", err)
 	}
 	return cfg, nil
 }
@@ -67,11 +67,11 @@ func LoadAt(root string) (Config, error) {
 		if os.IsNotExist(err) {
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("read tl config: %w", err)
+		return Config{}, fmt.Errorf("read tx config: %w", err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse tl config: %w", err)
+		return Config{}, fmt.Errorf("parse tx config: %w", err)
 	}
 	return cfg, nil
 }
@@ -86,15 +86,15 @@ func SaveAt(root string, cfg Config) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create tl config dir: %w", err)
+		return fmt.Errorf("create tx config dir: %w", err)
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal tl config: %w", err)
+		return fmt.Errorf("marshal tx config: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write tl config: %w", err)
+		return fmt.Errorf("write tx config: %w", err)
 	}
 	return nil
 }

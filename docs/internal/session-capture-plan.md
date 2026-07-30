@@ -4,7 +4,7 @@
 
 Every coding tool writes its own record of a session to disk as it goes — Claude
 and Codex append JSONL files under their config directories, Cursor writes rows
-into a SQLite database. When you `git push`, Totality's `pre-push` hook runs `tl
+into a SQLite database. When you `git push`, Totality's `pre-push` hook runs `tx
 capture push`, which finds the session files overlapping the pushed commits,
 parses them into a normalized `SessionEvent` stream, and redacts secrets. It
 then matches those events against the commits by **comparing the text the agent
@@ -27,7 +27,7 @@ content-based, a missing tail is not a degraded match — it is no match.
 thing keeping other repositories' sessions out of a repo's context. Discovery
 casts a wide net — any transcript mentioning the repo's path is a candidate —
 and `capture_sessions` today holds sessions sourced from `-Users-joe-git-console`
-and `-Users-joe-git-yeet` that were pulled in while capturing for `tl`. Matching
+and `-Users-joe-git-yeet` that were pulled in while capturing for `tx`. Matching
 throws them back. If matching stops being a prerequisite for indexing, something
 else has to be the gate.
 
@@ -74,7 +74,7 @@ better than silence.
 
 **Cross-repo context is allowed, deliberately.** Sessions bound to any connected
 repo may inform any other connected repo in the same org. Related repositories —
-`tl` and `console` — genuinely benefit from each other's context. The boundary is
+`tx` and `console` — genuinely benefit from each other's context. The boundary is
 org connection, not repo identity.
 
 **Unconnected repos never leave the machine.** A session bound to a repo with no

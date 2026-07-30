@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     cwd TEXT NOT NULL,
     client_pid INTEGER,
     exit_code INTEGER,
-    tl_version TEXT NOT NULL,
+    tx_version TEXT NOT NULL,
     source TEXT,
     process_name TEXT,
     parent_pid INTEGER,

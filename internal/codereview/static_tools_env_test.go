@@ -13,7 +13,7 @@ import (
 // reviewerCredentialEnv is the set this whole file exists to keep out of the
 // reviewed checkout's processes. These are the real names a Totality developer has
 // exported (see internal/cloud/credentials.go and internal/telemetry) plus the
-// two cloud conventions a CI runner exports into the step that runs tl review.
+// two cloud conventions a CI runner exports into the step that runs tx review.
 var reviewerCredentialEnv = map[string]string{
 	"ANTHROPIC_API_KEY":              "sk-ant-leaked",
 	"OPENAI_API_KEY":                 "sk-openai-leaked",
@@ -100,7 +100,7 @@ func TestStaticToolChildEnvKeepsTheVariablesTheToolchainsNeed(t *testing.T) {
 			t.Fatalf("child environment lost %s=%q (got %q); the toolchains need it", name, value, got[name])
 		}
 	}
-	if got["GOCACHE"] != filepath.Join(os.TempDir(), "tl-review-gocache") {
+	if got["GOCACHE"] != filepath.Join(os.TempDir(), "tx-review-gocache") {
 		t.Fatalf("GOCACHE = %q, want the review-owned build cache", got["GOCACHE"])
 	}
 	// Duplicate keys make the child's getenv pick a winner we did not choose,
@@ -162,7 +162,7 @@ func TestGoStaticToolsRunWithoutHandingTheCheckoutTheReviewersCredentials(t *tes
 // The other half of a leak is the return path: runStaticTool captures the
 // child's stdout and stderr into StaticToolResult.Output, which becomes part of
 // the AI reviewer's prompt and of a published report. A checkout that printed
-// the reviewer's environment would be exfiltrating it through tl itself.
+// the reviewer's environment would be exfiltrating it through tx itself.
 //
 // The fixture here fails on purpose, because that is the only way the output
 // travels: `go test` without -v discards a passing test's stdout, so the
@@ -195,7 +195,7 @@ func TestFailingCheckoutTestsCarryNoReviewerCredentialsBackIntoTheReport(t *test
 	}
 	for name, value := range reviewerCredentialEnv {
 		if strings.Contains(output, "CHILD-ENV "+name+"=") {
-			t.Fatalf("the reviewed checkout read %s and tl carried it back into the report:\n%s", name, output)
+			t.Fatalf("the reviewed checkout read %s and tx carried it back into the report:\n%s", name, output)
 		}
 		if value != "" && strings.Contains(output, value) {
 			t.Fatalf("the value of %s surfaced in the captured report output:\n%s", name, output)
@@ -243,7 +243,7 @@ func TestWhatTheReviewedCheckoutCanSee(t *testing.T) {
 
 // staticToolLeakFixtureTest is the shape a hostile pull request would take: an
 // ordinary-looking test that prints everything it was handed and then fails, so
-// that tl captures the dump and carries it into the review report.
+// that tx captures the dump and carries it into the review report.
 const staticToolLeakFixtureTest = `package app
 
 import (
@@ -373,7 +373,7 @@ type inheritedEnvRun struct {
 }
 
 // runWithInheritedEnv is the baseline half of the differential above: the same
-// command the static tool stage would run, with the environment tl itself has.
+// command the static tool stage would run, with the environment tx itself has.
 // It runs before the credential fixtures are set so the baseline is the
 // reviewer's real environment and not a doctored one.
 func runWithInheritedEnv(t *testing.T, root, bin string, args []string) inheritedEnvRun {

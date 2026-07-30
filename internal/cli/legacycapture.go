@@ -6,9 +6,9 @@ package cli
 // proxy daemon and pointed coding agents at it through launchctl environment
 // variables and managed blocks in shell profiles. That capture model is gone —
 // transcript capture is hook-driven — but machines that ran the old
-// `tl ops capture install` still have the agent loaded. This best-effort
-// cleanup runs during `tl init` and repo auto-init: it stops and removes the
-// LaunchAgent, strips the managed shell-profile blocks, clears the tl
+// `tx ops capture install` still have the agent loaded. This best-effort
+// cleanup runs during `tx init` and repo auto-init: it stops and removes the
+// LaunchAgent, strips the managed shell-profile blocks, clears the tx
 // launchctl env vars, and reverts ~/.codex/config.toml when it still routes
 // Codex through the retired local proxy. It is a silent no-op when nothing
 // legacy is present and never fails the caller; problems surface as warnings
@@ -32,8 +32,8 @@ import (
 const (
 	legacyLaunchAgentLabel = "dev.totality.capture"
 	legacyDefaultProxyAddr = "127.0.0.1:43123"
-	legacyShellBlockOpen   = "# >>> tl ambient capture >>>"
-	legacyShellBlockClose  = "# <<< tl ambient capture <<<"
+	legacyShellBlockOpen   = "# >>> tx ambient capture >>>"
+	legacyShellBlockClose  = "# <<< tx ambient capture <<<"
 	legacyEnvAnthropicKey  = "ANTHROPIC_BASE_URL"
 	legacyEnvOpenAIKey     = "OPENAI_BASE_URL"
 	legacyCodexProviderID  = "totality-openai"
@@ -60,7 +60,7 @@ func (r legacyCleanupResult) cleanedAny() bool {
 }
 
 // legacyLaunchAgentPath returns the plist path the retired
-// `tl ops capture install` wrote: ~/Library/LaunchAgents/dev.totality.capture.plist.
+// `tx ops capture install` wrote: ~/Library/LaunchAgents/dev.totality.capture.plist.
 func legacyLaunchAgentPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -388,7 +388,7 @@ func cleanupLegacyAmbientCapture(ctx context.Context, run legacyRunner) legacyCl
 	for _, path := range legacyShellProfilePaths() {
 		removed, err := removeLegacyShellBlockFromFile(path)
 		if err != nil {
-			warnf("remove tl ambient capture block from %s: %v", path, err)
+			warnf("remove tx ambient capture block from %s: %v", path, err)
 			continue
 		}
 		if removed {
@@ -448,7 +448,7 @@ func cleanupLegacyAmbientCaptureQuiet(ctx context.Context, errOut io.Writer) {
 	}
 }
 
-// cleanupLegacyAmbientCaptureFromInit runs during `tl init`, reporting a
+// cleanupLegacyAmbientCaptureFromInit runs during `tx init`, reporting a
 // one-line note when the retired service was actually removed.
 func cleanupLegacyAmbientCaptureFromInit(ctx context.Context, cmd *cobra.Command, quiet bool) {
 	result := cleanupLegacyAmbientCapture(ctx, nil)

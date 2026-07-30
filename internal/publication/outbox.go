@@ -94,7 +94,7 @@ func EnqueueArtifact(ctx context.Context, artifact reviewbundle.Artifact, attest
 	}
 	if existing, err := loadQueueItem(item.ID); err == nil {
 		// Re-enqueues for the same head carry newer data (the pre-push hook
-		// runs before tl push resolves the PR URL); the latest artifact must
+		// runs before tx push resolves the PR URL); the latest artifact must
 		// win or PR linkage is lost. Leave in-flight uploads alone.
 		if existing.Status == outboxStatusRunning && uploadLockActive() && !staleUpload(existing.LastAttemptAt) {
 			artifactPath, artErr := WriteLocalArtifact(artifact)

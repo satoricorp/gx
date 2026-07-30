@@ -13,19 +13,19 @@ import (
 )
 
 const (
-	// globalHookMarker identifies scripts written by `tl init --global`. Every
+	// globalHookMarker identifies scripts written by `tx init --global`. Every
 	// global script also carries hookMarker so the existing Totality-ownership checks
 	// (totalityOwnedHook / IsInstalled) keep recognizing them.
-	globalHookMarker = "# tl global lifecycle hooks"
+	globalHookMarker = "# tx global lifecycle hooks"
 
 	// hooksPathConfigKey is the git config key a global install points at the
 	// Totality hooks directory.
 	hooksPathConfigKey = "core.hooksPath"
 
-	// RepoEnabledConfigKey is the per-repo opt-out. `git config tl.enabled false`
+	// RepoEnabledConfigKey is the per-repo opt-out. `git config tx.enabled false`
 	// inside a repository stops Totality lifecycle work there while leaving the
 	// machine-wide install (and the repo's own hooks) intact.
-	RepoEnabledConfigKey = "tl.enabled"
+	RepoEnabledConfigKey = "tx.enabled"
 )
 
 // globalHookSpec describes one script installed into the Totality global hooks
@@ -40,12 +40,12 @@ type globalHookSpec struct {
 	// stdin even when there is nothing to do, and must replay it to the
 	// chained repo hook when Totality consumed it first.
 	stdin bool
-	// tl names the Totality lifecycle behavior this script runs before chaining.
+	// tx names the Totality lifecycle behavior this script runs before chaining.
 	// Empty means the script is a pure forwarder.
-	tl string
+	tx string
 }
 
-// globalHookSpecs lists every hook `tl init --global` installs.
+// globalHookSpecs lists every hook `tx init --global` installs.
 //
 // Deliberately excluded, because their mere existence changes what git does
 // and a shim that exits 0 would silently replace the built-in behavior:
@@ -55,10 +55,10 @@ type globalHookSpec struct {
 func globalHookSpecs() []globalHookSpec {
 	return []globalHookSpec{
 		// Totality lifecycle hooks: Totality work first (never fatal), then the repo hook.
-		{name: "prepare-commit-msg", tl: "prepare-commit-msg"},
-		{name: "post-commit", tl: "post-commit"},
-		{name: "post-rewrite", tl: "post-rewrite", stdin: true},
-		{name: "pre-push", tl: "pre-push", stdin: true},
+		{name: "prepare-commit-msg", tx: "prepare-commit-msg"},
+		{name: "post-commit", tx: "post-commit"},
+		{name: "post-rewrite", tx: "post-rewrite", stdin: true},
+		{name: "pre-push", tx: "pre-push", stdin: true},
 
 		// Pure forwarders: Totality does nothing, but the repo's hook must still run.
 		{name: "applypatch-msg"},
@@ -105,7 +105,7 @@ func GlobalHooksDir() (string, error) {
 type GlobalInstallOptions struct {
 	// HooksDir overrides the Totality hooks directory. Defaults to GlobalHooksDir().
 	HooksDir string
-	// TotalityPath overrides the tl binary baked into the scripts.
+	// TotalityPath overrides the tx binary baked into the scripts.
 	TotalityPath string
 }
 
@@ -163,11 +163,11 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 	}
 	result.HooksDir = hooksDir
 
-	tlPath := strings.TrimSpace(opts.TotalityPath)
-	if tlPath == "" {
-		tlPath, err = installTotalityPath()
+	txPath := strings.TrimSpace(opts.TotalityPath)
+	if txPath == "" {
+		txPath, err = installTotalityPath()
 		if err != nil {
-			return result, fmt.Errorf("resolve tl binary: %w", err)
+			return result, fmt.Errorf("resolve tx binary: %w", err)
 		}
 	}
 
@@ -181,7 +181,7 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 			"git config --global %s is already set to %s, which is not managed by Totality; "+
 				"Totality chains to each repository's own hooks but will not take over another global hooks directory. "+
 				"Move those hooks into %s (they will be chained from there) or unset the config with "+
-				"`git config --global --unset %s`, then re-run `tl init --global`",
+				"`git config --global --unset %s`, then re-run `tx init --global`",
 			hooksPathConfigKey, current, hooksDir, hooksPathConfigKey)
 	}
 
@@ -190,14 +190,14 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 	}
 	for _, spec := range globalHookSpecs() {
 		result.Scripts = append(result.Scripts, spec.name)
-		script := globalHookScript(spec, tlPath, hooksDir)
+		script := globalHookScript(spec, txPath, hooksDir)
 		path := filepath.Join(hooksDir, spec.name)
 		if data, readErr := os.ReadFile(path); readErr == nil {
 			if string(data) == script {
 				continue
 			}
 			if !totalityOwnedHook(spec.name, string(data)) {
-				return result, fmt.Errorf("refusing to overwrite non-Totality script at %s; move it aside before retrying `tl init --global`", path)
+				return result, fmt.Errorf("refusing to overwrite non-Totality script at %s; move it aside before retrying `tx init --global`", path)
 			}
 		}
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -252,8 +252,8 @@ func GlobalStatus(ctx context.Context) (GlobalState, error) {
 
 // EnabledForRepo reports whether Totality lifecycle work should run in repoRoot.
 //
-// A repository opts out with `git config tl.enabled false`, which is how a
-// user excludes one repo from a machine-wide `tl init --global` install. Unset
+// A repository opts out with `git config tx.enabled false`, which is how a
+// user excludes one repo from a machine-wide `tx init --global` install. Unset
 // or unreadable means enabled.
 func EnabledForRepo(ctx context.Context, repoRoot string) bool {
 	repoRoot = strings.TrimSpace(repoRoot)
@@ -333,7 +333,7 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// globalHookPreamble emits the shared header plus tl_resolve_local_hook, which
+// globalHookPreamble emits the shared header plus tx_resolve_local_hook, which
 // finds the repository's own hook of the given name.
 //
 // It must not use `git rev-parse --git-path hooks/<name>`: that call honors
@@ -345,118 +345,118 @@ func globalHookPreamble(hooksDir string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %[1]s
 %[2]s
-# Installed by `+"`tl init --global`"+`. A global core.hooksPath makes git ignore
+# Installed by `+"`tx init --global`"+`. A global core.hooksPath makes git ignore
 # every repository's own .git/hooks, so each script here does Totality's work (if any)
 # and then runs the repository's own hook of the same name.
 # Opt a repository out with: git config %[3]s false
 
-tl_global_hooks_dir=%[4]s
-tl_local_hook=""
+tx_global_hooks_dir=%[4]s
+tx_local_hook=""
 
-tl_resolve_local_hook() {
-  tl_local_hook=""
-  tl_hook_name="$1"
+tx_resolve_local_hook() {
+  tx_local_hook=""
+  tx_hook_name="$1"
   # Masking the global/system config keeps this from resolving to the Totality dir.
-  tl_dir="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git config --get %[5]s 2>/dev/null)"
-  if [ -z "$tl_dir" ]; then
-    tl_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-    [ -n "$tl_dir" ] || return 0
-    tl_dir="$tl_dir/hooks"
+  tx_dir="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git config --get %[5]s 2>/dev/null)"
+  if [ -z "$tx_dir" ]; then
+    tx_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+    [ -n "$tx_dir" ] || return 0
+    tx_dir="$tx_dir/hooks"
   fi
-  case "$tl_dir" in
+  case "$tx_dir" in
     /*) ;;
-    *) tl_dir="$(git rev-parse --show-toplevel 2>/dev/null)/$tl_dir" ;;
+    *) tx_dir="$(git rev-parse --show-toplevel 2>/dev/null)/$tx_dir" ;;
   esac
   # Never chain back into this directory: that would recurse forever.
-  if [ "$tl_dir" = "$tl_global_hooks_dir" ]; then
+  if [ "$tx_dir" = "$tx_global_hooks_dir" ]; then
     return 0
   fi
-  case "$tl_dir" in
+  case "$tx_dir" in
     %[4]s/*) return 0 ;;
   esac
-  tl_candidate="$tl_dir/$tl_hook_name"
-  [ -f "$tl_candidate" ] && [ -x "$tl_candidate" ] || return 0
-  # A repo that ran plain `+"`tl init`"+` has Totality's own hook here; running it would
+  tx_candidate="$tx_dir/$tx_hook_name"
+  [ -f "$tx_candidate" ] && [ -x "$tx_candidate" ] || return 0
+  # A repo that ran plain `+"`tx init`"+` has Totality's own hook here; running it would
   # repeat the work this script just did.
-  if grep -q '%[1]s' "$tl_candidate" 2>/dev/null; then
+  if grep -q '%[1]s' "$tx_candidate" 2>/dev/null; then
     return 0
   fi
-  tl_local_hook="$tl_candidate"
+  tx_local_hook="$tx_candidate"
 }
 `, hookMarker, globalHookMarker, RepoEnabledConfigKey, quotedDir, hooksPathConfigKey)
 }
 
-// globalTotalityResolver emits shell that resolves tl at run time: the pinned
-// install-time path when it is still an executable file, else tl from PATH.
-// Unlike the per-repo hooks, a global script must never exit when tl is
-// missing — it still has to chain to the repository's own hook — so tl_bin is
+// globalTotalityResolver emits shell that resolves tx at run time: the pinned
+// install-time path when it is still an executable file, else tx from PATH.
+// Unlike the per-repo hooks, a global script must never exit when tx is
+// missing — it still has to chain to the repository's own hook — so tx_bin is
 // left empty and the Totality work is skipped instead.
-func globalTotalityResolver(tlPath string) string {
-	if strings.TrimSpace(tlPath) == "" {
-		tlPath = "tl"
+func globalTotalityResolver(txPath string) string {
+	if strings.TrimSpace(txPath) == "" {
+		txPath = "tx"
 	}
-	return fmt.Sprintf(`tl_bin=%s
-case "$tl_bin" in /*) ;; *) tl_bin="" ;; esac
-if [ ! -f "$tl_bin" ] || [ ! -x "$tl_bin" ]; then
-  tl_bin="$(command -v tl 2>/dev/null)" || tl_bin=""
-fi`, shellSingleQuote(tlPath))
+	return fmt.Sprintf(`tx_bin=%s
+case "$tx_bin" in /*) ;; *) tx_bin="" ;; esac
+if [ ! -f "$tx_bin" ] || [ ! -x "$tx_bin" ]; then
+  tx_bin="$(command -v tx 2>/dev/null)" || tx_bin=""
+fi`, shellSingleQuote(txPath))
 }
 
 // globalHookScript renders one global hook script.
-func globalHookScript(spec globalHookSpec, tlPath, hooksDir string) string {
+func globalHookScript(spec globalHookSpec, txPath, hooksDir string) string {
 	preamble := globalHookPreamble(hooksDir)
-	resolver := globalTotalityResolver(tlPath)
-	switch spec.tl {
+	resolver := globalTotalityResolver(txPath)
+	switch spec.tx {
 	case "prepare-commit-msg":
 		return preamble + fmt.Sprintf(`
 %s
-tl_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tl_bin" ] && [ -n "$tl_repo" ]; then
-  "$tl_bin" __hooks prepare-commit-msg --repo "$tl_repo" --message-path "$1" || {
-    echo "tl prepare-commit-msg failed; commit continues without a Totality trailer" >&2
+tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$tx_bin" ] && [ -n "$tx_repo" ]; then
+  "$tx_bin" __hooks prepare-commit-msg --repo "$tx_repo" --message-path "$1" || {
+    echo "tx prepare-commit-msg failed; commit continues without a Totality trailer" >&2
   }
 fi
-tl_resolve_local_hook prepare-commit-msg
-if [ -n "$tl_local_hook" ]; then
-  exec "$tl_local_hook" "$@"
+tx_resolve_local_hook prepare-commit-msg
+if [ -n "$tx_local_hook" ]; then
+  exec "$tx_local_hook" "$@"
 fi
 exit 0
 `, resolver)
 	case "post-commit":
 		return preamble + fmt.Sprintf(`
 %s
-tl_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tl_bin" ] && [ -n "$tl_repo" ]; then
-  "$tl_bin" __hooks post-commit --repo "$tl_repo" || {
-    echo "tl post-commit metadata recording failed" >&2
+tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$tx_bin" ] && [ -n "$tx_repo" ]; then
+  "$tx_bin" __hooks post-commit --repo "$tx_repo" || {
+    echo "tx post-commit metadata recording failed" >&2
   }
 fi
-tl_resolve_local_hook post-commit
-if [ -n "$tl_local_hook" ]; then
-  exec "$tl_local_hook" "$@"
+tx_resolve_local_hook post-commit
+if [ -n "$tx_local_hook" ]; then
+  exec "$tx_local_hook" "$@"
 fi
 exit 0
 `, resolver)
 	case "post-rewrite":
 		return preamble + fmt.Sprintf(`
 %s
-tl_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-post-rewrite.XXXXXX" 2>/dev/null)" || tl_stdin=""
-if [ -n "$tl_stdin" ]; then
-  trap 'rm -f "$tl_stdin"' EXIT
-  cat > "$tl_stdin"
+tx_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-post-rewrite.XXXXXX" 2>/dev/null)" || tx_stdin=""
+if [ -n "$tx_stdin" ]; then
+  trap 'rm -f "$tx_stdin"' EXIT
+  cat > "$tx_stdin"
 fi
-tl_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tl_bin" ] && [ -n "$tl_repo" ] && [ -n "$tl_stdin" ]; then
-  "$tl_bin" __hooks post-rewrite --repo "$tl_repo" < "$tl_stdin" || {
-    echo "tl post-rewrite metadata update failed" >&2
+tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$tx_bin" ] && [ -n "$tx_repo" ] && [ -n "$tx_stdin" ]; then
+  "$tx_bin" __hooks post-rewrite --repo "$tx_repo" < "$tx_stdin" || {
+    echo "tx post-rewrite metadata update failed" >&2
   }
 fi
-tl_resolve_local_hook post-rewrite
-if [ -n "$tl_local_hook" ]; then
-  if [ -n "$tl_stdin" ]; then
-    "$tl_local_hook" "$@" < "$tl_stdin"
+tx_resolve_local_hook post-rewrite
+if [ -n "$tx_local_hook" ]; then
+  if [ -n "$tx_stdin" ]; then
+    "$tx_local_hook" "$@" < "$tx_stdin"
   else
-    "$tl_local_hook" "$@" < /dev/null
+    "$tx_local_hook" "$@" < /dev/null
   fi
   exit $?
 fi
@@ -465,37 +465,37 @@ exit 0
 	case "pre-push":
 		return preamble + fmt.Sprintf(`
 %s
-tl_remote="$1"
-tl_url="$2"
-tl_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-pre-push.XXXXXX" 2>/dev/null)" || tl_stdin=""
-if [ -n "$tl_stdin" ]; then
-  trap 'rm -f "$tl_stdin"' EXIT
-  cat > "$tl_stdin"
+tx_remote="$1"
+tx_url="$2"
+tx_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-pre-push.XXXXXX" 2>/dev/null)" || tx_stdin=""
+if [ -n "$tx_stdin" ]; then
+  trap 'rm -f "$tx_stdin"' EXIT
+  cat > "$tx_stdin"
 else
   # Always drain stdin so git never blocks writing refs to this hook.
   cat > /dev/null
 fi
-tl_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tl_bin" ] && [ -n "$tl_repo" ] && [ -n "$tl_stdin" ]; then
-  while read tl_local_ref tl_local_sha tl_remote_ref tl_remote_sha
+tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$tx_bin" ] && [ -n "$tx_repo" ] && [ -n "$tx_stdin" ]; then
+  while read tx_local_ref tx_local_sha tx_remote_ref tx_remote_sha
   do
-    if [ "$tl_local_sha" = "0000000000000000000000000000000000000000" ]; then
+    if [ "$tx_local_sha" = "0000000000000000000000000000000000000000" ]; then
       continue
     fi
-    if [ "$tl_remote_sha" = "0000000000000000000000000000000000000000" ]; then
-      tl_range="$tl_local_sha"
+    if [ "$tx_remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      tx_range="$tx_local_sha"
     else
-      tl_range="${tl_remote_sha}..${tl_local_sha}"
+      tx_range="${tx_remote_sha}..${tx_local_sha}"
     fi
-    "$tl_bin" capture push --remote "$tl_remote" --ref-range "$tl_range" --local-ref "$tl_local_ref" --head-sha "$tl_local_sha" --repo "$tl_repo" || true
-  done < "$tl_stdin"
+    "$tx_bin" capture push --remote "$tx_remote" --ref-range "$tx_range" --local-ref "$tx_local_ref" --head-sha "$tx_local_sha" --repo "$tx_repo" || true
+  done < "$tx_stdin"
 fi
-tl_resolve_local_hook pre-push
-if [ -n "$tl_local_hook" ]; then
-  if [ -n "$tl_stdin" ]; then
-    "$tl_local_hook" "$@" < "$tl_stdin"
+tx_resolve_local_hook pre-push
+if [ -n "$tx_local_hook" ]; then
+  if [ -n "$tx_stdin" ]; then
+    "$tx_local_hook" "$@" < "$tx_stdin"
   else
-    "$tl_local_hook" "$@" < /dev/null
+    "$tx_local_hook" "$@" < /dev/null
   fi
   exit $?
 fi
@@ -508,9 +508,9 @@ exit 0
 		drain = "# Drain the data git feeds this hook so it never sees a short write.\ncat > /dev/null\n"
 	}
 	return preamble + fmt.Sprintf(`
-tl_resolve_local_hook %s
-if [ -n "$tl_local_hook" ]; then
-  exec "$tl_local_hook" "$@"
+tx_resolve_local_hook %s
+if [ -n "$tx_local_hook" ]; then
+  exec "$tx_local_hook" "$@"
 fi
 %sexit 0
 `, spec.name, drain)

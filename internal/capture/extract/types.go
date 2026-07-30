@@ -7,7 +7,7 @@ type ExtractRequest struct {
 	RepoRoot         string             `json:"repoRoot"`
 	RefRange         string             `json:"refRange"`
 	HeadCommit       string             `json:"headCommit"`
-	TlVersion        string             `json:"tlVersion,omitempty"`
+	TxVersion        string             `json:"txVersion,omitempty"`
 	IntentCandidates []interface{}      `json:"intentCandidates,omitempty"`
 	HunkLinks        []matcher.HunkLink `json:"hunkLinks"`
 	StruggleSignals  []interface{}      `json:"struggleSignals,omitempty"`

@@ -3,27 +3,27 @@ title: CLI
 description: CLI Reference with flags, examples, and exit codes.
 ---
 
-Initialize any repository with `tl init`. This installs git hooks that capture
+Initialize any repository with `tx init`. This installs git hooks that capture
 your session context and pairs it with your code changes, giving totality
 better context for review.
 
 ## Totality CLI Overview
 
 ```bash
-tl init      # set up hooks in a repo (run once)
-tl review    # AI review of the current change (alias: tlr)
-tl auth      # sign in to Totality Cloud
-tl doctor    # diagnose capture, hooks, and publishing
-tl version   # print the version
+tx init      # set up hooks in a repo (run once)
+tx review    # AI review of the current change (alias: txr)
+tx auth      # sign in to Totality Cloud
+tx doctor    # diagnose capture, hooks, and publishing
+tx version   # print the version
 ```
 
-## tl init
+## tx init
 
 ```bash
-tl init
+tx init
 ```
 
-`tl init` installs the Git hooks and registers the MCP server. Run it once per
+`tx init` installs the Git hooks and registers the MCP server. Run it once per
 repository.
 
 | Flag | Meaning |
@@ -36,18 +36,18 @@ repository.
 ### Global hooks
 
 ```bash
-tl init --global
+tx init --global
 ```
 
 Installs the hooks once for every repository. The scripts chain to each
 repository's own hooks of the same name, so husky, lefthook, and hand-written
 hooks keep working. If a global hooks path is already set to something else,
-`tl init --global` stops rather than overwriting it.
+`tx init --global` stops rather than overwriting it.
 
 Opt a single repository out, from inside it:
 
 ```bash
-git config tl.enabled false
+git config tx.enabled false
 ```
 
 Undo the machine-wide install:
@@ -56,16 +56,16 @@ Undo the machine-wide install:
 git config --global --unset core.hooksPath
 ```
 
-## tl review
+## tx review
 
 ```bash
-tl review                                 # alias: tlr
-tl review "check the auth rollback path"
-tl review --scope security                # focused pass
-tl review --focus src/auth --deep         # deep review of one directory
+tx review                                 # alias: txr
+tx review "check the auth rollback path"
+tx review --scope security                # focused pass
+tx review --focus src/auth --deep         # deep review of one directory
 ```
 
-Reviews the current codebase state. `tl review` uses your indexed codebases,
+Reviews the current codebase state. `tx review` uses your indexed codebases,
 two separate models to identify the most important issues with a judge to
 dedupe findings. This can be run in the terminal or via [MCP](/docs/mcp).
 
@@ -90,18 +90,18 @@ dedupe findings. This can be run in the terminal or via [MCP](/docs/mcp).
    `master`, `origin/main`, `origin/master`), or the last commit when HEAD is
    the base branch
 
-If nothing was found, `tl review` says so. "Nothing was reviewed" is its own
+If nothing was found, `tx review` says so. "Nothing was reviewed" is its own
 outcome and never counts as a clean pass.
 
 ### Read-only
 
-`tl review` does not mutate any logic, and doesn't require `tl init`
-(`tl init` is required for PR summaries and chat).
+`tx review` does not mutate any logic, and doesn't require `tx init`
+(`tx init` is required for PR summaries and chat).
 
 ### As a CI gate
 
 ```bash
-tl review --base origin/main --fail-on strong --no-publish
+tx review --base origin/main --fail-on strong --no-publish
 ```
 
 `--fail-on` fails the review when findings at or above the level survive:
@@ -126,36 +126,36 @@ Exit codes:
 Pair with `--no-publish` so CI never posts PR comments, and `--json` to parse
 findings yourself.
 
-## tl auth
+## tx auth
 
 ```bash
-tl auth login
-tl auth status
-tl auth logout
+tx auth login
+tx auth status
+tx auth logout
 ```
 
 Signs the CLI into Totality Cloud through GitHub.
 
-## tl doctor
+## tx doctor
 
 ```bash
-tl doctor            # diagnose capture, hooks, auth, and the publish queue
-tl doctor --fix      # apply safe repairs
-tl doctor --json     # machine-readable report
-tl doctor --report   # send this diagnosis and recent logs to support
+tx doctor            # diagnose capture, hooks, auth, and the publish queue
+tx doctor --fix      # apply safe repairs
+tx doctor --json     # machine-readable report
+tx doctor --report   # send this diagnosis and recent logs to support
 ```
 
-## tl version
+## tx version
 
 ```bash
-tl version
-tl version --json
+tx version
+tx version --json
 ```
 
 ## Shortcuts
 
-The installer links `tlr` to the same binary:
+The installer links `txr` to the same binary:
 
 ```bash
-tlr   # tl review
+txr   # tx review
 ```

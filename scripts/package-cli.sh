@@ -43,50 +43,50 @@ esac
 
 build_root="$(mktemp -d)"
 trap 'rm -rf "$build_root"' EXIT
-stage_dir="$build_root/tl"
+stage_dir="$build_root/tx"
 mkdir -p "$stage_dir/bin" "$stage_dir/completions" "$stage_dir/hooks" "$dist_dir"
 
-echo "Building tl ${version} for ${goos}/${goarch}"
+echo "Building tx ${version} for ${goos}/${goarch}"
 GOOS="$goos" GOARCH="$goarch" CGO_ENABLED="${CGO_ENABLED:-0}" \
-  go build -trimpath -ldflags "$TOTALITY_LDFLAGS" -o "$stage_dir/bin/tl" ./cmd/tl
-chmod 755 "$stage_dir/bin/tl"
-ln -sf tl "$stage_dir/bin/tlr"
+  go build -trimpath -ldflags "$TOTALITY_LDFLAGS" -o "$stage_dir/bin/tx" ./cmd/tx
+chmod 755 "$stage_dir/bin/tx"
+ln -sf tx "$stage_dir/bin/txr"
 
-echo "Building tl-mcp for ${goos}/${goarch}"
+echo "Building tx-mcp for ${goos}/${goarch}"
 (
   cd "$repo_root/mcp"
   bun install --frozen-lockfile
   if [[ -n "$bun_target" ]]; then
-    bun build src/stdio.ts --compile --target "$bun_target" --outfile "$stage_dir/bin/tl-mcp"
+    bun build src/stdio.ts --compile --target "$bun_target" --outfile "$stage_dir/bin/tx-mcp"
   else
-    bun build src/stdio.ts --compile --outfile "$stage_dir/bin/tl-mcp"
+    bun build src/stdio.ts --compile --outfile "$stage_dir/bin/tx-mcp"
   fi
 )
-chmod 755 "$stage_dir/bin/tl-mcp"
+chmod 755 "$stage_dir/bin/tx-mcp"
 
-env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/tl-gen-completions "$stage_dir/completions/tl.bash" "$stage_dir/completions/_tl"
+env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/tx-gen-completions "$stage_dir/completions/tx.bash" "$stage_dir/completions/_tx"
 
 cat > "$stage_dir/hooks/README.txt" <<'EOF'
-Repo git hooks are installed by `tl init` in each repository.
+Repo git hooks are installed by `tx init` in each repository.
 Totality init also registers MCP with supported agent CLIs and offers AGENTS.md instructions.
 EOF
 
 cat > "$stage_dir/README.txt" <<EOF
 Totality CLI package
 
-Default install (CLI + tl-mcp + completions):
+Default install (CLI + tx-mcp + completions):
   curl -fsSL https://download.totality.sh/install.sh | sh
 
 Manual install:
-  install -m 755 bin/tl ~/.local/bin/tl
-  ln -sf tl ~/.local/bin/tlr
-  install -m 755 bin/tl-mcp ~/.local/bin/tl-mcp
+  install -m 755 bin/tx ~/.local/bin/tx
+  ln -sf tx ~/.local/bin/txr
+  install -m 755 bin/tx-mcp ~/.local/bin/tx-mcp
 EOF
 
-archive_name="tl_${version}_${goos}_${goarch}.tar.gz"
+archive_name="tx_${version}_${goos}_${goarch}.tar.gz"
 archive_path="$dist_dir/$archive_name"
 rm -f "$archive_path" "$archive_path.sha256"
-tar -czf "$archive_path" -C "$build_root" tl
+tar -czf "$archive_path" -C "$build_root" tx
 
 if command -v shasum >/dev/null 2>&1; then
   shasum -a 256 "$archive_path" > "$archive_path.sha256"

@@ -34,7 +34,7 @@ func TestSessionContextRetrieverEmitsSessionSnippets(t *testing.T) {
 				"session_id":     "sess-1",
 				"request_id":     "req-9",
 				"repo_full_name": "satoricorp/totality",
-				"branch_name":    "tl-review",
+				"branch_name":    "tx-review",
 				"text":           "The agent was told to keep retries idempotent and left the backoff for later.",
 			}},
 		},

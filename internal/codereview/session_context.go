@@ -208,7 +208,7 @@ func sessionNamespaceTargets(repoRoot, repoFullName string) []codeIndexTarget {
 		}
 		return out
 	}
-	// Same resolver as the code index and as `tl index`: publish artifacts,
+	// Same resolver as the code index and as `tx index`: publish artifacts,
 	// session context and code chunks all live in the per-org-per-repo
 	// namespace, so they must all name it the same way.
 	identity := semantic.RepoIdentity{

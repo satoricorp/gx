@@ -28,13 +28,13 @@ type changeRow struct {
 	UpdatedAt       int64
 }
 
-// DefaultDir is where tl keeps its machine-wide state: $TOTALITY_HOME when set,
+// DefaultDir is where tx keeps its machine-wide state: $TOTALITY_HOME when set,
 // otherwise ~/.totality.
 //
 // The override is trimmed because every other reader of TOTALITY_HOME trims it —
 // internal/auth, internal/semantic, internal/capture, internal/hooks — and this
 // one did not. A whitespace-only value put the database in a directory named
-// two spaces while the rest of tl carried on using ~/.totality, which is the
+// two spaces while the rest of tx carried on using ~/.totality, which is the
 // reader-and-writer-disagree shape this codebase has already paid for more than
 // once.
 func DefaultDir() (string, error) {
@@ -62,7 +62,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create tl dir: %w", err)
+		return nil, fmt.Errorf("create tx dir: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -117,7 +117,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 	// rows cascade off in the same open.
 	if err := deleteCommitSelfReportSession(ctx, db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("remove tl commit self-report session: %w", err)
+		return nil, fmt.Errorf("remove tx commit self-report session: %w", err)
 	}
 	if err := repairDanglingSessionLinks(ctx, db); err != nil {
 		_ = db.Close()
@@ -406,7 +406,7 @@ func ensureSessionIndexes(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// commitSelfReportSessionID is the fossil left by the retired `tl commit`
+// commitSelfReportSessionID is the fossil left by the retired `tx commit`
 // self-report. It has cwd=” and repo_root=NULL, so it can never match a repo
 // and only ever contributed noise to the change_sessions table. Nothing writes
 // it any more, so removing it on open is a one-way cleanup.

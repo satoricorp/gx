@@ -26,7 +26,7 @@ func TestNewRepoIsAMainCheckout(t *testing.T) {
 
 // TestAddWorktreeSharesTheMainCommonDir pins the state the session bug lived
 // in: a worktree with its own toplevel and its own git dir, sharing the main
-// repository's common dir. Repository identity in tl is that shared common dir,
+// repository's common dir. Repository identity in tx is that shared common dir,
 // so a push from here writes rows the pushing directory's own path can never
 // find.
 func TestAddWorktreeSharesTheMainCommonDir(t *testing.T) {

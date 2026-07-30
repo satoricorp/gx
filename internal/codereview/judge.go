@@ -21,7 +21,7 @@ const (
 	// unparseable one that costs every candidate in the batch its verdict.
 	//
 	// The measurement that set this: replaying the real 21-candidate judge
-	// request captured from a live tl review against
+	// request captured from a live tx review against
 	// us.anthropic.claude-sonnet-4-6, with the cap high enough that the reply's
 	// natural length was what got measured, produced 7,019 to 8,326 output
 	// tokens. Scaled to a full judgeBatchSize of 24 that is roughly 9.5K on the
@@ -400,7 +400,7 @@ func judgeAvailable(judge FindingJudge) bool {
 // response_format:json_object, and the two mechanisms that would enforce a shape
 // from the request side — Anthropic structured outputs and forced tool_choice —
 // are both unavailable here: the request body for the cloud transport is a fixed
-// struct that Totality Cloud's /tl/bedrock/fight normalizes, so a field only the
+// struct that Totality Cloud's /tx/bedrock/fight normalizes, so a field only the
 // direct-AWS path could send would leave the judge behaving differently
 // depending on which wire the user is on, which is precisely the split this
 // package refuses to ship. So the prompt is the enforcement, and

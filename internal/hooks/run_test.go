@@ -243,7 +243,7 @@ func TestRunPushKeepsResultFromPartialCaptureFailure(t *testing.T) {
 
 // TestRunPushKeepsPublishingWhenMarkingFails covers the failure mode the
 // shareable-marking pass is most likely to hit in the field: ~/.totality/totality.db is WAL
-// with a 5s busy timeout and the detached `tl capture sync` spawned by the
+// with a 5s busy timeout and the detached `tx capture sync` spawned by the
 // previous push writes the same tables. Aborting the hook there discarded the
 // error entirely, skipped EnqueueAdoptedPublication and skipped the upload
 // kickoff — so the push produced no PR artifact, attempted no upload, and
@@ -344,7 +344,7 @@ func TestRunPushKeepsPublishingWhenTrailerScanFails(t *testing.T) {
 }
 
 // TestRunPushNamesEveryReasonItDidNothing is the anti-ambiguity test. A paused
-// capture and a repo opted out with `git config tl.enabled false` both returned
+// capture and a repo opted out with `git config tx.enabled false` both returned
 // the same zero outcome as a genuine error, so all three printed the identical
 // `capture staged extract= sessions=0` line and only one of them was a problem.
 func TestRunPushNamesEveryReasonItDidNothing(t *testing.T) {
@@ -377,20 +377,20 @@ func TestRunPushNamesEveryReasonItDidNothing(t *testing.T) {
 		repo := t.TempDir()
 		initGitRepo(t, repo)
 		t.Setenv("TOTALITY_HOME", t.TempDir())
-		runGitInHookTest(t, repo, "config", "tl.enabled", "false")
+		runGitInHookTest(t, repo, "config", "tx.enabled", "false")
 
 		outcome, err := RunPush(context.Background(), PushOptions{RepoRoot: repo, HomeDir: home})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(outcome.SkipReason, "tl.enabled") {
+		if !strings.Contains(outcome.SkipReason, "tx.enabled") {
 			t.Fatalf("SkipReason = %q, want it to name the opt-out", outcome.SkipReason)
 		}
 	})
 }
 
 // TestRunPushReportsUploadFailuresFromEarlierPushes is the only path by which a
-// failing upload can reach a human. `tl capture sync` runs detached with stdout
+// failing upload can reach a human. `tx capture sync` runs detached with stdout
 // and stderr both on os.DevNull and nothing awaits it, so the push that starts
 // it can never report the result — the push after it must.
 func TestRunPushReportsUploadFailuresFromEarlierPushes(t *testing.T) {

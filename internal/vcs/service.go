@@ -19,7 +19,7 @@ import (
 	"github.com/satoricorp/totality/internal/totalityconfig"
 )
 
-var ErrNoGitBranch = errors.New("tl requires an active branch; create or checkout a branch first")
+var ErrNoGitBranch = errors.New("tx requires an active branch; create or checkout a branch first")
 
 type Runner interface {
 	Run(ctx context.Context, dir, name string, args ...string) (string, error)
@@ -564,8 +564,8 @@ func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (R
 
 // ResolveGitRepoWithoutStore resolves the repo from git alone. Opening the Totality
 // store creates ~/.totality and applies its schema, so a read-only command like
-// `tl review` must not go through ResolveGitRepo: it would leave Totality state
-// behind on a machine that has never run `tl init`. Everything review needs
+// `tx review` must not go through ResolveGitRepo: it would leave Totality state
+// behind on a machine that has never run `tx init`. Everything review needs
 // (root, remote, branch) comes from git; only AuthoringBase and a stored
 // backend override come from the store, and review uses neither.
 func (s *Service) ResolveGitRepoWithoutStore(ctx context.Context) (RepoInfo, error) {
@@ -847,19 +847,19 @@ func (s *Service) ensureIdentity(ctx context.Context, repoRoot string, opts Init
 		promptEmail := strings.TrimSpace(opts.Email) == ""
 		if promptName || promptEmail {
 			fmt.Fprintf(out, "Your config is stored in %s\n", totalityconfig.DisplayPath())
-			fmt.Fprintln(out, "and by initializing with tl you share your email with tl.")
+			fmt.Fprintln(out, "and by initializing with tx you share your email with tx.")
 			fmt.Fprintln(out)
 		}
 		if promptName {
 			var promptErr error
-			name, promptErr = promptRequiredValue(in, out, promptFocus("tl name"), name)
+			name, promptErr = promptRequiredValue(in, out, promptFocus("tx name"), name)
 			if promptErr != nil {
 				return "", "", false, promptErr
 			}
 		}
 		if promptEmail {
 			var promptErr error
-			email, promptErr = promptRequiredValue(in, out, promptFocus("tl email"), email)
+			email, promptErr = promptRequiredValue(in, out, promptFocus("tx email"), email)
 			if promptErr != nil {
 				return "", "", false, promptErr
 			}
@@ -938,7 +938,7 @@ func (s *Service) defaultStackBaseRef(repo RepoInfo) string {
 	}
 	if repo.BranchName != nil && strings.TrimSpace(*repo.BranchName) != "" {
 		branch := strings.TrimSpace(*repo.BranchName)
-		if base, ok := tlAuthoringBaseFromCheckoutRef(branch); ok {
+		if base, ok := txAuthoringBaseFromCheckoutRef(branch); ok {
 			return base
 		}
 	}
@@ -957,7 +957,7 @@ func (s *Service) publicStackBaseRef(ctx context.Context, repo RepoInfo, baseRef
 	if legacyStackBookmarkName(baseRef) && !legacyTotalityInternalCheckoutRef(baseRef) {
 		return stackBookmarkName(baseRef, "")
 	}
-	if base, ok := tlAuthoringBaseFromCheckoutRef(baseRef); ok {
+	if base, ok := txAuthoringBaseFromCheckoutRef(baseRef); ok {
 		if base == repo.defaultBaseBranch() {
 			if _, err := s.commitIDForRev(ctx, repo.RootPath, base); err == nil {
 				return base
@@ -1121,7 +1121,7 @@ func (r RepoInfo) authoringBaseRef() string {
 		if isTotalityStackBookmark(ref) {
 			return ref
 		}
-		if base, ok := tlAuthoringBaseFromCheckoutRef(ref); ok {
+		if base, ok := txAuthoringBaseFromCheckoutRef(ref); ok {
 			return base
 		}
 		if legacyTotalityInternalCheckoutRef(ref) {

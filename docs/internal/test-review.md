@@ -29,9 +29,9 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## Package Overview
 
-### `cmd/tl`
+### `cmd/tx`
 
-- `TestRootExposesAuthCommand`: ensures `tl auth` is visible from the root.
+- `TestRootExposesAuthCommand`: ensures `tx auth` is visible from the root.
 - `TestRootExposesShortcutCommands`: ensures shortcut aliases such as status/add
   shortcuts are registered.
 - `TestRootDoesNotExposeRemovedLegacyCommands`: protects the simplified CLI by
@@ -116,7 +116,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   revision to modify.
 - `TestPrintDemuxProposalIncludesFeasibilityWarnings`: checks human demux output
   includes feasibility warning details.
-- `TestPRHelpDoesNotPublish`: ensures `tl pr --help` is side-effect free.
+- `TestPRHelpDoesNotPublish`: ensures `tx pr --help` is side-effect free.
 - `TestConfirmBaseSwitchRequiresYes`: requires exact confirmation before a
   destructive base switch.
 
@@ -256,8 +256,8 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## UX/Test Recommendations
 
-1. Add CLI snapshot tests for the final public design of `tl status`, `tl commit`,
-   `tl demux`, `tl demux apply`, `tl pr`, and capture status.
+1. Add CLI snapshot tests for the final public design of `tx status`, `tx commit`,
+   `tx demux`, `tx demux apply`, `tx pr`, and capture status.
 2. Add MCP tool tests for argument construction and repair-loop behavior.
 3. Add demux graph tests before multi-channel design: SCC grouping,
    weak-component fan-out, topological ordering, textual overlap edges, and

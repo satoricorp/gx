@@ -69,7 +69,7 @@ func TestNormalizeOriginKeepsDifferentReposApart(t *testing.T) {
 	distinct := []string{
 		"git@github.com:satoricorp/totality.git",
 		"git@github.com:satoricorp/console.git",
-		"git@github.com:joe/tl.git",
+		"git@github.com:joe/tx.git",
 		"git@gitlab.com:satoricorp/totality.git",
 		"git@github.com:satoricorp/totality-internal.git",
 	}
@@ -89,7 +89,7 @@ func TestNormalizeOriginKeepsDifferentReposApart(t *testing.T) {
 // Empty means "not identifiable" and must never behave as a wildcard: a local
 // repo with no remote has to stay unbound rather than match something.
 func TestNormalizeOriginRejectsUnusableInput(t *testing.T) {
-	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/joe/git/tl"} {
+	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/joe/git/tx"} {
 		if got := NormalizeOrigin(raw); got != "" {
 			t.Errorf("NormalizeOrigin(%q) = %q, want empty", raw, got)
 		}

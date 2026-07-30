@@ -36,7 +36,7 @@ func HasUploadCredentials() bool {
 	return ok
 }
 
-// Save persists upload credentials (used by tl login).
+// Save persists upload credentials (used by tx login).
 func Save(creds Credentials) error {
 	return SaveUpload(UploadCredentials{
 		APIURL: creds.APIURL,

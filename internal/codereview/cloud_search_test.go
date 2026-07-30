@@ -125,7 +125,7 @@ func TestCodeIndexRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	if status.Namespace != "totality-org-uuid-acme-app-v2" {
 		t.Fatalf("evidence namespace = %q, want the server-resolved one", status.Namespace)
 	}
-	if !strings.Contains(status.Detail, "via tl cloud") {
+	if !strings.Contains(status.Detail, "via tx cloud") {
 		t.Fatalf("evidence detail = %q, want the cloud attribution", status.Detail)
 	}
 }
@@ -260,7 +260,7 @@ func TestKnowledgeSourceReportsDisabledWhenNothingConfigured(t *testing.T) {
 	if status.State != EvidenceDisabled {
 		t.Fatalf("evidence state = %q, want disabled", status.State)
 	}
-	if !strings.Contains(status.Remedy, "tl auth login") {
+	if !strings.Contains(status.Remedy, "tx auth login") {
 		t.Fatalf("remedy = %q, want the sign-in remedy", status.Remedy)
 	}
 }
@@ -276,7 +276,7 @@ func TestCodeIndexSourceReportsSignInRemedyWhenNothingConfigured(t *testing.T) {
 		t.Fatalf("Retrieve() = %d snippets, %v; want none", len(snippets), err)
 	}
 	status := evidenceFor(t, in.Evidence, codeIndexEvidenceSource)
-	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "tl auth login") {
+	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "tx auth login") {
 		t.Fatalf("evidence = %#v, want disabled with the sign-in remedy", status)
 	}
 }

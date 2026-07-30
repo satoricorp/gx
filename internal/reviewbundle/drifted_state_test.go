@@ -40,15 +40,15 @@ func TestBuildPushReadsTheDriftedRowThePushWroteTo(t *testing.T) {
 		storagetest.WeatheredNeighbourRepos(),
 	)
 
-	// The stale row: what an older tl wrote before the identity key moved to
+	// The stale row: what an older tx wrote before the identity key moved to
 	// the git common dir. Live analogue: repos id 1, 17 changes, last touched
 	// six days before the row that now receives every write.
-	staleChange := h.SeedChange(t, h.LegacyRepoID, "tlr-drift", "commit-drift", "stale alpha", []string{"stale.go"})
+	staleChange := h.SeedChange(t, h.LegacyRepoID, "txr-drift", "commit-drift", "stale alpha", []string{"stale.go"})
 	h.SeedObservedSession(t, staleChange, "stale-session", "codex", repo.Root)
 
 	// The row a modern write lands on: root_path empty, identified only by the
 	// git common dir. Live analogue: repos id 16, 21 changes, all recent.
-	currentChange := h.SeedChange(t, h.CurrentRepoID, "tlr-drift", "commit-drift", "real alpha", []string{"real.go"})
+	currentChange := h.SeedChange(t, h.CurrentRepoID, "txr-drift", "commit-drift", "real alpha", []string{"real.go"})
 	h.SeedObservedSession(t, currentChange, "real-session", "claude", repo.Root)
 
 	// All three identity-aware resolvers must land on the same row: the write
@@ -78,7 +78,7 @@ func TestBuildPushReadsTheDriftedRowThePushWroteTo(t *testing.T) {
 		},
 		Commits: []vcs.PushedCommit{{
 			CommitID:   "commit-drift",
-			RevisionID: "tlr-drift",
+			RevisionID: "txr-drift",
 			Message:    "real alpha",
 			Files:      []string{"real.go"},
 		}},
@@ -103,7 +103,7 @@ func TestBuildPushReadsTheDriftedRowThePushWroteTo(t *testing.T) {
 // stored identity has drifted, and a push whose worktree root has never
 // appeared in `repos` at all.
 //
-// tl's own demux-worktree flow and the yeet harness both push from linked
+// tx's own demux-worktree flow and the yeet harness both push from linked
 // worktrees, so this is not a hypothetical pairing.
 func TestBuildPushFromLinkedWorktreeOnADriftedDatabase(t *testing.T) {
 	ctx := context.Background()
@@ -115,7 +115,7 @@ func TestBuildPushFromLinkedWorktreeOnADriftedDatabase(t *testing.T) {
 		storagetest.DriftedRepoIdentity(main.Root, main.GitCommonDir),
 		storagetest.WeatheredNeighbourRepos(),
 	)
-	changeID := h.SeedChange(t, h.CurrentRepoID, "tlr-worktree", "commit-worktree", "gamma", []string{"gamma.go"})
+	changeID := h.SeedChange(t, h.CurrentRepoID, "txr-worktree", "commit-worktree", "gamma", []string{"gamma.go"})
 	h.SeedObservedSession(t, changeID, "worktree-session", "claude", worktree.Root)
 
 	// The worktree's own root is not in `repos` and never will be: linked
@@ -133,7 +133,7 @@ func TestBuildPushFromLinkedWorktreeOnADriftedDatabase(t *testing.T) {
 		},
 		Commits: []vcs.PushedCommit{{
 			CommitID:   "commit-worktree",
-			RevisionID: "tlr-worktree",
+			RevisionID: "txr-worktree",
 			Message:    "gamma",
 			Files:      []string{"gamma.go"},
 		}},

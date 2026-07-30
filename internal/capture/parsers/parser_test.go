@@ -12,11 +12,11 @@ import (
 
 func TestDiscoverFindsCursorAgentTranscripts(t *testing.T) {
 	home := t.TempDir()
-	repoRoot := filepath.Join(string(filepath.Separator), "Users", "joe", "git", "tl")
-	root := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tl", "agent-transcripts", "parent-1")
+	repoRoot := filepath.Join(string(filepath.Separator), "Users", "joe", "git", "tx")
+	root := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tx", "agent-transcripts", "parent-1")
 	mainPath := filepath.Join(root, "parent-1.jsonl")
 	subPath := filepath.Join(root, "subagents", "sub-1.jsonl")
-	oldPath := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tl", "agent-transcripts", "old", "old.jsonl")
+	oldPath := filepath.Join(home, ".cursor", "projects", "Users-joe-git-tx", "agent-transcripts", "old", "old.jsonl")
 	for _, path := range []string{mainPath, subPath, oldPath} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)

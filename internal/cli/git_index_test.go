@@ -30,7 +30,7 @@ func TestReadOnlyCommandsPreserveGitIndex(t *testing.T) {
 	runGitTest(t, root, "add", "a.txt")
 	before := gitCachedDiff(t, root)
 	if len(before) == 0 {
-		t.Fatal("expected staged content before running tl")
+		t.Fatal("expected staged content before running tx")
 	}
 
 	totalityHome := t.TempDir()
@@ -60,11 +60,11 @@ func TestReadOnlyCommandsPreserveGitIndex(t *testing.T) {
 				if strings.Contains(err.Error(), "Missing parent base") {
 					t.Skip("missing stack base in test repo")
 				}
-				t.Fatalf("tl %s error = %v", strings.Join(mode.args, " "), err)
+				t.Fatalf("tx %s error = %v", strings.Join(mode.args, " "), err)
 			}
 			after := gitCachedDiff(t, root)
 			if string(after) != string(before) {
-				t.Fatalf("git index changed after tl %s\nbefore=%q\nafter=%q", strings.Join(mode.args, " "), before, after)
+				t.Fatalf("git index changed after tx %s\nbefore=%q\nafter=%q", strings.Join(mode.args, " "), before, after)
 			}
 		})
 	}

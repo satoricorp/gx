@@ -239,7 +239,7 @@ func TestCloudAPITokenRequiresStoredTokenForMCP(t *testing.T) {
 		t.Fatal("expected error when GitHub token is missing")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "run `tl auth login` in a terminal") {
+	if !strings.Contains(message, "run `tx auth login` in a terminal") {
 		t.Fatalf("missing MCP login hint: %q", message)
 	}
 	if strings.Contains(message, "GH_TOKEN") || strings.Contains(message, "GITHUB_TOKEN") {

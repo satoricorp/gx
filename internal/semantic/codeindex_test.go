@@ -324,7 +324,7 @@ func TestIndexRepositoryWritesRetrievalAttributes(t *testing.T) {
 }
 
 func TestNamespaceForRepoMatchesConsoleShape(t *testing.T) {
-	got := NamespaceForRepo("2f273110-b6ce-4b3b-95d3-e7c0ca802e83", "satoricorp/totality", "/Users/joe/git/tl")
+	got := NamespaceForRepo("2f273110-b6ce-4b3b-95d3-e7c0ca802e83", "satoricorp/totality", "/Users/joe/git/tx")
 	want := "totality-2f273110-b6ce-4b3b-95d3-e7c0ca802e83-satoricorp-totality-v2"
 	if got != want {
 		t.Fatalf("NamespaceForRepo() = %q, want %q", got, want)

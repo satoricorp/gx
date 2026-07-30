@@ -379,7 +379,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 	store := newBundleTestStore(t)
 	ctx := context.Background()
 	repoID := seedRepo(t, store, "/repo")
-	changeID := seedChange(t, store, repoID, "tlr-3f9c", "0f4b21c9", "add retry helper\n\nCovers the timeout path.", []string{"retry.go"})
+	changeID := seedChange(t, store, repoID, "txr-3f9c", "0f4b21c9", "add retry helper\n\nCovers the timeout path.", []string{"retry.go"})
 	if err := store.UpsertObservedSession(ctx, storage.Session{
 		ID:        "session-one",
 		CreatedAt: 1,
@@ -421,7 +421,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 		GitHubPullRequestURL: &prURL,
 		Commits: []vcs.PushedCommit{{
 			CommitID:   "0f4b21c9",
-			RevisionID: "tlr-3f9c",
+			RevisionID: "txr-3f9c",
 			Message:    "add retry helper\n\nCovers the timeout path.",
 			Files:      []string{"retry.go"},
 			Patch:      "diff --git a/retry.go b/retry.go\n@@ -0,0 +1 @@\n+package retry\n",
@@ -447,7 +447,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 	if decoded["repo"].(map[string]any)["backend"] != "git" {
 		t.Fatalf("repo.backend = %#v, want git", decoded["repo"])
 	}
-	for _, key := range []string{"event", "schema_version", "created_at", "tl_version", "repo", "push", "revisions", "sessions"} {
+	for _, key := range []string{"event", "schema_version", "created_at", "tx_version", "repo", "push", "revisions", "sessions"} {
 		if _, ok := decoded[key]; !ok {
 			t.Fatalf("bundle JSON missing %q: %s", key, data)
 		}
@@ -469,7 +469,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 			t.Fatalf("revision JSON missing %q: %s", key, data)
 		}
 	}
-	if revision["revision_id"] != "tlr-3f9c" || revision["commit_id"] != "0f4b21c9" {
+	if revision["revision_id"] != "txr-3f9c" || revision["commit_id"] != "0f4b21c9" {
 		t.Fatalf("revision identity JSON = %#v", revision)
 	}
 	if revision["branch_name"] != "feature/retry" || revision["base_branch_name"] != "main" {
@@ -494,7 +494,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 			t.Fatalf("session JSON still contains retired key %q: %s", forbidden, data)
 		}
 	}
-	for _, key := range []string{"id", "created_at", "command", "cwd", "tl_version", "requests"} {
+	for _, key := range []string{"id", "created_at", "command", "cwd", "tx_version", "requests"} {
 		if _, ok := session[key]; !ok {
 			t.Fatalf("session JSON missing %q: %s", key, data)
 		}
@@ -508,7 +508,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 
 func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 	artifact := NewArtifact(Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: SchemaVersion,
 		Repo:          RepoPayload{RootPath: "/repo", Backend: "git"},
 		Push:          PushPayload{HeadCommitID: "commit-1"},
@@ -523,7 +523,7 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 		Sessions: []SessionPayload{},
 	})
 	artifact.ReviewID = "review-one"
-	artifact.ReviewURL = "http://tl.test/reviews/review-one"
+	artifact.ReviewURL = "http://tx.test/reviews/review-one"
 
 	data, err := json.Marshal(artifact)
 	if err != nil {

@@ -40,7 +40,7 @@ func withScratchGitIndex(ctx context.Context, repoRoot string) (context.Context,
 		// there is nothing for git to rewrite, so there is nothing to guard.
 		return ctx, noop
 	}
-	dir, err := os.MkdirTemp("", "tl-review-index-")
+	dir, err := os.MkdirTemp("", "tx-review-index-")
 	if err != nil {
 		return ctx, noop
 	}

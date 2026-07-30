@@ -96,9 +96,8 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"Setup:",
 		"  init",
 		"  auth",
-		"  set",
 		"Work:",
-		"  review (tlr)",
+		"  review (txr)",
 		"Help:",
 		"  doctor",
 		"  version",
@@ -156,7 +155,7 @@ func TestRootKeepsReportAsHiddenAlias(t *testing.T) {
 		t.Fatalf("Find(report) = cmd=%v err=%v, want the hidden report alias", cmd, err)
 	}
 	if !cmd.Hidden {
-		t.Fatal("tl report should be hidden after folding into tl doctor --report")
+		t.Fatal("tx report should be hidden after folding into tx doctor --report")
 	}
 }
 
@@ -229,7 +228,7 @@ func TestRootPrintsInitNoteWhenIdentityMissing(t *testing.T) {
 	}
 
 	text := out.String()
-	if !bytes.Contains(out.Bytes(), []byte("Run `tl init` first.")) {
+	if !bytes.Contains(out.Bytes(), []byte("Run `tx init` first.")) {
 		t.Fatalf("missing init note: %q", text)
 	}
 }
@@ -260,7 +259,7 @@ func TestRootSkipsInitNoteWhenIdentityConfigured(t *testing.T) {
 		t.Fatalf("root.Execute() unexpected error = %v", err)
 	}
 
-	if bytes.Contains(out.Bytes(), []byte("Run `tl init` first.")) {
+	if bytes.Contains(out.Bytes(), []byte("Run `tx init` first.")) {
 		t.Fatalf("unexpected init note: %q", out.String())
 	}
 }

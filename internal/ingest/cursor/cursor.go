@@ -2,8 +2,8 @@
 //
 // Cursor stores every chat/composer/agent thread under
 // ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb. The
-// sync that copied those threads into the tl store is retired; what remains
-// is the path lookup tl doctor uses to report whether the database exists.
+// sync that copied those threads into the tx store is retired; what remains
+// is the path lookup tx doctor uses to report whether the database exists.
 package cursor
 
 import (

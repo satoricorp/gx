@@ -211,7 +211,7 @@ func TestNewClientUsesStoredGitHubToken(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	if err := os.WriteFile(filepath.Join(home, "credentials.json"), []byte(`{
   "cloud": {
-    "token": "tl_saved_token_with_enough_length",
+    "token": "tx_saved_token_with_enough_length",
     "github_access_token": "stored-github-token"
   }
 }`), 0o600); err != nil {

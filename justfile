@@ -4,7 +4,7 @@ set dotenv-load := true
 repo_root := `pwd`
 
 # `just build` / `just build-release` / `just install` bake public auth/client endpoints from .env into buildconfig.
-tl_ldflags := "\
+tx_ldflags := "\
   -X github.com/satoricorp/totality/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
   -X github.com/satoricorp/totality/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
   -X github.com/satoricorp/totality/internal/buildconfig.CloudURL=${TOTALITY_CLOUD_URL:-} \
@@ -13,29 +13,29 @@ tl_ldflags := "\
   -X github.com/satoricorp/totality/internal/version.Version=${VERSION:-dev}"
 
 build:
-  go build -ldflags "{{tl_ldflags}}" -o tl ./cmd/tl
+  go build -ldflags "{{tx_ldflags}}" -o tx ./cmd/tx
 
 build-release:
-  go build -ldflags "{{tl_ldflags}}" -o tl ./cmd/tl
+  go build -ldflags "{{tx_ldflags}}" -o tx ./cmd/tx
 
 package-cli:
   scripts/package-cli.sh
 
 install-completions:
   mkdir -p ~/.local/share/bash-completion/completions ~/.zfunc
-  go run ./cmd/tl-gen-completions ~/.local/share/bash-completion/completions/tl ~/.zfunc/_tl
+  go run ./cmd/tx-gen-completions ~/.local/share/bash-completion/completions/tx ~/.zfunc/_tx
 
 install:
   mkdir -p ~/.local/bin
   just build
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./tl || true
-  cp ./tl ~/.local/bin/tl
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/tl || true
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./tx || true
+  cp ./tx ~/.local/bin/tx
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/tx || true
   just install-completions
-  just verify-bake ./tl
-  just verify-bake ~/.local/bin/tl
+  just verify-bake ./tx
+  just verify-bake ~/.local/bin/tx
 
-verify-bake bin="tl":
+verify-bake bin="tx":
   #!/usr/bin/env bash
   set -euo pipefail
   bin="{{bin}}"
@@ -66,7 +66,7 @@ verify-bake bin="tl":
 test:
   go test ./...
 
-# Build the MCP: xmcp JS output plus the standalone dist/tl-mcp binary.
+# Build the MCP: xmcp JS output plus the standalone dist/tx-mcp binary.
 mcp-build:
   cd mcp && bun install && bun run build
 
@@ -76,5 +76,5 @@ mcp-publish:
   cd mcp && bun install --frozen-lockfile && npm publish
 
 run *args:
-  {{repo_root}}/tl {{args}}
+  {{repo_root}}/tx {{args}}
 

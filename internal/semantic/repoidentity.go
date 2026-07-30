@@ -11,10 +11,10 @@ import (
 // A TurboPuffer namespace is a function of who the repository is, and the
 // writer and the reader have to agree on that function or the reader addresses
 // an empty namespace and reports the repository as never indexed. They did not
-// agree. `tl index` asked git one way and parsed the answer with one parser;
-// `tl review` asked git a different way and parsed the answer with a different
-// copy of the same parser. Verified live: a `tl index` run wrote
-// totality-local-yeet-8d862445e7e4-v2 while `tl review` in the same checkout looked in
+// agree. `tx index` asked git one way and parsed the answer with one parser;
+// `tx review` asked git a different way and parsed the answer with a different
+// copy of the same parser. Verified live: a `tx index` run wrote
+// totality-local-yeet-8d862445e7e4-v2 while `tx review` in the same checkout looked in
 // totality-local-satoricorp-yeet-v2 and reported "Totality Cloud has never indexed this
 // repository" over an index that existed and was current.
 //
@@ -70,10 +70,10 @@ type NamespaceCandidate struct {
 
 // Namespace origins, as they appear in a review's evidence line.
 const (
-	NamespaceOriginPrimary = "tl code index"
+	NamespaceOriginPrimary = "tx code index"
 	// NamespaceOriginPreRemote is the name this repository's index was written
 	// under before the checkout gained a git remote.
-	NamespaceOriginPreRemote = "tl code index (pre-remote name)"
+	NamespaceOriginPreRemote = "tx code index (pre-remote name)"
 )
 
 // ResolveRepoIdentity derives a repository's identity from its checkout.

@@ -39,19 +39,19 @@ const connectedReposTTL = time.Hour
 // ConnectedRepos lists the repositories this organization has connected.
 //
 // Which repositories are connected is the server's answer, not something the
-// client can work out: the local repos table records what tl has seen on this
+// client can work out: the local repos table records what tx has seen on this
 // machine, which is not the same question and would include repositories nobody
 // connected.
 func (c *Client) ConnectedRepos(ctx context.Context) ([]ConnectedRepo, error) {
 	if c == nil || c.url == "" {
-		return nil, fmt.Errorf("tl cloud base URL is not configured")
+		return nil, fmt.Errorf("tx cloud base URL is not configured")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cloudURLWithPath(c.url, "/v1/connected-repos"), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create connected repos request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "tl/"+version.Current())
+	req.Header.Set("User-Agent", "tx/"+version.Current())
 	token, err := CloudAPIToken()
 	if err != nil {
 		return nil, err

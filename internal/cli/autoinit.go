@@ -25,14 +25,14 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 		return err
 	}
 	if result.Prepared && !commandRequestsJSON(cmd) {
-		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing tl for this repository..."))
+		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing tx for this repository..."))
 	}
 	if result.Repo.RootPath != "" {
 		if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: Totality lifecycle hooks not installed: %v\n", hookErr)
 		}
 		// Existing installs may still run the retired ambient-capture
-		// LaunchAgent; retire it the next time tl touches an initialized repo.
+		// LaunchAgent; retire it the next time tx touches an initialized repo.
 		cleanupLegacyAmbientCaptureQuiet(ctx, cmd.ErrOrStderr())
 	}
 	return nil
@@ -76,8 +76,8 @@ func commandMustNotWriteTotalityState(cmd *cobra.Command) bool {
 			return true
 		// `version` answers one question about the binary. Dockerfiles and CI
 		// steps run it to check what they installed, and minting a machine ID
-		// and an install sentinel to answer it means `tl version` creates
-		// $TOTALITY_HOME on a machine that has not yet decided to use tl. The
+		// and an install sentinel to answer it means `tx version` creates
+		// $TOTALITY_HOME on a machine that has not yet decided to use tx. The
 		// install event is not worth that; the first command that actually
 		// does something records it.
 		case "version":

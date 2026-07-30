@@ -31,7 +31,7 @@ func normalizeCloudURL(raw string) string {
 	if url == "" || url == "0" || strings.EqualFold(url, "off") {
 		return ""
 	}
-	const legacyPublishSuffix = "/tl/pr"
+	const legacyPublishSuffix = "/tx/pr"
 	if strings.HasSuffix(strings.ToLower(url), legacyPublishSuffix) {
 		return strings.TrimRight(url[:len(url)-len(legacyPublishSuffix)], "/")
 	}

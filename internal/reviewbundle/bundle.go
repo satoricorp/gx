@@ -21,7 +21,7 @@ type Bundle struct {
 	Event         string            `json:"event"`
 	SchemaVersion int               `json:"schema_version"`
 	CreatedAt     int64             `json:"created_at"`
-	TLVersion     string            `json:"tl_version"`
+	TLVersion     string            `json:"tx_version"`
 	Repo          RepoPayload       `json:"repo"`
 	Push          PushPayload       `json:"push"`
 	Revisions     []RevisionPayload `json:"revisions"`
@@ -191,7 +191,7 @@ type SessionPayload struct {
 	// session.source, so dropping it rendered every session as `command=?`.
 	Command          string           `json:"command"`
 	Cwd              string           `json:"cwd"`
-	TLVersion        string           `json:"tl_version"`
+	TLVersion        string           `json:"tx_version"`
 	Source           *string          `json:"source,omitempty"`
 	LastSeenAt       *int64           `json:"last_seen_at,omitempty"`
 	EndReason        *string          `json:"end_reason,omitempty"`
@@ -244,7 +244,7 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 	defer db.Close()
 
 	bundle := Bundle{
-		Event:         "tl.pr",
+		Event:         "tx.pr",
 		SchemaVersion: SchemaVersion,
 		CreatedAt:     time.Now().UnixMilli(),
 		TLVersion:     version.Current(),
@@ -900,7 +900,7 @@ func dedupeStrings(values []string) []string {
 
 func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]SessionPayload, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.tl_version,
+		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.tx_version,
 			s.source, s.last_seen_at, s.end_reason, s.repo_root,
 			s.models_json, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens
 		FROM change_sessions cs

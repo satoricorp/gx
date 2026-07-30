@@ -60,7 +60,7 @@ func installHelpStyling(root *cobra.Command) {
 }
 
 func helpBodyTemplate() string {
-	intro := `{{if not (eq .CommandPath "tl")}}{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}{{end}}
+	intro := `{{if not (eq .CommandPath "tx")}}{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}{{end}}
 
 {{end}}`
 
@@ -87,13 +87,13 @@ func helpBodyTemplate() string {
 {{section "Additional Help Topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{commandPadded .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
-{{if eq .CommandPath "tl"}}{{muted (printf "Use \"%s [command] --help\" for more information about a command." .CommandPath)}}{{end}}{{end}}
+{{if eq .CommandPath "tx"}}{{muted (printf "Use \"%s [command] --help\" for more information about a command." .CommandPath)}}{{end}}{{end}}
 `
 }
 
 func printRootIntro(out io.Writer) {
 	fmt.Fprintln(out, renderStaticLogo())
-	fmt.Fprintln(out, muted(tlTagline))
+	fmt.Fprintln(out, muted(txTagline))
 	fmt.Fprintln(out, rootAuthStatusLine())
 	fmt.Fprintln(out, rootInferenceStatusLine())
 	fmt.Fprintln(out)
@@ -104,7 +104,7 @@ func rootAuthStatusLine() string {
 	if err == nil && authKindForCredentials(creds) != "none" && strings.TrimSpace(creds.Login) != "" {
 		return success("●") + " " + value("Signed in as "+strings.TrimSpace(creds.Login))
 	}
-	return danger("●") + " " + muted("Not signed in") + "  " + logoText("tl auth login")
+	return danger("●") + " " + muted("Not signed in") + "  " + logoText("tx auth login")
 }
 
 func rootInferenceStatusLine() string {
@@ -150,7 +150,7 @@ func helpInvocation(cmd *cobra.Command) string {
 		return ""
 	}
 	if cmd.Root() == cmd {
-		return "tl help"
+		return "tx help"
 	}
 	if cmd.Name() == "help" {
 		return path

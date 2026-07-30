@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	hookMarker          = "# tl lifecycle hooks"
-	legacyPrePushMarker = "# tl capture pre-push hook"
+	hookMarker          = "# tx lifecycle hooks"
+	legacyPrePushMarker = "# tx capture pre-push hook"
 )
 
 // AgentHookConfig documents future Claude/Codex lifecycle hook settings (V1.1).
@@ -25,24 +25,24 @@ type InstallOptions struct {
 	TotalityPath string
 }
 
-// Install writes tl lifecycle hooks using git's hooks directory resolution.
+// Install writes tx lifecycle hooks using git's hooks directory resolution.
 func Install(opts InstallOptions) error {
 	repoRoot, err := filepath.Abs(opts.RepoRoot)
 	if err != nil {
 		return err
 	}
-	tlPath := opts.TotalityPath
-	if tlPath == "" {
-		tlPath, err = installTotalityPath()
+	txPath := opts.TotalityPath
+	if txPath == "" {
+		txPath, err = installTotalityPath()
 		if err != nil {
-			return fmt.Errorf("resolve tl binary: %w", err)
+			return fmt.Errorf("resolve tx binary: %w", err)
 		}
 	}
 	hooksDir, err := ResolveHooksDir(context.Background(), repoRoot)
 	if err != nil {
 		return err
 	}
-	// Under a machine-wide install (`tl init --global`) git resolves every
+	// Under a machine-wide install (`tx init --global`) git resolves every
 	// repo's hooks dir to the shared Totality directory. Those scripts chain to repo
 	// hooks; overwriting them with the per-repo variants would break chaining
 	// for every repository on the machine.
@@ -53,10 +53,10 @@ func Install(opts InstallOptions) error {
 		return err
 	}
 	scripts := map[string]string{
-		"prepare-commit-msg": prepareCommitMsgScript(tlPath),
-		"post-commit":        postCommitScript(tlPath),
-		"post-rewrite":       postRewriteScript(tlPath),
-		"pre-push":           prePushScript(tlPath),
+		"prepare-commit-msg": prepareCommitMsgScript(txPath),
+		"post-commit":        postCommitScript(txPath),
+		"post-rewrite":       postRewriteScript(txPath),
+		"pre-push":           prePushScript(txPath),
 	}
 	for name, script := range scripts {
 		hookPath := filepath.Join(hooksDir, name)
@@ -65,7 +65,7 @@ func Install(opts InstallOptions) error {
 				continue
 			}
 			if !totalityOwnedHook(name, string(data)) {
-				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying tl init", name, hookPath)
+				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying tx init", name, hookPath)
 			}
 		}
 		if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
@@ -75,7 +75,7 @@ func Install(opts InstallOptions) error {
 	return nil
 }
 
-// IsInstalled reports whether tl lifecycle hooks are present.
+// IsInstalled reports whether tx lifecycle hooks are present.
 func IsInstalled(repoRoot string) bool {
 	repoRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -109,57 +109,57 @@ func hookRepoArg() string {
 	return `repo="$(git rev-parse --show-toplevel)"`
 }
 
-// hookResolveTotality emits shell that resolves the tl binary at run time: the
-// pinned install-time path when it is still an executable file, else tl from
-// PATH. Pinned paths go stale — reinstalls move the binary, and a tl run from
-// a temporary location pins that location — and a hook that cannot find tl
+// hookResolveTotality emits shell that resolves the tx binary at run time: the
+// pinned install-time path when it is still an executable file, else tx from
+// PATH. Pinned paths go stale — reinstalls move the binary, and a tx run from
+// a temporary location pins that location — and a hook that cannot find tx
 // must skip Totality work silently rather than break every commit and push.
-func hookResolveTotality(tlPath string) string {
-	if tlPath == "" {
-		tlPath = "tl"
+func hookResolveTotality(txPath string) string {
+	if txPath == "" {
+		txPath = "tx"
 	}
-	return fmt.Sprintf(`tl_bin=%q
-case "$tl_bin" in /*) ;; *) tl_bin="" ;; esac
-if [ ! -f "$tl_bin" ] || [ ! -x "$tl_bin" ]; then
-  tl_bin="$(command -v tl 2>/dev/null)" || tl_bin=""
+	return fmt.Sprintf(`tx_bin=%q
+case "$tx_bin" in /*) ;; *) tx_bin="" ;; esac
+if [ ! -f "$tx_bin" ] || [ ! -x "$tx_bin" ]; then
+  tx_bin="$(command -v tx 2>/dev/null)" || tx_bin=""
 fi
-[ -n "$tl_bin" ] || exit 0`, tlPath)
+[ -n "$tx_bin" ] || exit 0`, txPath)
 }
 
-func prepareCommitMsgScript(tlPath string) string {
+func prepareCommitMsgScript(txPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$tl_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
-`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
+"$tx_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
+`, hookMarker, hookResolveTotality(txPath), hookRepoArg())
 }
 
-func postCommitScript(tlPath string) string {
+func postCommitScript(txPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$tl_bin" __hooks post-commit --repo "$repo" || {
-  echo "tl post-commit metadata recording failed" >&2
+"$tx_bin" __hooks post-commit --repo "$repo" || {
+  echo "tx post-commit metadata recording failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
+`, hookMarker, hookResolveTotality(txPath), hookRepoArg())
 }
 
-func postRewriteScript(tlPath string) string {
+func postRewriteScript(txPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$tl_bin" __hooks post-rewrite --repo "$repo" || {
-  echo "tl post-rewrite metadata update failed" >&2
+"$tx_bin" __hooks post-rewrite --repo "$repo" || {
+  echo "tx post-rewrite metadata update failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveTotality(tlPath), hookRepoArg())
+`, hookMarker, hookResolveTotality(txPath), hookRepoArg())
 }
 
-func prePushScript(tlPath string) string {
+func prePushScript(txPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
@@ -175,8 +175,8 @@ do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  "$tl_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
+  "$tx_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
 done
 exit 0
-`, hookMarker, hookResolveTotality(tlPath))
+`, hookMarker, hookResolveTotality(txPath))
 }

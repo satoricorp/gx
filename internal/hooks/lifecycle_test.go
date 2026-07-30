@@ -18,8 +18,8 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 	runGitInRepo(t, repo, "init")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	tlPath := buildTotalityBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: tlPath}); err != nil {
+	txPath := buildTotalityBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: txPath}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -31,7 +31,7 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s hook: %v", name, err)
 		}
-		if !strings.Contains(string(data), "# tl lifecycle hooks") {
+		if !strings.Contains(string(data), "# tx lifecycle hooks") {
 			t.Fatalf("%s hook missing marker:\n%s", name, data)
 		}
 	}
@@ -65,8 +65,8 @@ func TestPlainGitCommitWithInstalledHooks(t *testing.T) {
 	runGitInRepo(t, repo, "init", "-b", "main")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	tlPath := buildTotalityBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: tlPath}); err != nil {
+	txPath := buildTotalityBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: txPath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
@@ -91,7 +91,7 @@ func TestInstallRefusesForeignHook(t *testing.T) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\necho foreign\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tl"})
+	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tx"})
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("Install() error = %v, want refusal", err)
 	}
@@ -105,18 +105,18 @@ func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(hooksDir, "pre-push")
-	legacy := "#!/bin/sh\n# tl capture pre-push hook\ntt capture push || true\n"
+	legacy := "#!/bin/sh\n# tx capture pre-push hook\ntt capture push || true\n"
 	if err := os.WriteFile(path, []byte(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "# tl lifecycle hooks") || strings.Contains(string(data), "# tl capture pre-push hook") {
+	if !strings.Contains(string(data), "# tx lifecycle hooks") || strings.Contains(string(data), "# tx capture pre-push hook") {
 		t.Fatalf("legacy pre-push hook was not upgraded:\n%s", data)
 	}
 }
@@ -124,7 +124,7 @@ func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
 func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/missing/tl"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/missing/tx"}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -170,14 +170,14 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGitInRepo(t, linked, "add", "linked.txt")
-	// Any tl command run inside the linked worktree bootstraps the repo and
+	// Any tx command run inside the linked worktree bootstraps the repo and
 	// installs the lifecycle hooks; the commit itself is plain git.
-	tlPath := buildTotalityBinary(t)
-	cmd := exec.Command(tlPath, "doctor")
+	txPath := buildTotalityBinary(t)
+	cmd := exec.Command(txPath, "doctor")
 	cmd.Dir = linked
 	cmd.Env = append(os.Environ(), "TOTALITY_HOME="+totalityHome, "TOTALITY_DISABLE_BACKGROUND_WORKERS=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("tl doctor: %v\n%s", err, out)
+		t.Fatalf("tx doctor: %v\n%s", err, out)
 	}
 
 	if !hooks.IsInstalled(linked) {
@@ -320,11 +320,11 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 
 func buildTotalityBinary(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "tl")
-	cmd := exec.Command("go", "build", "-o", out, "./cmd/tl")
+	out := filepath.Join(t.TempDir(), "tx")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/tx")
 	cmd.Dir = mustRepoRoot(t)
 	if combined, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build tl: %v\n%s", err, combined)
+		t.Fatalf("go build tx: %v\n%s", err, combined)
 	}
 	return out
 }

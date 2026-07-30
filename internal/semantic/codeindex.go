@@ -618,7 +618,7 @@ func listRepositoryFiles(root string) ([]repoFile, error) {
 //
 // These are GitHub Linguist's standard markers, so a repository declares
 // "this is not our source" once and every tool agrees. It matters because a
-// vendored corpus is not neutral filler: tl's own checkout carries 165
+// vendored corpus is not neutral filler: tx's own checkout carries 165
 // third-party documents under scripts/review-knowledge/corpus (30% of its
 // files), fetched from external standards bodies and, by that directory's own
 // README, "repo-independent review knowledge". Indexed as if they were source,

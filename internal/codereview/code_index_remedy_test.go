@@ -11,7 +11,7 @@ import (
 // warnings worth printing: a user told their review ran on partial evidence
 // must also be told how to fix it, and told once.
 //
-// Every route goes to the website. `tl index` is a hidden maintenance command
+// Every route goes to the website. `tx index` is a hidden maintenance command
 // that fills one developer's namespace from one developer's checkout; the
 // index a review actually reads is the one Totality Cloud maintains from the GitHub
 // App, and that is connected on the site.
@@ -39,8 +39,8 @@ func TestMissingIndexWarningsCarryTheirRemedy(t *testing.T) {
 	if !strings.Contains(warning, "https://totality.sh/repositories") {
 		t.Fatalf("warning = %q, want it to say where to get the repository indexed", warning)
 	}
-	if strings.Contains(warning, "tl index") {
-		t.Fatalf("warning = %q, want the website rather than the hidden `tl index` command", warning)
+	if strings.Contains(warning, "tx index") {
+		t.Fatalf("warning = %q, want the website rather than the hidden `tx index` command", warning)
 	}
 	if count := strings.Count(warning, "https://totality.sh/repositories"); count != 1 {
 		t.Fatalf("warning states the remedy %d times, want once:\n%s", count, warning)

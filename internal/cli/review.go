@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Exit codes for `tl review` as an automated gate. Both are distinct from the
+// Exit codes for `tx review` as an automated gate. Both are distinct from the
 // generic failure exit so a CI step can tell a policy failure from a crash.
 const (
 	// reviewFindingsExitCode means findings at or above --fail-on survived.
@@ -46,7 +46,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var noPublish bool
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
-		Aliases: []string{"tlr"},
+		Aliases: []string{"txr"},
 		Short:   "Review changes based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +69,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				prompt = strings.TrimSpace(args[0])
 			}
 			// Store-free on purpose: review must leave no Totality state behind in a
-			// repo (or on a machine) that has never run `tl init`.
+			// repo (or on a machine) that has never run `tx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
@@ -148,7 +148,7 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 		if target == "" {
 			target = "the working tree"
 		}
-		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("tl review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("tx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
 	}
 	// A degraded run is not a clean run with fewer findings. When no model ran,
 	// `findings` is whatever the deterministic checks produced — usually nothing
@@ -156,13 +156,13 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	// request merged reporting a review that never happened. The rendered report
 	// says so in a banner, but an exit code is the only thing a CI step reads.
 	if reason := gateDegradedReason(report); reason != "" {
-		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("tl review: %s; refusing to pass a gate on an incomplete review", reason))
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("tx review: %s; refusing to pass a gate on an incomplete review", reason))
 	}
 	failures := report.GateFailures(level)
 	if len(failures) == 0 {
 		return nil
 	}
-	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("tl review: %d finding(s) at or above %q", len(failures), string(level)))
+	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("tx review: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
 // gateDegradedReason states why this review cannot answer the gate's question,

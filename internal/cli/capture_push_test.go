@@ -68,14 +68,14 @@ func TestCapturePushWarnsAboutSkippedTools(t *testing.T) {
 // TestCapturePushDistinguishesSkipsFromFailures pins the meaning of the
 // staging line. RunPush returns an empty outcome on four separate paths, and
 // the command printed the staging line unconditionally, so a paused capture and
-// a repo opted out with `git config tl.enabled false` emitted the byte-for-byte
+// a repo opted out with `git config tx.enabled false` emitted the byte-for-byte
 // signature of an errored run — `capture staged extract= sessions=0 …` — with
 // nothing on stderr. An empty extract id has to mean exactly one thing.
 func TestCapturePushDistinguishesSkipsFromFailures(t *testing.T) {
 	restore := runPushHook
 	runPushHook = func(context.Context, hooks.PushOptions) (hooks.PushOutcome, error) {
 		return hooks.PushOutcome{
-			SkipReason: "this repository opted out (git config tl.enabled false)",
+			SkipReason: "this repository opted out (git config tx.enabled false)",
 		}, nil
 	}
 	t.Cleanup(func() { runPushHook = restore })
@@ -100,7 +100,7 @@ func TestCapturePushDistinguishesSkipsFromFailures(t *testing.T) {
 }
 
 // TestCapturePushSurfacesFailingUploads is the last link in the only chain by
-// which a failed upload can reach a human: `tl capture sync` runs detached with
+// which a failed upload can reach a human: `tx capture sync` runs detached with
 // both streams on os.DevNull, so the push that starts it cannot report its
 // result and the next push has to. Without this, 32 rows could 400 on every
 // push for weeks behind a clean-looking capture line.

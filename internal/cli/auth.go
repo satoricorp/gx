@@ -59,7 +59,7 @@ func buildAuthStatusJSON(ctx context.Context) (authStatusJSON, error) {
 func newAuthCommand(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Authenticate with tl cloud",
+		Short: "Authenticate with tx cloud",
 	}
 	cmd.AddCommand(
 		newAuthLoginCommand(ctx),
@@ -74,7 +74,7 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 	var machineName string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Log into tl cloud",
+		Short: "Log into tx cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			creds, err := cloud.Login(ctx, cloud.LoginOptions{
 				MachineName: machineName,
@@ -92,14 +92,14 @@ func newAuthLoginCommand(ctx context.Context) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the tl console")
+	cmd.Flags().StringVar(&machineName, "name", "", "Machine name shown in the tx console")
 	return cmd
 }
 
 func newAuthLogoutCommand(ctx context.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Logout of tl cloud",
+		Short: "Logout of tx cloud",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			props := map[string]any{
 				"status":    "success",
@@ -134,7 +134,7 @@ func newAuthStatusCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show tl cloud login status",
+		Short: "Show tx cloud login status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonOut {
 				status, err := buildAuthStatusJSON(ctx)
@@ -215,7 +215,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 					if status.APIError == "" {
 						status.APIError = "Totality API rejected stored session"
 					}
-					status.APIError += "; run `tl auth logout` then `tl auth login`"
+					status.APIError += "; run `tx auth logout` then `tx auth login`"
 				}
 			}
 		}
@@ -245,7 +245,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 		if status.AuthError == "" {
 			status.AuthError = "GitHub rejected stored token"
 		}
-		status.AuthError += "; run `tl auth logout` then `tl auth login`"
+		status.AuthError += "; run `tx auth logout` then `tx auth login`"
 	}
 	return status
 }
@@ -253,7 +253,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 func newAuthTokenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "token",
-		Short:  "Print the resolved tl cloud bearer token",
+		Short:  "Print the resolved tx cloud bearer token",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, kind, err := cloud.CloudAPITokenWithKind()

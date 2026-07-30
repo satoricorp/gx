@@ -110,7 +110,7 @@ func resolveBedrockTransportPlan() (bedrockTransportPlan, error) {
 	if _, err := cloud.CloudAPIToken(); err != nil {
 		// Cloud is reachable but this machine is not signed in. Say both, so
 		// the reader can pick whichever is cheaper for them to fix.
-		return bedrockTransportPlan{}, fmt.Errorf("%v; or sign in with `tl auth login` to review through Totality Cloud (%v)", credsErr, err)
+		return bedrockTransportPlan{}, fmt.Errorf("%v; or sign in with `tx auth login` to review through Totality Cloud (%v)", credsErr, err)
 	}
 	return bedrockTransportPlan{Kind: bedrockTransportKindCloud, client: client, cloudURL: cloud.CloudURL()}, nil
 }
@@ -129,7 +129,7 @@ func bedrockTransportShortName(kind string) string {
 }
 
 // bedrockRequestBody is the Anthropic messages shape bedrock-runtime's
-// InvokeModel takes, and the shape Totality Cloud's /tl/bedrock/fight normalizes.
+// InvokeModel takes, and the shape Totality Cloud's /tx/bedrock/fight normalizes.
 type bedrockRequestBody struct {
 	AnthropicVersion string           `json:"anthropic_version"`
 	MaxTokens        int              `json:"max_tokens"`
@@ -177,7 +177,7 @@ func bedrockRequestPayload(system, input string, maxOutputTokens int) bedrockReq
 
 // directBedrockTransport signs and posts InvokeModel itself.
 //
-// tl depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
+// tx depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
 // is a deliberate trade: the signing is thirty lines and fully covered by the
 // canned-response tests, against an SDK that would pull in dozens of modules
 // for one endpoint.

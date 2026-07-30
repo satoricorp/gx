@@ -22,7 +22,7 @@ type credentialsFile struct {
 	Cloud *CloudCredentials `json:"cloud,omitempty"`
 }
 
-// CloudCredentials holds tl cloud auth state.
+// CloudCredentials holds tx cloud auth state.
 type CloudCredentials struct {
 	GitHubAccessToken           string    `json:"github_access_token,omitempty"`
 	GitHubAccessTokenExpiresAt  time.Time `json:"github_access_token_expires_at,omitempty"`
@@ -58,7 +58,7 @@ func credentialsPath() (string, error) {
 // ExistingMachineID returns the stable machine UUID if one has already been
 // minted, and empty otherwise. Callers that must not leave state behind — a
 // read-only command, or a failure report from a machine that may never have
-// run tl — use this instead of DefaultMachineID, which creates $TOTALITY_HOME.
+// run tx — use this instead of DefaultMachineID, which creates $TOTALITY_HOME.
 func ExistingMachineID() (string, error) {
 	path, err := machineIDPath()
 	if err != nil {
@@ -189,9 +189,9 @@ func CloudAPITokenWithKind() (string, string, error) {
 	if creds != nil && strings.TrimSpace(creds.CLISessionToken) != "" {
 		if !creds.CLISessionExpiresAt.IsZero() && time.Now().UTC().After(creds.CLISessionExpiresAt.UTC()) {
 			if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
-				return "", "totality-cli", fmt.Errorf("tl cloud session expired: run `tl auth logout` then `tl auth login` in a terminal, then retry the MCP tool")
+				return "", "totality-cli", fmt.Errorf("tx cloud session expired: run `tx auth logout` then `tx auth login` in a terminal, then retry the MCP tool")
 			}
-			return "", "totality-cli", fmt.Errorf("tl cloud session expired: run `tl auth logout` then `tl auth login`")
+			return "", "totality-cli", fmt.Errorf("tx cloud session expired: run `tx auth logout` then `tx auth login`")
 		}
 		return strings.TrimSpace(creds.CLISessionToken), "totality-cli", nil
 	}
@@ -204,7 +204,7 @@ func CloudAPITokenWithKind() (string, string, error) {
 
 func writeJSONFile(path string, v any, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create tl home dir: %w", err)
+		return fmt.Errorf("create tx home dir: %w", err)
 	}
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

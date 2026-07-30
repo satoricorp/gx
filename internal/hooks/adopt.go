@@ -51,7 +51,7 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 	}
 	branch := branchNameFromRef(opts.LocalRef)
 	if branch == "" {
-		// Hooks installed by older tl versions do not pass --local-ref;
+		// Hooks installed by older tx versions do not pass --local-ref;
 		// without a branch the artifact routes to an "unknown" bookmark on
 		// the server and PR linkage is lost.
 		branch, _ = gitCurrentBranch(ctx, repoRoot)
@@ -65,8 +65,8 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 		Backend:    "git",
 		BranchName: branchPtr,
 	}
-	if tlRepo, err := vcs.NewService().ResolveTotalityRepoAtPath(ctx, repoRoot); err == nil {
-		repo = tlRepo
+	if txRepo, err := vcs.NewService().ResolveTotalityRepoAtPath(ctx, repoRoot); err == nil {
+		repo = txRepo
 		repo.BranchName = branchPtr
 	}
 	if remotePtr != nil {

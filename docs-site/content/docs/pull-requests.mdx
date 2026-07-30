@@ -1,10 +1,10 @@
 ---
 title: Pull Requests
-description: Generated PR summaries in the pull request description, and @gx chat inside PR comments.
+description: Generated PR summaries in the pull request description, and @tx chat inside PR comments.
 ---
 
 Totality Cloud writes a review summary into your pull request description and
-answers questions when you mention `@gx` in PR comments.
+answers questions when you mention `@tx` in PR comments.
 
 A summary looks like this:
 
@@ -33,10 +33,10 @@ downstream.
 
 ## Setup
 
-1. `tl auth login` (or sign in on the console)
+1. `tx auth login` (or sign in on the console)
 2. Install the Totality GitHub App on your account or organization:
    [github.com/apps/satoricorp-gx](https://github.com/apps/satoricorp-gx)
-3. Publish through the hook: `git push` in a repo where `tl init` ran
+3. Publish through the hook: `git push` in a repo where `tx init` ran
 
 A PR whose branch was never pushed through the pre-push hook gets no summary —
 there is no captured context to summarize.
@@ -60,28 +60,28 @@ Summaries are generated when the GitHub App sees `pull_request`
 `opened`/`synchronize` for a branch with published Totality context, and after a
 publish when a PR already exists. Push again to force a refresh.
 
-## Chat with @gx
+## Chat with @tx
 
-Mention `@gx` in any PR comment:
+Mention `@tx` in any PR comment:
 
 ```text
-@gx which files should I review first?
-@gx explain the auth callback changes
-@gx what is the highest-risk change in this PR?
-@gx are there missing tests?
+@tx which files should I review first?
+@tx explain the auth callback changes
+@tx what is the highest-risk change in this PR?
+@tx are there missing tests?
 ```
 
 Answers cite their sources: published revision diffs, changed hunks, PR comments,
 the latest summary, and — when available — captured session context, indexed
 codebase context, and previous findings. Because revisions carry session
-provenance, `@gx` can answer what the author asked for and which commands and
+provenance, `@tx` can answer what the author asked for and which commands and
 tests ran.
 
 ### Retire a learned rule
 
 ```text
-@gx skip rule never use var
-@gx do not enforce this migration naming rule
+@tx skip rule never use var
+@tx do not enforce this migration naming rule
 ```
 
 When a matching active rule exists, it is retired and the override recorded.

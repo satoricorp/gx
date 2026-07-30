@@ -1,15 +1,15 @@
 # Agents
 
-Version control: plain Git. Once `tl init` installs the hooks, Totality records and publishes automatically — there is no Totality save verb.
+Version control: plain Git. Once `tx init` installs the hooks, Totality records and publishes automatically — there is no Totality save verb.
 
 Default flow:
 - Run `git add` to stage the files for this revision.
 - Run `git commit -m "..."` to save. A Totality hook records the commit as a reviewable revision.
-- Run plain `git push` to publish. The Totality pre-push hook captures the session and publishes code changes, sessions, and Totality metadata to Totality Cloud automatically — do not run `tl push` or `tl capture push` yourself; they bypass the hook.
+- Run plain `git push` to publish. The Totality pre-push hook captures the session and publishes code changes, sessions, and Totality metadata to Totality Cloud automatically — do not run `tx push` or `tx capture push` yourself; they bypass the hook.
 - Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; Totality Cloud appends the rich summary below once the PR exists.
 - To amend, use `git commit --amend` and preserve the Totality revision trailer in the message.
 
-For AI review, run the `tl_review` MCP tool (or the `tl review` CLI) on the current change.
+For AI review, run the `tx_review` MCP tool (or the `tx review` CLI) on the current change.
 
 ## Tests: seed through the writer production uses, or do not seed
 

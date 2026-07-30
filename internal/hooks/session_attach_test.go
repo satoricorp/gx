@@ -309,7 +309,7 @@ func TestRunPushAttachesLinksToTheirOwnCommits(t *testing.T) {
 // change_sessions under the MAIN repo's row while the worktree's own path never
 // appears in `repos` at all. reviewbundle read those rows back by root_path,
 // found nothing, and published `sessions: []` with no error on any surface —
-// on a brand new database, for every push from a worktree. tl's own
+// on a brand new database, for every push from a worktree. tx's own
 // demux-worktree flow and the yeet harness both push from linked worktrees.
 func TestRunPushFromLinkedWorktreePublishesSessions(t *testing.T) {
 	ctx := context.Background()

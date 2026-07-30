@@ -2,7 +2,7 @@
 .env
 .env.local
 .totality/
-/tl
+/tx
 dist/
 node_modules/
 mcp/.xmcp/

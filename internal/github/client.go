@@ -79,9 +79,9 @@ func accessToken() (string, error) {
 
 func tokenError() error {
 	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
-		return fmt.Errorf("github token is not configured for MCP: run `tl auth login` in a terminal, then retry the MCP tool")
+		return fmt.Errorf("github token is not configured for MCP: run `tx auth login` in a terminal, then retry the MCP tool")
 	}
-	return fmt.Errorf("github token is not configured: run `tl auth login` or set GH_TOKEN/GITHUB_TOKEN")
+	return fmt.Errorf("github token is not configured: run `tx auth login` or set GH_TOKEN/GITHUB_TOKEN")
 }
 
 func NewClientWithToken(host, token string, httpClient *http.Client) *Client {
@@ -306,9 +306,9 @@ func (c *Client) do(req *http.Request, out any) error {
 			if err := json.Unmarshal(body, &payload); err == nil && strings.TrimSpace(payload.Message) != "" {
 				detail = strings.TrimSpace(payload.Message)
 			}
-			return fmt.Errorf("github auth failed: status %s: %s. Run `tl auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status, detail)
+			return fmt.Errorf("github auth failed: status %s: %s. Run `tx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status, detail)
 		}
-		return fmt.Errorf("github auth failed: status %s. Run `tl auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status)
+		return fmt.Errorf("github auth failed: status %s. Run `tx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", resp.Status)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(body))

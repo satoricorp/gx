@@ -11,7 +11,7 @@ import (
 func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO sessions (
-			id, created_at, ended_at, command, cwd, client_pid, exit_code, tl_version,
+			id, created_at, ended_at, command, cwd, client_pid, exit_code, tx_version,
 			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -21,7 +21,7 @@ func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 			cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE sessions.cwd END,
 			client_pid = COALESCE(excluded.client_pid, sessions.client_pid),
 			exit_code = COALESCE(excluded.exit_code, sessions.exit_code),
-			tl_version = CASE WHEN excluded.tl_version != '' THEN excluded.tl_version ELSE sessions.tl_version END,
+			tx_version = CASE WHEN excluded.tx_version != '' THEN excluded.tx_version ELSE sessions.tx_version END,
 			source = COALESCE(excluded.source, sessions.source),
 			process_name = COALESCE(excluded.process_name, sessions.process_name),
 			parent_pid = COALESCE(excluded.parent_pid, sessions.parent_pid),
@@ -65,12 +65,12 @@ func (s *Store) UpsertSession(ctx context.Context, session Session) error {
 // permanently — nothing rewrites command afterwards.
 func (s *Store) UpsertObservedSession(ctx context.Context, session Session) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, created_at, command, cwd, tl_version, source, repo_root)
+		INSERT INTO sessions (id, created_at, command, cwd, tx_version, source, repo_root)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			command = CASE WHEN TRIM(COALESCE(sessions.command, '')) = '' THEN excluded.command ELSE sessions.command END,
 			cwd = CASE WHEN TRIM(COALESCE(sessions.cwd, '')) = '' THEN excluded.cwd ELSE sessions.cwd END,
-			tl_version = CASE WHEN TRIM(COALESCE(sessions.tl_version, '')) = '' THEN excluded.tl_version ELSE sessions.tl_version END,
+			tx_version = CASE WHEN TRIM(COALESCE(sessions.tx_version, '')) = '' THEN excluded.tx_version ELSE sessions.tx_version END,
 			source = CASE WHEN TRIM(COALESCE(sessions.source, '')) = '' THEN excluded.source ELSE sessions.source END,
 			repo_root = CASE WHEN TRIM(COALESCE(sessions.repo_root, '')) = '' THEN excluded.repo_root ELSE sessions.repo_root END
 	`,
@@ -96,7 +96,7 @@ func (s *Store) UpsertSessionContext(ctx context.Context, session Session, conte
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO sessions (
-			id, created_at, ended_at, command, cwd, client_pid, exit_code, tl_version,
+			id, created_at, ended_at, command, cwd, client_pid, exit_code, tx_version,
 			source, process_name, parent_pid, last_seen_at, end_reason, repo_root
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -106,7 +106,7 @@ func (s *Store) UpsertSessionContext(ctx context.Context, session Session, conte
 			cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE sessions.cwd END,
 			client_pid = COALESCE(excluded.client_pid, sessions.client_pid),
 			exit_code = COALESCE(excluded.exit_code, sessions.exit_code),
-			tl_version = CASE WHEN excluded.tl_version != '' THEN excluded.tl_version ELSE sessions.tl_version END,
+			tx_version = CASE WHEN excluded.tx_version != '' THEN excluded.tx_version ELSE sessions.tx_version END,
 			source = COALESCE(excluded.source, sessions.source),
 			process_name = COALESCE(excluded.process_name, sessions.process_name),
 			parent_pid = COALESCE(excluded.parent_pid, sessions.parent_pid),

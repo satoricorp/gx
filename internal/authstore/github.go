@@ -20,7 +20,7 @@ import (
 
 const (
 	githubAccessTokenURL = "https://github.com/login/oauth/access_token"
-	githubKeyringService = "tl"
+	githubKeyringService = "tx"
 	tokenRefreshSkew     = 5 * time.Minute
 )
 
@@ -313,9 +313,9 @@ func refreshGitHubAccessToken(refreshToken string, client *http.Client) (accessT
 
 func tokenError() error {
 	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
-		return fmt.Errorf("github token is not configured for MCP: run `tl auth login` in a terminal, then retry the MCP tool")
+		return fmt.Errorf("github token is not configured for MCP: run `tx auth login` in a terminal, then retry the MCP tool")
 	}
-	return fmt.Errorf("github token is not configured: run `tl auth login` or set GH_TOKEN/GITHUB_TOKEN")
+	return fmt.Errorf("github token is not configured: run `tx auth login` or set GH_TOKEN/GITHUB_TOKEN")
 }
 
 func reloginError(reason string) error {
@@ -324,9 +324,9 @@ func reloginError(reason string) error {
 		reason = "stored GitHub token is invalid"
 	}
 	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
-		return fmt.Errorf("%s; run `tl auth login` in a terminal, then retry the MCP tool", reason)
+		return fmt.Errorf("%s; run `tx auth login` in a terminal, then retry the MCP tool", reason)
 	}
-	return fmt.Errorf("%s; run `tl auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", reason)
+	return fmt.Errorf("%s; run `tx auth login` to refresh stored credentials or set GH_TOKEN/GITHUB_TOKEN", reason)
 }
 
 func firstNonEmpty(values ...string) string {

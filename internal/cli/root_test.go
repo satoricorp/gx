@@ -38,7 +38,7 @@ func TestVersionCommandPrintsLabeledVersion(t *testing.T) {
 	if !strings.HasPrefix(text, "version ") {
 		t.Fatalf("version output = %q, want compact version line", text)
 	}
-	if strings.Contains(text, "$ tl version") {
+	if strings.Contains(text, "$ tx version") {
 		t.Fatalf("version output should not echo command:\n%s", text)
 	}
 }
@@ -82,17 +82,17 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.HasPrefix(text, tlLogoRaw+"\n") {
+	if !strings.HasPrefix(text, txLogoRaw+"\n") {
 		t.Fatalf("root help should start with logo:\n%s", text)
 	}
-	if !strings.Contains(text, "$ tl help") {
-		t.Fatalf("root help missing tl help invocation:\n%s", text)
+	if !strings.Contains(text, "$ tx help") {
+		t.Fatalf("root help missing tx help invocation:\n%s", text)
 	}
-	if !strings.Contains(text, "Not signed in  tl auth login") {
+	if !strings.Contains(text, "Not signed in  tx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	if !strings.Contains(text, "review (tlr)") {
-		t.Fatalf("root help missing alias %q:\n%s", "review (tlr)", text)
+	if !strings.Contains(text, "review (txr)") {
+		t.Fatalf("root help missing alias %q:\n%s", "review (txr)", text)
 	}
 	if strings.Contains(text, "status") {
 		t.Fatalf("root help should not offer a status command:\n%s", text)
@@ -107,9 +107,9 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 
 func TestReviewAliasResolves(t *testing.T) {
 	root := NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"tlr"})
+	cmd, _, err := root.Find([]string{"txr"})
 	if err != nil || cmd == nil || cmd.Name() != "review" {
-		t.Fatalf("Find(tlr) = cmd=%v err=%v, want review command", cmd, err)
+		t.Fatalf("Find(txr) = cmd=%v err=%v, want review command", cmd, err)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
 	if strings.Contains(text, "Signed in as api-key") {
 		t.Fatalf("root help showed stale legacy login:\n%s", text)
 	}
-	if !strings.Contains(text, "Not signed in  tl auth login") {
+	if !strings.Contains(text, "Not signed in  tx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
 }
@@ -162,7 +162,7 @@ func TestRootHelpIgnoresLegacyLoginWithoutGitHubToken(t *testing.T) {
 func TestRootHelpShowsStoredLoginWithCloudEnvPresent(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3200/tl/pr")
+	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3200/tx/pr")
 	if err := cloud.SaveCloudCredentials(cloud.CloudCredentials{Login: "joelachance", GitHubAccessToken: "gho_saved", ObtainedAt: time.Now()}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -210,10 +210,10 @@ func TestDoctorAcceptsReportFlag(t *testing.T) {
 	}
 	flag := doctor.Flags().Lookup("report")
 	if flag == nil {
-		t.Fatal("tl doctor is missing the --report flag")
+		t.Fatal("tx doctor is missing the --report flag")
 	}
 	if flag.Value.Type() != "bool" {
-		t.Fatalf("tl doctor --report type = %q, want bool", flag.Value.Type())
+		t.Fatalf("tx doctor --report type = %q, want bool", flag.Value.Type())
 	}
 }
 
@@ -224,10 +224,10 @@ func TestReportCommandStaysResolvableAsHiddenAlias(t *testing.T) {
 		t.Fatalf("Find(report) = cmd=%v err=%v, want report", report, err)
 	}
 	if !report.Hidden {
-		t.Fatal("tl report should be hidden now that tl doctor --report is the public spelling")
+		t.Fatal("tx report should be hidden now that tx doctor --report is the public spelling")
 	}
 	if report.GroupID != "" {
-		t.Fatalf("tl report GroupID = %q, want no group", report.GroupID)
+		t.Fatalf("tx report GroupID = %q, want no group", report.GroupID)
 	}
 }
 
@@ -251,7 +251,7 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	}))
 	defer server.Close()
 	t.Setenv("TOTALITY_CLOUD_URL", server.URL)
-	// `tl doctor` checks the saved GitHub token against GitHub's user endpoint,
+	// `tx doctor` checks the saved GitHub token against GitHub's user endpoint,
 	// which sent this test to api.github.com on every run with a token it had
 	// just invented. The endpoint is a separate override from TOTALITY_GITHUB_API_URL,
 	// so pointing that one at a fake is not enough.
@@ -268,7 +268,7 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	root.SetArgs([]string{"doctor", "--report"})
 
 	if err := root.Execute(); err != nil {
-		t.Fatalf("tl doctor --report error = %v\n%s", err, out.String())
+		t.Fatalf("tx doctor --report error = %v\n%s", err, out.String())
 	}
 
 	var diagnosis string
@@ -285,10 +285,10 @@ func TestDoctorReportSendsDiagnosisWithLogs(t *testing.T) {
 	}
 	text := out.String()
 	if !strings.Contains(text, "Publish outbox") {
-		t.Fatalf("tl doctor --report stopped printing the diagnosis:\n%s", text)
+		t.Fatalf("tx doctor --report stopped printing the diagnosis:\n%s", text)
 	}
 	if !strings.Contains(text, "Report sent") || !strings.Contains(text, "report-9") {
-		t.Fatalf("tl doctor --report missing send confirmation:\n%s", text)
+		t.Fatalf("tx doctor --report missing send confirmation:\n%s", text)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	cmd.SetArgs([]string{"review"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tl review error = %v\n%s", err, out.String())
+		t.Fatalf("tx review error = %v\n%s", err, out.String())
 	}
 	text := out.String()
 	for _, want := range []string{
@@ -332,12 +332,12 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 		"- No material issues found in this change.",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("tl review output missing %q in:\n%s", want, text)
+			t.Fatalf("tx review output missing %q in:\n%s", want, text)
 		}
 	}
 	for _, unwanted := range []string{"brief", "PR Summary"} {
 		if strings.Contains(strings.ToLower(text), unwanted) {
-			t.Fatalf("tl review output should not include %q:\n%s", unwanted, text)
+			t.Fatalf("tx review output should not include %q:\n%s", unwanted, text)
 		}
 	}
 }
@@ -355,11 +355,11 @@ func writeTestTotalityConfig(t *testing.T, totalityHome, name, email string) {
 
 // narrowPathToGit leaves git on PATH and nothing else.
 //
-// `tl init` registers the Totality MCP server with every agent CLI it finds installed
-// by running it (`claude mcp add tl …`, `cursor mcp add tl …`). On a developer's
+// `tx init` registers the Totality MCP server with every agent CLI it finds installed
+// by running it (`claude mcp add tx …`, `cursor mcp add tx …`). On a developer's
 // machine those resolve to the real binaries, so this test was launching the
 // developer's own Claude Code — which calls home to api.anthropic.com — as a
-// side effect of asserting that `tl init -y` prints nothing. What the test means
+// side effect of asserting that `tx init -y` prints nothing. What the test means
 // by a default machine is one with no agent CLI installed, and this is how to
 // say that rather than inherit whatever the author happened to have.
 func narrowPathToGit(t *testing.T) {
@@ -394,13 +394,13 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	cmd.SetArgs([]string{"init", "-y"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tl init -y error = %v\n%s", err, out.String())
+		t.Fatalf("tx init -y error = %v\n%s", err, out.String())
 	}
 	if out.String() != "" {
-		t.Fatalf("tl init -y output = %q, want empty", out.String())
+		t.Fatalf("tx init -y output = %q, want empty", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
-		t.Fatalf("after tl init -y .git missing: %v", err)
+		t.Fatalf("after tx init -y .git missing: %v", err)
 	}
 }
 
@@ -421,33 +421,33 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"review", "--scope", "architecture"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tl review --scope error = %v\n%s", err, out.String())
+		t.Fatalf("tx review --scope error = %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "## Recommendations") {
-		t.Fatalf("tl review --scope output missing recommendations:\n%s", out.String())
+		t.Fatalf("tx review --scope output missing recommendations:\n%s", out.String())
 	}
 }
 
 func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
-	remote := "https://github.com/acme/tl.git"
+	remote := "https://github.com/acme/tx.git"
 	branch := "feature/demo"
 	var gotCommentBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/pulls":
 			if r.URL.Query().Get("head") != "acme:"+branch {
 				t.Fatalf("head query = %q", r.URL.Query().Get("head"))
 			}
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tx/pull/7"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			var payload map[string]string
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode comment body: %v", err)
 			}
 			gotCommentBody = payload["body"]
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tx/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -486,7 +486,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	if gotCommentBody == "" {
 		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- tl review summary -->", "## Recommendations", "**Informed by:** Go project"} {
+	for _, want := range []string{"<!-- tx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
 		}
@@ -507,15 +507,15 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 	gitAddTestFiles(t, root, "main.go")
 	runGitTest(t, root, "commit", "-m", "change")
 
-	remote := "https://github.com/acme/tl.git"
+	remote := "https://github.com/acme/tx.git"
 	branch := "feature/demo"
 	var inlineAttempted bool
 	var summaryAttempted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/pulls/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tx/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tx/pulls/7/comments":
 			inlineAttempted = true
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -525,11 +525,11 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 				t.Fatalf("inline payload = %#v", payload)
 			}
 			_, _ = w.Write([]byte(`{"id":99}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			summaryAttempted = true
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tx/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -577,20 +577,20 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	gitAddTestFiles(t, root, "main.go")
 	runGitTest(t, root, "commit", "-m", "change")
 
-	remote := "https://github.com/acme/tl.git"
+	remote := "https://github.com/acme/tx.git"
 	branch := "feature/demo"
 	var summaryAttempted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/pulls":
-			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tl/pull/7"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/pulls/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/pulls":
+			_, _ = w.Write([]byte(`[{"number":7,"html_url":"https://github.com/acme/tx/pull/7"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tx/pulls/7/comments":
 			http.Error(w, "line cannot be commented", http.StatusUnprocessableEntity)
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tl/issues/7/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/tx/issues/7/comments":
 			summaryAttempted = true
-			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tl/pull/7#issuecomment-12","body":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":12,"html_url":"https://github.com/acme/tx/pull/7#issuecomment-12","body":"ok"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -630,10 +630,10 @@ func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("tl review accepted multiple positional prompts")
+		t.Fatal("tx review accepted multiple positional prompts")
 	}
 	if !strings.Contains(err.Error(), "accepts at most 1 arg") {
-		t.Fatalf("tl review error = %v, want maximum arg error", err)
+		t.Fatalf("tx review error = %v, want maximum arg error", err)
 	}
 }
 

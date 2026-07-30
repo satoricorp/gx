@@ -403,7 +403,7 @@ func claudeSessionAt(path, sessionID string, since, until time.Time, needles [][
 // referenced a path inside repoRoot.
 //
 // The trailing separator matters: it keeps a sibling checkout such as
-// /Users/joe/git/totality-cloud from matching /Users/joe/git/tl, and every session
+// /Users/joe/git/totality-cloud from matching /Users/joe/git/tx, and every session
 // that actually edited the repo records at least one absolute path beneath the
 // root. Windows transcripts store backslashes JSON-escaped, so both the raw and
 // escaped spellings are included.

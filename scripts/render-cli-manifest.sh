@@ -27,14 +27,14 @@ json_escape() {
 }
 
 archive_rows=()
-for archive in "$dist_dir"/tl_"$version"_*.tar.gz; do
+for archive in "$dist_dir"/tx_"$version"_*.tar.gz; do
   [[ -f "$archive" ]] || continue
   base="$(basename "$archive")"
-  rest="${base#tl_${version}_}"
+  rest="${base#tx_${version}_}"
   platform="${rest%.tar.gz}"
   goos="${platform%_*}"
   goarch="${platform##*_}"
-  latest_name="tl_${goos}_${goarch}.tar.gz"
+  latest_name="tx_${goos}_${goarch}.tar.gz"
   sha_path="$archive.sha256"
   [[ -f "$sha_path" ]] || { echo "missing checksum for $archive" >&2; exit 1; }
   sha="$(awk '{print $1}' "$sha_path")"

@@ -65,7 +65,7 @@ func TestConvexSiteURLEmptyWhenUnset(t *testing.T) {
 
 func TestCloudURLEnvOverridesDefault(t *testing.T) {
 	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3201")
-	buildconfig.CloudURL = "https://api.example.com/tl/pr"
+	buildconfig.CloudURL = "https://api.example.com/tx/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	if got := CloudURL(); got != "http://localhost:3201" {
@@ -75,7 +75,7 @@ func TestCloudURLEnvOverridesDefault(t *testing.T) {
 
 func TestCloudURLUsesBakedDefault(t *testing.T) {
 	os.Unsetenv("TOTALITY_CLOUD_URL")
-	buildconfig.CloudURL = "https://api.example.com/tl/pr"
+	buildconfig.CloudURL = "https://api.example.com/tx/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	if got := CloudURL(); got != "https://api.example.com" {
@@ -84,7 +84,7 @@ func TestCloudURLUsesBakedDefault(t *testing.T) {
 }
 
 func TestCloudURLNormalizesLegacyPublishSuffix(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3200/tl/pr/")
+	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3200/tx/pr/")
 	buildconfig.CloudURL = ""
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 

@@ -1,11 +1,11 @@
 ---
 title: How it works
-description: What Totality captures, how tl review and PR summaries use it, and why that makes review faster.
+description: What Totality captures, how tx review and PR summaries use it, and why that makes review faster.
 ---
 
 Totality adds a context layer around your existing Git workflow. It captures what
 happened during coding sessions, attaches that context to ordinary Git commits,
-and uses it for two review surfaces: `tl review` locally and generated PR
+and uses it for two review surfaces: `tx review` locally and generated PR
 summaries on GitHub.
 
 ## The problem
@@ -35,9 +35,9 @@ Agent-written code breaks two of Git's assumptions:
   produced it by matching the changed hunks against captured session activity —
   nothing is attached by hand.
 
-## How tl review works
+## How tx review works
 
-`tl review` reads the current change — a dirty working tree, or the branch's
+`tx review` reads the current change — a dirty working tree, or the branch's
 commits against its base — and reviews it with two independent AI reviewers
 plus repo context: the indexed codebase, captured sessions, review history, and
 your repo's review policy. A judge model then verifies and dedupes the
@@ -50,7 +50,7 @@ signal a two-model panel produces.
 
 The command writes nothing — no hooks, no repo state, no index mutation — so it
 runs anywhere, including CI (`--fail-on` turns it into a gate) and checkouts
-you do not own. See the [CLI reference](/docs/cli#tl-review).
+you do not own. See the [CLI reference](/docs/cli#tx-review).
 
 ## How PR summaries work
 
@@ -74,7 +74,7 @@ including code the diff never touches. Notable Changes each carry an
   rest can be skimmed instead of read line by line.
 - Session provenance answers "why is this here?" without a round-trip to the
   author — the prompt, commands, and tests are part of the review context.
-- `tl review` catches findings before the PR exists, when they are cheapest to
+- `tx review` catches findings before the PR exists, when they are cheapest to
   fix.
 
 ## Everything is still just Git

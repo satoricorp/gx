@@ -166,7 +166,7 @@ func configuredPublisher(publisher *Publisher) (*Publisher, error) {
 	}
 	client := cloud.NewClient()
 	if client == nil {
-		return nil, fmt.Errorf("tl cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
+		return nil, fmt.Errorf("tx cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	return NewPublisher(client), nil
 }

@@ -24,7 +24,7 @@ func TestCloudURLExplicitDisable(t *testing.T) {
 }
 
 func TestCloudURLCustom(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "https://api.example/tl/pr")
+	t.Setenv("TOTALITY_CLOUD_URL", "https://api.example/tx/pr")
 	if got := CloudURL(); got != "https://api.example" {
 		t.Fatalf("CloudURL() = %q", got)
 	}
