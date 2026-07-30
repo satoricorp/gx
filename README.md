@@ -49,19 +49,12 @@ This removes the installed binaries only. Local Totality data remains in `~/.tot
 
 ## Set An API Key
 
-```bash
-tl set key
-```
-
-Totality will look for an existing key first:
+Totality reads a model key from the environment:
 
 ```bash
 ANTHROPIC_API_KEY
 OPENAI_API_KEY
 ```
-
-If it finds one, it can use that. Otherwise, choose Anthropic or OpenAI and
-paste a key.
 
 ## Auth
 

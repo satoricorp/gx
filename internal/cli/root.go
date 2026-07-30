@@ -59,7 +59,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newVersionCommand(),
 		newDoctorCommand(ctx),
 		newAuthCommand(ctx),
-		newSetCommand(ctx),
 		newInitCommand(ctx, engine),
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
@@ -88,7 +87,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 func assignCommandGroups(root *cobra.Command) {
 	for _, cmd := range root.Commands() {
 		switch cmd.Name() {
-		case "init", "auth", "set":
+		case "init", "auth":
 			cmd.GroupID = groupSetup
 		case "review":
 			cmd.GroupID = groupWork

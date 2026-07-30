@@ -99,7 +99,7 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 		// `review` is read-only: it must work as a CI gate and on someone
 		// else's checkout without installing hooks or writing Totality state into a
 		// repo the reviewer does not own.
-		case "init", "version", "login", "auth", "set", "review":
+		case "init", "version", "login", "auth", "review":
 			return true
 		}
 	}

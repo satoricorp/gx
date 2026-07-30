@@ -21,7 +21,7 @@ func (e *PaymentRequiredError) Error() string {
 
 // PaymentRequiredMessage formats the JSON body of a Totality Cloud 402 response
 // into a user-facing message that names both remedies: upgrading the org, or
-// bringing your own model key with tl set key.
+// bringing your own model key via ANTHROPIC_API_KEY / OPENAI_API_KEY.
 func PaymentRequiredMessage(body []byte) string {
 	var payload struct {
 		Message    string `json:"message"`
@@ -30,7 +30,7 @@ func PaymentRequiredMessage(body []byte) string {
 	_ = json.Unmarshal(body, &payload)
 	message := strings.TrimSpace(payload.Message)
 	if message == "" {
-		message = "Totality Cloud AI needs an active plan; the free trial for this org has ended. Upgrade to keep using Totality Cloud AI, or set your own model key with `tl set key`."
+		message = "Totality Cloud AI needs an active plan; the free trial for this org has ended. Upgrade to keep using Totality Cloud AI, or set your own model key via ANTHROPIC_API_KEY or OPENAI_API_KEY."
 	}
 	if url := strings.TrimSpace(payload.UpgradeURL); url != "" && !strings.Contains(message, url) {
 		message += " Upgrade: " + url

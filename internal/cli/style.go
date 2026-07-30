@@ -110,7 +110,7 @@ func rootAuthStatusLine() string {
 func rootInferenceStatusLine() string {
 	creds, ok := inference.Resolve()
 	if !ok {
-		return danger("●") + " " + muted("API Key required. Run `tl set key` to set an API Key.")
+		return danger("●") + " " + muted("API Key required. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
 	}
 	return success("●") + " " + value("Using "+creds.Provider+": "+maskedAPIKey(creds.APIKey))
 }

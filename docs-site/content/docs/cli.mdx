@@ -1,24 +1,18 @@
 ---
 title: CLI
-description: Reference for the tl CLI — tl init, tl review, tl auth, tl set key, tl doctor — with flags, examples, and exit codes.
+description: CLI Reference with flags, examples, and exit codes.
 ---
 
-`tl` is the local CLI. You work in plain Git; once `tl init` installs the hooks,
-your normal commands do the Totality work on the way through:
+The only required command is `tl init`, which initializes totality in your
+repository. This installs git hooks that capture your session context and pairs
+it with your code changes.
 
-```bash
-git add <files>                        # choose the scope of the change
-git commit -m "describe this change"   # a hook records it as a revision
-git push                               # the pre-push hook captures the session and publishes
-```
-
-`tl` adds these commands and nothing that duplicates Git:
+## Totality CLI Overview
 
 ```bash
 tl init      # set up hooks in a repo (run once)
 tl review    # AI review of the current change (alias: tlr)
 tl auth      # sign in to Totality Cloud
-tl set key   # store an API key for local inference
 tl doctor    # diagnose capture, hooks, and publishing
 tl version   # print the version
 ```
@@ -29,10 +23,8 @@ tl version   # print the version
 tl init
 ```
 
-Installs the Git hooks (`prepare-commit-msg`, `post-commit`, `post-rewrite`,
-`pre-push`), registers the MCP server with agent CLIs found on your `PATH`
-(Claude Code, Cursor, Codex), and offers to add workflow instructions to
-`AGENTS.md`. Run it once per repository.
+`tl init` installs the Git hooks and registers the MCP server. Run it once per
+repository.
 
 | Flag | Meaning |
 | --- | --- |
@@ -41,17 +33,16 @@ Installs the Git hooks (`prepare-commit-msg`, `post-commit`, `post-rewrite`,
 | `-y`, `--yes` | accept defaults and suppress prompts — use in scripts and agent sandboxes |
 | `--global` | install the hooks machine-wide instead of for one repository |
 
-### Machine-wide hooks
+### Global hooks
 
 ```bash
 tl init --global
 ```
 
-Installs the hooks once for every repository via `git config --global
-core.hooksPath`. The scripts chain to each repository's own hooks of the same
-name, so husky, lefthook, and hand-written hooks keep working. If a global hooks
-path is already set to something else, `tl init --global` stops rather than
-overwriting it.
+Installs the hooks once for every repository. The scripts chain to each
+repository's own hooks of the same name, so husky, lefthook, and hand-written
+hooks keep working. If a global hooks path is already set to something else,
+`tl init --global` stops rather than overwriting it.
 
 Opt a single repository out, from inside it:
 
@@ -137,18 +128,6 @@ tl auth logout
 ```
 
 Signs the CLI into Totality Cloud through GitHub.
-
-## tl set key
-
-```bash
-tl set key                                                # interactive: pick provider, paste key
-tl set key --provider anthropic --key "$ANTHROPIC_API_KEY"
-```
-
-Stores one key in `~/.totality/inference.json` (or `$TOTALITY_HOME/inference.json`)
-and injects it for local inference and MCP-launched `tl` commands. Providers:
-`anthropic`, `openai`. `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in the
-environment remain supported as fallbacks; the stored key wins when present.
 
 ## tl doctor
 

@@ -121,12 +121,11 @@ func TestDoctorHandlesRegisteredRepoWithoutMain(t *testing.T) {
 func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 	root := NewRoot(context.Background())
 	cases := map[string]bool{
-		"tl init":                    true,
-		"tl version":                 true,
-		"tl auth status":             true,
-		"tl set inference-key dummy": true,
-		"tl review":                  true,
-		"tl doctor":                  false,
+		"tl init":        true,
+		"tl version":     true,
+		"tl auth status": true,
+		"tl review":      true,
+		"tl doctor":      false,
 	}
 	for path, want := range cases {
 		cmd, _, err := root.Find(strings.Fields(strings.TrimPrefix(path, "tl ")))
