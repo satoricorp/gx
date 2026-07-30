@@ -13,9 +13,9 @@ curl -fsSL https://download.totality.sh/install.sh | sh
 tl auth login
 ```
 
-This installs `tl`, `tlr`, and `tl-mcp` to `~/.local/bin`, plus bash/zsh completions.
+This installs bash/zsh completions and aliases, like `tlr`, for `tl review`.
 
-## First change
+## Basic Usage
 
 ```bash
 cd your-repo
@@ -26,9 +26,6 @@ tl review                              # AI review before you push (optional)
 git push                               # hook captures the session and publishes
 gh pr create                           # Totality Cloud adds the summary to the PR
 ```
-
-There is no `tl commit`, `tl status`, or `tl push` — the hooks do the Totality work
-inside your normal Git commands.
 
 ## Uninstall
 
