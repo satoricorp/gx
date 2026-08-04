@@ -59,6 +59,18 @@ func runInitRepoSetup(opts initSetupOptions) error {
 		}
 	}
 
+	if commands, err := installSlashCommands(); err != nil {
+		if !opts.Quiet && opts.Err != nil {
+			fmt.Fprintln(opts.Err, labelWarningValue("Command", err.Error()))
+		}
+	} else if !opts.Quiet && opts.Out != nil {
+		if len(commands) == 0 {
+			fmt.Fprintln(opts.Out, labelValue("Command", muted("skipped (no supported agent found)")))
+		} else {
+			fmt.Fprintln(opts.Out, labelValue("Command", success("ok")+": /"+slashCommandName+" in "+strings.Join(commands, ", ")))
+		}
+	}
+
 	if err := offerInitAgentsMD(opts); err != nil && !errors.Is(err, context.Canceled) {
 		if !opts.Quiet && opts.Err != nil {
 			fmt.Fprintln(opts.Err, labelWarningValue("AGENTS.md", err.Error()))
