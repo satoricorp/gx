@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/gx/internal/capture"
 )
 
 func (p *Parser) parseTranscriptFile(path string, repoRoot string) ([]capture.SessionEvent, error) {

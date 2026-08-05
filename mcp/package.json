@@ -1,16 +1,16 @@
 {
-  "name": "@satoricorp/lgtm",
+  "name": "@satoricorp/gx",
   "version": "0.2.0",
-  "description": "lgtm MCP server (stdio): lgtm_review context from the local lgtm CLI.",
+  "description": "gx MCP server (stdio): gx_review context from the local gx CLI.",
   "license": "AGPL-3.0-only",
-  "homepage": "https://lgtm.cx",
+  "homepage": "https://gx.run",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/satoricorp/lgtm.git",
+    "url": "git+https://github.com/satoricorp/gx.git",
     "directory": "mcp"
   },
   "bin": {
-    "lgtm-mcp": "dist/stdio.js"
+    "gx-mcp": "dist/stdio.js"
   },
   "files": [
     "dist/*.js",
@@ -26,8 +26,8 @@
     "dev": "xmcp dev",
     "build": "xmcp build && bun run build:binary",
     "build:xmcp": "xmcp build",
-    "build:binary": "bun build src/stdio.ts --compile --outfile dist/lgtm-mcp",
-    "start": "./dist/lgtm-mcp",
+    "build:binary": "bun build src/stdio.ts --compile --outfile dist/gx-mcp",
+    "start": "./dist/gx-mcp",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build:xmcp && bun test"

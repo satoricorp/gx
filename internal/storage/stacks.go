@@ -79,13 +79,13 @@ func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, 
 	if repoID == 0 || stackID == 0 || publishRef == "" {
 		return nil
 	}
-	lgtm, err := s.db.BeginTx(ctx, nil)
+	gx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin prune published stack: %w", err)
 	}
-	defer lgtm.Rollback()
+	defer gx.Rollback()
 
-	if _, err := lgtm.ExecContext(ctx, `
+	if _, err := gx.ExecContext(ctx, `
 		DELETE FROM change_bookmarks
 		WHERE bookmark_name = ?
 			AND change_id IN (
@@ -94,25 +94,25 @@ func (s *Store) PrunePublishedStack(ctx context.Context, repoID, stackID int64, 
 	`, publishRef, stackID); err != nil {
 		return fmt.Errorf("delete stack change bookmarks: %w", err)
 	}
-	if _, err := lgtm.ExecContext(ctx, `
+	if _, err := gx.ExecContext(ctx, `
 		DELETE FROM pushes
 		WHERE repo_id = ? AND branch_name = ?
 	`, repoID, publishRef); err != nil {
 		return fmt.Errorf("delete stack pushes: %w", err)
 	}
-	if _, err := lgtm.ExecContext(ctx, `
+	if _, err := gx.ExecContext(ctx, `
 		DELETE FROM stack_changes
 		WHERE stack_id = ?
 	`, stackID); err != nil {
 		return fmt.Errorf("delete pruned stack changes: %w", err)
 	}
-	if _, err := lgtm.ExecContext(ctx, `
+	if _, err := gx.ExecContext(ctx, `
 		DELETE FROM stacks
 		WHERE repo_id = ? AND id = ?
 	`, repoID, stackID); err != nil {
 		return fmt.Errorf("delete pruned stack: %w", err)
 	}
-	return lgtm.Commit()
+	return gx.Commit()
 }
 
 func (s *Store) MarkStackStatus(ctx context.Context, stackID int64, status string, updatedAt int64) error {

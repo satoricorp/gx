@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/lgtm/internal/cloud"
-	"github.com/satoricorp/lgtm/internal/semantic"
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 type ReviewHistoryRetriever struct {
@@ -17,14 +17,14 @@ type ReviewHistoryRetriever struct {
 }
 
 func reviewHistoryRetrieverFromEnv() ContextRetriever {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_HISTORY_CONTEXT")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_HISTORY_CONTEXT")), "0") {
 		return nil
 	}
 	client := cloud.NewClient()
 	if client == nil {
 		return nil
 	}
-	limit := reviewEnvInt("LGTM_REVIEW_HISTORY_TOP_K", 8)
+	limit := reviewEnvInt("GX_REVIEW_HISTORY_TOP_K", 8)
 	return ReviewHistoryRetriever{Client: client, Limit: limit}
 }
 
@@ -75,7 +75,7 @@ func reviewHistoryRepoFullName(ctx context.Context, repoRoot string) string {
 
 func reviewHistoryQuery(opts Options, facts RepoFacts, hints []ReviewHint) string {
 	parts := []string{
-		"lgtm code review history recall",
+		"gx code review history recall",
 		strings.TrimSpace(opts.Prompt),
 		strings.TrimSpace(opts.Scope),
 		strings.Join(facts.DependencyFiles, " "),
@@ -108,8 +108,8 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 		snippets = append(snippets, ContextSnippet{
 			Kind:      "code_review_history",
 			Ref:       firstNonEmpty(finding.Fingerprint, finding.ID),
-			Source:    "lgtm-cloud:code-review-history",
-			Publisher: "prior lgtm reviews",
+			Source:    "gx-cloud:code-review-history",
+			Publisher: "prior gx reviews",
 			Title:     finding.Title,
 			Text:      text,
 			File:      finding.FilePath,
@@ -125,8 +125,8 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 		snippets = append(snippets, ContextSnippet{
 			Kind:      "code_review_summary",
 			Ref:       summary.ID,
-			Source:    "lgtm-cloud:code-review-history",
-			Publisher: "prior lgtm reviews",
+			Source:    "gx-cloud:code-review-history",
+			Publisher: "prior gx reviews",
 			Title:     fmt.Sprintf("Prior %s summary", firstNonEmpty(summary.SummaryKind, "review")),
 			Text:      strings.TrimSpace(summary.SummaryText),
 		})
@@ -143,7 +143,7 @@ func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int
 			Kind:      "code_review_history",
 			Ref:       firstNonEmpty(match.ID, stringAttribute(match.Attributes, "review_fingerprint")),
 			Source:    "turbopuffer:code-review-history",
-			Publisher: "prior lgtm reviews",
+			Publisher: "prior gx reviews",
 			Title:     firstNonEmpty(stringAttribute(match.Attributes, "review_category"), "Code review history"),
 			Text:      text,
 			File:      stringAttribute(match.Attributes, "file"),

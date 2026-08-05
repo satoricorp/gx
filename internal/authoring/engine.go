@@ -4,13 +4,13 @@ import (
 	"context"
 	"os"
 
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
 
-// Engine is lgtm's authoring seam. CLI and MCP adapters call this module
+// Engine is gx's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
 type Engine struct {
 	vcs *vcs.Service

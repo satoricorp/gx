@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/satoricorp/lgtm/internal/cli"
+	"github.com/satoricorp/gx/internal/cli"
 )
 
 func main() {

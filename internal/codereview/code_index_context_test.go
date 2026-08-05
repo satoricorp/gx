@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/semantic"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 // fakeIndexStore serves probes and query rows from memory so retrieval, fusion
@@ -87,7 +87,7 @@ func codeIndexTestInput() RetrieveInput {
 func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	store := &fakeIndexStore{
 		probes: map[string]indexProbe{
-			"lgtm-org-repo-v2": {
+			"gx-org-repo-v2": {
 				Exists: true, Dimensions: 3072, BodyField: "text", SymbolField: "symbol",
 				Filterable: map[string]bool{"source_kind": true},
 			},
@@ -96,7 +96,7 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 			},
 		},
 		rows: map[string][]indexRow{
-			"lgtm-org-repo-v2": {
+			"gx-org-repo-v2": {
 				{"file_path": "internal/codereview/engine.go", "start_line": 1.0, "end_line": 20.0, "text": "fresh chunk", "symbol_name": "Review"},
 			},
 			"repo-owner-repo": {
@@ -109,8 +109,8 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "lgtm-org-repo-v2", Origin: "lgtm code index"},
-			{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"},
+			{Namespace: "gx-org-repo-v2", Origin: "gx code index"},
+			{Namespace: "repo-owner-repo", Origin: "gx Cloud code index"},
 		},
 		Limit:       10,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
@@ -121,12 +121,12 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	}
 
 	// Each namespace is queried with the field names its own schema declares.
-	lgtmQuery := store.query("lgtm-org-repo-v2")
-	if lgtmQuery.BodyField != "text" || lgtmQuery.SymbolField != "symbol" || len(lgtmQuery.Vector) != 3072 {
-		t.Fatalf("lgtm query = %+v, want text/symbol legs and a 3072-wide vector", lgtmQuery)
+	gxQuery := store.query("gx-org-repo-v2")
+	if gxQuery.BodyField != "text" || gxQuery.SymbolField != "symbol" || len(gxQuery.Vector) != 3072 {
+		t.Fatalf("gx query = %+v, want text/symbol legs and a 3072-wide vector", gxQuery)
 	}
-	if lgtmQuery.Legs() != 3 {
-		t.Fatalf("lgtm query legs = %d, want 3", lgtmQuery.Legs())
+	if gxQuery.Legs() != 3 {
+		t.Fatalf("gx query legs = %d, want 3", gxQuery.Legs())
 	}
 	consoleQuery := store.query("repo-owner-repo")
 	if consoleQuery.BodyField != "content" || len(consoleQuery.Vector) != 1536 {
@@ -138,10 +138,10 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	if !strings.Contains(consoleQuery.SymbolQuery, "contextRetrieverFromEnv") {
 		t.Fatalf("symbol query = %q, want the changed identifier", consoleQuery.SymbolQuery)
 	}
-	// The lgtm namespace holds more than code, so it is filtered; the console one
+	// The gx namespace holds more than code, so it is filtered; the console one
 	// does not declare source_kind and must not be filtered on it.
-	if lgtmQuery.Filters == nil {
-		t.Fatal("lgtm query has no source_kind filter")
+	if gxQuery.Filters == nil {
+		t.Fatal("gx query has no source_kind filter")
 	}
 	if consoleQuery.Filters != nil {
 		t.Fatalf("console query filters = %v, want none for a namespace without source_kind", consoleQuery.Filters)
@@ -182,8 +182,8 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "lgtm-local-yeet-v2", Origin: "lgtm code index"},
-			{Namespace: "repo-owner-yeet", Origin: "lgtm Cloud code index"},
+			{Namespace: "gx-local-yeet-v2", Origin: "gx code index"},
+			{Namespace: "repo-owner-yeet", Origin: "gx Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
@@ -202,15 +202,15 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 		t.Fatalf("warnings = %v, want one warning for the code index as a whole", warnings)
 	}
 	// The warning has to say how to fix it, and the fix is the website. It used
-	// to name `lgtm index`, which is a hidden maintenance command that fills one
+	// to name `gx index`, which is a hidden maintenance command that fills one
 	// developer's namespace from one developer's checkout — a worse, manual
-	// copy of the index lgtm Cloud maintains from the GitHub App on merge.
+	// copy of the index gx Cloud maintains from the GitHub App on merge.
 	joined := strings.Join(warnings, " ")
-	if !strings.Contains(joined, "https://lgtm.cx/repositories") {
+	if !strings.Contains(joined, "https://gx.run/repositories") {
 		t.Fatalf("warnings = %v, want the missing index to say where to get it built", warnings)
 	}
-	if strings.Contains(joined, "lgtm index") {
-		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `lgtm index`", warnings)
+	if strings.Contains(joined, "gx index") {
+		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `gx index`", warnings)
 	}
 	if len(in.Evidence.Statuses()) != 2 {
 		t.Fatalf("statuses = %#v, want one per namespace so the verbose listing still names each", in.Evidence.Statuses())
@@ -225,10 +225,10 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 	store := &fakeIndexStore{
 		probes: map[string]indexProbe{
-			"lgtm-local-satoricorp-yeet-v2": {Exists: true, Dimensions: 1536, BodyField: "text", SymbolField: "symbol"},
+			"gx-local-satoricorp-yeet-v2": {Exists: true, Dimensions: 1536, BodyField: "text", SymbolField: "symbol"},
 		},
 		rows: map[string][]indexRow{
-			"lgtm-local-satoricorp-yeet-v2": {
+			"gx-local-satoricorp-yeet-v2": {
 				{"file_path": "src/bridge.ts", "start_line": 1.0, "end_line": 20.0, "text": "chunk", "symbol_name": "Bridge"},
 			},
 		},
@@ -237,8 +237,8 @@ func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "lgtm-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
-			{Namespace: "lgtm-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
+			{Namespace: "gx-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
+			{Namespace: "gx-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
 		},
 		Limit:       10,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
@@ -274,7 +274,7 @@ func TestCodeIndexRetrieverReportsQueryFailure(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "gx Cloud code index"}},
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
 	}
 	if _, err := retriever.Retrieve(context.Background(), in); err != nil {
@@ -298,7 +298,7 @@ func TestCodeIndexRetrieverDegradesToLexicalWithoutAnEmbedder(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "gx Cloud code index"}},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
 	snippets, err := retriever.Retrieve(context.Background(), in)
@@ -337,8 +337,8 @@ func TestCodeIndexRetrieverDistinguishesUnqueryableFromEmpty(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "unqueryable", Origin: "lgtm code index"},
-			{Namespace: "answered", Origin: "lgtm Cloud code index"},
+			{Namespace: "unqueryable", Origin: "gx code index"},
+			{Namespace: "answered", Origin: "gx Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
@@ -372,7 +372,7 @@ func TestCodeIndexRetrieverReportsStaleIndex(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "gx Cloud code index"}},
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
 	}
 	if _, err := retriever.Retrieve(context.Background(), in); err != nil {
@@ -501,9 +501,9 @@ func TestIndexQueryPayloadAsksForAllAttributesWhenSchemaIsUnknown(t *testing.T) 
 }
 
 func TestEmbedModelMatchesNamespaceWidth(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_INDEX_EMBED_MODEL", "")
-	t.Setenv("LGTM_OPENAI_EMBEDDING_MODEL", "")
-	t.Setenv("LGTM_EMBEDDING_DIMENSIONS", "")
+	t.Setenv("GX_REVIEW_INDEX_EMBED_MODEL", "")
+	t.Setenv("GX_OPENAI_EMBEDDING_MODEL", "")
+	t.Setenv("GX_EMBEDDING_DIMENSIONS", "")
 	for width, want := range map[int]string{
 		3072: "text-embedding-3-large",
 		1536: "text-embedding-3-small",

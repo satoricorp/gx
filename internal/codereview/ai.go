@@ -50,7 +50,7 @@ const (
 	maxAIWholeRepoContextSnippets = 128
 	// maxAIRepoInventoryBytes is the file listing's own budget. A map of the
 	// repository is worth its bytes: at ~45 bytes a path this holds roughly
-	// 4,000 files, which is every file in both repositories lgtm reviews today.
+	// 4,000 files, which is every file in both repositories gx reviews today.
 	maxAIRepoInventoryBytes = 180000
 	// Diff snippets are the primary evidence for what changed, so they get their
 	// own budget rather than sharing the retrieved-context one. A PR summary
@@ -82,7 +82,7 @@ const (
 // of 2026-08 the 4.6 family is the only 1M-context generation this deployment's
 // AWS account has Bedrock access to — when Opus 4.7+/Sonnet 5 access is granted
 // in the Bedrock console, prefer moving leg B there (or override with
-// LGTM_REVIEW_BEDROCK_MODEL_B).
+// GX_REVIEW_BEDROCK_MODEL_B).
 //
 // The judge would ideally be a third model — it decides which candidate
 // findings survive, and a model grading its own output is not a filter. That
@@ -93,7 +93,7 @@ const (
 // account has. Sharing Sonnet 4.6 with leg B is the lesser evil — leg A's
 // findings are still independently judged, and a judge that cannot run
 // verifies nothing. When newer-model access is granted, give the judge its
-// own model again (LGTM_REVIEW_JUDGE_MODEL overrides it today).
+// own model again (GX_REVIEW_JUDGE_MODEL overrides it today).
 //
 // Every ID here MUST be the `us.`-prefixed inference profile form. Bare
 // `anthropic.*` model IDs are rejected by bedrock-runtime for on-demand
@@ -137,7 +137,7 @@ type AIReviewerWithSummary interface {
 type ReviewerInfo struct {
 	Models []string
 	// Transport is how the panel reached bedrock-runtime, phrased for a human
-	// ("lgtm Cloud (https://api.lgtm.cx)" / "direct AWS credentials (us-west-2)").
+	// ("gx Cloud (https://api.gx.run)" / "direct AWS credentials (us-west-2)").
 	// It is reported rather than inferred because the two have different
 	// latency and different failure modes, and a review that does not say which
 	// one ran leaves both questions unanswerable after the fact.
@@ -287,7 +287,7 @@ func reviewerFromEnv() AIReviewer { return reviewerFromEnvFast(false) }
 // the one model that found none of the planted defects, so speed alone is not
 // a reason to switch reviewers.
 func reviewerFromEnvFast(fast bool) AIReviewer {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_AI")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
 		return nil
 	}
 	plan, err := resolveBedrockTransportPlan()
@@ -324,7 +324,7 @@ func reviewerFromEnvFast(fast bool) AIReviewer {
 		// Both legs off is a configuration mistake, not a request for a review
 		// with no reviewer: say so rather than reporting a clean review.
 		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{
-			reason: "every Bedrock review leg is disabled; set LGTM_REVIEW_BEDROCK_MODEL_A to a model ID",
+			reason: "every Bedrock review leg is disabled; set GX_REVIEW_BEDROCK_MODEL_A to a model ID",
 		}})
 	}
 	panel := multiAIReviewer{
@@ -829,7 +829,7 @@ func concisePromptLines() []string {
 
 func baseReviewDeveloperPromptLines() []string {
 	return []string{
-		"You are lgtm Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
+		"You are gx Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
@@ -884,7 +884,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func aiReviewRequestedFromEnv() bool {
-	value := strings.TrimSpace(os.Getenv("LGTM_REVIEW_AI"))
+	value := strings.TrimSpace(os.Getenv("GX_REVIEW_AI"))
 	if value == "" {
 		return true
 	}

@@ -21,7 +21,7 @@ func TestValidateGitHubAccessToken(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("LGTM_GITHUB_USER_URL", server.URL)
+	t.Setenv("GX_GITHUB_USER_URL", server.URL)
 
 	valid, err := ValidateGitHubAccessToken(context.Background(), server.Client(), "gho_ok")
 	if err != nil {
@@ -45,7 +45,7 @@ func TestValidateCloudAPISession(t *testing.T) {
 		if r.URL.Path != "/v1/auth/me" {
 			t.Fatalf("path = %s, want /v1/auth/me", r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer tlcs_ok" {
+		if r.Header.Get("Authorization") != "Bearer gxcs_ok" {
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
 			return
@@ -56,9 +56,9 @@ func TestValidateCloudAPISession(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("LGTM_CLOUD_URL", server.URL)
+	t.Setenv("GX_CLOUD_URL", server.URL)
 
-	valid, err := ValidateCloudAPISession(context.Background(), server.Client(), "tlcs_ok")
+	valid, err := ValidateCloudAPISession(context.Background(), server.Client(), "gxcs_ok")
 	if err != nil {
 		t.Fatalf("ValidateCloudAPISession() valid error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestValidateCloudAPISession(t *testing.T) {
 		t.Fatalf("valid result = %+v", valid)
 	}
 
-	invalid, err := ValidateCloudAPISession(context.Background(), server.Client(), "tlcs_bad")
+	invalid, err := ValidateCloudAPISession(context.Background(), server.Client(), "gxcs_bad")
 	if err != nil {
 		t.Fatalf("ValidateCloudAPISession() invalid error = %v", err)
 	}

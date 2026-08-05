@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-const hookMarker = "lgtm capture transcript"
+const hookMarker = "gx capture transcript"
 
-// MergeSettings registers lgtm transcript capture hooks in .claude/settings.json
+// MergeSettings registers gx transcript capture hooks in .claude/settings.json
 // without replacing existing user hook entries.
-func MergeSettings(repoRoot, lgtmPath string) error {
+func MergeSettings(repoRoot, gxPath string) error {
 	if strings.TrimSpace(repoRoot) == "" {
 		return fmt.Errorf("repo root required")
 	}
-	if strings.TrimSpace(lgtmPath) == "" {
+	if strings.TrimSpace(gxPath) == "" {
 		var err error
-		lgtmPath, err = os.Executable()
+		gxPath, err = os.Executable()
 		if err != nil {
 			return err
 		}
@@ -48,7 +48,7 @@ func MergeSettings(repoRoot, lgtmPath string) error {
 		hooks = map[string]json.RawMessage{}
 	}
 
-	command := shellQuote(portableTlPath(lgtmPath)) + " capture transcript"
+	command := shellQuote(portableTlPath(gxPath)) + " capture transcript"
 	for _, event := range []string{"Stop", "SessionEnd"} {
 		merged, err := mergeHookEvent(hooks[event], command)
 		if err != nil {
@@ -129,16 +129,16 @@ func hookGroupContainsMarker(group map[string]any) bool {
 // directory. Claude Code runs hook commands through a shell, so a
 // double-quoted $HOME expands per machine. A path outside the home directory
 // is left as-is: there is nothing portable to substitute.
-func portableTlPath(lgtmPath string) string {
+func portableTlPath(gxPath string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
-		return lgtmPath
+		return gxPath
 	}
 	home = strings.TrimRight(home, string(filepath.Separator))
-	if lgtmPath == home || !strings.HasPrefix(lgtmPath, home+string(filepath.Separator)) {
-		return lgtmPath
+	if gxPath == home || !strings.HasPrefix(gxPath, home+string(filepath.Separator)) {
+		return gxPath
 	}
-	return "$HOME" + strings.TrimPrefix(lgtmPath, home)
+	return "$HOME" + strings.TrimPrefix(gxPath, home)
 }
 
 func shellQuote(value string) string {

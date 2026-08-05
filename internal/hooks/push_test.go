@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/hooks"
-	"github.com/satoricorp/lgtm/internal/publication"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/hooks"
+	"github.com/satoricorp/gx/internal/publication"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 func TestRunPushAlwaysSucceedsWithNetworkUnavailable(t *testing.T) {
@@ -20,10 +20,10 @@ func TestRunPushAlwaysSucceedsWithNetworkUnavailable(t *testing.T) {
 	head := gitRev(t, repo, "HEAD")
 	refRange := base + ".." + head
 
-	lgtmHome := t.TempDir()
-	t.Setenv("LGTM_HOME", lgtmHome)
-	t.Setenv("LGTM_API_URL", "http://127.0.0.1:1")
-	t.Setenv("LGTM_TOKEN", "test-token")
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("GX_API_URL", "http://127.0.0.1:1")
+	t.Setenv("GX_TOKEN", "test-token")
 
 	outcome, err := hooks.RunPush(context.Background(), hooks.PushOptions{
 		RepoRoot:    repo,
@@ -43,8 +43,8 @@ func TestRunPushAlwaysSucceedsWithNetworkUnavailable(t *testing.T) {
 func TestRunPushMarksOnlyPushedRevisionsShareable(t *testing.T) {
 	repo := initPushHookRepo(t)
 	ctx := context.Background()
-	lgtmHome := t.TempDir()
-	t.Setenv("LGTM_HOME", lgtmHome)
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
 
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -95,9 +95,9 @@ func TestRunPushMarksOnlyPushedRevisionsShareable(t *testing.T) {
 
 func TestRunPushIdempotentCaptureRows(t *testing.T) {
 	ctx := context.Background()
-	lgtmHome := t.TempDir()
-	t.Setenv("LGTM_HOME", lgtmHome)
-	t.Setenv("LGTM_DISABLE_BACKGROUND_WORKERS", "1")
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
 
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -127,8 +127,8 @@ func TestRunPushIdempotentCaptureRows(t *testing.T) {
 }
 
 func TestEnqueueAdoptedPublicationIsIdempotent(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
-	t.Setenv("LGTM_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
 	repo := t.TempDir()
 	head := "abc123"
 	opts := hooks.AdoptPushOptions{
@@ -161,7 +161,7 @@ func TestEnqueueAdoptedPublicationIsIdempotent(t *testing.T) {
 }
 
 func TestEnqueueAdoptedPublicationBuildsV2Revisions(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	repo := initPushHookRepo(t)
 	base := gitRev(t, repo, "HEAD~1")
 	head := gitRev(t, repo, "HEAD")
@@ -208,7 +208,7 @@ func TestEnqueueAdoptedPublicationBuildsV2Revisions(t *testing.T) {
 }
 
 func TestEnqueueAdoptedPublicationResolvesHeadLocalRef(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	repo := initPushHookRepo(t)
 	head := gitRev(t, repo, "HEAD")
 
@@ -232,7 +232,7 @@ func TestEnqueueAdoptedPublicationResolvesHeadLocalRef(t *testing.T) {
 
 func initPushHookRepo(t *testing.T) string {
 	t.Helper()
-	t.Setenv("LGTM_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
 	repo := t.TempDir()
 	for _, args := range [][]string{
 		{"git", "init", "-b", "main"},

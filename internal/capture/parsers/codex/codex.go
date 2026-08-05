@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/capture"
-	"github.com/satoricorp/lgtm/internal/capture/repopath"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/repopath"
 )
 
 // Parser normalizes Codex rollout JSONL into SessionEvents.

@@ -25,9 +25,9 @@ func TestRenderMarkdownShowsAIUnavailableWarning(t *testing.T) {
 }
 
 func TestReviewRecordsAIReviewerFailureWithEngine(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_AI", "1")
-	t.Setenv("LGTM_REVIEW_JUDGE", "0")
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 
 	root := initRepo(t)
 	writeFile(t, root, "go.mod", "module example.com/review\n")
@@ -59,10 +59,10 @@ func TestReviewRecordsAIReviewerFailureWithEngine(t *testing.T) {
 // neither the provider nor the fix and left a deterministic-only report looking
 // like a completed review.
 func TestReviewRecordsMissingAIConfiguration(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_AI", "1")
-	t.Setenv("LGTM_REVIEW_JUDGE", "0")
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("LGTM_CLOUD_URL", "off")
+	t.Setenv("GX_REVIEW_AI", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 

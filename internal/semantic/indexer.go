@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satoricorp/lgtm/internal/reviewbundle"
+	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
 type IndexResult struct {

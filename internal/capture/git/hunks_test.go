@@ -3,7 +3,7 @@ package git_test
 import (
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/capture/git"
+	"github.com/satoricorp/gx/internal/capture/git"
 )
 
 const sampleDiff = `diff --git a/internal/foo.go b/internal/foo.go

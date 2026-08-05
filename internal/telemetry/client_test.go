@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/telemetry"
+	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 func TestNopClient(t *testing.T) {
-	t.Setenv("LGTM_POSTHOG_KEY", "")
+	t.Setenv("GX_POSTHOG_KEY", "")
 	client := telemetry.NewFromEnv()
 	ctx := context.Background()
 	client.EmitCaptureCoverage(ctx, telemetry.CaptureCoverageProps{HunkCoverage: 0.9})
@@ -26,8 +26,8 @@ func TestClientImplImplementsInterface(t *testing.T) {
 }
 
 func TestClientSendsCaptureEventWithIdentity(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
-	t.Setenv("LGTM_POSTHOG_KEY", "test-posthog-key")
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GX_POSTHOG_KEY", "test-posthog-key")
 
 	requests := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +47,7 @@ func TestClientSendsCaptureEventWithIdentity(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	t.Setenv("LGTM_POSTHOG_HOST", server.URL+"/")
+	t.Setenv("GX_POSTHOG_HOST", server.URL+"/")
 
 	client := telemetry.NewFromEnv()
 	client.EmitCaptureCoverage(context.Background(), telemetry.CaptureCoverageProps{
@@ -82,8 +82,8 @@ func TestClientSendsCaptureEventWithIdentity(t *testing.T) {
 	if properties["machine_id"] == "" {
 		t.Fatal("properties.machine_id is empty")
 	}
-	if properties["lgtm_version"] == "" {
-		t.Fatal("properties.lgtm_version is empty")
+	if properties["gx_version"] == "" {
+		t.Fatal("properties.gx_version is empty")
 	}
 	if properties["entrypoint"] != "cli" {
 		t.Fatalf("properties.entrypoint = %v, want cli", properties["entrypoint"])

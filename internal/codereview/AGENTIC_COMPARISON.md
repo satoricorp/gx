@@ -7,8 +7,8 @@ Agentic review is intentionally opt-in. Do not make it the default until repeate
 Run both modes against the same pull request and commit range:
 
 ```sh
-LGTM_REVIEW_AGENTIC=0 lgtm review --verbose > /tmp/lgtm-review-single-shot.md
-LGTM_REVIEW_AGENTIC=1 lgtm review --verbose > /tmp/lgtm-review-agentic.md
+GX_REVIEW_AGENTIC=0 gx review --verbose > /tmp/gx-review-single-shot.md
+GX_REVIEW_AGENTIC=1 gx review --verbose > /tmp/gx-review-agentic.md
 ```
 
 Record:

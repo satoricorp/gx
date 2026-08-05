@@ -2,6 +2,6 @@
 # standards bodies, vendors and language teams. They are third-party material
 # checked in for reproducibility, not this repository's source, and they build
 # their own separate retrieval corpus. Marking them vendored keeps them out of
-# GitHub's language statistics and out of lgtm's code index, where prose about
+# GitHub's language statistics and out of gx's code index, where prose about
 # code review otherwise outranks the code that implements it.
 scripts/review-knowledge/corpus/** linguist-vendored

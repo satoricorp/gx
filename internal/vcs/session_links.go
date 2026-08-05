@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/capture/matcher"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/version"
+	"github.com/satoricorp/gx/internal/capture/matcher"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 // maxSessionsPerChange caps how many sessions one change may link. A single
@@ -53,7 +53,7 @@ func (s *Service) AttachSessionsFromHunkLinks(ctx context.Context, repo RepoInfo
 				return err
 			}
 			if change == nil {
-				// The commit has no recorded revision (no lgtm trailer, or the
+				// The commit has no recorded revision (no gx trailer, or the
 				// recovery pass could not resolve it). Nothing to link to.
 				continue
 			}
@@ -79,7 +79,7 @@ func (s *Service) AttachSessionsFromHunkLinks(ctx context.Context, repo RepoInfo
 					CreatedAt: now,
 					Command:   candidate.tool,
 					Cwd:       repoRoot,
-					TLVersion: version.Current(),
+					GxVersion: version.Current(),
 					Source:    &candidate.tool,
 					RepoRoot:  &repoRoot,
 				}); err != nil {

@@ -1,6 +1,6 @@
-# lgtm Authoring Glossary
+# gx Authoring Glossary
 
-lgtm keeps several names for the same reviewable revision because each layer has its
+gx keeps several names for the same reviewable revision because each layer has its
 own wire format. Use these mappings when changing authoring code.
 
 ## Core Mapping
@@ -8,7 +8,7 @@ own wire format. Use these mappings when changing authoring code.
 - **Revision**: the product term for one reviewable logical change.
 - **JJ change**: the durable local VCS object for a revision. This is the
   stable key to use for local provenance because JJ rewrites Git commits.
-- **Stack**: the named line of revisions. Locally it is backed by lgtm metadata
+- **Stack**: the named line of revisions. Locally it is backed by gx metadata
   and a JJ/Git-compatible conventional ref such as `feature/login-flow`.
 - **Published stack**: a stack that has been exported to the remote review/Git
   surface.
@@ -27,7 +27,7 @@ Published stack = remote wire format for that stack
 - **Session**: captured agent or editor context. Sessions are provenance only;
   they do not own or route stacks or revisions.
 - **Exact provenance**: `change_sessions(change_id, session_id)` created from an
-  explicit handoff such as `LGTM_SESSION_ID` / `LGTM_SESSION_IDS`, or from an
+  explicit handoff such as `GX_SESSION_ID` / `GX_SESSION_IDS`, or from an
   unlinked captured session whose `repo_root` / `cwd` matches the repo being
   recorded. This is still provenance only; it never chooses a stack.
 - **Fuzzy provenance**: a retrieval hint based on time/files/session metadata.
@@ -57,9 +57,9 @@ Published stack = remote wire format for that stack
   Revision plans should refer to entries by `hunk_ids` instead of copying patch
   payloads into each revision.
 - **Demux plan packet**: the MCP-facing planning object returned by
-  `lgtm demux --json` / `lgtm_demux_changes`. It contains the demux
+  `gx demux --json` / `gx_demux_changes`. It contains the demux
   proposal, the hunk catalog, and the schema the host model should pass to
-  `lgtm_apply_revision_plan`. The Authoring Engine also runs the first validation
+  `gx_apply_revision_plan`. The Authoring Engine also runs the first validation
   pass and reports whether the plan is ready to apply, has recommended repairs,
   or requires repair before apply.
 - **Review plan**: normalize and check an LLM-authored revision plan without
@@ -78,7 +78,7 @@ Published stack = remote wire format for that stack
   split one file into hunk-level revisions when different hunks map cleanly to
   different changed symbols.
 - **Feasibility warning**: a structured warning attached to a demux proposal
-  when lgtm can see that a proposed revision may not be reviewable bottom-up.
+  when gx can see that a proposed revision may not be reviewable bottom-up.
   Examples include unmapped hunks, dependency-order conflicts, and separated
   source/test counterparts. Info-level inferred dependency warnings make
   structural dependencies explicit even when the order is already coherent.

@@ -8,7 +8,7 @@ import (
 
 func TestSaveWritesInferenceJSON0600(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("LGTM_HOME", home)
+	t.Setenv("GX_HOME", home)
 
 	if err := Save(Credentials{Provider: "anthropic", APIKey: "anthropic-key"}); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -32,7 +32,7 @@ func TestSaveWritesInferenceJSON0600(t *testing.T) {
 }
 
 func TestResolveStoredKeyWinsOverEnv(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "env-anthropic")
 	t.Setenv("OPENAI_API_KEY", "env-openai")
 	if err := Save(Credentials{Provider: "openai", APIKey: "stored-openai"}); err != nil {
@@ -49,7 +49,7 @@ func TestResolveStoredKeyWinsOverEnv(t *testing.T) {
 }
 
 func TestResolveEnvFallbackOrder(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "env-anthropic")
 	t.Setenv("OPENAI_API_KEY", "env-openai")
 
@@ -63,7 +63,7 @@ func TestResolveEnvFallbackOrder(t *testing.T) {
 }
 
 func TestApplyToEnvironmentKeepsOnlyActiveProvider(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "env-anthropic")
 	t.Setenv("OPENAI_API_KEY", "env-openai")
 	if err := Save(Credentials{Provider: "anthropic", APIKey: "stored-anthropic"}); err != nil {

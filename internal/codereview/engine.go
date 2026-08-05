@@ -442,7 +442,7 @@ func reviewProgress(opts Options, message string) {
 	_, _ = io.WriteString(opts.ProgressWriter, strings.TrimSpace(message)+"\n")
 }
 
-// Review phase timing, enabled with LGTM_REVIEW_TIMING=1.
+// Review phase timing, enabled with GX_REVIEW_TIMING=1.
 //
 // Progress messages already mark every phase boundary, so timing them costs one
 // clock read and answers the only question that matters when a review feels
@@ -456,7 +456,7 @@ var (
 )
 
 func reviewTimingEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("LGTM_REVIEW_TIMING"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_REVIEW_TIMING"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}

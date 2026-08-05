@@ -19,7 +19,7 @@ func (s *Service) repoRootFromPath(ctx context.Context, startPath string) (strin
 }
 
 func (s *Service) isRepoInitialized(ctx context.Context, repoRoot string) (bool, error) {
-	repo, err := s.ResolveLgtmRepoAtPath(ctx, repoRoot)
+	repo, err := s.ResolveGxRepoAtPath(ctx, repoRoot)
 	if err != nil {
 		store, storeErr := openStore(ctx)
 		if storeErr != nil {
@@ -31,7 +31,7 @@ func (s *Service) isRepoInitialized(ctx context.Context, repoRoot string) (bool,
 	return s.isRepoInitializedByIdentity(ctx, repo.GitCommonDir, repo.RootPath)
 }
 
-// EnsureReadyRepo initializes lgtm for the repository at startPath when needed.
+// EnsureReadyRepo initializes gx for the repository at startPath when needed.
 func (s *Service) EnsureReadyRepo(ctx context.Context, startPath string) (EnsureReadyResult, error) {
 	repoRoot, inRepo, err := s.repoRootFromPath(ctx, startPath)
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *Service) EnsureReadyRepo(ctx context.Context, startPath string) (Ensure
 		return EnsureReadyResult{}, nil
 	}
 
-	repo, err := s.ResolveLgtmRepoAtPath(ctx, repoRoot)
+	repo, err := s.ResolveGxRepoAtPath(ctx, repoRoot)
 	if err != nil {
 		return EnsureReadyResult{}, err
 	}

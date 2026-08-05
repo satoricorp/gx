@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/satoricorp/lgtm/internal/cloud"
-	"github.com/satoricorp/lgtm/internal/publication"
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/publication"
 	"github.com/spf13/cobra"
 )
 
@@ -14,8 +14,8 @@ func newPublishUploadCommand(ctx context.Context) *cobra.Command {
 	var quiet bool
 	var limit int
 	cmd := &cobra.Command{
-		Use:    "__lgtm-upload-outbox",
-		Short:  "Upload queued lgtm Cloud context",
+		Use:    "__gx-upload-outbox",
+		Short:  "Upload queued gx Cloud context",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,14 +30,14 @@ func newPublishUploadCommand(ctx context.Context) *cobra.Command {
 func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, limit int) error {
 	client := cloud.NewClient()
 	if client == nil {
-		return fmt.Errorf("lgtm cloud is not configured; set LGTM_CLOUD_URL or rebuild with cloud endpoints")
+		return fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	result, err := publication.DrainQueuedUploads(ctx, client, limit)
 	if err != nil {
 		return err
 	}
 	if !quiet {
-		fmt.Fprintln(out, labelValue("lgtm Cloud uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
+		fmt.Fprintln(out, labelValue("gx Cloud uploads", fmt.Sprintf("%d uploaded, %d failed, %d pending", result.Uploaded, result.Failed, result.Pending)))
 	}
 	return nil
 }

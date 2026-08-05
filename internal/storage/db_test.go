@@ -13,7 +13,7 @@ import (
 
 func TestRepoIdentityMigrationAndLinkedWorktreeUpsert(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("LGTM_HOME", home)
+	t.Setenv("GX_HOME", home)
 	repoRoot := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
 		t.Fatal(err)
@@ -23,7 +23,7 @@ func TestRepoIdentityMigrationAndLinkedWorktreeUpsert(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	dbPath := filepath.Join(home, "lgtm.db")
+	dbPath := filepath.Join(home, "gx.db")
 	legacy, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestRepoIdentityMigrationAndLinkedWorktreeUpsert(t *testing.T) {
 }
 
 func TestOpenRepairsCorruptedJJChangeIDs(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 
 	db, err := Open(ctx)
@@ -169,7 +169,7 @@ secondchangeid', 'commit-b', 'feat two', NULL, 'draft', 3, 30)
 }
 
 func TestDemuxProposalRoundTrip(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -226,7 +226,7 @@ func TestDemuxProposalRoundTrip(t *testing.T) {
 }
 
 func TestSessionContextRoundTrip(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -244,12 +244,12 @@ func TestSessionContextRoundTrip(t *testing.T) {
 		CreatedAt: 1,
 		Command:   "codex",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 	}, SessionContext{
 		SessionID:   "session-one",
 		Tool:        "codex",
 		Model:       &model,
-		Format:      "lgtm_session_events_v1",
+		Format:      "gx_session_events_v1",
 		ContentJSON: []byte(`[{"session_id":"session-one","new_text":"redacted"}]`),
 		CapturedAt:  2,
 	}); err != nil {
@@ -263,13 +263,13 @@ func TestSessionContextRoundTrip(t *testing.T) {
 	if got == nil {
 		t.Fatal("SessionContext() = nil")
 	}
-	if got.SessionID != "session-one" || got.Tool != "codex" || got.Model == nil || *got.Model != model || got.Format != "lgtm_session_events_v1" || string(got.ContentJSON) == "" || got.CapturedAt != 2 {
+	if got.SessionID != "session-one" || got.Tool != "codex" || got.Model == nil || *got.Model != model || got.Format != "gx_session_events_v1" || string(got.ContentJSON) == "" || got.CapturedAt != 2 {
 		t.Fatalf("SessionContext() = %#v", got)
 	}
 }
 
 func TestOpenRepairsDanglingSessionLinks(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -284,7 +284,7 @@ func TestOpenRepairsDanglingSessionLinks(t *testing.T) {
 		VALUES (1, '/repo', 'jj', 1, 1);
 		INSERT INTO changes (id, repo_id, jj_change_id, current_commit_id, description, parent_change_id, status, first_seen_at, updated_at)
 		VALUES (1, 1, 'change-one', 'commit-one', 'one', NULL, 'draft', 1, 1);
-		INSERT INTO sessions (id, created_at, command, cwd, lgtm_version)
+		INSERT INTO sessions (id, created_at, command, cwd, gx_version)
 		VALUES ('live-session', 1, 'codex', '/repo', 'test');
 		INSERT INTO change_sessions (change_id, session_id, created_at)
 		VALUES (1, 'live-session', 1), (999, 'live-session', 2), (1, 'missing-session', 3);
@@ -323,7 +323,7 @@ func TestOpenRepairsDanglingSessionLinks(t *testing.T) {
 }
 
 func TestListReposOrdersByMostRecentlyUpdated(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -357,7 +357,7 @@ func TestListReposOrdersByMostRecentlyUpdated(t *testing.T) {
 }
 
 func TestInitializedReposRoundTrip(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -395,7 +395,7 @@ func TestInitializedReposRoundTrip(t *testing.T) {
 }
 
 func TestStackTracksChangeAndCommitRefs(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -500,7 +500,7 @@ func TestStackTracksChangeAndCommitRefs(t *testing.T) {
 }
 
 func TestDeletePendingDemuxProposalsForRepo(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -547,7 +547,7 @@ func TestDeletePendingDemuxProposalsForRepo(t *testing.T) {
 }
 
 func TestFindLatestDemuxProposal(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -617,7 +617,7 @@ func proposalIDs(proposals []DemuxProposal) []string {
 }
 
 func TestChangeDemuxEvidenceRoundTrip(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -690,7 +690,7 @@ func TestChangeDemuxEvidenceRoundTrip(t *testing.T) {
 }
 
 func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -734,7 +734,7 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 		CreatedAt: 10,
 		Command:   "codex exec",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 		Source:    &source,
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
@@ -776,7 +776,7 @@ func TestWriteChangeSessionsPersistsAgentProvenance(t *testing.T) {
 }
 
 func TestAgentLedgerSummaryBackfillsTokensFromRawResponseBodies(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -793,7 +793,7 @@ func TestAgentLedgerSummaryBackfillsTokensFromRawResponseBodies(t *testing.T) {
 		CreatedAt: 10,
 		Command:   "codex",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
@@ -848,7 +848,7 @@ func TestAgentLedgerSummaryBackfillsTokensFromRawResponseBodies(t *testing.T) {
 }
 
 func TestSessionUsageAggregatesRequestModelsAndResponseTokens(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := Open(ctx)
 	if err != nil {
@@ -865,7 +865,7 @@ func TestSessionUsageAggregatesRequestModelsAndResponseTokens(t *testing.T) {
 		CreatedAt: 10,
 		Command:   "codex",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}

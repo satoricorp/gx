@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/codereview"
+	"github.com/satoricorp/gx/internal/codereview"
 )
 
 func TestSaveReviewReportWritesTimestampedJSON(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/lgtmconfig"
+	"github.com/satoricorp/gx/internal/gxconfig"
 )
 
 func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string) {
@@ -30,12 +30,12 @@ func setupStagedCommitRepo(t *testing.T, defaultBranch string) (*Service, string
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "init")
 
-	lgtmHome := t.TempDir()
-	t.Setenv("LGTM_HOME", lgtmHome)
-	if err := lgtmconfig.Save(lgtmconfig.Config{
-		User: lgtmconfig.User{Name: "Test User", Email: "test@example.com"},
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	if err := gxconfig.Save(gxconfig.Config{
+		User: gxconfig.User{Name: "Test User", Email: "test@example.com"},
 	}); err != nil {
-		t.Fatalf("lgtmconfig.Save() error = %v", err)
+		t.Fatalf("gxconfig.Save() error = %v", err)
 	}
 
 	prev, _ := os.Getwd()
@@ -85,7 +85,7 @@ func gitCurrentBranch(t *testing.T, root string) string {
 }
 
 // commitViaHooks commits the staged selection with plain git and records it
-// exactly as lgtm's prepare-commit-msg and post-commit hooks do.
+// exactly as gx's prepare-commit-msg and post-commit hooks do.
 func commitViaHooks(t *testing.T, svc *Service, root, message string) CommitResult {
 	t.Helper()
 	stamped, err := PrepareCommitMessageHook(message)
@@ -94,9 +94,9 @@ func commitViaHooks(t *testing.T, svc *Service, root, message string) CommitResu
 	}
 	runGit(t, root, "commit", "-m", stamped)
 	ctx := context.Background()
-	repo, err := svc.ResolveLgtmRepoAtPath(ctx, root)
+	repo, err := svc.ResolveGxRepoAtPath(ctx, root)
 	if err != nil {
-		t.Fatalf("ResolveLgtmRepoAtPath() error = %v", err)
+		t.Fatalf("ResolveGxRepoAtPath() error = %v", err)
 	}
 	result, err := svc.RecordGitCommit(ctx, repo, gitHeadCommit(t, root), PendingCommitContext{
 		WorktreeRoot: repo.RootPath,
@@ -128,7 +128,7 @@ func TestRecordedCommitPreservesUnstagedWork(t *testing.T) {
 	}
 }
 
-func TestRecordedCommitStampsLgtmTrailer(t *testing.T) {
+func TestRecordedCommitStampsGxTrailer(t *testing.T) {
 	svc, root := setupStagedCommitRepo(t, "main")
 	if err := os.WriteFile(filepath.Join(root, "work.txt"), []byte("work\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -149,13 +149,13 @@ func TestRecordedCommitStampsLgtmTrailer(t *testing.T) {
 		t.Fatalf("git commit message = %q, want trailer %q", gitMessage, trailer)
 	}
 
-	parsed, err := gitInterpretTrailer(t, root, gitMessage, "lgtm")
+	parsed, err := gitInterpretTrailer(t, root, gitMessage, "gx")
 	if err != nil {
 		t.Fatalf("gitInterpretTrailer() error = %v", err)
 	}
-	wantTrailerValue := fmt.Sprintf("https://lgtm.cx/r/%s", result.Change.ChangeID)
+	wantTrailerValue := fmt.Sprintf("https://gx.run/r/%s", result.Change.ChangeID)
 	if parsed != wantTrailerValue {
-		t.Fatalf("parsed lgtm trailer = %q, want %q", parsed, wantTrailerValue)
+		t.Fatalf("parsed gx trailer = %q, want %q", parsed, wantTrailerValue)
 	}
 }
 
@@ -467,7 +467,7 @@ func TestRecordedCommitAfterUnstampedGitCommitSyncs(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	runGit(t, root, "add", "raw.txt")
-	runGit(t, root, "commit", "-m", "raw commit without a lgtm trailer")
+	runGit(t, root, "commit", "-m", "raw commit without a gx trailer")
 
 	if err := os.WriteFile(filepath.Join(root, "next.txt"), []byte("next\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -493,10 +493,10 @@ func TestRecordedCommitSelfInitializesPlainGitRepo(t *testing.T) {
 	runGit(t, root, "add", ".")
 	runGit(t, root, "commit", "-m", "init")
 
-	lgtmHome := t.TempDir()
-	t.Setenv("LGTM_HOME", lgtmHome)
-	if err := lgtmconfig.Save(lgtmconfig.Config{User: lgtmconfig.User{Name: "Test User", Email: "test@example.com"}}); err != nil {
-		t.Fatalf("lgtmconfig.Save() error = %v", err)
+	gxHome := t.TempDir()
+	t.Setenv("GX_HOME", gxHome)
+	if err := gxconfig.Save(gxconfig.Config{User: gxconfig.User{Name: "Test User", Email: "test@example.com"}}); err != nil {
+		t.Fatalf("gxconfig.Save() error = %v", err)
 	}
 	prev, _ := os.Getwd()
 	if err := os.Chdir(root); err != nil {

@@ -9,7 +9,7 @@ import (
 var DefaultPatterns = []string{
 	"**/go.sum",
 	"**/*_gen.go",
-	"**/.lgtm/**",
+	"**/.gx/**",
 	"**/_generated/**",
 	"**/package-lock.json",
 	"**/yarn.lock",

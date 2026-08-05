@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/reviewsource"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/reviewsource"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 func TestBuildPushIncludesDemuxEvidenceContext(t *testing.T) {
@@ -110,7 +110,7 @@ func TestBuildPushIncludesPatchesAndDedupedSessions(t *testing.T) {
 		CreatedAt: 1,
 		Command:   "codex",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
@@ -153,7 +153,7 @@ func TestBuildPushIncludesPatchesAndDedupedSessions(t *testing.T) {
 			Backend:       "git",
 			DefaultBranch: &main,
 		},
-		LgtmStackRef: "feature/alpha",
+		GxStackRef: "feature/alpha",
 		Commits: []vcs.PushedCommit{
 			{
 				CommitID:   "alpha-commit",
@@ -259,7 +259,7 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 		CreatedAt: 1,
 		Command:   "codex exec",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 		Source:    &source,
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
@@ -309,7 +309,7 @@ func TestBuildPushIncludesAgentProvenance(t *testing.T) {
 	}
 }
 
-func TestBuildPushUsesLgtmStackRefForPushBranchName(t *testing.T) {
+func TestBuildPushUsesGxStackRefForPushBranchName(t *testing.T) {
 	store := newBundleTestStore(t)
 	_ = store
 	ctx := context.Background()
@@ -317,8 +317,8 @@ func TestBuildPushUsesLgtmStackRefForPushBranchName(t *testing.T) {
 	main := "main"
 	stackRef := "feature/cli"
 	bundle, err := BuildPush(ctx, vcs.PushResult{
-		HeadCommitID:     "commit-1",
-		LgtmStackRef: stackRef,
+		HeadCommitID: "commit-1",
+		GxStackRef:   stackRef,
 		Repo: vcs.RepoInfo{
 			RootPath:   "/repo",
 			Backend:    "git",
@@ -379,13 +379,13 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 	store := newBundleTestStore(t)
 	ctx := context.Background()
 	repoID := seedRepo(t, store, "/repo")
-	changeID := seedChange(t, store, repoID, "lgtmr-3f9c", "0f4b21c9", "add retry helper\n\nCovers the timeout path.", []string{"retry.go"})
+	changeID := seedChange(t, store, repoID, "gxr-3f9c", "0f4b21c9", "add retry helper\n\nCovers the timeout path.", []string{"retry.go"})
 	if err := store.UpsertObservedSession(ctx, storage.Session{
 		ID:        "session-one",
 		CreatedAt: 1,
 		Command:   "claude",
 		Cwd:       "/repo",
-		TLVersion: "test",
+		GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertObservedSession() error = %v", err)
 	}
@@ -417,11 +417,11 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 			DefaultBranch: &main,
 			BranchName:    &main,
 		},
-		LgtmStackRef:     "feature/retry",
+		GxStackRef:           "feature/retry",
 		GitHubPullRequestURL: &prURL,
 		Commits: []vcs.PushedCommit{{
 			CommitID:   "0f4b21c9",
-			RevisionID: "lgtmr-3f9c",
+			RevisionID: "gxr-3f9c",
 			Message:    "add retry helper\n\nCovers the timeout path.",
 			Files:      []string{"retry.go"},
 			Patch:      "diff --git a/retry.go b/retry.go\n@@ -0,0 +1 @@\n+package retry\n",
@@ -447,7 +447,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 	if decoded["repo"].(map[string]any)["backend"] != "git" {
 		t.Fatalf("repo.backend = %#v, want git", decoded["repo"])
 	}
-	for _, key := range []string{"event", "schema_version", "created_at", "lgtm_version", "repo", "push", "revisions", "sessions"} {
+	for _, key := range []string{"event", "schema_version", "created_at", "gx_version", "repo", "push", "revisions", "sessions"} {
 		if _, ok := decoded[key]; !ok {
 			t.Fatalf("bundle JSON missing %q: %s", key, data)
 		}
@@ -469,7 +469,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 			t.Fatalf("revision JSON missing %q: %s", key, data)
 		}
 	}
-	if revision["revision_id"] != "lgtmr-3f9c" || revision["commit_id"] != "0f4b21c9" {
+	if revision["revision_id"] != "gxr-3f9c" || revision["commit_id"] != "0f4b21c9" {
 		t.Fatalf("revision identity JSON = %#v", revision)
 	}
 	if revision["branch_name"] != "feature/retry" || revision["base_branch_name"] != "main" {
@@ -494,7 +494,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 			t.Fatalf("session JSON still contains retired key %q: %s", forbidden, data)
 		}
 	}
-	for _, key := range []string{"id", "created_at", "command", "cwd", "lgtm_version", "requests"} {
+	for _, key := range []string{"id", "created_at", "command", "cwd", "gx_version", "requests"} {
 		if _, ok := session[key]; !ok {
 			t.Fatalf("session JSON missing %q: %s", key, data)
 		}
@@ -508,7 +508,7 @@ func TestBuildPushMarshalsSchemaV2WireShape(t *testing.T) {
 
 func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 	artifact := NewArtifact(Bundle{
-		Event:         "lgtm.pr",
+		Event:         "gx.pr",
 		SchemaVersion: SchemaVersion,
 		Repo:          RepoPayload{RootPath: "/repo", Backend: "git"},
 		Push:          PushPayload{HeadCommitID: "commit-1"},
@@ -523,7 +523,7 @@ func TestArtifactJSONShapeIsFlattenedForReviewIngest(t *testing.T) {
 		Sessions: []SessionPayload{},
 	})
 	artifact.ReviewID = "review-one"
-	artifact.ReviewURL = "http://lgtm.test/reviews/review-one"
+	artifact.ReviewURL = "http://gx.test/reviews/review-one"
 
 	data, err := json.Marshal(artifact)
 	if err != nil {
@@ -620,7 +620,7 @@ func indentJSON(t *testing.T, data []byte) string {
 
 func newBundleTestStore(t *testing.T) *storage.Store {
 	t.Helper()
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	db, err := storage.Open(context.Background())
 	if err != nil {
 		t.Fatalf("storage.Open() error = %v", err)
@@ -726,7 +726,7 @@ func TestBuildPushFindsSessionsWhenRepoRootPathDiverges(t *testing.T) {
 	}
 	changeID := seedChange(t, store, repoID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
 	if err := store.UpsertSession(ctx, storage.Session{
-		ID: "session-one", CreatedAt: 1, Command: "claude", Cwd: "/repo", TLVersion: "test",
+		ID: "session-one", CreatedAt: 1, Command: "claude", Cwd: "/repo", GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertSession() error = %v", err)
 	}
@@ -768,7 +768,7 @@ func TestBuildPushDoesNotReadAnotherReposChanges(t *testing.T) {
 	otherID := seedRepo(t, store, "/other")
 	otherChange := seedChange(t, store, otherID, "change-1", "commit-1", "alpha", []string{"alpha.txt"})
 	if err := store.UpsertSession(ctx, storage.Session{
-		ID: "other-session", CreatedAt: 1, Command: "claude", Cwd: "/other", TLVersion: "test",
+		ID: "other-session", CreatedAt: 1, Command: "claude", Cwd: "/other", GxVersion: "test",
 	}); err != nil {
 		t.Fatalf("UpsertSession() error = %v", err)
 	}

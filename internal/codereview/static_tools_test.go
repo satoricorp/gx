@@ -18,7 +18,7 @@ func TestStaticToolsUseAffectedPackagesForNarrowGoChanges(t *testing.T) {
 	gitCommit(t, root)
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\nfunc NewBehavior() {}\n")
 	installFakeGo(t)
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {
@@ -37,7 +37,7 @@ func TestStaticToolsFallbackForGoModChanges(t *testing.T) {
 	gitCommit(t, root)
 	writeFile(t, root, "go.mod", "module example.com/repo\n\ngo 1.24\n")
 	installFakeGo(t)
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {
@@ -55,7 +55,7 @@ func TestStaticToolsSkipDocsOnlyChanges(t *testing.T) {
 	gitAdd(t, root, "go.mod", "README.md")
 	gitCommit(t, root)
 	writeFile(t, root, "README.md", "# new\n")
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 0 {
@@ -296,7 +296,7 @@ func TestStaticToolsRunDetectedNonGoTools(t *testing.T) {
 	writeFile(t, root, "src/a.ts", "export const a = 2\n")
 	writeExecutable(t, filepath.Join(root, "node_modules", ".bin", "tsc"), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(root, "node_modules", ".bin", "eslint"), "#!/bin/sh\necho \"src/a.ts: error\"\nexit 1\n")
-	t.Setenv("LGTM_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
 	if len(results) != 2 {

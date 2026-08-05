@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// PrepareCommitMessageHook ensures exactly one lgtm revision trailer is present.
+// PrepareCommitMessageHook ensures exactly one gx revision trailer is present.
 func PrepareCommitMessageHook(message string) (string, error) {
 	existing := ParseRevisionIDsFromMessage(message)
 	if len(existing) > 0 {
@@ -19,9 +19,9 @@ func PrepareCommitMessageHook(message string) (string, error) {
 	return StampRevisionTrailer(message, revisionID), nil
 }
 
-// RunPostCommitHook records the latest git commit as a lgtm revision.
+// RunPostCommitHook records the latest git commit as a gx revision.
 func (s *Service) RunPostCommitHook(ctx context.Context, repoRoot string) error {
-	repo, err := s.ResolveLgtmRepoAtPath(ctx, repoRoot)
+	repo, err := s.ResolveGxRepoAtPath(ctx, repoRoot)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (s *Service) RunPostCommitHook(ctx context.Context, repoRoot string) error 
 
 // RunPostRewriteHook updates rewritten commit OIDs from git post-rewrite stdin.
 func (s *Service) RunPostRewriteHook(ctx context.Context, repoRoot string, mappings []CommitOIDMapping) error {
-	repo, err := s.ResolveLgtmRepoAtPath(ctx, repoRoot)
+	repo, err := s.ResolveGxRepoAtPath(ctx, repoRoot)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (s *Service) commitResultFromDB(ctx context.Context, repo RepoInfo, commitO
 	}
 	revisionIDs := ParseRevisionIDsFromMessage(message)
 	if len(revisionIDs) == 0 {
-		return CommitResult{}, fmt.Errorf("commit has no lgtm revision trailer")
+		return CommitResult{}, fmt.Errorf("commit has no gx revision trailer")
 	}
 	revisionID := revisionIDs[len(revisionIDs)-1]
 	store, err := openStore(ctx)

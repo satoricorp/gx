@@ -1,7 +1,7 @@
-# lgtm Manual Workflow Test Sheet
+# gx Manual Workflow Test Sheet
 
-> **Note (2026):** Replace `lgtm compose` / `lgtm stacks` / `lgtm add` / `lgtm publish`
-> in this sheet with `git add` + `lgtm commit`, `lgtm status`, `lgtm generate` where
+> **Note (2026):** Replace `gx compose` / `gx stacks` / `gx add` / `gx publish`
+> in this sheet with `git add` + `gx commit`, `gx status`, `gx generate` where
 > bulk split is needed, and plain `git push` + `gh pr create` to publish.
 
 Use this sheet against a disposable GitHub repository. The goal is to test the
@@ -11,7 +11,7 @@ real flow, not mocked services.
 
 - Date:
 - Tester:
-- lgtm version or commit:
+- gx version or commit:
 - Desktop app version or commit:
 - Fixture repo:
 - Notes / bug links:
@@ -19,11 +19,11 @@ real flow, not mocked services.
 ## Fixture Setup
 
 ```bash
-export LGTM_HOME="$(mktemp -d)"
+export GX_HOME="$(mktemp -d)"
 git clone git@github.com:<owner>/<fixture-repo>.git
 cd <fixture-repo>
-lgtm auth status || lgtm auth login
-lgtm init --name "lgtm Flow Tester" --email "lgtm-flow@example.com"
+gx auth status || gx auth login
+gx init --name "gx Flow Tester" --email "gx-flow@example.com"
 git fetch origin
 git switch main
 git pull origin main
@@ -45,10 +45,10 @@ Purpose: prove code change to compose to publish to desktop merge to GitHub
 ```bash
 printf "counter %s\n" "$(date +%s)" >> counter.txt
 printf "message %s\n" "$(date +%s)" >> src/message.txt
-lgtm status
+gx status
 git add counter.txt src/message.txt
-lgtm commit -m "dummy counter and message update"
-lgtm status
+gx commit -m "dummy counter and message update"
+gx status
 git push
 gh pr create
 ```
@@ -56,16 +56,16 @@ gh pr create
 Then:
 
 - Open the PR in GitHub.
-- Open lgtm Desktop.
+- Open gx Desktop.
 - Find the published stack.
 - Verify the PR link/status appears.
-- Merge from lgtm Desktop.
+- Merge from gx Desktop.
 - Refresh local state.
 
 ```bash
 git fetch origin
 git log --oneline origin/main -5
-lgtm doctor
+gx doctor
 git status
 ```
 
@@ -73,10 +73,10 @@ git status
 
 - `git push` succeeds and the pre-push hook runs; `gh pr create` prints a GitHub PR URL.
 - GitHub PR contains the dummy changes.
-- lgtm Desktop shows the published stack.
-- Merge from lgtm Desktop succeeds.
+- gx Desktop shows the published stack.
+- Merge from gx Desktop succeeds.
 - `origin/main` contains the dummy changes.
-- `lgtm status` agrees with the merged/published state.
+- `gx status` agrees with the merged/published state.
 
 Result: PASS / FAIL
 
@@ -84,31 +84,31 @@ Notes:
 
 ## Test 2: Republish Existing PR
 
-Purpose: prove editing a published lgtm revision updates the same GitHub PR.
+Purpose: prove editing a published gx revision updates the same GitHub PR.
 
 ### Steps
 
 Start from an open published PR.
 
 ```bash
-lgtm status
-lgtm edit <revision-or-change-id>
+gx status
+gx edit <revision-or-change-id>
 printf "republish %s\n" "$(date +%s)" >> counter.txt
 git add counter.txt
-lgtm commit -m "republish counter update"
-lgtm status
+gx commit -m "republish counter update"
+gx status
 git push
 ```
 
-Then verify in GitHub and lgtm Desktop.
+Then verify in GitHub and gx Desktop.
 
 ### Pass Criteria
 
 - Same PR number is reused.
 - PR branch/head SHA changes.
 - GitHub shows the new dummy change.
-- lgtm Desktop shows the updated stack/review state.
-- Merge still succeeds from lgtm Desktop.
+- gx Desktop shows the updated stack/review state.
+- Merge still succeeds from gx Desktop.
 
 Result: PASS / FAIL
 
@@ -124,9 +124,9 @@ disconnected replacement PR.
 Publish a PR that changes `shared.txt`:
 
 ```bash
-printf "lgtm change %s\n" "$(date +%s)" > shared.txt
+printf "gx change %s\n" "$(date +%s)" > shared.txt
 git add shared.txt
-lgtm commit -m "change shared text"
+gx commit -m "change shared text"
 git push
 gh pr create
 ```
@@ -134,8 +134,8 @@ gh pr create
 In a separate clone, advance `main` with a conflicting edit:
 
 ```bash
-git clone git@github.com:<owner>/<fixture-repo>.git /tmp/lgtm-flow-main
-cd /tmp/lgtm-flow-main
+git clone git@github.com:<owner>/<fixture-repo>.git /tmp/gx-flow-main
+cd /tmp/gx-flow-main
 git switch main
 printf "main change %s\n" "$(date +%s)" > shared.txt
 git add shared.txt
@@ -143,28 +143,28 @@ git commit -m "advance main with conflicting shared text"
 git push origin main
 ```
 
-Back in the lgtm repo:
+Back in the gx repo:
 
 ```bash
 git fetch origin
-lgtm doctor
+gx doctor
 git status
 ```
 
 Then:
 
-- Confirm GitHub or lgtm Desktop reports the PR as conflicted/not mergeable.
-- Use lgtm/AI conflict repair.
+- Confirm GitHub or gx Desktop reports the PR as conflicted/not mergeable.
+- Use gx/AI conflict repair.
 - Prefer editing the existing revision.
 - Run `git push` again.
-- Merge from lgtm Desktop.
+- Merge from gx Desktop.
 
 ### Pass Criteria
 
 - Conflict is visible before repair.
 - Repair updates the same PR number.
 - PR becomes mergeable.
-- Merge from lgtm Desktop succeeds.
+- Merge from gx Desktop succeeds.
 - `origin/main` contains the repaired final content.
 
 Result: PASS / FAIL
@@ -182,21 +182,21 @@ printf "alpha %s\n" "$(date +%s)" >> counter.txt
 printf "beta %s\n" "$(date +%s)" >> src/message.txt
 printf "gamma %s\n" "$(date +%s)" >> shared.txt
 git add counter.txt src/message.txt shared.txt
-lgtm generate
-lgtm status
+gx generate
+gx status
 git push
 gh pr create
 ```
 
-Then verify GitHub and lgtm Desktop.
+Then verify GitHub and gx Desktop.
 
 ### Pass Criteria
 
-- `lgtm generate` / `lgtm commit` creates the expected revision structure.
-- `lgtm status` shows all revisions in the intended order.
+- `gx generate` / `gx commit` creates the expected revision structure.
+- `gx status` shows all revisions in the intended order.
 - GitHub PR contains all changes.
-- lgtm Desktop displays the stack/revisions coherently.
-- Merge from lgtm Desktop updates `main`.
+- gx Desktop displays the stack/revisions coherently.
+- Merge from gx Desktop updates `main`.
 
 Result: PASS / FAIL
 
@@ -212,7 +212,7 @@ and leaves a normal branch checkout.
 ```bash
 printf "review only %s\n" "$(date +%s)" >> counter.txt
 git add counter.txt
-lgtm commit -m "review only counter update"
+gx commit -m "review only counter update"
 git push
 git branch --show-current
 ```
@@ -220,7 +220,7 @@ git branch --show-current
 ### Pass Criteria
 
 - Every accepted unpublished stack is pushed via plain `git push`.
-- lgtm review/publish metadata is recorded by the pre-push hook.
+- gx review/publish metadata is recorded by the pre-push hook.
 - The final Git branch is a normal attached checkout (typically `main` or the stack branch per product rules).
 
 Result: PASS / FAIL

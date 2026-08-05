@@ -10,13 +10,13 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/satoricorp/lgtm/internal/codereview"
+	"github.com/satoricorp/gx/internal/codereview"
 )
 
 // useInteractiveTerminal reports whether both ends of the pipe are a real
 // terminal, so a Bubble Tea loader can take over the screen.
 func useInteractiveTerminal(in io.Reader, out io.Writer) bool {
-	if os.Getenv("LGTM_PLAIN_PROMPTS") != "" {
+	if os.Getenv("GX_PLAIN_PROMPTS") != "" {
 		return false
 	}
 	input, ok := in.(*os.File)

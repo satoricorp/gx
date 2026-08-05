@@ -2,7 +2,7 @@
 set -euo pipefail
 
 dist_dir="${1:-dist/cli}"
-base_url="${LGTM_DOWNLOAD_BASE_URL:-https://download.lgtm.cx}"
+base_url="${GX_DOWNLOAD_BASE_URL:-https://download.gx.run}"
 version="${VERSION:-}"
 git_sha="${GITHUB_SHA:-}"
 published_at="${PUBLISHED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
@@ -27,14 +27,14 @@ json_escape() {
 }
 
 archive_rows=()
-for archive in "$dist_dir"/lgtm_"$version"_*.tar.gz; do
+for archive in "$dist_dir"/gx_"$version"_*.tar.gz; do
   [[ -f "$archive" ]] || continue
   base="$(basename "$archive")"
-  rest="${base#lgtm_${version}_}"
+  rest="${base#gx_${version}_}"
   platform="${rest%.tar.gz}"
   goos="${platform%_*}"
   goarch="${platform##*_}"
-  latest_name="lgtm_${goos}_${goarch}.tar.gz"
+  latest_name="gx_${goos}_${goarch}.tar.gz"
   sha_path="$archive.sha256"
   [[ -f "$sha_path" ]] || { echo "missing checksum for $archive" >&2; exit 1; }
   sha="$(awk '{print $1}' "$sha_path")"

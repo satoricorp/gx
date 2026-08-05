@@ -55,11 +55,11 @@ const (
 	// only ones exceeding the latency budget.
 	fastShardDiffBytes = 50000
 	// maxReviewShards bounds the fan-out. It is a guard against a repository
-	// far larger than anything lgtm reviews today, not a coverage decision: if it
+	// far larger than anything gx reviews today, not a coverage decision: if it
 	// ever binds, the shards it dropped are counted and reported.
 	maxReviewShards = 256
 	// defaultFanOutConcurrency is how many shards are in flight at once.
-	// Overridable with LGTM_REVIEW_FANOUT_CONCURRENCY. Each shard is two
+	// Overridable with GX_REVIEW_FANOUT_CONCURRENCY. Each shard is two
 	// concurrent model calls (one per reviewer leg), so 10 shards is up to 20
 	// in-flight Bedrock calls. Throttles this induces are absorbed by the
 	// transport's retry (see bedrockRetryBackoffs) rather than failing shards.
@@ -493,7 +493,7 @@ func namespaceShardFindings(findings []Finding, shard ReviewShard) []Finding {
 
 func fanOutConcurrency(shards int) int {
 	limit := defaultFanOutConcurrency
-	if raw := strings.TrimSpace(os.Getenv("LGTM_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("GX_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			limit = parsed
 		}

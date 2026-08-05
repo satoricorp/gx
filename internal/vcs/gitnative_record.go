@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 // RecordGitCommit records metadata for a git commit that already exists.
@@ -23,7 +23,7 @@ func (s *Service) RecordGitCommit(ctx context.Context, repo RepoInfo, commitOID 
 	}
 	revisionIDs := ParseRevisionIDsFromMessage(message)
 	if len(revisionIDs) == 0 {
-		return CommitResult{}, fmt.Errorf("commit %s has no lgtm revision trailer", shortID(commitOID, 7))
+		return CommitResult{}, fmt.Errorf("commit %s has no gx revision trailer", shortID(commitOID, 7))
 	}
 	revisionID := revisionIDs[len(revisionIDs)-1]
 	if existing, lookupErr := s.commitResultFromDB(ctx, repo, commitOID); lookupErr == nil &&

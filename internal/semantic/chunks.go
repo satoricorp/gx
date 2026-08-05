@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/satoricorp/lgtm/internal/reviewbundle"
+	"github.com/satoricorp/gx/internal/reviewbundle"
 )
 
 type Chunk struct {
@@ -50,7 +50,7 @@ type reviewTarget struct {
 	ReviewContext *reviewbundle.ReviewContextPayload
 }
 
-// revisionKey identifies a target even when a commit carries no lgtm trailer.
+// revisionKey identifies a target even when a commit carries no gx trailer.
 func (t reviewTarget) revisionKey() string {
 	if strings.TrimSpace(t.RevisionID) != "" {
 		return t.RevisionID
@@ -158,10 +158,10 @@ func findRequestResponse(session reviewbundle.SessionPayload, requestID string, 
 
 func renderTranscriptChunk(bundle reviewbundle.Bundle, target reviewTarget, session reviewbundle.SessionPayload, request reviewbundle.RequestPayload, response *reviewbundle.ResponsePayload) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "lgtm session transcript for review.\n")
+	fmt.Fprintf(&b, "gx session transcript for review.\n")
 	fmt.Fprintf(&b, "Repo: %s\n", bundle.Repo.RootPath)
 	fmt.Fprintf(&b, "Revision: %s\n", target.Description)
-	fmt.Fprintf(&b, "lgtm revision: %s\n", target.revisionKey())
+	fmt.Fprintf(&b, "gx revision: %s\n", target.revisionKey())
 	if target.BranchName != "" {
 		fmt.Fprintf(&b, "Branch: %s\n", target.BranchName)
 	}
@@ -185,7 +185,7 @@ func transcriptChunkKey(changeID string, source reviewbundle.ReviewTranscriptSou
 		responseID = *source.ResponseID
 	}
 	return strings.Join([]string{
-		"lgtm",
+		"gx",
 		"change", changeID,
 		"session", source.SessionID,
 		"request", source.RequestID,
@@ -195,7 +195,7 @@ func transcriptChunkKey(changeID string, source reviewbundle.ReviewTranscriptSou
 
 func stableChunkID(key string) string {
 	sum := sha256.Sum256([]byte(key))
-	return "lgtm-" + hex.EncodeToString(sum[:])[:40]
+	return "gx-" + hex.EncodeToString(sum[:])[:40]
 }
 
 // limitBytes truncates on a rune boundary. Source files are UTF-8 and a naive

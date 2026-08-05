@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/hooks"
+	"github.com/satoricorp/gx/internal/hooks"
 )
 
 func TestInstallPrePushHook(t *testing.T) {
@@ -18,8 +18,8 @@ func TestInstallPrePushHook(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	if err := hooks.Install(hooks.InstallOptions{
-		RepoRoot:     repo,
-		LgtmPath: "/usr/local/bin/lgtm",
+		RepoRoot: repo,
+		GxPath:   "/usr/local/bin/gx",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,20 +36,20 @@ func TestInstallPrePushHook(t *testing.T) {
 	}
 }
 
-// TestPerRepoHooksResolveLgtmAtRunTime pins the run-time lgtm resolution of the
+// TestPerRepoHooksResolveGxAtRunTime pins the run-time gx resolution of the
 // per-repo scripts: the pinned path when it is still an executable file, else
-// lgtm from PATH, else a silent exit 0 so a missing binary never breaks a
+// gx from PATH, else a silent exit 0 so a missing binary never breaks a
 // commit or push.
-func TestPerRepoHooksResolveLgtmAtRunTime(t *testing.T) {
+func TestPerRepoHooksResolveGxAtRunTime(t *testing.T) {
 	repo := t.TempDir()
 	runGit(t, repo, "init")
 	work := t.TempDir()
 	pinnedLog := filepath.Join(work, "pinned.log")
 	pathLog := filepath.Join(work, "path.log")
-	pinnedLgtm := filepath.Join(work, "pinned", "lgtm")
-	writeExecutable(t, pinnedLgtm, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pinnedLog+"\"\n")
+	pinnedGx := filepath.Join(work, "pinned", "gx")
+	writeExecutable(t, pinnedGx, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pinnedLog+"\"\n")
 	pathDir := filepath.Join(work, "pathbin")
-	writeExecutable(t, filepath.Join(pathDir, "lgtm"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pathLog+"\"\n")
+	writeExecutable(t, filepath.Join(pathDir, "gx"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+pathLog+"\"\n")
 	// The pre-push loop shells out to git; nothing else on PATH is needed.
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -60,13 +60,13 @@ func TestPerRepoHooksResolveLgtmAtRunTime(t *testing.T) {
 	}
 	stdin := "refs/heads/main aaaa111 refs/heads/main bbbb222\n"
 
-	install := func(lgtmPath string) string {
+	install := func(gxPath string) string {
 		t.Helper()
 		hookPath := filepath.Join(repo, ".git", "hooks", "pre-push")
 		if err := os.RemoveAll(hookPath); err != nil {
 			t.Fatal(err)
 		}
-		if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: lgtmPath}); err != nil {
+		if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GxPath: gxPath}); err != nil {
 			t.Fatal(err)
 		}
 		return hookPath
@@ -82,20 +82,20 @@ func TestPerRepoHooksResolveLgtmAtRunTime(t *testing.T) {
 	}
 
 	t.Run("pinned path wins when executable", func(t *testing.T) {
-		out, err := runPrePush(install(pinnedLgtm), pathDir)
+		out, err := runPrePush(install(pinnedGx), pathDir)
 		if err != nil {
 			t.Fatalf("pre-push: %v\n%s", err, out)
 		}
 		if got := readFile(t, pinnedLog); !strings.Contains(got, "capture push") {
-			t.Fatalf("pinned lgtm not invoked:\n%s", got)
+			t.Fatalf("pinned gx not invoked:\n%s", got)
 		}
 		if _, err := os.Stat(pathLog); err == nil {
-			t.Fatal("PATH lgtm invoked despite a valid pinned path")
+			t.Fatal("PATH gx invoked despite a valid pinned path")
 		}
 	})
 
 	t.Run("falls back to PATH when pinned path is gone", func(t *testing.T) {
-		hookPath := install(filepath.Join(work, "missing", "lgtm"))
+		hookPath := install(filepath.Join(work, "missing", "gx"))
 		out, err := runPrePush(hookPath, pathDir)
 		if err != nil {
 			t.Fatalf("pre-push: %v\n%s", err, out)
@@ -103,28 +103,28 @@ func TestPerRepoHooksResolveLgtmAtRunTime(t *testing.T) {
 		got := readFile(t, pathLog)
 		for _, want := range []string{"capture push", "--ref-range bbbb222..aaaa111", "--local-ref refs/heads/main"} {
 			if !strings.Contains(got, want) {
-				t.Fatalf("PATH lgtm args missing %q:\n%s", want, got)
+				t.Fatalf("PATH gx args missing %q:\n%s", want, got)
 			}
 		}
 	})
 
-	t.Run("exits zero silently when no lgtm exists", func(t *testing.T) {
-		hookPath := install(filepath.Join(work, "missing", "lgtm"))
+	t.Run("exits zero silently when no gx exists", func(t *testing.T) {
+		hookPath := install(filepath.Join(work, "missing", "gx"))
 		emptyDir := filepath.Join(work, "empty")
 		if err := os.MkdirAll(emptyDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		out, err := runPrePush(hookPath, emptyDir)
 		if err != nil {
-			t.Fatalf("pre-push without lgtm must exit 0, got %v\n%s", err, out)
+			t.Fatalf("pre-push without gx must exit 0, got %v\n%s", err, out)
 		}
 		if strings.TrimSpace(out) != "" {
-			t.Fatalf("pre-push without lgtm must be silent, got:\n%s", out)
+			t.Fatalf("pre-push without gx must be silent, got:\n%s", out)
 		}
 	})
 
-	t.Run("prepare-commit-msg exits zero without lgtm", func(t *testing.T) {
-		install(filepath.Join(work, "missing", "lgtm"))
+	t.Run("prepare-commit-msg exits zero without gx", func(t *testing.T) {
+		install(filepath.Join(work, "missing", "gx"))
 		hookPath := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
 		messagePath := filepath.Join(repo, ".git", "COMMIT_EDITMSG")
 		if err := os.WriteFile(messagePath, []byte("subject\n"), 0o644); err != nil {
@@ -139,10 +139,10 @@ func TestPerRepoHooksResolveLgtmAtRunTime(t *testing.T) {
 		cmd.Env = append(os.Environ(), "PATH="+emptyDir)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("prepare-commit-msg without lgtm must exit 0 (a failing hook aborts the commit), got %v\n%s", err, out)
+			t.Fatalf("prepare-commit-msg without gx must exit 0 (a failing hook aborts the commit), got %v\n%s", err, out)
 		}
 		if strings.TrimSpace(string(out)) != "" {
-			t.Fatalf("prepare-commit-msg without lgtm must be silent, got:\n%s", out)
+			t.Fatalf("prepare-commit-msg without gx must be silent, got:\n%s", out)
 		}
 	})
 }

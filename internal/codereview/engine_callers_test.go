@@ -14,8 +14,8 @@ import (
 // nowhere else. That matters because this package is shared. The PR-summary
 // pipeline in internal/publication uses its types, its brief, and its AI
 // reviewer, but takes its subject from the pushed bundle rather than from the
-// working tree, so changing how `lgtm review` picks a subject cannot move the
-// summaries lgtm writes on every push.
+// working tree, so changing how `gx review` picks a subject cannot move the
+// summaries gx writes on every push.
 //
 // Pinning the caller set keeps that true by construction: wiring the engine
 // into another pipeline becomes a deliberate act with a failing test attached,

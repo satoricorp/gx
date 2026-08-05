@@ -9,9 +9,9 @@ import (
 
 const (
 	PlaceholderDescription      = "(no description set)"
-	PendingRemainderDescription = "lgtm: pending remainder"
-	// RevisionTrailerFormat is the lgtm identity trailer line template.
-	RevisionTrailerFormat = "lgtm: https://lgtm.cx/r/%s"
+	PendingRemainderDescription = "gx: pending remainder"
+	// RevisionTrailerFormat is the gx identity trailer line template.
+	RevisionTrailerFormat = "gx: https://gx.run/r/%s"
 )
 
 var (
@@ -46,8 +46,8 @@ func RevisionTrailerLine(revisionID string) string {
 	return fmt.Sprintf(RevisionTrailerFormat, revisionID)
 }
 
-// StampRevisionTrailer returns message carrying exactly one lgtm identity
-// trailer for revisionID. lgtm trailers from a prior revision identity are
+// StampRevisionTrailer returns message carrying exactly one gx identity
+// trailer for revisionID. gx trailers from a prior revision identity are
 // replaced, never accumulated.
 func StampRevisionTrailer(message, revisionID string) string {
 	revisionID = strings.TrimSpace(revisionID)
@@ -75,7 +75,7 @@ func isRevisionTrailerLine(line string) bool {
 }
 
 // revisionTrailerPresent reports whether message already carries the canonical
-// lgtm trailer for revisionID and no stale trailers, i.e. re-stamping would be a
+// gx trailer for revisionID and no stale trailers, i.e. re-stamping would be a
 // no-op.
 func revisionTrailerPresent(message, revisionID string) bool {
 	return StampRevisionTrailer(message, revisionID) == strings.TrimRight(message, "\n")

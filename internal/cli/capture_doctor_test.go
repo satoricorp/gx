@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/hooks"
-	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/gx/internal/hooks"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 func TestPrintCaptureDoctorHumanOutputUsesCompactRows(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	status := captureDoctorJSON{
 		HookApplicable:  true,
@@ -22,7 +22,7 @@ func TestPrintCaptureDoctorHumanOutputUsesCompactRows(t *testing.T) {
 		RepoHooksOK:     true,
 		RepoHooksTotal:  1,
 		UploadAuthed:    true,
-		UploadAPI:       "https://api.lgtm.cx",
+		UploadAPI:       "https://api.gx.run",
 		PendingExtracts: 300,
 		PendingSessions: 176,
 		CursorReachable: true,
@@ -36,7 +36,7 @@ func TestPrintCaptureDoctorHumanOutputUsesCompactRows(t *testing.T) {
 		"Hooks installed",
 		"ok",
 		"Upload",
-		"ok: https://api.lgtm.cx",
+		"ok: https://api.gx.run",
 		"Staging backlog",
 		"476 pending",
 		"Disk used",
@@ -87,7 +87,7 @@ func TestCaptureHookStatusResolvesGitRoot(t *testing.T) {
 
 	installed, applicable, resolvedRoot := captureHookStatus(context.Background(), subdir)
 	if installed {
-		t.Fatal("expected hook not installed before lgtm init")
+		t.Fatal("expected hook not installed before gx init")
 	}
 	if !applicable {
 		t.Fatal("expected hook check applicable inside a git repo")
@@ -96,7 +96,7 @@ func TestCaptureHookStatusResolvesGitRoot(t *testing.T) {
 		t.Fatalf("resolvedRoot = %q, want %q", resolvedRoot, wantRepo)
 	}
 
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GxPath: "/usr/local/bin/gx"}); err != nil {
 		t.Fatal(err)
 	}
 	installed, applicable, resolvedRoot = captureHookStatus(context.Background(), subdir)
@@ -106,11 +106,11 @@ func TestCaptureHookStatusResolvesGitRoot(t *testing.T) {
 }
 
 func TestCaptureRegisteredRepoHooksReportsInstalledAndMissingHooks(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	installedRepo := initDoctorGitRepo(t)
 	missingRepo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, GxPath: "/usr/local/bin/gx"}); err != nil {
 		t.Fatal(err)
 	}
 	store := openTestStore(t, ctx)
@@ -142,10 +142,10 @@ func TestCaptureRegisteredRepoHooksReportsInstalledAndMissingHooks(t *testing.T)
 }
 
 func TestCaptureDoctorStatusFallsBackToInitializedRepoRegistry(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	repo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GxPath: "/usr/local/bin/gx"}); err != nil {
 		t.Fatal(err)
 	}
 	wantRepo, err := filepath.EvalSymlinks(repo)
@@ -182,10 +182,10 @@ func TestCaptureDoctorStatusFallsBackToInitializedRepoRegistry(t *testing.T) {
 }
 
 func TestCaptureDoctorStatusFallsBackToKnownRepoRegistryWhenInitializedReposEmpty(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	repo := initDoctorGitRepo(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, GxPath: "/usr/local/bin/gx"}); err != nil {
 		t.Fatal(err)
 	}
 	wantRepo, err := filepath.EvalSymlinks(repo)
@@ -227,12 +227,12 @@ func TestCaptureDoctorStatusFallsBackToKnownRepoRegistryWhenInitializedReposEmpt
 }
 
 func TestCaptureRegisteredRepoHooksFallsBackToReachableKnownRepos(t *testing.T) {
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	installedRepo := initDoctorGitRepo(t)
 	missingRepo := initDoctorGitRepo(t)
 	staleRepo := filepath.Join(t.TempDir(), "stale")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: installedRepo, GxPath: "/usr/local/bin/gx"}); err != nil {
 		t.Fatal(err)
 	}
 	store := openTestStore(t, ctx)
@@ -324,7 +324,7 @@ func TestCaptureDoctorBacklogDoesNotAffectHealth(t *testing.T) {
 
 func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	store := openTestStore(t, ctx)
 
 	repoID, err := store.UpsertRepo(ctx, storage.Repo{
@@ -337,7 +337,7 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 		t.Fatalf("UpsertRepo() error = %v", err)
 	}
 	draftChangeID := insertDoctorStatsChange(t, ctx, store, repoID, "draft-change")
-	draftStackID := insertDoctorStatsStack(t, ctx, store, repoID, "lgtm/draft-stack", "draft")
+	draftStackID := insertDoctorStatsStack(t, ctx, store, repoID, "gx/draft-stack", "draft")
 	if err := store.AddChangeToStack(ctx, draftStackID, draftChangeID, 2); err != nil {
 		t.Fatalf("AddChangeToStack(draft) error = %v", err)
 	}
@@ -356,7 +356,7 @@ func TestDoctorStatsSummarizesStacksAndAgents(t *testing.T) {
 	if err := store.AddChangeToStack(ctx, mergedStackID, mergedChangeID, 5); err != nil {
 		t.Fatalf("AddChangeToStack(merged) error = %v", err)
 	}
-	_ = insertDoctorStatsStack(t, ctx, store, repoID, "lgtm/empty-stack", "draft")
+	_ = insertDoctorStatsStack(t, ctx, store, repoID, "gx/empty-stack", "draft")
 	if err := store.Close(); err != nil {
 		t.Fatalf("store.Close() error = %v", err)
 	}

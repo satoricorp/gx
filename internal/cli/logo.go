@@ -4,24 +4,24 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-const lgtmTagline = "automating version control and simplifying code review"
-const lgtmLogoColor = "6"
+const gxTagline = "automating version control and simplifying code review"
+const gxLogoColor = "6"
 
-const lgtmLogoRaw = `████████╗ ██████╗ ████████╗ █████╗ ██╗     ██╗████████╗██╗   ██╗
-╚══██╔══╝██╔═══██╗╚══██╔══╝██╔══██╗██║     ██║╚══██╔══╝╚██╗ ██╔╝
-   ██║   ██║   ██║   ██║   ███████║██║     ██║   ██║    ╚████╔╝
-   ██║   ██║   ██║   ██║   ██╔══██║██║     ██║   ██║     ╚██╔╝
-   ██║   ╚██████╔╝   ██║   ██║  ██║███████╗██║   ██║      ██║
-   ╚═╝    ╚═════╝    ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝   ╚═╝      ╚═╝   `
+const gxLogoRaw = ` ██████╗ ██╗  ██╗
+██╔════╝ ╚██╗██╔╝
+██║  ███╗ ╚███╔╝
+██║   ██║ ██╔██╗
+╚██████╔╝██╔╝ ██╗
+ ╚═════╝ ╚═╝  ╚═╝`
 
 func renderStaticLogo() string {
-	return logoText(lgtmLogoRaw)
+	return logoText(gxLogoRaw)
 }
 
 func logoText(text string) string {
 	if !enableColor() {
 		return text
 	}
-	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(lgtmLogoColor))
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(gxLogoColor))
 	return style.Render(text)
 }

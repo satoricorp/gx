@@ -73,19 +73,19 @@ func (s *RepoIndexState) SortedFiles() []string {
 var unsafeStatePathChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 // RepoIndexStatePath is where the manifest for a namespace lives:
-// $LGTM_HOME/index/<namespace>.json, defaulting to ~/.lgtm/index.
+// $GX_HOME/index/<namespace>.json, defaulting to ~/.gx/index.
 func RepoIndexStatePath(namespace string) (string, error) {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
 		return "", fmt.Errorf("namespace is required for the index manifest path")
 	}
-	base := strings.TrimSpace(os.Getenv("LGTM_HOME"))
+	base := strings.TrimSpace(os.Getenv("GX_HOME"))
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		base = filepath.Join(home, ".lgtm")
+		base = filepath.Join(home, ".gx")
 	}
 	name := unsafeStatePathChars.ReplaceAllString(namespace, "-")
 	if len(name) > 120 {

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/authstore"
-	"github.com/satoricorp/lgtm/internal/version"
+	"github.com/satoricorp/gx/internal/authstore"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 const (
@@ -79,7 +79,7 @@ type GitHubTokenValidation struct {
 	Error      string
 }
 
-// CloudAPISessionValidation reports whether lgtm-cloud accepts a bearer token.
+// CloudAPISessionValidation reports whether gx-cloud accepts a bearer token.
 type CloudAPISessionValidation struct {
 	Valid      bool
 	UserID     string
@@ -102,10 +102,10 @@ type completeAuthRequest struct {
 	GitHubAccessToken string `json:"github_access_token"`
 	MachineID         string `json:"machine_id"`
 	MachineName       string `json:"machine_name"`
-	TLVersion         string `json:"lgtm_version"`
+	GxVersion         string `json:"gx_version"`
 }
 
-// LoginOptions configures lgtm auth login.
+// LoginOptions configures gx auth login.
 type LoginOptions struct {
 	MachineName string
 	Endpoints   AuthEndpoints
@@ -114,7 +114,7 @@ type LoginOptions struct {
 }
 
 // Login runs GitHub device flow, stores the GitHub token with Convex via
-// POST /cx/auth/complete, and saves the token locally for lgtm cloud API calls.
+// POST /cx/auth/complete, and saves the token locally for gx cloud API calls.
 func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 	clientID := GitHubClientID()
 	if clientID == "" {
@@ -165,7 +165,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 		GitHubAccessToken: githubToken.AccessToken,
 		MachineID:         machineID,
 		MachineName:       machineName,
-		TLVersion:         version.Current(),
+		GxVersion:         version.Current(),
 	})
 	if err != nil {
 		return CloudCredentials{}, err
@@ -208,7 +208,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 				if detail == "" {
 					detail = "console API rejected CLI session"
 				}
-				return CloudCredentials{}, fmt.Errorf("verify lgtm console session: %s", detail)
+				return CloudCredentials{}, fmt.Errorf("verify gx console session: %s", detail)
 			}
 		}
 	}
@@ -228,7 +228,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 		return CloudCredentials{}, err
 	}
 	if opts.Out != nil && strings.TrimSpace(complete.GitHubAppInstallURL) != "" {
-		fmt.Fprintf(opts.Out, "Install the lgtm GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
+		fmt.Fprintf(opts.Out, "Install the gx GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
 	}
 	return creds, nil
 }
@@ -321,7 +321,7 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		case "slow_down":
 			interval++
 		case "incorrect_device_code", "expired_token":
-			return accessTokenResponse{}, fmt.Errorf("github device authorization was rejected or expired; run `lgtm auth login` again and use the newest code")
+			return accessTokenResponse{}, fmt.Errorf("github device authorization was rejected or expired; run `gx auth login` again and use the newest code")
 		case "":
 			return accessTokenResponse{}, fmt.Errorf("github access token response missing access_token")
 		default:
@@ -342,7 +342,7 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 	if token == "" {
 		return GitHubTokenValidation{Valid: false, Error: "missing token"}, nil
 	}
-	userURL := strings.TrimSpace(os.Getenv("LGTM_GITHUB_USER_URL"))
+	userURL := strings.TrimSpace(os.Getenv("GX_GITHUB_USER_URL"))
 	if userURL == "" {
 		userURL = "https://api.github.com/user"
 	}
@@ -355,7 +355,7 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "lgtm/"+version.Current())
+	req.Header.Set("User-Agent", "gx/"+version.Current())
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	resp, err := client.Do(req)
@@ -396,7 +396,7 @@ func ValidateGitHubAccessToken(ctx context.Context, client *http.Client, token s
 	}, nil
 }
 
-// ValidateCloudAPISession checks the token against lgtm-cloud's auth endpoint.
+// ValidateCloudAPISession checks the token against gx-cloud's auth endpoint.
 func ValidateCloudAPISession(ctx context.Context, client *http.Client, token string) (CloudAPISessionValidation, error) {
 	return validateCloudAPISessionAtURL(ctx, client, CloudURL(), token)
 }
@@ -408,22 +408,22 @@ func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, clou
 	}
 	meURL := cloudURLWithPath(cloudURL, "/v1/auth/me")
 	if meURL == "" {
-		return CloudAPISessionValidation{Valid: false, Error: "lgtm cloud URL is not configured"}, nil
+		return CloudAPISessionValidation{Valid: false, Error: "gx cloud URL is not configured"}, nil
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, meURL, nil)
 	if err != nil {
-		return CloudAPISessionValidation{}, fmt.Errorf("create lgtm api auth validation request: %w", err)
+		return CloudAPISessionValidation{}, fmt.Errorf("create gx api auth validation request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "lgtm/"+version.Current())
+	req.Header.Set("User-Agent", "gx/"+version.Current())
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return CloudAPISessionValidation{}, fmt.Errorf("validate lgtm api token: %w", err)
+		return CloudAPISessionValidation{}, fmt.Errorf("validate gx api token: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -452,7 +452,7 @@ func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, clou
 		return CloudAPISessionValidation{
 			Valid:      false,
 			StatusCode: resp.StatusCode,
-			Error:      "lgtm API response missing user id",
+			Error:      "gx API response missing user id",
 		}, nil
 	}
 	return CloudAPISessionValidation{
@@ -474,7 +474,7 @@ func completeConvexAuth(ctx context.Context, client *http.Client, convexURL stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "lgtm/"+version.Current())
+	req.Header.Set("User-Agent", "gx/"+version.Current())
 
 	resp, err := client.Do(req)
 	if err != nil {

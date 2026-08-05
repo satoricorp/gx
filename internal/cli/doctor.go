@@ -13,12 +13,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/lgtm/internal/auth"
-	cursoringest "github.com/satoricorp/lgtm/internal/ingest/cursor"
-	"github.com/satoricorp/lgtm/internal/publication"
-	"github.com/satoricorp/lgtm/internal/semantic"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/auth"
+	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
+	"github.com/satoricorp/gx/internal/publication"
+	"github.com/satoricorp/gx/internal/semantic"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 func newDoctorCommand(ctx context.Context) *cobra.Command {
@@ -27,7 +27,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 	var sendReport bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Fix current lgtm state",
+		Short: "Fix current gx state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var repair vcs.RepairResult
 			var repairErr error
@@ -70,7 +70,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 				}
 				// Send the diagnosis that was just produced, then fold the
 				// outcome into the same document so stdout stays one JSON value.
-				result, reportErr := sendSupportReport(ctx, supportAttachment("lgtm-doctor.json", marshalDoctorDiagnosis(payload)))
+				result, reportErr := sendSupportReport(ctx, supportAttachment("gx-doctor.json", marshalDoctorDiagnosis(payload)))
 				if reportErr != nil {
 					payload["report_error"] = reportErr.Error()
 				} else {
@@ -114,7 +114,7 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 				}
 			}
 			if sendReport {
-				result, reportErr := sendSupportReport(ctx, supportAttachment("lgtm-doctor.txt", diagnosis.String()))
+				result, reportErr := sendSupportReport(ctx, supportAttachment("gx-doctor.txt", diagnosis.String()))
 				if reportErr != nil {
 					return reportErr
 				}
@@ -136,8 +136,8 @@ func newDoctorCommand(ctx context.Context) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print machine-readable JSON")
-	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe lgtm workflow state issues")
-	cmd.Flags().BoolVar(&sendReport, "report", false, "send this diagnosis and recent lgtm logs to support")
+	cmd.Flags().BoolVar(&fix, "fix", false, "repair safe gx workflow state issues")
+	cmd.Flags().BoolVar(&sendReport, "report", false, "send this diagnosis and recent gx logs to support")
 	return cmd
 }
 
@@ -152,7 +152,7 @@ func marshalDoctorDiagnosis(payload map[string]any) string {
 }
 
 // reportAndDrainPublishOutbox surfaces the publish-outbox backlog and, when
-// anything is pending or failed, retries the uploads right here. With `lgtm sync`
+// anything is pending or failed, retries the uploads right here. With `gx sync`
 // retired, doctor is the manual retry path; the pre-push hook is the automatic
 // one.
 func reportAndDrainPublishOutbox(ctx context.Context, w io.Writer) {
@@ -240,7 +240,7 @@ func printDoctorMissingStackBaseRefs(w io.Writer, fixed bool, status vcs.Missing
 	for _, issue := range status.Issues {
 		names = append(names, firstNonEmptyString(issue.BookmarkName, issue.Name))
 	}
-	fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("%d stack(s) with missing parent base refs: %s (run lgtm doctor)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Missing parent base", fmt.Sprintf("%d stack(s) with missing parent base refs: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanupResult, err error) {
@@ -263,7 +263,7 @@ func printDoctorStaleStacks(w io.Writer, fixed bool, result vcs.StaleStackCleanu
 	for _, stack := range result.Stale {
 		names = append(names, stack.BookmarkName)
 	}
-	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run lgtm doctor)", len(names), strings.Join(names, ", "))))
+	fmt.Fprintln(w, labelWarningValue("Stale stacks", fmt.Sprintf("%d stack(s) with missing branches: %s (run gx doctor)", len(names), strings.Join(names, ", "))))
 }
 
 type doctorJSON struct {
@@ -507,7 +507,7 @@ func formatLedgerLast(lastSeenAt *int64) string {
 func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
 	stats := statsJSON{
 		Agents:        agentStatsRows(status),
-		DiskUsedBytes: lgtmStorageDiskUsedBytes(),
+		DiskUsedBytes: gxStorageDiskUsedBytes(),
 	}
 
 	db, err := storage.Open(ctx)
@@ -538,7 +538,7 @@ func doctorStats(ctx context.Context, status doctorJSON) statsJSON {
 func doctorStatsRepos(ctx context.Context, store *storage.Store, repoRoot string) ([]storage.Repo, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	if repoRoot != "" {
-		repoInfo, resolveErr := vcs.NewService().ResolveLgtmRepoAtPath(ctx, repoRoot)
+		repoInfo, resolveErr := vcs.NewService().ResolveGxRepoAtPath(ctx, repoRoot)
 		var repo *storage.Repo
 		var err error
 		if resolveErr == nil {
@@ -570,15 +570,15 @@ func doctorRepoStackStats(ctx context.Context, store *storage.Store, repoID int6
 		if err != nil || len(changes) == 0 {
 			continue
 		}
-		if strings.EqualFold(strings.TrimSpace(stack.Status), "draft") && isLgtmOwnedStack(stack) {
+		if strings.EqualFold(strings.TrimSpace(stack.Status), "draft") && isGxOwnedStack(stack) {
 			stats.ApprovedStacksWaitingForPublish++
 		}
 	}
 	return stats, nil
 }
 
-func isLgtmOwnedStack(stack storage.Stack) bool {
-	return strings.HasPrefix(strings.TrimSpace(stack.BookmarkName), "lgtm/")
+func isGxOwnedStack(stack storage.Stack) bool {
+	return strings.HasPrefix(strings.TrimSpace(stack.BookmarkName), "gx/")
 }
 
 func agentStatsRows(status doctorJSON) []agentStatsJSON {
@@ -645,7 +645,7 @@ func parseLedgerSessions(value string) int {
 	return out
 }
 
-func lgtmStorageDiskUsedBytes() int64 {
+func gxStorageDiskUsedBytes() int64 {
 	root, err := storage.DefaultDir()
 	if err != nil {
 		return 0
@@ -655,7 +655,7 @@ func lgtmStorageDiskUsedBytes() int64 {
 		if err != nil || entry.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(filepath.Base(path), "lgtm.db.backup-") {
+		if strings.HasPrefix(filepath.Base(path), "gx.db.backup-") {
 			return nil
 		}
 		info, err := entry.Info()
@@ -764,7 +764,7 @@ func writeJSON(cmd *cobra.Command, value any) error {
 // reportCodeIndexFreshness surfaces how far the local code index has drifted
 // from the checkout.
 //
-// `lgtm review` retrieves from this index, and a stale one fails silently: the
+// `gx review` retrieves from this index, and a stale one fails silently: the
 // query succeeds, returns chunks for code that has since changed, and the
 // review reads as fully informed. Measured on this repository, an index 30 days
 // behind HEAD scored 0.000 recall on every query targeting code written after
@@ -789,7 +789,7 @@ func reportCodeIndexFreshness(ctx context.Context, w io.Writer, repoRoot string)
 	state := semantic.LoadRepoIndexState(statePath)
 	if state == nil {
 		fmt.Fprintln(w, labelWarningValue("Code index",
-			"not indexed ("+identity.Namespace+"); run `lgtm index` so review can retrieve from this repository"))
+			"not indexed ("+identity.Namespace+"); run `gx index` so review can retrieve from this repository"))
 		return
 	}
 
@@ -807,7 +807,7 @@ func reportCodeIndexFreshness(ctx context.Context, w io.Writer, repoRoot string)
 	if state.CommitID != "" && head != "" {
 		detail += ": indexed at " + shortCommit(state.CommitID) + ", HEAD is " + shortCommit(head)
 	}
-	detail += age + "; run `lgtm index` to refresh"
+	detail += age + "; run `gx index` to refresh"
 	fmt.Fprintln(w, labelWarningValue("Code index", detail))
 }
 
@@ -843,7 +843,7 @@ func repoRootForDoctor(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	repo, err := vcs.NewService().ResolveLgtmRepoAtPath(ctx, cwd)
+	repo, err := vcs.NewService().ResolveGxRepoAtPath(ctx, cwd)
 	if err != nil {
 		return ""
 	}

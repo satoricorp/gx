@@ -1,0 +1,3 @@
+interface:
+  display_name: "gx"
+  short_description: "Record with gx commit/MCP, publish only with plain git push (not gx push), then gh pr create."

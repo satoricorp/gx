@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/agentprovenance"
-	"github.com/satoricorp/lgtm/internal/reviewsource"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/vcs"
-	"github.com/satoricorp/lgtm/internal/version"
+	"github.com/satoricorp/gx/internal/agentprovenance"
+	"github.com/satoricorp/gx/internal/reviewsource"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/vcs"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 const SchemaVersion = 2
@@ -21,7 +21,7 @@ type Bundle struct {
 	Event         string            `json:"event"`
 	SchemaVersion int               `json:"schema_version"`
 	CreatedAt     int64             `json:"created_at"`
-	TLVersion     string            `json:"lgtm_version"`
+	GxVersion     string            `json:"gx_version"`
 	Repo          RepoPayload       `json:"repo"`
 	Push          PushPayload       `json:"push"`
 	Revisions     []RevisionPayload `json:"revisions"`
@@ -60,7 +60,7 @@ type PushPayload struct {
 }
 
 // RevisionPayload describes one pushed commit, oldest first in
-// Bundle.Revisions. RevisionID is the lgtm trailer ID from the commit message
+// Bundle.Revisions. RevisionID is the gx trailer ID from the commit message
 // and is empty for commits without a trailer.
 type RevisionPayload struct {
 	RevisionID           string                `json:"revision_id"`
@@ -191,7 +191,7 @@ type SessionPayload struct {
 	// session.source, so dropping it rendered every session as `command=?`.
 	Command          string           `json:"command"`
 	Cwd              string           `json:"cwd"`
-	TLVersion        string           `json:"lgtm_version"`
+	GxVersion        string           `json:"gx_version"`
 	Source           *string          `json:"source,omitempty"`
 	LastSeenAt       *int64           `json:"last_seen_at,omitempty"`
 	EndReason        *string          `json:"end_reason,omitempty"`
@@ -244,10 +244,10 @@ func BuildPush(ctx context.Context, push vcs.PushResult) (Bundle, error) {
 	defer db.Close()
 
 	bundle := Bundle{
-		Event:         "lgtm.pr",
+		Event:         "gx.pr",
 		SchemaVersion: SchemaVersion,
 		CreatedAt:     time.Now().UnixMilli(),
-		TLVersion:     version.Current(),
+		GxVersion:     version.Current(),
 		Repo: RepoPayload{
 			RootPath: push.Repo.RootPath,
 			// Pinned rather than copied: stored repo rows can still carry a
@@ -366,7 +366,7 @@ func capCapturedBody(body []byte, budget int) ([]byte, int) {
 	return body, budget - len(body)
 }
 
-// revisionRow is the local change row for a lgtm revision ID: the DB id that
+// revisionRow is the local change row for a gx revision ID: the DB id that
 // links sessions, the recorded files, and the assembled review context. The
 // local `changes` table keeps its historical column names; none of them reach
 // the wire.
@@ -900,7 +900,7 @@ func dedupeStrings(values []string) []string {
 
 func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]SessionPayload, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.lgtm_version,
+		SELECT s.id, s.created_at, s.ended_at, s.command, s.cwd, s.gx_version,
 			s.source, s.last_seen_at, s.end_reason, s.repo_root,
 			s.models_json, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens
 		FROM change_sessions cs
@@ -918,7 +918,7 @@ func listChangeSessions(ctx context.Context, db *sql.DB, changeID int64) ([]Sess
 		var s SessionPayload
 		var modelsJSON string
 		if err := rows.Scan(
-			&s.ID, &s.CreatedAt, &s.EndedAt, &s.Command, &s.Cwd, &s.TLVersion,
+			&s.ID, &s.CreatedAt, &s.EndedAt, &s.Command, &s.Cwd, &s.GxVersion,
 			&s.Source, &s.LastSeenAt, &s.EndReason, &s.RepoRoot,
 			&modelsJSON, &s.InputTokens, &s.OutputTokens, &s.CacheReadTokens, &s.CacheWriteTokens,
 		); err != nil {
@@ -1002,7 +1002,7 @@ func listRequestResponses(ctx context.Context, db *sql.DB, requestID string) ([]
 }
 
 func publishBranchName(push vcs.PushResult) *string {
-	if ref := strings.TrimSpace(push.LgtmStackRef); ref != "" {
+	if ref := strings.TrimSpace(push.GxStackRef); ref != "" {
 		return &ref
 	}
 	return push.Repo.BranchName

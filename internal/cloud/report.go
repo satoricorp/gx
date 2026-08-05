@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/satoricorp/lgtm/internal/version"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 type ReportLogFile struct {
@@ -18,7 +18,7 @@ type ReportLogFile struct {
 }
 
 type ReportLogRequest struct {
-	TLVersion    string          `json:"lgtm_version"`
+	GxVersion    string          `json:"gx_version"`
 	OS           string          `json:"os"`
 	Arch         string          `json:"arch"`
 	UserID       string          `json:"user_id,omitempty"`
@@ -39,23 +39,23 @@ type ReportLogResult struct {
 
 func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (ReportLogResult, error) {
 	if c == nil || c.url == "" {
-		return ReportLogResult{}, fmt.Errorf("lgtm cloud base URL is not configured")
+		return ReportLogResult{}, fmt.Errorf("gx cloud base URL is not configured")
 	}
 	reportURL := cloudURLWithPath(c.url, "/v1/reported-logs")
 	if reportURL == "" {
-		return ReportLogResult{}, fmt.Errorf("lgtm cloud base URL is not configured")
+		return ReportLogResult{}, fmt.Errorf("gx cloud base URL is not configured")
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("marshal lgtm report: %w", err)
+		return ReportLogResult{}, fmt.Errorf("marshal gx report: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reportURL, bytes.NewReader(body))
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("create lgtm report request: %w", err)
+		return ReportLogResult{}, fmt.Errorf("create gx report request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "lgtm/"+version.Current())
+	req.Header.Set("User-Agent", "gx/"+version.Current())
 	token, err := CloudAPIToken()
 	if err != nil {
 		return ReportLogResult{}, err
@@ -64,7 +64,7 @@ func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (Repor
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return ReportLogResult{}, fmt.Errorf("send lgtm report: %w", err)
+		return ReportLogResult{}, fmt.Errorf("send gx report: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -72,19 +72,19 @@ func (c *Client) ReportLogs(ctx context.Context, report ReportLogRequest) (Repor
 		detail := strings.TrimSpace(string(raw))
 		if resp.StatusCode == http.StatusUnauthorized {
 			if detail != "" {
-				return ReportLogResult{}, fmt.Errorf("send lgtm report: status %s: %s (run `lgtm auth login`)", resp.Status, detail)
+				return ReportLogResult{}, fmt.Errorf("send gx report: status %s: %s (run `gx auth login`)", resp.Status, detail)
 			}
-			return ReportLogResult{}, fmt.Errorf("send lgtm report: status %s (run `lgtm auth login`)", resp.Status)
+			return ReportLogResult{}, fmt.Errorf("send gx report: status %s (run `gx auth login`)", resp.Status)
 		}
 		if detail != "" {
-			return ReportLogResult{}, fmt.Errorf("send lgtm report: status %s: %s", resp.Status, detail)
+			return ReportLogResult{}, fmt.Errorf("send gx report: status %s: %s", resp.Status, detail)
 		}
-		return ReportLogResult{}, fmt.Errorf("send lgtm report: status %s", resp.Status)
+		return ReportLogResult{}, fmt.Errorf("send gx report: status %s", resp.Status)
 	}
 	var result ReportLogResult
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &result); err != nil {
-			return ReportLogResult{}, fmt.Errorf("decode lgtm report response: %w", err)
+			return ReportLogResult{}, fmt.Errorf("decode gx report response: %w", err)
 		}
 	}
 	return result, nil

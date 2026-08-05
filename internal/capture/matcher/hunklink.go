@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/gx/internal/capture"
 )
 
 const (

@@ -1,4 +1,4 @@
-# lgtm Test Review
+# gx Test Review
 
 This is a design- and architecture-oriented review of the current test suite.
 The suite spans CLI, authoring, cloud, storage, VCS, review bundle,
@@ -29,9 +29,9 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ## Package Overview
 
-### `cmd/lgtm`
+### `cmd/gx`
 
-- `TestRootExposesAuthCommand`: ensures `lgtm auth` is visible from the root.
+- `TestRootExposesAuthCommand`: ensures `gx auth` is visible from the root.
 - `TestRootExposesShortcutCommands`: ensures shortcut aliases such as status/add
   shortcuts are registered.
 - `TestRootDoesNotExposeRemovedLegacyCommands`: protects the simplified CLI by
@@ -40,7 +40,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   visible CLI command.
 - `TestRootDoesNotExposeDaemonCommand`: ensures internal daemon mode remains
   hidden.
-- `TestRootDoesNotExposeGitOrJJPassthroughCommands`: ensures lgtm does not become
+- `TestRootDoesNotExposeGitOrJJPassthroughCommands`: ensures gx does not become
   a generic Git/JJ passthrough CLI.
 - `TestRootPrintsInitNoteWhenIdentityMissing`: checks root execution guides an
   unconfigured user toward init/identity setup.
@@ -116,7 +116,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
   revision to modify.
 - `TestPrintDemuxProposalIncludesFeasibilityWarnings`: checks human demux output
   includes feasibility warning details.
-- `TestPRHelpDoesNotPublish`: ensures `lgtm pr --help` is side-effect free.
+- `TestPRHelpDoesNotPublish`: ensures `gx pr --help` is side-effect free.
 - `TestConfirmBaseSwitchRequiresYes`: requires exact confirmation before a
   destructive base switch.
 
@@ -151,7 +151,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 ### `internal/ingest/cursor`
 
 - `TestSyncFromPathIngestsComposersAndBubbles`: ingests Cursor composer/bubble
-  records into lgtm session storage.
+  records into gx session storage.
 - `TestSyncFromPathIsIdempotent`: repeated Cursor ingest does not duplicate
   session data.
 - `TestSyncFromPathMissingFile`: handles missing Cursor DB/file input.
@@ -217,7 +217,7 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ### `internal/vcs`
 
-- Stack tests verify lgtm stack naming, fallback slugs, JJ stack revsets,
+- Stack tests verify gx stack naming, fallback slugs, JJ stack revsets,
   detached-HEAD recovery with JJ stack refs, git index lock detection, and retry
   behavior.
 - Bookmark tests verify edit revision selection for published/draft stacks and
@@ -234,30 +234,30 @@ provider parsing, Cursor ingest, MCP tools, and e2e packages.
 
 ### `test/e2e`
 
-- `TestLgtmAddMaintainsBookmarkStateAndAttachesExplicitSession`: records a
+- `TestGxAddMaintainsBookmarkStateAndAttachesExplicitSession`: records a
   revision while preserving stack state and explicit session linkage.
-- `TestLgtmDemuxProposesAndAppliesFileLevelRevisions`: proposes file-level demux
+- `TestGxDemuxProposesAndAppliesFileLevelRevisions`: proposes file-level demux
   revisions, applies them, and verifies evidence/provenance.
-- `TestLgtmDemuxChangesWorkflowHappyPathAppliesValidatedProposal`: exercises the
+- `TestGxDemuxChangesWorkflowHappyPathAppliesValidatedProposal`: exercises the
   machine demux workflow packet, validation, and apply flow.
-- `TestLgtmDemuxAttachesRepoLocalSessionWithoutEnv`: proves ambient repo-local
+- `TestGxDemuxAttachesRepoLocalSessionWithoutEnv`: proves ambient repo-local
   sessions can attach without explicit env.
-- `TestLgtmDemuxValidatePlanReportsRepairableErrorsWithoutApplying`: validates
+- `TestGxDemuxValidatePlanReportsRepairableErrorsWithoutApplying`: validates
   bad plans, returns repairable errors, and avoids JJ side effects.
-- `TestLgtmDemuxApplyPlanResolvesHunkIDs`: applies an LLM-style plan using
+- `TestGxDemuxApplyPlanResolvesHunkIDs`: applies an LLM-style plan using
   catalog `hunk_ids`.
-- `TestLgtmDemuxProposesSymbolLevelRevisions`: proves deterministic symbol-level
+- `TestGxDemuxProposesSymbolLevelRevisions`: proves deterministic symbol-level
   demux can split one file into multiple revisions.
-- `TestLgtmPRWithMultipleBookmarksPushesAPIAndPreservesState`: pushes stack data,
+- `TestGxPRWithMultipleBookmarksPushesAPIAndPreservesState`: pushes stack data,
   uploads API context, and preserves local state across multiple stacks.
-- `TestLgtmSwitchBaseRequiresConfirmationAndReturnsToMain`: protects destructive
+- `TestGxSwitchBaseRequiresConfirmationAndReturnsToMain`: protects destructive
   base switch behavior.
-- `TestLgtmSwitchAcceptsImplicitStackAliases`: supports user-friendly stack aliases.
+- `TestGxSwitchAcceptsImplicitStackAliases`: supports user-friendly stack aliases.
 
 ## UX/Test Recommendations
 
-1. Add CLI snapshot tests for the final public design of `lgtm status`, `lgtm commit`,
-   `lgtm demux`, `lgtm demux apply`, `lgtm pr`, and capture status.
+1. Add CLI snapshot tests for the final public design of `gx status`, `gx commit`,
+   `gx demux`, `gx demux apply`, `gx pr`, and capture status.
 2. Add MCP tool tests for argument construction and repair-loop behavior.
 3. Add demux graph tests before multi-channel design: SCC grouping,
    weak-component fan-out, topological ordering, textual overlap edges, and

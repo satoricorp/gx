@@ -33,7 +33,7 @@ func TestReviewerAvailable(t *testing.T) {
 }
 
 func TestJudgeConfirmsFindingAndItSurvives(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	engine := judgeTestEngine(root, []Finding{judgeTestFinding("ai.review.1", "internal/app/app.go")})
@@ -59,7 +59,7 @@ func TestJudgeConfirmsFindingAndItSurvives(t *testing.T) {
 }
 
 func TestJudgeWrongFindingDrops(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\n")
 	engine := judgeTestEngine(root, []Finding{judgeTestFinding("ai.review.1", "internal/app/app.go")})
@@ -75,7 +75,7 @@ func TestJudgeWrongFindingDrops(t *testing.T) {
 }
 
 func TestJudgeUnverifiedFindingDrops(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\n")
 	engine := judgeTestEngine(root, []Finding{judgeTestFinding("ai.review.1", "internal/app/app.go")})
@@ -91,7 +91,7 @@ func TestJudgeUnverifiedFindingDrops(t *testing.T) {
 }
 
 func TestJudgeErrorStillKeepsDedupedFindings(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	engine := judgeTestEngine(root, []Finding{
@@ -148,7 +148,7 @@ func TestApplyJudgeResultsPrecisionFilter(t *testing.T) {
 }
 
 func TestCapKeepsTopThreeAdvisoryFindings(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
 	root := t.TempDir()
 	findings := []Finding{
 		judgeTestFindingWithStrength("advice.5", "Worth exploring"),
@@ -169,7 +169,7 @@ func TestCapKeepsTopThreeAdvisoryFindings(t *testing.T) {
 }
 
 func TestBlockingToolFindingsRenderInAdditionToCap(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
 	root := t.TempDir()
 	findings := []Finding{{
 		ID:             "tools.static-failure",
@@ -198,7 +198,7 @@ func TestBlockingToolFindingsRenderInAdditionToCap(t *testing.T) {
 }
 
 func TestJudgeDisabledStillCapsAdvisoryFindingsAtThree(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
 	root := t.TempDir()
 	engine := judgeTestEngine(root, []Finding{
 		judgeTestFindingWithStrength("advice.1", "Worth exploring"),
@@ -247,8 +247,8 @@ func TestNearDupeProviderFindingsMerge(t *testing.T) {
 }
 
 func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
-	t.Setenv("LGTM_CLOUD_URL", "off")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
+	t.Setenv("GX_CLOUD_URL", "off")
 	// An OPENAI_API_KEY must no longer produce a judge: the OpenAI judge is
 	// gone, and embeddings keep that variable set on most developer machines.
 	t.Setenv("OPENAI_API_KEY", "sk-embeddings-only")

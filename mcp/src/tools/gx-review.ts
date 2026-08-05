@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { InferSchema, ToolMetadata } from "xmcp";
-import { formatError, formatResult, runTt } from "../lgtm";
+import { formatError, formatResult, runTt } from "../gx";
 
 const reviewScope = z.enum([
   "architecture",
@@ -15,9 +15,9 @@ const reviewScope = z.enum([
 
 export const schema = {
   cwd: z.string().optional().describe("Repository working directory. Defaults to the MCP server process cwd."),
-  scope: reviewScope.optional().describe("Optional focused review scope. Omit for lgtm review's patch-focused default."),
+  scope: reviewScope.optional().describe("Optional focused review scope. Omit for gx review's patch-focused default."),
   focus: z.string().optional().describe("Limit review to files under this path prefix."),
-  prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional lgtm review prompt."),
+  prompt: z.string().optional().describe("Optional reviewer prompt passed as the positional gx review prompt."),
   repo: z
     .boolean()
     .optional()
@@ -35,20 +35,20 @@ export const schema = {
 };
 
 export const metadata: ToolMetadata = {
-  name: "lgtm_review",
+  name: "gx_review",
   description:
-    "Run lgtm review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Defaults to reviewing the current change; pass repo=true to review the whole repository instead, which is what questions about the codebase need when the working tree is dirty. Pass deep=true for full-spectrum review. MCP forces LGTM_REVIEW_AI=1 for this command.",
+    "Run gx review for local facts, patch facts, previous-session context, PR/code-change context, indexed review resources, and configured AI reviewers. Defaults to reviewing the current change; pass repo=true to review the whole repository instead, which is what questions about the codebase need when the working tree is dirty. Pass deep=true for full-spectrum review. MCP forces GX_REVIEW_AI=1 for this command.",
   annotations: {
-    title: "lgtm Review",
+    title: "gx Review",
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: false,
   },
 };
 
-export default async function lgtmReview(params: InferSchema<typeof schema>) {
-  // --no-publish is not optional here. Without it `lgtm review` posts a review
-  // comment on the matching GitHub PR and records the run to lgtm Cloud, so a
+export default async function gxReview(params: InferSchema<typeof schema>) {
+  // --no-publish is not optional here. Without it `gx review` posts a review
+  // comment on the matching GitHub PR and records the run to gx Cloud, so a
   // tool annotated readOnlyHint would write to a pull request other people
   // read — and an agent calling it for context mid-codegen would comment on
   // the PR every time it asked a question. Publishing is a deliberate act that
@@ -77,7 +77,7 @@ export default async function lgtmReview(params: InferSchema<typeof schema>) {
     args.push(prompt);
   }
   try {
-    // No init, no hooks, no lgtm state, and nothing published: `lgtm review
+    // No init, no hooks, no gx state, and nothing published: `gx review
     // --no-publish` reads the repo and reports back, which is what
     // readOnlyHint promises the caller.
     return formatResult(await runTt(args, { cwd: params.cwd, timeoutMs: 300_000 }), {

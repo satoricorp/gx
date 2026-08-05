@@ -76,7 +76,7 @@ func TriageChange(changedFiles []string, diffSnippets []DiffSnippet, opts Option
 }
 
 func triageEnabled() bool {
-	return !strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_TRIAGE")), "0")
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_TRIAGE")), "0")
 }
 
 func reviewPlanFor(opts Options, triage ChangeTriage) ReviewExecutionPlan {

@@ -22,29 +22,29 @@ import (
 // ones, which is exactly where a shared fixture has to stay cheap or nobody
 // uses it.
 //
-// The layering is: internal/lgtmtest imports nothing from lgtm at all (which is why
+// The layering is: internal/gxtest imports nothing from gx at all (which is why
 // it carries its own copy of the revision trailer, pinned by
-// TestLgtmTestRevisionTrailerMatchesProduction in internal/hooks), and
+// TestGxTestRevisionTrailerMatchesProduction in internal/hooks), and
 // internal/storage/storagetest imports only internal/storage and
-// internal/lgtmtest. Checking internal/storage too closes the transitive hole:
+// internal/gxtest. Checking internal/storage too closes the transitive hole:
 // if storage ever imported vcs, storagetest would inherit it.
 func TestHarnessLayering(t *testing.T) {
 	root := repoRoot(t)
-	const prefix = "github.com/satoricorp/lgtm/"
+	const prefix = "github.com/satoricorp/gx/"
 
 	for _, tc := range []struct {
 		pkg     string
 		allowed []string
 	}{
-		{pkg: "internal/lgtmtest", allowed: nil},
+		{pkg: "internal/gxtest", allowed: nil},
 		{pkg: "internal/storage", allowed: []string{"internal/agentprovenance"}},
-		{pkg: "internal/storage/storagetest", allowed: []string{"internal/storage", "internal/lgtmtest"}},
+		{pkg: "internal/storage/storagetest", allowed: []string{"internal/storage", "internal/gxtest"}},
 	} {
 		allowed := map[string]bool{}
 		for _, name := range tc.allowed {
 			allowed[name] = true
 		}
-		for _, imported := range lgtmImports(t, filepath.Join(root, tc.pkg), prefix) {
+		for _, imported := range gxImports(t, filepath.Join(root, tc.pkg), prefix) {
 			if !allowed[imported] {
 				t.Errorf("%s imports %s, which the harness layering forbids; allowed: %v",
 					tc.pkg, imported, tc.allowed)
@@ -53,8 +53,8 @@ func TestHarnessLayering(t *testing.T) {
 	}
 }
 
-// lgtmImports returns the lgtm-internal packages a package's non-test files import.
-func lgtmImports(t *testing.T, dir, prefix string) []string {
+// gxImports returns the gx-internal packages a package's non-test files import.
+func gxImports(t *testing.T, dir, prefix string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {

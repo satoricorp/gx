@@ -9,8 +9,8 @@ const (
 	transcriptFieldRepoRoot   = "repo_root"
 	transcriptFieldBranchName = "branch_name"
 	transcriptFieldRevisionID = "revision_id"
-	// transcriptFieldJJChangeID is the legacy attribute name for the lgtm
-	// revision id (commit-SHA fallback) from the jj era. The lgtm-sessions
+	// transcriptFieldJJChangeID is the legacy attribute name for the gx
+	// revision id (commit-SHA fallback) from the jj era. The gx-sessions
 	// namespace is upserted into and never rebuilt wholesale, so rows written
 	// before the rename carry only this key. Dual-write keeps those rows and
 	// new ones queryable by one shared name during the transition; delete
@@ -33,8 +33,8 @@ type TranscriptMetadata struct {
 	SourceID   string
 	RepoRoot   string
 	BranchName string
-	// RevisionID carries the lgtm revision id, falling back to the commit SHA
-	// for commits without a lgtm trailer.
+	// RevisionID carries the gx revision id, falling back to the commit SHA
+	// for commits without a gx trailer.
 	RevisionID       string
 	CommitID         string
 	RevisionTitle    string
@@ -73,7 +73,7 @@ func (m TranscriptMetadata) Attributes() map[string]any {
 	}
 }
 
-// transcriptTurboPufferSchema is the single schema every lgtm writer declares.
+// transcriptTurboPufferSchema is the single schema every gx writer declares.
 // One namespace holds session transcripts, published diffs and code chunks, so
 // the schema is the union of their fields; TurboPuffer only stores attributes a
 // row actually sets, so unused columns cost nothing.

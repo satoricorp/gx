@@ -3,7 +3,7 @@ package matcher
 import (
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/gx/internal/capture"
 )
 
 const (

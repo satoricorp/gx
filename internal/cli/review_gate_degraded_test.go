@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/satoricorp/lgtm/internal/codereview"
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/codereview"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 func gateExitCode(t *testing.T, err error) int {

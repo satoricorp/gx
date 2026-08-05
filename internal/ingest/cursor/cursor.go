@@ -2,8 +2,8 @@
 //
 // Cursor stores every chat/composer/agent thread under
 // ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb. The
-// sync that copied those threads into the lgtm store is retired; what remains
-// is the path lookup lgtm doctor uses to report whether the database exists.
+// sync that copied those threads into the gx store is retired; what remains
+// is the path lookup gx doctor uses to report whether the database exists.
 package cursor
 
 import (

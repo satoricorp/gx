@@ -1,14 +1,14 @@
-# lgtm CLI Authoring Contract
+# gx CLI Authoring Contract
 
-> **Note (2026):** `lgtm compose`, `lgtm stacks`, and `lgtm add` were removed. Normal
-> work uses `git add` + `lgtm commit`, `lgtm status`, and the hidden `lgtm generate`.
+> **Note (2026):** `gx compose`, `gx stacks`, and `gx add` were removed. Normal
+> work uses `git add` + `gx commit`, `gx status`, and the hidden `gx generate`.
 
-This document captures the intended behavior for lgtm authoring, compose, stacks,
+This document captures the intended behavior for gx authoring, compose, stacks,
 and publish workflows.
 
 ## Mental Model
 
-lgtm is a product layer over JJ and Git.
+gx is a product layer over JJ and Git.
 
 The user-facing objects are:
 
@@ -16,7 +16,7 @@ The user-facing objects are:
    files, prompts, responses, and tests.
 2. **Revision**: one reviewable logical change. Locally this is a JJ change,
    identified by JJ `change_id`.
-3. **Stack**: an ordered line of revisions. Locally this is lgtm metadata plus a
+3. **Stack**: an ordered line of revisions. Locally this is gx metadata plus a
    JJ/Git-compatible bookmark or branch ref.
 4. **Published stack**: the remote GitHub/review representation of that local
    stack.
@@ -24,13 +24,13 @@ The user-facing objects are:
 The important mapping is:
 
 ```text
-lgtm revision = JJ change = stable product identity
+gx revision = JJ change = stable product identity
 Git commit = current exported snapshot of that revision
-lgtm stack = ordered container of revisions
+gx stack = ordered container of revisions
 Git branch/bookmark = transport/ref for that stack
 ```
 
-JJ gives lgtm stable change IDs while commits can be rewritten. Git exists so the
+JJ gives gx stable change IDs while commits can be rewritten. Git exists so the
 outside world can receive branches and PRs.
 
 ## Normal Flow
@@ -39,21 +39,21 @@ The normal workflow should be:
 
 ```bash
 git add <files>
-lgtm commit -m "describe this revision"
-lgtm status
+gx commit -m "describe this revision"
+gx status
 git push
 gh pr create
 ```
 
-`git add` + `lgtm commit` records staged work as a lgtm revision. The hidden
-`lgtm generate` command can organize a large working copy into smaller revisions
+`git add` + `gx commit` records staged work as a gx revision. The hidden
+`gx generate` command can organize a large working copy into smaller revisions
 when needed.
 
-`lgtm status` shows local features, revisions, and remote state.
+`gx status` shows local features, revisions, and remote state.
 
-Publish with plain `git push` (the lgtm pre-push hook captures the session and
-publishes). Open the PR with `gh pr create`. Do not run `lgtm push` or
-`lgtm publish` — those paths are disabled or removed; plain `git push` is the
+Publish with plain `git push` (the gx pre-push hook captures the session and
+publishes). Open the PR with `gh pr create`. Do not run `gx push` or
+`gx publish` — those paths are disabled or removed; plain `git push` is the
 user-facing publish path.
 
 The user should stay on a normal branch checkout after commit and push.
@@ -61,7 +61,7 @@ Detached HEAD is not an acceptable steady state.
 
 ## Compose
 
-`lgtm compose` is the core authoring command. It should take messy working-copy
+`gx compose` is the core authoring command. It should take messy working-copy
 changes and turn them into reviewable revisions grouped into stacks.
 
 The intended compose pipeline is:
@@ -81,7 +81,7 @@ The intended compose pipeline is:
 11. Present only a proposal that should apply successfully.
 
 Compose must not silently degrade to "I applied one valid piece; run me again."
-If the user accepts all, lgtm should create all proposed stacks and revisions. If
+If the user accepts all, gx should create all proposed stacks and revisions. If
 the user accepts one stack, that stack should be created and visible
 immediately, and the remaining unaccepted changes should stay available for the
 next compose run.
@@ -94,13 +94,13 @@ The preflight message:
 Checking compose apply in disposable attempt 1/3...
 ```
 
-means lgtm is testing the proposal before presenting or applying it. It should not
+means gx is testing the proposal before presenting or applying it. It should not
 mutate the real worktree. If it fails, the proposal should be repaired before
 the user sees it as ready.
 
 ## Stacks
 
-`lgtm stacks` is the local truth view for accepted work.
+`gx stacks` is the local truth view for accepted work.
 
 It should show:
 
@@ -115,23 +115,23 @@ It should show:
 - remote ref if published
 
 It should not require being on that stack. In the normal flow, the user is on
-`main`, and `lgtm stacks` still shows accepted local stacks and published stacks
+`main`, and `gx stacks` still shows accepted local stacks and published stacks
 that are still under review. Merged or closed stacks are removed from the
 working stack surface.
 
-A stack record and its bookmark must agree. If lgtm metadata says a stack head is
+A stack record and its bookmark must agree. If gx metadata says a stack head is
 change `A`, but the bookmark points at change `B`, that is a bug. Stack
 metadata, JJ bookmark state, and Git branch refs must be kept in sync.
 
 ## Revisions And Change IDs
 
-lgtm should store JJ change IDs for every lgtm revision.
+gx should store JJ change IDs for every gx revision.
 
 That is the right design because JJ change IDs survive edits better than Git
 commit hashes. Git commit hashes are still useful, but they are current
 snapshots, not durable identities.
 
-For each revision lgtm needs:
+For each revision gx needs:
 
 - JJ `change_id`
 - current Git `commit_id`
@@ -143,16 +143,16 @@ For each revision lgtm needs:
 - provenance/session links
 - demux/compose evidence
 
-Editing should work by change ID. If a user runs `lgtm edit <revision>`, lgtm should
+Editing should work by change ID. If a user runs `gx edit <revision>`, gx should
 find the stack containing that JJ change, enter the correct revision, and
 preserve the relationship after the edit rewrites the commit.
 
 ## Branches And Bookmarks
 
-lgtm should hide JJ's awkward checkout state.
+gx should hide JJ's awkward checkout state.
 
-Normal users should see real Git branches, not detached HEAD. Internally lgtm can
-use JJ bookmarks and lgtm-owned refs, but the visible checkout should be attached
+Normal users should see real Git branches, not detached HEAD. Internally gx can
+use JJ bookmarks and gx-owned refs, but the visible checkout should be attached
 to a branch.
 
 The intended visible-branch rules are:
@@ -163,16 +163,16 @@ The intended visible-branch rules are:
 - Publish may create or update branch refs for stacks.
 - After publish, visible Git checkout returns to `main`.
 - Edit surgery should attach visible Git to the real stack branch when one
-  exists. lgtm must not create `lgtm/...` checkout branches for edit/base state.
+  exists. gx must not create `gx/...` checkout branches for edit/base state.
 
 Branches/bookmarks created by compose should match the stack names shown in
 compose. If compose proposes `feature/stack-management`, then accepting it
-should create a stack whose visible name/ref in `lgtm stacks` is
+should create a stack whose visible name/ref in `gx stacks` is
 `feature/stack-management`.
 
 ## Publish
 
-Publish with plain `git push`. The lgtm pre-push hook captures the session and
+Publish with plain `git push`. The gx pre-push hook captures the session and
 registers publish metadata as the branch goes up. Open the PR separately with
 `gh pr create`.
 
@@ -190,7 +190,7 @@ means:
 - upload review context when cloud/GitHub integration is enabled
 - open or update the PR with `gh pr create` (do not seed `## Summary`)
 
-Do not run `lgtm push` or `lgtm publish`. Those are not the agent/user publish path.
+Do not run `gx push` or `gx publish`. Those are not the agent/user publish path.
 
 ## MCP And Agent Flow
 
@@ -199,16 +199,16 @@ MCP should call the same authoring engine behavior as the CLI.
 The ideal agent loop is:
 
 1. `git add` staged files
-2. `lgtm commit`
-3. `lgtm status`
+2. `gx commit`
+3. `gx status`
 4. plain `git push` when ready
 5. `gh pr create`
-6. `git commit --amend` when updating the latest revision, preserving its lgtm trailer
-7. `lgtm_review` when review context is needed
+6. `git commit --amend` when updating the latest revision, preserving its gx trailer
+7. `gx_review` when review context is needed
 
-MCP exposes `lgtm_review` only — there is no `lgtm_commit` / `lgtm_status` / `lgtm_publish` /
-`lgtm_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
-(never `lgtm push` or `lgtm capture push`).
+MCP exposes `gx_review` only — there is no `gx_commit` / `gx_status` / `gx_publish` /
+`gx_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
+(never `gx push` or `gx capture push`).
 
 The important invariant is shared: agent commits must create the same revisions
 that the human CLI path would create.
@@ -217,9 +217,9 @@ that the human CLI path would create.
 
 Merge only changes that support this contract:
 
-- `git add` + `lgtm commit` (and hidden `lgtm generate` when needed) record reviewable revisions
+- `git add` + `gx commit` (and hidden `gx generate` when needed) record reviewable revisions
 - stack/revision metadata stores JJ change IDs and current commit IDs
-- agents publish with plain `git push` only (never `lgtm push` / `lgtm publish` / MCP push tools)
+- agents publish with plain `git push` only (never `gx push` / `gx publish` / MCP push tools)
 - the pre-push hook captures session data and records publish metadata
 - PRs are opened with `gh pr create` without seeding `## Summary`
 
@@ -239,12 +239,12 @@ Then run a manual dogfood:
 
 ```bash
 git add <files>
-lgtm commit -m "describe this revision"
-lgtm status
+gx commit -m "describe this revision"
+gx status
 git push
 gh pr create
 git branch --show-current
 ```
 
-The result should be boring: staged work becomes a lgtm revision, `git push`
+The result should be boring: staged work becomes a gx revision, `git push`
 publishes the branch through the pre-push hook, and the PR opens cleanly.

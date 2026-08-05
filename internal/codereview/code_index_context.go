@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/auth"
-	"github.com/satoricorp/lgtm/internal/semantic"
+	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 const (
@@ -71,7 +71,7 @@ type CodeIndexRetriever struct {
 	// EmbedderFor builds an embedder for a namespace width. Injected so tests
 	// can drive fusion without an embeddings API.
 	EmbedderFor embedderFactory
-	// CloudSearcher overrides the lgtm Cloud retrieval client; injected in
+	// CloudSearcher overrides the gx Cloud retrieval client; injected in
 	// tests. When nil it is resolved from the signed-in credentials.
 	CloudSearcher reviewCloudSearcher
 }
@@ -87,16 +87,16 @@ type codeIndexTarget struct {
 func (CodeIndexRetriever) EvidenceSource() string { return codeIndexEvidenceSource }
 
 func codeIndexRetrieverFromEnv() ContextRetriever {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_CODE_INDEX")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_CODE_INDEX")), "0") {
 		return nil
 	}
 	return CodeIndexRetriever{
-		Limit: reviewEnvInt("LGTM_REVIEW_CODE_INDEX_TOP_K", defaultCodeIndexTopK),
+		Limit: reviewEnvInt("GX_REVIEW_CODE_INDEX_TOP_K", defaultCodeIndexTopK),
 	}
 }
 
 func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
-	// The signed-in path: retrieval through lgtm Cloud, no provider keys on this
+	// The signed-in path: retrieval through gx Cloud, no provider keys on this
 	// machine. The direct-store path below stays for development (raw
 	// TURBOPUFFER_API_KEY) and for tests that inject a Store.
 	if r.Store == nil && !rawTurboPufferKeyPresent() {
@@ -115,7 +115,7 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 	targets := r.Namespaces
 	if len(targets) == 0 {
 		// Review reads; it does not index. Keeping this repository's index
-		// current is lgtm Cloud's job, done from the GitHub App when a pull
+		// current is gx Cloud's job, done from the GitHub App when a pull
 		// request merges, which covers every user rather than only those
 		// running the CLI with an embeddings key. Two writers filling one
 		// namespace with two different chunkings would also have them
@@ -128,10 +128,10 @@ func (r CodeIndexRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]C
 			State:  EvidenceMissing,
 			Detail: "no namespace could be resolved for this repository (no git remote and no org)",
 			// No remedy names the website here on purpose: without a GitHub
-			// remote there is no repository for lgtm Cloud to connect to, so
+			// remote there is no repository for gx Cloud to connect to, so
 			// pointing at /repositories would be an instruction that cannot be
 			// followed.
-			Remedy: "Add a GitHub remote, then connect this repository at https://lgtm.cx/repositories",
+			Remedy: "Add a GitHub remote, then connect this repository at https://gx.run/repositories",
 		})
 		return nil, nil
 	}
@@ -265,12 +265,12 @@ func (r CodeIndexRetriever) resolveStore(log *EvidenceLog) (indexStore, bool) {
 		log.Record(EvidenceStatus{
 			Source: codeIndexEvidenceSource,
 			State:  EvidenceDisabled,
-			Detail: "not signed in to lgtm Cloud, and no TURBOPUFFER_API_KEY for direct access",
+			Detail: "not signed in to gx Cloud, and no TURBOPUFFER_API_KEY for direct access",
 			Remedy: signInRemedy,
 		})
 		return nil, false
 	}
-	return newTurboPufferIndexStore(apiKey, firstNonEmpty(os.Getenv("LGTM_TPUF_BASE_URL"), defaultReviewResourceBaseURL)), true
+	return newTurboPufferIndexStore(apiKey, firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL)), true
 }
 
 func (r CodeIndexRetriever) limitFor(opts Options) int {
@@ -291,7 +291,7 @@ func (r CodeIndexRetriever) limitFor(opts Options) int {
 // source, most specific first.
 //
 // The names come from semantic.ResolveRepoIdentity — the same function
-// `lgtm index` writes through — so the reader and the writer cannot address
+// `gx index` writes through — so the reader and the writer cannot address
 // different namespaces. They used to derive the name separately and did not
 // agree; see the comment at the top of internal/semantic/repoidentity.go for
 // what that cost.
@@ -303,11 +303,11 @@ func (r CodeIndexRetriever) limitFor(opts Options) int {
 // remote. Results from every namespace that answers are fused, and the evidence
 // line names which ones did.
 func codeIndexTargets(ctx context.Context, repoRoot string) []codeIndexTarget {
-	if override := strings.TrimSpace(os.Getenv("LGTM_REVIEW_CODE_INDEX_NAMESPACE")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("GX_REVIEW_CODE_INDEX_NAMESPACE")); override != "" {
 		var out []codeIndexTarget
 		for _, name := range strings.Split(override, ",") {
 			if name = strings.TrimSpace(name); name != "" {
-				out = append(out, codeIndexTarget{Namespace: name, Origin: "LGTM_REVIEW_CODE_INDEX_NAMESPACE"})
+				out = append(out, codeIndexTarget{Namespace: name, Origin: "GX_REVIEW_CODE_INDEX_NAMESPACE"})
 			}
 		}
 		return out
@@ -320,7 +320,7 @@ func codeIndexTargets(ctx context.Context, repoRoot string) []codeIndexTarget {
 	return out
 }
 
-// reviewOrgID is the signed-in lgtm org, or "" when this machine has never
+// reviewOrgID is the signed-in gx org, or "" when this machine has never
 // logged in. Read in one place so the review's namespaces and the index refresh
 // it triggers cannot disagree about which org they belong to.
 func reviewOrgID() string {
@@ -332,13 +332,13 @@ func reviewOrgID() string {
 
 // connectRepositoryRemedy is where a user goes to get their repository indexed.
 //
-// Every "no index" message ends here rather than at `lgtm index`. Indexing is lgtm
+// Every "no index" message ends here rather than at `gx index`. Indexing is gx
 // Cloud's job — it runs from the GitHub App on merge, so it stays current
-// without anyone remembering to re-run anything — and `lgtm index` is a hidden
+// without anyone remembering to re-run anything — and `gx index` is a hidden
 // maintenance command that indexes from one developer's checkout into one
 // developer's namespace. Sending users to it would have them build, by hand, a
 // worse copy of something the server maintains for them.
-const connectRepositoryRemedy = "Connect this repository at https://lgtm.cx/repositories to have lgtm Cloud index it"
+const connectRepositoryRemedy = "Connect this repository at https://gx.run/repositories to have gx Cloud index it"
 
 // codeIndexMissingDetail explains an absent namespace.
 func codeIndexMissingDetail(target codeIndexTarget) string {
@@ -358,9 +358,9 @@ func codeIndexMissingDetail(target codeIndexTarget) string {
 // saw less than it could have and leaves them nowhere to go. This is the only
 // place that gap is visible to a user, so it carries the fix.
 //
-// Every case points at the website rather than at `lgtm index`. Indexing is lgtm
+// Every case points at the website rather than at `gx index`. Indexing is gx
 // Cloud's job — it runs from the GitHub App on merge, so it stays current
-// without anyone remembering to re-run anything — and `lgtm index` is a hidden
+// without anyone remembering to re-run anything — and `gx index` is a hidden
 // maintenance command that indexes one developer's checkout into one
 // developer's namespace. Sending users there would have them build by hand a
 // worse copy of something the server maintains for them.

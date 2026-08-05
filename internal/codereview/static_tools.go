@@ -38,7 +38,7 @@ type staticToolEnv struct {
 	changedFiles []string
 }
 
-// staticToolCommand is a resolved invocation. bin is the executable lgtm runs;
+// staticToolCommand is a resolved invocation. bin is the executable gx runs;
 // argv is what humans and the AI brief see, so argv[0] stays the plain tool
 // name even when bin points at a repo-local binary.
 type staticToolCommand struct {
@@ -53,7 +53,7 @@ type staticToolCommand struct {
 // silently — a missing tool is never a review finding.
 //
 // Runners must be fast and scoped to the change. They are NOT side-effect
-// free, and it is worth being exact about that because the rest of `lgtm review`
+// free, and it is worth being exact about that because the rest of `gx review`
 // is: outside Go the runners are type checkers and linters, but the Go runner
 // is `go test`, which compiles and executes the reviewed checkout's own test
 // binaries, and `cargo check` executes the crate's build.rs and proc macros.
@@ -64,7 +64,7 @@ type staticToolCommand struct {
 //
 // They also write: `cargo check` populates <repo>/target/, `tsc` writes
 // *.tsbuildinfo when tsconfig sets incremental or composite, and every Go run
-// shares a build cache at $TMPDIR/lgtm-review-gocache that nothing prunes.
+// shares a build cache at $TMPDIR/gx-review-gocache that nothing prunes.
 type staticToolRunner struct {
 	name     string
 	progress string
@@ -95,7 +95,7 @@ var staticToolRunners = []staticToolRunner{
 
 // staticToolScope is the file set every runner detects against. It is the
 // change set, except for a whole-repo review that has no diff: there the
-// repository stands in for it. Without that, `lgtm review --repo` on a clean
+// repository stands in for it. Without that, `gx review --repo` on a clean
 // tree runs no compiler, no test, and no linter — collectStaticToolResults
 // returns before detection on an empty set — and then reports the repository
 // clean, which is the silent pass --fail-on exists to prevent.
@@ -111,7 +111,7 @@ func staticToolScope(facts RepoFacts, opts Options, changed []string) []string {
 // files this review resolved — the caller owns that resolution so the tools see
 // the same change set as the rest of the review, working tree or ref range.
 func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changed []string) []StaticToolResult {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_STATIC_TOOLS")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0") {
 		return nil
 	}
 	env := staticToolEnv{

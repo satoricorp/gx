@@ -2,7 +2,7 @@ package cloud
 
 import "strings"
 
-// CloudBaseURL returns the lgtm-cloud API origin.
+// CloudBaseURL returns the gx-cloud API origin.
 func CloudBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(CloudURL()), "/")
 }

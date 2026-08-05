@@ -15,15 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/cloud"
-	"github.com/satoricorp/lgtm/internal/lgtmtest"
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
-// recordingEndpoint stands in for lgtm Cloud and PostHog so the credential-gated
+// recordingEndpoint stands in for gx Cloud and PostHog so the credential-gated
 // paths actually execute instead of returning early. A `go test` binary is
 // built without -ldflags, so the embedded buildconfig.PostHogKey and CloudURL
 // are empty and every telemetry- and cloud-gated branch is dead code under
-// test — which is exactly how a release binary came to create $LGTM_HOME during
+// test — which is exactly how a release binary came to create $GX_HOME during
 // a read-only review without any test noticing. Pointing both at a live
 // recorder makes those branches run and makes what they send observable.
 type recordingEndpoint struct {
@@ -64,17 +64,17 @@ func (r *recordingEndpoint) requested(path string) bool {
 }
 
 // setReviewCloudEnv wires cloud and telemetry to a recorder. Call it after
-// setReviewGateEnv, which owns LGTM_HOME.
+// setReviewGateEnv, which owns GX_HOME.
 func setReviewCloudEnv(t *testing.T, rec *recordingEndpoint) {
 	t.Helper()
-	t.Setenv("LGTM_CLOUD_URL", rec.URL)
-	t.Setenv("LGTM_POSTHOG_KEY", "phc-test-key")
-	t.Setenv("LGTM_POSTHOG_HOST", rec.URL)
+	t.Setenv("GX_CLOUD_URL", rec.URL)
+	t.Setenv("GX_POSTHOG_KEY", "phc-test-key")
+	t.Setenv("GX_POSTHOG_HOST", rec.URL)
 }
 
 // staleGitStatCache backdates the working tree's mtimes so the index's stat
 // cache no longer matches it. This is the ordinary state of a fresh clone or
-// checkout — the CI case lgtm review is built for — and it is the condition
+// checkout — the CI case gx review is built for — and it is the condition
 // under which git status and git diff rewrite .git/index. Without it the
 // cache is already current, git has nothing to refresh, and an index-guard
 // regression would sail past this test.
@@ -111,9 +111,9 @@ func gitIndexDigest(t *testing.T, root string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// `lgtm review` has to be usable as a CI gate and on a checkout the reviewer
-// does not own, so it must not auto-initialize anything: no git hooks, no lgtm
-// home, no repo state. This test reviews a repo that has never run `lgtm init`
+// `gx review` has to be usable as a CI gate and on a checkout the reviewer
+// does not own, so it must not auto-initialize anything: no git hooks, no gx
+// home, no repo state. This test reviews a repo that has never run `gx init`
 // and asserts the repo and the machine come out untouched.
 func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	root := newReviewGateRepo(t)
@@ -131,16 +131,16 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	// pass because the network failed rather than because review kept its hands
 	// off the machine, which is exactly how this assertion came to be satisfied
 	// by accident.
-	backend := lgtmtest.NewIndexBackend(t)
+	backend := gxtest.NewIndexBackend(t)
 	backend.Use(t)
 
-	// Point LGTM_HOME and HOME at paths that do not exist yet: anything that
+	// Point GX_HOME and HOME at paths that do not exist yet: anything that
 	// opens the store or writes config has to create them, which makes the
 	// mutation visible instead of silently landing in an existing directory.
 	sandbox := t.TempDir()
-	lgtmHome := filepath.Join(sandbox, "lgtm-home")
+	gxHome := filepath.Join(sandbox, "gx-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("LGTM_HOME", lgtmHome)
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", fakeHome)
 
 	hooksDir := filepath.Join(root, ".git", "hooks")
@@ -152,49 +152,49 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--base", "main")
 	if err != nil {
-		t.Fatalf("lgtm review error = %v\n%s", err, out)
+		t.Fatalf("gx review error = %v\n%s", err, out)
 	}
 	if strings.TrimSpace(out) == "" {
-		t.Fatalf("lgtm review produced no report in an uninitialized repo")
+		t.Fatalf("gx review produced no report in an uninitialized repo")
 	}
-	// Indexing is lgtm Cloud's job, done on merge from the GitHub App. A review on
-	// a machine with no lgtm home reads that index; it must not write one, which
+	// Indexing is gx Cloud's job, done on merge from the GitHub App. A review on
+	// a machine with no gx home reads that index; it must not write one, which
 	// would mean both re-embedding the whole checkout and leaving a manifest
 	// behind.
 	if backend.Upserted() {
-		t.Fatalf("lgtm review indexed from a checkout with no lgtm home.\nrequests: %v", backend.Requests())
+		t.Fatalf("gx review indexed from a checkout with no gx home.\nrequests: %v", backend.Requests())
 	}
 
 	if after := hookDirEntries(t, hooksDir); !equalStrings(before, after) {
-		t.Fatalf("lgtm review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
+		t.Fatalf("gx review changed .git/hooks:\nbefore: %v\nafter:  %v", before, after)
 	}
 	for _, name := range before {
 		data, readErr := os.ReadFile(filepath.Join(hooksDir, name))
 		if readErr != nil {
 			t.Fatalf("read hook %s: %v", name, readErr)
 		}
-		if strings.Contains(string(data), "lgtm ") || strings.Contains(string(data), "LGTM_") {
-			t.Fatalf("lgtm review left a lgtm marker in .git/hooks/%s:\n%s", name, data)
+		if strings.Contains(string(data), "gx ") || strings.Contains(string(data), "GX_") {
+			t.Fatalf("gx review left a gx marker in .git/hooks/%s:\n%s", name, data)
 		}
 	}
-	for _, path := range []string{lgtmHome, fakeHome, filepath.Join(root, ".lgtm")} {
+	for _, path := range []string{gxHome, fakeHome, filepath.Join(root, ".gx")} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("lgtm review created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("gx review created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 	if after := gitIndexDigest(t, root); after != indexBefore {
-		t.Fatalf("lgtm review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
+		t.Fatalf("gx review rewrote .git/index:\nbefore: %s\nafter:  %s", indexBefore, after)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a successful lgtm review uploaded a failure report: %v", recorder.requestedPaths())
+		t.Fatalf("a successful gx review uploaded a failure report: %v", recorder.requestedPaths())
 	}
 }
 
-// A gate that fails is the tool working, not a crash. `lgtm review --fail-on`
-// returning findings must not ship log tails and repo identity to lgtm Cloud,
+// A gate that fails is the tool working, not a crash. `gx review --fail-on`
+// returning findings must not ship log tails and repo identity to gx Cloud,
 // and must not mint a machine ID — a CI job that fails the gate on every run
-// would otherwise upload on every run, from a machine that never ran lgtm.
-func TestReviewGateFailureNeverAutoReportsOrWritesLgtmHome(t *testing.T) {
+// would otherwise upload on every run, from a machine that never ran gx.
+func TestReviewGateFailureNeverAutoReportsOrWritesGxHome(t *testing.T) {
 	root := newReviewGateRepo(t)
 	writeTestFile(t, root, "package.json", "{\n  \"name\": \"example\"\n}\n")
 	gitAddTestFiles(t, root, "package.json")
@@ -205,9 +205,9 @@ func TestReviewGateFailureNeverAutoReportsOrWritesLgtmHome(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	lgtmHome := filepath.Join(sandbox, "lgtm-home")
+	gxHome := filepath.Join(sandbox, "gx-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("LGTM_HOME", lgtmHome)
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", fakeHome)
 
 	staleGitStatCache(t, root)
@@ -215,16 +215,16 @@ func TestReviewGateFailureNeverAutoReportsOrWritesLgtmHome(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("lgtm review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
 	}
 
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing gate auto-reported to lgtm Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing gate auto-reported to gx Cloud: %v", recorder.requestedPaths())
 	}
-	for _, path := range []string{lgtmHome, fakeHome, filepath.Join(root, ".lgtm")} {
+	for _, path := range []string{gxHome, fakeHome, filepath.Join(root, ".gx")} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 			t.Fatalf("a failing gate created %s (stat error = %v), want it untouched", path, statErr)
 		}
@@ -234,15 +234,15 @@ func TestReviewGateFailureNeverAutoReportsOrWritesLgtmHome(t *testing.T) {
 	}
 }
 
-// signIn writes credentials into an existing LGTM_HOME. Uploading a failure
+// signIn writes credentials into an existing GX_HOME. Uploading a failure
 // report needs a cloud token — without one ReportLogs fails before it sends
 // anything, which would make an "it did not upload" assertion pass for the
 // wrong reason. A signed-in machine is where the auto-report actually fires,
 // so that is where the gate has to be proven silent.
-func signIn(t *testing.T, lgtmHome string) {
+func signIn(t *testing.T, gxHome string) {
 	t.Helper()
-	if err := os.MkdirAll(lgtmHome, 0o755); err != nil {
-		t.Fatalf("create lgtm home: %v", err)
+	if err := os.MkdirAll(gxHome, 0o755); err != nil {
+		t.Fatalf("create gx home: %v", err)
 	}
 	// credentials.json nests the cloud section under "cloud"; a flat object
 	// parses without error and leaves the token empty, which would quietly
@@ -261,7 +261,7 @@ func signIn(t *testing.T, lgtmHome string) {
 	if err != nil {
 		t.Fatalf("marshal credentials: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(lgtmHome, "credentials.json"), data, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(gxHome, "credentials.json"), data, 0o600); err != nil {
 		t.Fatalf("write credentials: %v", err)
 	}
 	// Prove the machine really is signed in. Without this, a change to the
@@ -285,27 +285,27 @@ func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 	recorder := newRecordingEndpoint(t)
 	setReviewCloudEnv(t, recorder)
 
-	lgtmHome := filepath.Join(t.TempDir(), "lgtm-home")
-	t.Setenv("LGTM_HOME", lgtmHome)
-	signIn(t, lgtmHome)
+	gxHome := filepath.Join(t.TempDir(), "gx-home")
+	t.Setenv("GX_HOME", gxHome)
+	signIn(t, gxHome)
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("lgtm review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing gate uploaded logs and repo identity to lgtm Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing gate uploaded logs and repo identity to gx Cloud: %v", recorder.requestedPaths())
 	}
 }
 
-// `lgtm version` answers one question about the binary. A Dockerfile or CI step
+// `gx version` answers one question about the binary. A Dockerfile or CI step
 // that runs it to check what it installed should not thereby acquire a machine
-// ID and a $LGTM_HOME — the install event is not worth creating state on a
-// machine that has not yet decided to use lgtm.
-func TestVersionNeverWritesLgtmState(t *testing.T) {
+// ID and a $GX_HOME — the install event is not worth creating state on a
+// machine that has not yet decided to use gx.
+func TestVersionNeverWritesGxState(t *testing.T) {
 	root := newReviewGateRepo(t)
 	t.Chdir(root)
 	setReviewGateEnv(t)
@@ -313,9 +313,9 @@ func TestVersionNeverWritesLgtmState(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	lgtmHome := filepath.Join(sandbox, "lgtm-home")
+	gxHome := filepath.Join(sandbox, "gx-home")
 	fakeHome := filepath.Join(sandbox, "home")
-	t.Setenv("LGTM_HOME", lgtmHome)
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", fakeHome)
 
 	cmd := NewRoot(context.Background())
@@ -324,14 +324,14 @@ func TestVersionNeverWritesLgtmState(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"version"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("lgtm version error = %v", err)
+		t.Fatalf("gx version error = %v", err)
 	}
 	if strings.TrimSpace(out.String()) == "" {
-		t.Fatalf("lgtm version printed nothing")
+		t.Fatalf("gx version printed nothing")
 	}
-	for _, path := range []string{lgtmHome, fakeHome} {
+	for _, path := range []string{gxHome, fakeHome} {
 		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("lgtm version created %s (stat error = %v), want it untouched", path, statErr)
+			t.Fatalf("gx version created %s (stat error = %v), want it untouched", path, statErr)
 		}
 	}
 }
@@ -345,19 +345,19 @@ func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
 	recorder := newRecordingEndpoint(t)
 	setReviewCloudEnv(t, recorder)
 
-	lgtmHome := filepath.Join(t.TempDir(), "lgtm-home")
-	t.Setenv("LGTM_HOME", lgtmHome)
-	signIn(t, lgtmHome)
+	gxHome := filepath.Join(t.TempDir(), "gx-home")
+	t.Setenv("GX_HOME", gxHome)
+	signIn(t, gxHome)
 
 	// Somewhere that is not a git repo at all.
 	notARepo := t.TempDir()
 	t.Chdir(notARepo)
 
 	if _, err := runReviewCommand(t, "--no-publish"); err == nil {
-		t.Fatalf("lgtm review succeeded outside a git repository")
+		t.Fatalf("gx review succeeded outside a git repository")
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("a failing lgtm review uploaded logs to lgtm Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("a failing gx review uploaded logs to gx Cloud: %v", recorder.requestedPaths())
 	}
 }
 
@@ -371,18 +371,18 @@ func TestReviewNothingToReviewGateNeverAutoReports(t *testing.T) {
 	setReviewCloudEnv(t, recorder)
 
 	sandbox := t.TempDir()
-	t.Setenv("LGTM_HOME", filepath.Join(sandbox, "lgtm-home"))
+	t.Setenv("GX_HOME", filepath.Join(sandbox, "gx-home"))
 	t.Setenv("HOME", filepath.Join(sandbox, "home"))
 
 	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
-		t.Fatalf("lgtm review --fail-on any exited 0 without reviewing anything:\n%s", out)
+		t.Fatalf("gx review --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, err)
 	}
 	if recorder.requested("/v1/reported-logs") {
-		t.Fatalf("the nothing-to-review gate auto-reported to lgtm Cloud: %v", recorder.requestedPaths())
+		t.Fatalf("the nothing-to-review gate auto-reported to gx Cloud: %v", recorder.requestedPaths())
 	}
 }
 

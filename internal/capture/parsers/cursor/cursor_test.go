@@ -10,8 +10,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/satoricorp/lgtm/internal/capture"
-	"github.com/satoricorp/lgtm/internal/capture/parsers/cursor"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/parsers/cursor"
 )
 
 func TestParseCursor_Golden(t *testing.T) {
@@ -104,7 +104,7 @@ func buildGoldenVSCDB(t *testing.T) string {
 	}{
 		{
 			key:   "composerData:c1",
-			value: `{"composerId":"c1","name":"lgtm spike","createdAt":1700000000000,"lastUpdatedAt":1700000005000}`,
+			value: `{"composerId":"c1","name":"gx spike","createdAt":1700000000000,"lastUpdatedAt":1700000005000}`,
 		},
 		{
 			key: "bubbleId:c1:b1",

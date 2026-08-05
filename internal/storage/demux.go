@@ -98,27 +98,27 @@ func (s *Store) ListChangeDemuxEvidenceByProposal(ctx context.Context, proposalI
 }
 
 func (s *Store) WriteChangeDemuxEvidenceWithSemanticLabels(ctx context.Context, evidence ChangeDemuxEvidence, labels []SemanticLabelWrite) error {
-	lgtm, err := s.db.BeginTx(ctx, nil)
+	gx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin demux evidence semantic labels: %w", err)
 	}
-	defer lgtm.Rollback()
+	defer gx.Rollback()
 
-	if err := writeChangeDemuxEvidence(ctx, lgtm, evidence); err != nil {
+	if err := writeChangeDemuxEvidence(ctx, gx, evidence); err != nil {
 		return err
 	}
 	for _, write := range labels {
-		labelID, err := upsertSemanticLabel(ctx, lgtm, write.Label)
+		labelID, err := upsertSemanticLabel(ctx, gx, write.Label)
 		if err != nil {
 			return err
 		}
 		link := write.Link
 		link.LabelID = labelID
-		if err := writeSemanticLabelLink(ctx, lgtm, link); err != nil {
+		if err := writeSemanticLabelLink(ctx, gx, link); err != nil {
 			return err
 		}
 	}
-	if err := lgtm.Commit(); err != nil {
+	if err := gx.Commit(); err != nil {
 		return fmt.Errorf("commit demux evidence semantic labels: %w", err)
 	}
 	return nil

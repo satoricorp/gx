@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	hookMarker          = "# lgtm lifecycle hooks"
-	legacyPrePushMarker = "# lgtm capture pre-push hook"
+	hookMarker          = "# gx lifecycle hooks"
+	legacyPrePushMarker = "# gx capture pre-push hook"
 )
 
 // AgentHookConfig documents future Claude/Codex lifecycle hook settings (V1.1).
@@ -21,29 +21,29 @@ type AgentHookConfig struct {
 
 // InstallOptions configures git lifecycle hook installation.
 type InstallOptions struct {
-	RepoRoot     string
-	LgtmPath string
+	RepoRoot string
+	GxPath   string
 }
 
-// Install writes lgtm lifecycle hooks using git's hooks directory resolution.
+// Install writes gx lifecycle hooks using git's hooks directory resolution.
 func Install(opts InstallOptions) error {
 	repoRoot, err := filepath.Abs(opts.RepoRoot)
 	if err != nil {
 		return err
 	}
-	lgtmPath := opts.LgtmPath
-	if lgtmPath == "" {
-		lgtmPath, err = installLgtmPath()
+	gxPath := opts.GxPath
+	if gxPath == "" {
+		gxPath, err = installGxPath()
 		if err != nil {
-			return fmt.Errorf("resolve lgtm binary: %w", err)
+			return fmt.Errorf("resolve gx binary: %w", err)
 		}
 	}
 	hooksDir, err := ResolveHooksDir(context.Background(), repoRoot)
 	if err != nil {
 		return err
 	}
-	// Under a machine-wide install (`lgtm init --global`) git resolves every
-	// repo's hooks dir to the shared lgtm directory. Those scripts chain to repo
+	// Under a machine-wide install (`gx init --global`) git resolves every
+	// repo's hooks dir to the shared gx directory. Those scripts chain to repo
 	// hooks; overwriting them with the per-repo variants would break chaining
 	// for every repository on the machine.
 	if globalDir, globalErr := GlobalHooksDir(); globalErr == nil && sameHooksPath(hooksDir, globalDir) {
@@ -53,10 +53,10 @@ func Install(opts InstallOptions) error {
 		return err
 	}
 	scripts := map[string]string{
-		"prepare-commit-msg": prepareCommitMsgScript(lgtmPath),
-		"post-commit":        postCommitScript(lgtmPath),
-		"post-rewrite":       postRewriteScript(lgtmPath),
-		"pre-push":           prePushScript(lgtmPath),
+		"prepare-commit-msg": prepareCommitMsgScript(gxPath),
+		"post-commit":        postCommitScript(gxPath),
+		"post-rewrite":       postRewriteScript(gxPath),
+		"pre-push":           prePushScript(gxPath),
 	}
 	for name, script := range scripts {
 		hookPath := filepath.Join(hooksDir, name)
@@ -64,8 +64,8 @@ func Install(opts InstallOptions) error {
 			if string(data) == script {
 				continue
 			}
-			if !lgtmOwnedHook(name, string(data)) {
-				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying lgtm init", name, hookPath)
+			if !gxOwnedHook(name, string(data)) {
+				return fmt.Errorf("refusing to overwrite existing %s hook at %s; preserve or chain it before retrying gx init", name, hookPath)
 			}
 		}
 		if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
@@ -75,7 +75,7 @@ func Install(opts InstallOptions) error {
 	return nil
 }
 
-// IsInstalled reports whether lgtm lifecycle hooks are present.
+// IsInstalled reports whether gx lifecycle hooks are present.
 func IsInstalled(repoRoot string) bool {
 	repoRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -98,7 +98,7 @@ func containsHookMarker(content string) bool {
 	return strings.Contains(content, hookMarker)
 }
 
-func lgtmOwnedHook(name, content string) bool {
+func gxOwnedHook(name, content string) bool {
 	if containsHookMarker(content) {
 		return true
 	}
@@ -109,57 +109,57 @@ func hookRepoArg() string {
 	return `repo="$(git rev-parse --show-toplevel)"`
 }
 
-// hookResolveLgtm emits shell that resolves the lgtm binary at run time: the
-// pinned install-time path when it is still an executable file, else lgtm from
-// PATH. Pinned paths go stale — reinstalls move the binary, and a lgtm run from
-// a temporary location pins that location — and a hook that cannot find lgtm
-// must skip lgtm work silently rather than break every commit and push.
-func hookResolveLgtm(lgtmPath string) string {
-	if lgtmPath == "" {
-		lgtmPath = "lgtm"
+// hookResolveGx emits shell that resolves the gx binary at run time: the
+// pinned install-time path when it is still an executable file, else gx from
+// PATH. Pinned paths go stale — reinstalls move the binary, and a gx run from
+// a temporary location pins that location — and a hook that cannot find gx
+// must skip gx work silently rather than break every commit and push.
+func hookResolveGx(gxPath string) string {
+	if gxPath == "" {
+		gxPath = "gx"
 	}
-	return fmt.Sprintf(`lgtm_bin=%q
-case "$lgtm_bin" in /*) ;; *) lgtm_bin="" ;; esac
-if [ ! -f "$lgtm_bin" ] || [ ! -x "$lgtm_bin" ]; then
-  lgtm_bin="$(command -v lgtm 2>/dev/null)" || lgtm_bin=""
+	return fmt.Sprintf(`gx_bin=%q
+case "$gx_bin" in /*) ;; *) gx_bin="" ;; esac
+if [ ! -f "$gx_bin" ] || [ ! -x "$gx_bin" ]; then
+  gx_bin="$(command -v gx 2>/dev/null)" || gx_bin=""
 fi
-[ -n "$lgtm_bin" ] || exit 0`, lgtmPath)
+[ -n "$gx_bin" ] || exit 0`, gxPath)
 }
 
-func prepareCommitMsgScript(lgtmPath string) string {
+func prepareCommitMsgScript(gxPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$lgtm_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
-`, hookMarker, hookResolveLgtm(lgtmPath), hookRepoArg())
+"$gx_bin" __hooks prepare-commit-msg --repo "$repo" --message-path "$1"
+`, hookMarker, hookResolveGx(gxPath), hookRepoArg())
 }
 
-func postCommitScript(lgtmPath string) string {
+func postCommitScript(gxPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$lgtm_bin" __hooks post-commit --repo "$repo" || {
-  echo "lgtm post-commit metadata recording failed" >&2
+"$gx_bin" __hooks post-commit --repo "$repo" || {
+  echo "gx post-commit metadata recording failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveLgtm(lgtmPath), hookRepoArg())
+`, hookMarker, hookResolveGx(gxPath), hookRepoArg())
 }
 
-func postRewriteScript(lgtmPath string) string {
+func postRewriteScript(gxPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
 %s
-"$lgtm_bin" __hooks post-rewrite --repo "$repo" || {
-  echo "lgtm post-rewrite metadata update failed" >&2
+"$gx_bin" __hooks post-rewrite --repo "$repo" || {
+  echo "gx post-rewrite metadata update failed" >&2
   exit 0
 }
-`, hookMarker, hookResolveLgtm(lgtmPath), hookRepoArg())
+`, hookMarker, hookResolveGx(gxPath), hookRepoArg())
 }
 
-func prePushScript(lgtmPath string) string {
+func prePushScript(gxPath string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %s
 %s
@@ -175,8 +175,8 @@ do
   else
     range="${remote_sha}..${local_sha}"
   fi
-  "$lgtm_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
+  "$gx_bin" capture push --remote "$remote" --ref-range "$range" --local-ref "$local_ref" --head-sha "$local_sha" --repo "$(git rev-parse --show-toplevel)" || true
 done
 exit 0
-`, hookMarker, hookResolveLgtm(lgtmPath))
+`, hookMarker, hookResolveGx(gxPath))
 }

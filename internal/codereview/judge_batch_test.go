@@ -166,7 +166,7 @@ func TestRunJudgeKeepsCandidatesTheJudgeNeverAnsweredFor(t *testing.T) {
 // boundary: a finding shipped without a verdict must say it was shipped without
 // a verdict.
 func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	engine := judgeTestEngine(root, []Finding{
@@ -197,7 +197,7 @@ func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
 // is visible in the report. It used to collapse the findings to at most
 // maxAdvisoryFindings while the report still read as a completed review.
 func TestReviewReportsFailedVerificationAsDegraded(t *testing.T) {
-	t.Setenv("LGTM_REVIEW_JUDGE", "1")
+	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
 	engine := judgeTestEngine(root, []Finding{

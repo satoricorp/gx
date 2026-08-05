@@ -52,7 +52,7 @@ Repo-specific checks a general reviewer will not think to make:
 
 ## high-risk paths
 
-`risk-path: <glob> — <why it is risky>`. lgtm raises the severity of findings in
+`risk-path: <glob> — <why it is risky>`. gx raises the severity of findings in
 these files and quotes your reason in the report.
 
 risk-path: internal/ledger/** — Append-only money records. A bug here is silent and permanent.

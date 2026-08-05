@@ -115,8 +115,8 @@ func TestMaxEmbeddingDimensionsKnowsTheConfiguredModels(t *testing.T) {
 func TestCodeIndexConfigFromEnvCapsDimensionsToTheModel(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "key")
 	t.Setenv("TURBOPUFFER_API_KEY", "key")
-	t.Setenv("LGTM_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-	t.Setenv("LGTM_EMBEDDING_DIMENSIONS", "3072")
+	t.Setenv("GX_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+	t.Setenv("GX_EMBEDDING_DIMENSIONS", "3072")
 	cfg := CodeIndexConfigFromEnv()
 	if cfg.EmbeddingDimensions != 1536 {
 		t.Fatalf("dimensions = %d, want the model's native 1536", cfg.EmbeddingDimensions)
@@ -125,8 +125,8 @@ func TestCodeIndexConfigFromEnvCapsDimensionsToTheModel(t *testing.T) {
 		t.Fatalf("namespace = %q, want empty (resolved per repository)", cfg.TurboPufferNamespace)
 	}
 
-	t.Setenv("LGTM_OPENAI_EMBEDDING_MODEL", "")
-	t.Setenv("LGTM_EMBEDDING_DIMENSIONS", "")
+	t.Setenv("GX_OPENAI_EMBEDDING_MODEL", "")
+	t.Setenv("GX_EMBEDDING_DIMENSIONS", "")
 	def := CodeIndexConfigFromEnv()
 	if def.OpenAIEmbeddingModel != defaultOpenAIEmbedModel || def.EmbeddingDimensions != defaultEmbeddingDims {
 		t.Fatalf("default config = %s/%d", def.OpenAIEmbeddingModel, def.EmbeddingDimensions)
@@ -135,14 +135,14 @@ func TestCodeIndexConfigFromEnvCapsDimensionsToTheModel(t *testing.T) {
 		t.Fatal("code indexing must be enabled by default when credentials exist")
 	}
 
-	t.Setenv("LGTM_SEMANTIC_INDEX", "0")
+	t.Setenv("GX_SEMANTIC_INDEX", "0")
 	if CodeIndexConfigFromEnv().Enabled {
-		t.Fatal("LGTM_SEMANTIC_INDEX=0 must turn code indexing off")
+		t.Fatal("GX_SEMANTIC_INDEX=0 must turn code indexing off")
 	}
 }
 
 func TestVectorRowDimensionGuardMentionsBothWidths(t *testing.T) {
-	client := NewTurboPufferClientForNamespace(Config{EmbeddingDimensions: 3072}, "lgtm-scratch")
+	client := NewTurboPufferClientForNamespace(Config{EmbeddingDimensions: 3072}, "gx-scratch")
 	err := client.Upsert(t.Context(), []VectorRow{{ID: "x", Vector: make([]float32, 512)}})
 	if err == nil {
 		t.Fatal("expected a dimension mismatch error")

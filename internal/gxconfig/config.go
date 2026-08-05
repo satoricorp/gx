@@ -1,4 +1,4 @@
-package lgtmconfig
+package gxconfig
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 type Config struct {
@@ -32,10 +32,10 @@ func DefaultPath() (string, error) {
 }
 
 func DisplayPath() string {
-	if override := os.Getenv("LGTM_HOME"); strings.TrimSpace(override) != "" {
+	if override := os.Getenv("GX_HOME"); strings.TrimSpace(override) != "" {
 		return filepath.Join(override, "config.json")
 	}
-	return "~/.lgtm/config.json"
+	return "~/.gx/config.json"
 }
 
 func Load() (Config, error) {
@@ -48,11 +48,11 @@ func Load() (Config, error) {
 		if os.IsNotExist(err) {
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("read lgtm config: %w", err)
+		return Config{}, fmt.Errorf("read gx config: %w", err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse lgtm config: %w", err)
+		return Config{}, fmt.Errorf("parse gx config: %w", err)
 	}
 	return cfg, nil
 }
@@ -67,11 +67,11 @@ func LoadAt(root string) (Config, error) {
 		if os.IsNotExist(err) {
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("read lgtm config: %w", err)
+		return Config{}, fmt.Errorf("read gx config: %w", err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse lgtm config: %w", err)
+		return Config{}, fmt.Errorf("parse gx config: %w", err)
 	}
 	return cfg, nil
 }
@@ -86,15 +86,15 @@ func SaveAt(root string, cfg Config) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create lgtm config dir: %w", err)
+		return fmt.Errorf("create gx config dir: %w", err)
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal lgtm config: %w", err)
+		return fmt.Errorf("marshal gx config: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write lgtm config: %w", err)
+		return fmt.Errorf("write gx config: %w", err)
 	}
 	return nil
 }

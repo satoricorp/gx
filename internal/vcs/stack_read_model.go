@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 type stackReadModel struct {
@@ -88,7 +88,7 @@ func (s *Service) hydrateStoredStacks(ctx context.Context, store *storage.Store,
 				return nil, err
 			}
 		}
-		if !stackVisibleInLgtm(info) {
+		if !stackVisibleInGx(info) {
 			continue
 		}
 		out = append(out, info)

@@ -11,19 +11,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/satoricorp/lgtm/internal/capture"
-	"github.com/satoricorp/lgtm/internal/capture/exclude"
-	capturegit "github.com/satoricorp/lgtm/internal/capture/git"
-	"github.com/satoricorp/lgtm/internal/capture/matcher"
-	"github.com/satoricorp/lgtm/internal/capture/parsers"
-	"github.com/satoricorp/lgtm/internal/capture/parsers/claude"
-	"github.com/satoricorp/lgtm/internal/capture/parsers/codex"
-	cursorparser "github.com/satoricorp/lgtm/internal/capture/parsers/cursor"
-	"github.com/satoricorp/lgtm/internal/capture/redact"
-	"github.com/satoricorp/lgtm/internal/capture/repobind"
-	"github.com/satoricorp/lgtm/internal/storage"
-	"github.com/satoricorp/lgtm/internal/telemetry"
-	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/exclude"
+	capturegit "github.com/satoricorp/gx/internal/capture/git"
+	"github.com/satoricorp/gx/internal/capture/matcher"
+	"github.com/satoricorp/gx/internal/capture/parsers"
+	"github.com/satoricorp/gx/internal/capture/parsers/claude"
+	"github.com/satoricorp/gx/internal/capture/parsers/codex"
+	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
+	"github.com/satoricorp/gx/internal/capture/redact"
+	"github.com/satoricorp/gx/internal/capture/repobind"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 const defaultTimeSlack = 24 * time.Hour
@@ -177,7 +177,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 
 	revisionIDs, err := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
 	if err != nil {
-		return Result{}, fmt.Errorf("resolve lgtm revision IDs: %w", err)
+		return Result{}, fmt.Errorf("resolve gx revision IDs: %w", err)
 	}
 
 	stager := opts.DB

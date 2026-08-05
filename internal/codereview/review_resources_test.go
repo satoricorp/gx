@@ -29,7 +29,7 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	retriever := ReviewResourceRetriever{
 		Embedder:  fakeReviewResourceEmbedder{vector: []float32{0.1, 0.2}},
 		Store:     store,
-		Namespace: "lgtm-review-knowledge",
+		Namespace: "gx-review-knowledge",
 		Limit:     6,
 	}
 
@@ -71,7 +71,7 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 		t.Fatalf("snippets = %#v", snippets)
 	}
 	snippet := snippets[0]
-	if snippet.Kind != "review_resource" || snippet.Source != "turbopuffer:lgtm-review-knowledge" {
+	if snippet.Kind != "review_resource" || snippet.Source != "turbopuffer:gx-review-knowledge" {
 		t.Fatalf("snippet = %#v", snippet)
 	}
 	if snippet.Publisher != "OWASP" {
@@ -176,7 +176,7 @@ func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	store := turboPufferReviewResourceStore{
 		apiKey:     "test-tpuf",
 		baseURL:    server.URL,
-		namespace:  "lgtm-review-knowledge",
+		namespace:  "gx-review-knowledge",
 		httpClient: server.Client(),
 	}
 	rows, err := store.Query(context.Background(), reviewResourceQuery{
@@ -189,7 +189,7 @@ func TestTurboPufferReviewResourceStoreBuildsQueryPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Query() error = %v", err)
 	}
-	if gotPath != "/v2/namespaces/lgtm-review-knowledge/query" {
+	if gotPath != "/v2/namespaces/gx-review-knowledge/query" {
 		t.Fatalf("path = %s", gotPath)
 	}
 	if gotAuth != "Bearer test-tpuf" {
