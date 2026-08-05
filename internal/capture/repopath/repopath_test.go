@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/repopath"
+	"github.com/satoricorp/lgtm/internal/capture/repopath"
 )
 
 // An agent working in a linked worktree edits <worktree>/internal/cli/x.go,

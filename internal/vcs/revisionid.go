@@ -21,7 +21,7 @@ func GenerateRevisionID() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }
 
-// ValidRevisionID reports whether id looks like a Totality revision identifier.
+// ValidRevisionID reports whether id looks like a lgtm revision identifier.
 func ValidRevisionID(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {

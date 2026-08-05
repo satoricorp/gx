@@ -1,0 +1,3 @@
+interface:
+  display_name: "lgtm"
+  short_description: "Record with lgtm commit/MCP, publish only with plain git push (not lgtm push), then gh pr create."

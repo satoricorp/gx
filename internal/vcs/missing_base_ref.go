@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
-const MissingStackBaseRepairCommand = "tx doctor"
+const MissingStackBaseRepairCommand = "lgtm doctor"
 
 // MissingStackBaseRef describes a stack whose stored parent base ref no longer exists.
 type MissingStackBaseRef struct {
@@ -68,7 +68,7 @@ func (s *Service) DetectMissingStackBaseRefs(ctx context.Context) (MissingStackB
 	if err != nil {
 		return MissingStackBaseRefStatus{}, err
 	}
-	repo, err := s.ResolveTotalityRepoAtPath(ctx, cwd)
+	repo, err := s.ResolveLgtmRepoAtPath(ctx, cwd)
 	if err != nil {
 		return MissingStackBaseRefStatus{}, err
 	}
@@ -175,7 +175,7 @@ func (s *Service) RepairMissingStackBaseRefs(ctx context.Context) (RebaseOntoDef
 		if cwdErr != nil {
 			return RebaseOntoDefaultResult{}, cwdErr
 		}
-		repo, repoErr := s.ResolveTotalityRepoAtPath(ctx, cwd)
+		repo, repoErr := s.ResolveLgtmRepoAtPath(ctx, cwd)
 		if repoErr != nil {
 			return RebaseOntoDefaultResult{}, repoErr
 		}
@@ -191,7 +191,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 	if err != nil {
 		return RebaseOntoDefaultResult{}, err
 	}
-	repo, err := s.ResolveTotalityRepoAtPath(ctx, cwd)
+	repo, err := s.ResolveLgtmRepoAtPath(ctx, cwd)
 	if err != nil {
 		return RebaseOntoDefaultResult{}, err
 	}
@@ -210,7 +210,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 			return err
 		}
 		if repoRow == nil {
-			return fmt.Errorf("repo not registered in tx storage")
+			return fmt.Errorf("repo not registered in lgtm storage")
 		}
 		now := time.Now().UnixMilli()
 		missingBases := map[string]struct{}{}
@@ -243,7 +243,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 							return err
 						}
 						result.Actions = append(result.Actions, fmt.Sprintf(
-							"changed Totality authoring base from %s to %s",
+							"changed lgtm authoring base from %s to %s",
 							authoringBase,
 							defaultBase,
 						))
@@ -261,7 +261,7 @@ func (s *Service) RebaseMissingStackBaseRefs(ctx context.Context, issues []Missi
 
 func (s *Service) finishMissingStackBaseRepair(ctx context.Context, result *RebaseOntoDefaultResult) error {
 	return withBusyRetry(ctx, "repair repo authoring base", func() error {
-		repo, err := s.ResolveTotalityRepoAtPath(ctx, result.RepoRoot)
+		repo, err := s.ResolveLgtmRepoAtPath(ctx, result.RepoRoot)
 		if err != nil {
 			return err
 		}
@@ -316,7 +316,7 @@ func (s *Service) rebaseStackOntoDefaultUnlocked(ctx context.Context, store *sto
 		return err
 	}
 	if stack == nil {
-		return fmt.Errorf("stack %q not found in tx storage", bookmark)
+		return fmt.Errorf("stack %q not found in lgtm storage", bookmark)
 	}
 	stack.BaseRef = defaultBase
 	stack.BaseCommitID = s.stackBaseCommitID(ctx, repo.RootPath, defaultBase)

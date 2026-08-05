@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/version"
 )
 
 // maxSessionsPerChange caps how many sessions one change may link. A single
@@ -53,7 +53,7 @@ func (s *Service) AttachSessionsFromHunkLinks(ctx context.Context, repo RepoInfo
 				return err
 			}
 			if change == nil {
-				// The commit has no recorded revision (no Totality trailer, or the
+				// The commit has no recorded revision (no lgtm trailer, or the
 				// recovery pass could not resolve it). Nothing to link to.
 				continue
 			}

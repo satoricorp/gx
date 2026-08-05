@@ -1,16 +1,16 @@
 {
-  "name": "@satoricorp/totality",
+  "name": "@satoricorp/lgtm",
   "version": "0.2.0",
-  "description": "Totality MCP server (stdio): tx_review context from the local tx CLI.",
+  "description": "lgtm MCP server (stdio): lgtm_review context from the local lgtm CLI.",
   "license": "AGPL-3.0-only",
-  "homepage": "https://totality.sh",
+  "homepage": "https://lgtm.cx",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/satoricorp/totality.git",
+    "url": "git+https://github.com/satoricorp/lgtm.git",
     "directory": "mcp"
   },
   "bin": {
-    "tx-mcp": "dist/stdio.js"
+    "lgtm-mcp": "dist/stdio.js"
   },
   "files": [
     "dist/*.js",
@@ -26,8 +26,8 @@
     "dev": "xmcp dev",
     "build": "xmcp build && bun run build:binary",
     "build:xmcp": "xmcp build",
-    "build:binary": "bun build src/stdio.ts --compile --outfile dist/tx-mcp",
-    "start": "./dist/tx-mcp",
+    "build:binary": "bun build src/stdio.ts --compile --outfile dist/lgtm-mcp",
+    "start": "./dist/lgtm-mcp",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run build:xmcp && bun test"

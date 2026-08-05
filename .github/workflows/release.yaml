@@ -1,8 +1,8 @@
 name: Release CLI
 
-# Builds the tx CLI + tx-mcp for darwin/linux, publishes the archives,
+# Builds the lgtm CLI + lgtm-mcp for darwin/linux, publishes the archives,
 # manifest, and install.sh to the downloads bucket (fronted by
-# download.totality.sh), and attaches assets to a GitHub release on v* tags.
+# download.lgtm.cx), and attaches assets to a GitHub release on v* tags.
 # Pushes to main publish a "latest" build versioned by commit SHA; v* tags
 # publish that version and create the GitHub release.
 
@@ -24,15 +24,15 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish the tx CLI
+    name: Build and publish the lgtm CLI
     runs-on: macos-latest
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       DEPLOY_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       DEPLOY_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      TOTALITY_DOWNLOAD_BUCKET_NAME: ${{ vars.TOTALITY_DOWNLOAD_BUCKET_NAME }}
-      TOTALITY_DOWNLOAD_DISTRIBUTION_ID: ${{ vars.TOTALITY_DOWNLOAD_DISTRIBUTION_ID }}
+      LGTM_DOWNLOAD_BUCKET_NAME: ${{ vars.LGTM_DOWNLOAD_BUCKET_NAME }}
+      LGTM_DOWNLOAD_DISTRIBUTION_ID: ${{ vars.LGTM_DOWNLOAD_DISTRIBUTION_ID }}
 
     steps:
       - name: Checkout
@@ -68,12 +68,12 @@ jobs:
       - name: Build CLI packages
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_CLIENT_ID: ${{ vars.TOTALITY_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_ID: ${{ vars.LGTM_GITHUB_CLIENT_ID }}
           CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
-          TOTALITY_CLOUD_URL: ${{ vars.TOTALITY_CLOUD_URL }}
-          TOTALITY_POSTHOG_KEY: ${{ vars.TOTALITY_POSTHOG_KEY }}
-          TOTALITY_POSTHOG_HOST: ${{ vars.TOTALITY_POSTHOG_HOST || 'https://f.totality.sh' }}
-          TOTALITY_DOWNLOAD_BASE_URL: https://download.totality.sh
+          LGTM_CLOUD_URL: ${{ vars.LGTM_CLOUD_URL }}
+          LGTM_POSTHOG_KEY: ${{ vars.LGTM_POSTHOG_KEY }}
+          LGTM_POSTHOG_HOST: ${{ vars.LGTM_POSTHOG_HOST || 'https://f.lgtm.cx' }}
+          LGTM_DOWNLOAD_BASE_URL: https://download.lgtm.cx
         run: |
           GOOS=darwin GOARCH=arm64 BUN_TARGET=bun-darwin-arm64 scripts/package-cli.sh
           GOOS=darwin GOARCH=amd64 BUN_TARGET=bun-darwin-x64 scripts/package-cli.sh
@@ -83,17 +83,17 @@ jobs:
 
       - name: Verify artifacts
         run: |
-          test -f dist/cli/tx_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-          test -f dist/cli/tx_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
-          test -f dist/cli/tx_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
-          test -f dist/cli/tx_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+          test -f dist/cli/lgtm_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+          test -f dist/cli/lgtm_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+          test -f dist/cli/lgtm_${{ steps.version.outputs.version }}_linux_arm64.tar.gz
+          test -f dist/cli/lgtm_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
           test -f dist/cli/manifest.json
           test -f scripts/install.sh
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tx-cli
+          name: lgtm-cli
           path: |
             dist/cli/*
             scripts/install.sh
@@ -120,23 +120,23 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          test -n "$TOTALITY_DOWNLOAD_BUCKET_NAME" || {
-            echo "TOTALITY_DOWNLOAD_BUCKET_NAME repository variable is required" >&2
+          test -n "$LGTM_DOWNLOAD_BUCKET_NAME" || {
+            echo "LGTM_DOWNLOAD_BUCKET_NAME repository variable is required" >&2
             exit 1
           }
-          test -n "$TOTALITY_DOWNLOAD_DISTRIBUTION_ID" || {
-            echo "TOTALITY_DOWNLOAD_DISTRIBUTION_ID repository variable is required" >&2
+          test -n "$LGTM_DOWNLOAD_DISTRIBUTION_ID" || {
+            echo "LGTM_DOWNLOAD_DISTRIBUTION_ID repository variable is required" >&2
             exit 1
           }
 
-          aws s3 cp scripts/install.sh "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/install.sh" \
+          aws s3 cp scripts/install.sh "s3://$LGTM_DOWNLOAD_BUCKET_NAME/install.sh" \
             --content-type text/x-shellscript \
             --cache-control "public, max-age=300"
-          aws s3 cp dist/cli/manifest.json "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/manifest.json" \
+          aws s3 cp dist/cli/manifest.json "s3://$LGTM_DOWNLOAD_BUCKET_NAME/cli/manifest.json" \
             --content-type application/json \
             --cache-control "public, max-age=300"
 
-          for archive in dist/cli/tx_"$VERSION"_*.tar.gz; do
+          for archive in dist/cli/lgtm_"$VERSION"_*.tar.gz; do
             test -f "$archive" || continue
             base="$(basename "$archive")"
             checksum="$archive.sha256"
@@ -144,33 +144,33 @@ jobs:
               echo "missing checksum for $archive" >&2
               exit 1
             }
-            rest="${base#tx_${VERSION}_}"
+            rest="${base#lgtm_${VERSION}_}"
             platform="${rest%.tar.gz}"
             goos="${platform%_*}"
             goarch="${platform##*_}"
-            latest="tx_${goos}_${goarch}.tar.gz"
+            latest="lgtm_${goos}_${goarch}.tar.gz"
 
-            aws s3 cp "$archive" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/latest/$latest" \
+            aws s3 cp "$archive" "s3://$LGTM_DOWNLOAD_BUCKET_NAME/cli/latest/$latest" \
               --content-type application/gzip \
               --cache-control "public, max-age=300"
-            aws s3 cp "$checksum" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/latest/$latest.sha256" \
+            aws s3 cp "$checksum" "s3://$LGTM_DOWNLOAD_BUCKET_NAME/cli/latest/$latest.sha256" \
               --content-type text/plain \
               --cache-control "public, max-age=300"
-            aws s3 cp "$archive" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base" \
+            aws s3 cp "$archive" "s3://$LGTM_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base" \
               --content-type application/gzip \
               --cache-control "public, max-age=31536000, immutable"
-            aws s3 cp "$checksum" "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base.sha256" \
+            aws s3 cp "$checksum" "s3://$LGTM_DOWNLOAD_BUCKET_NAME/cli/releases/$GITHUB_SHA/$base.sha256" \
               --content-type text/plain \
               --cache-control "public, max-age=31536000, immutable"
           done
 
-          printf 'Totality download not found\n' > 404.txt
-          aws s3 cp 404.txt "s3://$TOTALITY_DOWNLOAD_BUCKET_NAME/404.txt" \
+          printf 'lgtm download not found\n' > 404.txt
+          aws s3 cp 404.txt "s3://$LGTM_DOWNLOAD_BUCKET_NAME/404.txt" \
             --content-type text/plain \
             --cache-control "public, max-age=300"
 
           aws cloudfront create-invalidation \
-            --distribution-id "$TOTALITY_DOWNLOAD_DISTRIBUTION_ID" \
+            --distribution-id "$LGTM_DOWNLOAD_DISTRIBUTION_ID" \
             --paths /install.sh /cli/manifest.json "/cli/latest/*" /404.txt >/dev/null
 
       - name: Publish GitHub release assets
@@ -184,8 +184,8 @@ jobs:
           assets=(
             scripts/install.sh
             dist/cli/manifest.json
-            dist/cli/tx_*.tar.gz
-            dist/cli/tx_*.tar.gz.sha256
+            dist/cli/lgtm_*.tar.gz
+            dist/cli/lgtm_*.tar.gz.sha256
           )
 
           if gh release view "$tag" >/dev/null 2>&1; then

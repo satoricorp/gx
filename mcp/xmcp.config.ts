@@ -11,12 +11,12 @@ const config: XmcpConfig = {
     resources: false,
   },
   template: {
-    name: "Totality MCP",
+    name: "lgtm MCP",
     instructions: [
-      "Totality MCP exposes tx_review.",
-      "Save work with plain Git: git add, then git commit. Totality installs Git hooks that stamp each commit with its Totality revision trailer and record it, so no Totality-specific commit verb is needed.",
-      "Publish with plain git push, then open the PR with gh pr create. The Totality pre-push hook captures the agent session, links edits to the changed hunks, and publishes the Totality metadata that becomes the PR summary. Do not run tx push or tx capture push; they bypass or suppress that hook.",
-      "Run tx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
+      "lgtm MCP exposes lgtm_review.",
+      "Save work with plain Git: git add, then git commit. lgtm installs Git hooks that stamp each commit with its lgtm revision trailer and record it, so no lgtm-specific commit verb is needed.",
+      "Publish with plain git push, then open the PR with gh pr create. The lgtm pre-push hook captures the agent session, links edits to the changed hunks, and publishes the lgtm metadata that becomes the PR summary. Do not run lgtm push or lgtm capture push; they bypass or suppress that hook.",
+      "Run lgtm_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
       "Use git status for inspection.",
     ].join(" "),
   },

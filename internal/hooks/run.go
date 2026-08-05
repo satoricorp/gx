@@ -9,20 +9,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/background"
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/capture/repobind"
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/publication"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/background"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/capture/orchestrator"
+	"github.com/satoricorp/lgtm/internal/capture/repobind"
+	"github.com/satoricorp/lgtm/internal/cloud"
+	"github.com/satoricorp/lgtm/internal/publication"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
-// SuppressAdoptedPublicationEnv tells the pre-push hook that tx push owns
+// SuppressAdoptedPublicationEnv tells the pre-push hook that lgtm push owns
 // this push and will enqueue the publication itself.
-const SuppressAdoptedPublicationEnv = "TOTALITY_SUPPRESS_ADOPTED_PUBLICATION"
+const SuppressAdoptedPublicationEnv = "LGTM_SUPPRESS_ADOPTED_PUBLICATION"
 
 // runCapture is a seam for tests that need one specific orchestrator outcome —
 // above all a partial failure, which returns a populated Result *and* an error
@@ -55,7 +55,7 @@ type PushOptions struct {
 // PushOutcome summarizes a non-blocking pre-push hook run.
 //
 // SkipReason is set whenever the hook deliberately did no work. Without it a
-// paused capture, a repo opted out with `git config tx.enabled false`, and a
+// paused capture, a repo opted out with `git config lgtm.enabled false`, and a
 // failure to resolve the working directory all returned the same zero outcome,
 // so all three rendered as the identical `capture staged extract= sessions=0`
 // line — the same line a genuine error prints. An empty extract id has to mean
@@ -99,7 +99,7 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 		homeDir, _ = os.UserHomeDir()
 	}
 	if capture.IsPaused(homeDir) {
-		outcome.SkipReason = "capture is paused (TOTALITY_CAPTURE_PAUSED or ~/.totality/pause-capture)"
+		outcome.SkipReason = "capture is paused (LGTM_CAPTURE_PAUSED or ~/.lgtm/pause-capture)"
 		return outcome, nil
 	}
 
@@ -121,10 +121,10 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 		outcome.CaptureError = outcome.SkipReason
 		return outcome, nil
 	}
-	// Per-repo opt-out: `git config tx.enabled false` excludes one repository
-	// from Totality, including from a machine-wide `tx init --global` install.
+	// Per-repo opt-out: `git config lgtm.enabled false` excludes one repository
+	// from lgtm, including from a machine-wide `lgtm init --global` install.
 	if !EnabledForRepo(ctx, repoRoot) {
-		outcome.SkipReason = "this repository opted out (git config tx.enabled false)"
+		outcome.SkipReason = "this repository opted out (git config lgtm.enabled false)"
 		return outcome, nil
 	}
 
@@ -170,15 +170,15 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 		// Revisions are a backlog convenience, not a prerequisite: the rows
 		// this run staged are addressed by id. Returning here also skipped the
 		// publication and the upload kickoff, so a trailer-scan hiccup left the
-		// PR with no Totality artifact at all and nothing said so. Carry on with no
+		// PR with no lgtm artifact at all and nothing said so. Carry on with no
 		// revisions and report the scan failure.
-		outcome.RecoveryError = fmt.Sprintf("scan Totality revision trailers: %v", err)
+		outcome.RecoveryError = fmt.Sprintf("scan lgtm revision trailers: %v", err)
 		revisionIDs = nil
 	}
 	outcome.RevisionIDs = revisionIDs
 
 	if len(revisionIDs) > 0 {
-		if repo, repoErr := vcs.NewService().ResolveTotalityRepoAtPath(ctx, repoRoot); repoErr == nil {
+		if repo, repoErr := vcs.NewService().ResolveLgtmRepoAtPath(ctx, repoRoot); repoErr == nil {
 			if _, recoverErr := vcs.NewService().RecoverMissingRevisions(ctx, repo, revisionIDs); recoverErr != nil {
 				outcome.RecoveryError = recoverErr.Error()
 			}
@@ -191,7 +191,7 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	// `changes` rows this links to exist, and EnqueueAdoptedPublication below
 	// runs reviewbundle.BuildPush synchronously in this same process — so the
 	// artifact this very push writes already carries the sessions. Running it
-	// before the SuppressAdoptedPublication early return covers `tx push`,
+	// before the SuppressAdoptedPublication early return covers `lgtm push`,
 	// which builds its own artifact from the same rows.
 	if attached, err := attachPushSessions(ctx, repoRoot, outcome.Result.HunkLinks); err != nil {
 		outcome.AttachError = err.Error()
@@ -215,11 +215,11 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	}
 
 	if os.Getenv(SuppressAdoptedPublicationEnv) != "" {
-		// tx push drives this git push and enqueues its own artifact with
+		// lgtm push drives this git push and enqueues its own artifact with
 		// the PR URL attached; a hook publication here would race it with
 		// a PR-less artifact for the same head.
 		if backgroundWorkersEnabled() {
-			_ = background.StartDetachedTotality("capture", "sync", "--quiet")
+			_ = background.StartDetachedLgtm("capture", "sync", "--quiet")
 		}
 		return outcome, nil
 	}
@@ -238,15 +238,15 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	if err == nil {
 		outcome.Publication = pub
 	} else {
-		// Without this the PR simply never grows a Totality summary and nothing
+		// Without this the PR simply never grows a lgtm summary and nothing
 		// anywhere says why.
 		outcome.PublicationError = err.Error()
 	}
 
 	if backgroundWorkersEnabled() {
-		_ = background.StartDetachedTotality("capture", "sync", "--quiet")
+		_ = background.StartDetachedLgtm("capture", "sync", "--quiet")
 		if shouldStartOutboxWorker(pub.Queued) {
-			_ = background.StartDetachedTotality("__totality-upload-outbox", "--quiet")
+			_ = background.StartDetachedLgtm("__lgtm-upload-outbox", "--quiet")
 		}
 	}
 	return outcome, nil
@@ -259,7 +259,7 @@ func attachPushSessions(ctx context.Context, repoRoot string, links []matcher.Hu
 		return 0, nil
 	}
 	service := vcs.NewService()
-	repo, err := service.ResolveTotalityRepoAtPath(ctx, repoRoot)
+	repo, err := service.ResolveLgtmRepoAtPath(ctx, repoRoot)
 	if err != nil {
 		return 0, err
 	}
@@ -271,7 +271,7 @@ func attachPushSessions(ctx context.Context, repoRoot string, links []matcher.Hu
 // The staged row ids are the load-bearing gate: they name the exact rows this
 // run wrote, with no dependence on resolving a revision. Revision matching runs
 // afterwards for the backlog — rows staged by an earlier run whose revisions
-// only now reach the remote — and still works, since a repo with the Totality
+// only now reach the remote — and still works, since a repo with the lgtm
 // prepare-commit-msg hook stamps a trailer on plain `git commit`. Rows the id
 // pass already marked are excluded from the second pass's count.
 //
@@ -316,7 +316,7 @@ func markShareable(ctx context.Context, repoRoot string, outcome *PushOutcome, r
 
 // shouldStartOutboxWorker decides whether this push spawns the publish-outbox
 // worker. It is not gated on the current push having enqueued something: with
-// `tx sync` retired, the pre-push hook is the retry path for items that failed
+// `lgtm sync` retired, the pre-push hook is the retry path for items that failed
 // or were left pending by an earlier push, so any backlog also spawns the
 // worker.
 func shouldStartOutboxWorker(queuedThisPush bool) bool {
@@ -393,7 +393,7 @@ func RefRangeForPush(localSHA, remoteSHA string) string {
 }
 
 func backgroundWorkersEnabled() bool {
-	return os.Getenv("TOTALITY_DISABLE_BACKGROUND_WORKERS") == ""
+	return os.Getenv("LGTM_DISABLE_BACKGROUND_WORKERS") == ""
 }
 
 // sessionsForThisRepo keeps the staged sessions that belong to the repository
@@ -404,7 +404,7 @@ func backgroundWorkersEnabled() bool {
 // several repositories an organization has connected is a real requirement, but
 // only the server knows which repositories those are; until it can say, the
 // safe answer is the one repository we can prove is connected — this one, which
-// is being pushed through Totality right now.
+// is being pushed through lgtm right now.
 func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repoRoot string, ids []string) ([]string, int) {
 	if len(ids) == 0 {
 		return ids, 0

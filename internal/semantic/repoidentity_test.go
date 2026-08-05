@@ -57,8 +57,8 @@ func namespaceReviewReads(ctx context.Context, t *testing.T, repoRoot, orgID str
 //
 // A writer and a reader deriving the same identity separately is how three
 // separate defects reached production in this codebase. The observed one:
-// `tx index` wrote totality-local-yeet-8d862445e7e4-v2 while `tx review` in the same
-// checkout searched totality-local-satoricorp-yeet-v2 and reported the repository as
+// `lgtm index` wrote lgtm-local-yeet-8d862445e7e4-v2 while `lgtm review` in the same
+// checkout searched lgtm-local-satoricorp-yeet-v2 and reported the repository as
 // never indexed. Each case below is a real way the two derivations diverged or
 // could diverge; the test fails if anyone re-opens the gap.
 func TestIndexAndReviewResolveTheSameNamespace(t *testing.T) {
@@ -119,7 +119,7 @@ func TestIndexAndReviewResolveTheSameNamespace(t *testing.T) {
 			written := namespaceIndexWrites(ctx, t, root, tc.orgID)
 			read := namespaceReviewReads(ctx, t, root, tc.orgID)
 			if written != read {
-				t.Fatalf("`tx index` writes %q but `tx review` reads %q — a review of this repository would report it as never indexed", written, read)
+				t.Fatalf("`lgtm index` writes %q but `lgtm review` reads %q — a review of this repository would report it as never indexed", written, read)
 			}
 			if strings.TrimSpace(written) == "" {
 				t.Fatal("resolved an empty namespace")

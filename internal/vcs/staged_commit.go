@@ -33,7 +33,7 @@ func (s *Service) currentStagedCommitBranch(ctx context.Context, repoRoot string
 }
 
 // resolveStagedCommitStack maps a recorded commit onto a stack. The stack is
-// the checked-out branch: Totality records what git already did and never moves HEAD
+// the checked-out branch: lgtm records what git already did and never moves HEAD
 // or mints branches of its own.
 func (s *Service) resolveStagedCommitStack(ctx context.Context, repo RepoInfo, branch, headCommit string) (StackInfo, error) {
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))

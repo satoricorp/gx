@@ -8,17 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/capture/redact"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/capture/orchestrator"
+	"github.com/satoricorp/lgtm/internal/capture/redact"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 func TestOrchestrator_StagesExtract(t *testing.T) {
 	repo := initTestGitRepo(t)
-	totalityHome := t.TempDir()
-	t.Setenv("TOTALITY_HOME", totalityHome)
+	lgtmHome := t.TempDir()
+	t.Setenv("LGTM_HOME", lgtmHome)
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -50,11 +50,11 @@ func TestOrchestrator_StagesExtract(t *testing.T) {
 
 func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 	repo := initTestGitRepo(t)
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
-	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("LGTM_UPLOAD_TOKEN", "")
+	t.Setenv("LGTM_CLOUD_URL", "")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -82,13 +82,13 @@ func TestOrchestrator_BuildsHunkLinks(t *testing.T) {
 
 func TestOrchestrator_StagesWhenUploadIsUnauthorized(t *testing.T) {
 	repo := initTestGitRepo(t)
-	totalityHome := t.TempDir()
-	t.Setenv("TOTALITY_HOME", totalityHome)
+	lgtmHome := t.TempDir()
+	t.Setenv("LGTM_HOME", lgtmHome)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("TOTALITY_CLOUD_URL", "")
-	t.Setenv("TOTALITY_UPLOAD_TOKEN", "bad-token")
-	t.Setenv("TOTALITY_API_URL", "http://127.0.0.1:1")
+	t.Setenv("LGTM_CLOUD_URL", "")
+	t.Setenv("LGTM_UPLOAD_TOKEN", "bad-token")
+	t.Setenv("LGTM_API_URL", "http://127.0.0.1:1")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{

@@ -11,19 +11,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/exclude"
-	capturegit "github.com/satoricorp/totality/internal/capture/git"
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/capture/parsers"
-	"github.com/satoricorp/totality/internal/capture/parsers/claude"
-	"github.com/satoricorp/totality/internal/capture/parsers/codex"
-	cursorparser "github.com/satoricorp/totality/internal/capture/parsers/cursor"
-	"github.com/satoricorp/totality/internal/capture/redact"
-	"github.com/satoricorp/totality/internal/capture/repobind"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/telemetry"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/exclude"
+	capturegit "github.com/satoricorp/lgtm/internal/capture/git"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/capture/parsers"
+	"github.com/satoricorp/lgtm/internal/capture/parsers/claude"
+	"github.com/satoricorp/lgtm/internal/capture/parsers/codex"
+	cursorparser "github.com/satoricorp/lgtm/internal/capture/parsers/cursor"
+	"github.com/satoricorp/lgtm/internal/capture/redact"
+	"github.com/satoricorp/lgtm/internal/capture/repobind"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/telemetry"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
 const defaultTimeSlack = 24 * time.Hour
@@ -177,7 +177,7 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 
 	revisionIDs, err := vcs.RevisionIDsInGitRange(ctx, repoRoot, refRange)
 	if err != nil {
-		return Result{}, fmt.Errorf("resolve Totality revision IDs: %w", err)
+		return Result{}, fmt.Errorf("resolve lgtm revision IDs: %w", err)
 	}
 
 	stager := opts.DB

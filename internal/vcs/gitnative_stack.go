@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 func (s *Service) loadGitStackReadModel(ctx context.Context, repo RepoInfo) (stackReadModel, error) {
@@ -82,7 +82,7 @@ func (s *Service) gitStackEntries(ctx context.Context, repo RepoInfo) ([]stackEn
 	}
 	branch = cleanRefName(strings.TrimSpace(branch))
 	if branch == "" {
-		return nil, fmt.Errorf("%w; check out a branch before running tx", ErrDetachedHEAD)
+		return nil, fmt.Errorf("%w; check out a branch before running lgtm", ErrDetachedHEAD)
 	}
 	baseRef := s.publicStackBaseRef(ctx, repo, s.defaultStackBaseRef(repo))
 	rangeSpec := fmt.Sprintf("%s..HEAD", baseCheckoutRef(baseRef))
@@ -127,6 +127,6 @@ func withRepoIdentityLock(commonDir string, fn func() error) error {
 	if commonDir == "" {
 		return fn()
 	}
-	lockPath := filepath.Join(commonDir, "tx", "repo.lock")
+	lockPath := filepath.Join(commonDir, "lgtm", "repo.lock")
 	return withLockFile(lockPath, fn)
 }

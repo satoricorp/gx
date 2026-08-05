@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/semantic"
+	"github.com/satoricorp/lgtm/internal/semantic"
 )
 
 // fakeIndexStore serves probes and query rows from memory so retrieval, fusion
@@ -87,7 +87,7 @@ func codeIndexTestInput() RetrieveInput {
 func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	store := &fakeIndexStore{
 		probes: map[string]indexProbe{
-			"totality-org-repo-v2": {
+			"lgtm-org-repo-v2": {
 				Exists: true, Dimensions: 3072, BodyField: "text", SymbolField: "symbol",
 				Filterable: map[string]bool{"source_kind": true},
 			},
@@ -96,7 +96,7 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 			},
 		},
 		rows: map[string][]indexRow{
-			"totality-org-repo-v2": {
+			"lgtm-org-repo-v2": {
 				{"file_path": "internal/codereview/engine.go", "start_line": 1.0, "end_line": 20.0, "text": "fresh chunk", "symbol_name": "Review"},
 			},
 			"repo-owner-repo": {
@@ -109,8 +109,8 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "totality-org-repo-v2", Origin: "tx code index"},
-			{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"},
+			{Namespace: "lgtm-org-repo-v2", Origin: "lgtm code index"},
+			{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"},
 		},
 		Limit:       10,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
@@ -121,12 +121,12 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	}
 
 	// Each namespace is queried with the field names its own schema declares.
-	totalityQuery := store.query("totality-org-repo-v2")
-	if totalityQuery.BodyField != "text" || totalityQuery.SymbolField != "symbol" || len(totalityQuery.Vector) != 3072 {
-		t.Fatalf("tx query = %+v, want text/symbol legs and a 3072-wide vector", totalityQuery)
+	lgtmQuery := store.query("lgtm-org-repo-v2")
+	if lgtmQuery.BodyField != "text" || lgtmQuery.SymbolField != "symbol" || len(lgtmQuery.Vector) != 3072 {
+		t.Fatalf("lgtm query = %+v, want text/symbol legs and a 3072-wide vector", lgtmQuery)
 	}
-	if totalityQuery.Legs() != 3 {
-		t.Fatalf("tx query legs = %d, want 3", totalityQuery.Legs())
+	if lgtmQuery.Legs() != 3 {
+		t.Fatalf("lgtm query legs = %d, want 3", lgtmQuery.Legs())
 	}
 	consoleQuery := store.query("repo-owner-repo")
 	if consoleQuery.BodyField != "content" || len(consoleQuery.Vector) != 1536 {
@@ -138,10 +138,10 @@ func TestCodeIndexRetrieverFusesNamespacesAndBuildsHybridLegs(t *testing.T) {
 	if !strings.Contains(consoleQuery.SymbolQuery, "contextRetrieverFromEnv") {
 		t.Fatalf("symbol query = %q, want the changed identifier", consoleQuery.SymbolQuery)
 	}
-	// The tx namespace holds more than code, so it is filtered; the console one
+	// The lgtm namespace holds more than code, so it is filtered; the console one
 	// does not declare source_kind and must not be filtered on it.
-	if totalityQuery.Filters == nil {
-		t.Fatal("tx query has no source_kind filter")
+	if lgtmQuery.Filters == nil {
+		t.Fatal("lgtm query has no source_kind filter")
 	}
 	if consoleQuery.Filters != nil {
 		t.Fatalf("console query filters = %v, want none for a namespace without source_kind", consoleQuery.Filters)
@@ -182,8 +182,8 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "totality-local-yeet-v2", Origin: "tx code index"},
-			{Namespace: "repo-owner-yeet", Origin: "Totality Cloud code index"},
+			{Namespace: "lgtm-local-yeet-v2", Origin: "lgtm code index"},
+			{Namespace: "repo-owner-yeet", Origin: "lgtm Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
@@ -202,15 +202,15 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 		t.Fatalf("warnings = %v, want one warning for the code index as a whole", warnings)
 	}
 	// The warning has to say how to fix it, and the fix is the website. It used
-	// to name `tx index`, which is a hidden maintenance command that fills one
+	// to name `lgtm index`, which is a hidden maintenance command that fills one
 	// developer's namespace from one developer's checkout — a worse, manual
-	// copy of the index Totality Cloud maintains from the GitHub App on merge.
+	// copy of the index lgtm Cloud maintains from the GitHub App on merge.
 	joined := strings.Join(warnings, " ")
-	if !strings.Contains(joined, "https://totality.sh/repositories") {
+	if !strings.Contains(joined, "https://lgtm.cx/repositories") {
 		t.Fatalf("warnings = %v, want the missing index to say where to get it built", warnings)
 	}
-	if strings.Contains(joined, "tx index") {
-		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `tx index`", warnings)
+	if strings.Contains(joined, "lgtm index") {
+		t.Fatalf("warnings = %v, want users sent to the console rather than the hidden `lgtm index`", warnings)
 	}
 	if len(in.Evidence.Statuses()) != 2 {
 		t.Fatalf("statuses = %#v, want one per namespace so the verbose listing still names each", in.Evidence.Statuses())
@@ -225,10 +225,10 @@ func TestCodeIndexRetrieverReportsMissingNamespace(t *testing.T) {
 func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 	store := &fakeIndexStore{
 		probes: map[string]indexProbe{
-			"totality-local-satoricorp-yeet-v2": {Exists: true, Dimensions: 1536, BodyField: "text", SymbolField: "symbol"},
+			"lgtm-local-satoricorp-yeet-v2": {Exists: true, Dimensions: 1536, BodyField: "text", SymbolField: "symbol"},
 		},
 		rows: map[string][]indexRow{
-			"totality-local-satoricorp-yeet-v2": {
+			"lgtm-local-satoricorp-yeet-v2": {
 				{"file_path": "src/bridge.ts", "start_line": 1.0, "end_line": 20.0, "text": "chunk", "symbol_name": "Bridge"},
 			},
 		},
@@ -237,8 +237,8 @@ func TestCodeIndexAnsweredByOneNamespaceIsNotDegraded(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "totality-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
-			{Namespace: "totality-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
+			{Namespace: "lgtm-local-satoricorp-yeet-v2", Origin: semantic.NamespaceOriginPrimary},
+			{Namespace: "lgtm-local-yeet-8d862445e7e4-v2", Origin: semantic.NamespaceOriginPreRemote},
 		},
 		Limit:       10,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
@@ -274,7 +274,7 @@ func TestCodeIndexRetrieverReportsQueryFailure(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
 	}
 	if _, err := retriever.Retrieve(context.Background(), in); err != nil {
@@ -298,7 +298,7 @@ func TestCodeIndexRetrieverDegradesToLexicalWithoutAnEmbedder(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
 	snippets, err := retriever.Retrieve(context.Background(), in)
@@ -337,8 +337,8 @@ func TestCodeIndexRetrieverDistinguishesUnqueryableFromEmpty(t *testing.T) {
 	retriever := CodeIndexRetriever{
 		Store: store,
 		Namespaces: []codeIndexTarget{
-			{Namespace: "unqueryable", Origin: "tx code index"},
-			{Namespace: "answered", Origin: "Totality Cloud code index"},
+			{Namespace: "unqueryable", Origin: "lgtm code index"},
+			{Namespace: "answered", Origin: "lgtm Cloud code index"},
 		},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
@@ -372,7 +372,7 @@ func TestCodeIndexRetrieverReportsStaleIndex(t *testing.T) {
 	in := codeIndexTestInput()
 	retriever := CodeIndexRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "lgtm Cloud code index"}},
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
 	}
 	if _, err := retriever.Retrieve(context.Background(), in); err != nil {
@@ -501,9 +501,9 @@ func TestIndexQueryPayloadAsksForAllAttributesWhenSchemaIsUnknown(t *testing.T) 
 }
 
 func TestEmbedModelMatchesNamespaceWidth(t *testing.T) {
-	t.Setenv("TOTALITY_REVIEW_INDEX_EMBED_MODEL", "")
-	t.Setenv("TOTALITY_OPENAI_EMBEDDING_MODEL", "")
-	t.Setenv("TOTALITY_EMBEDDING_DIMENSIONS", "")
+	t.Setenv("LGTM_REVIEW_INDEX_EMBED_MODEL", "")
+	t.Setenv("LGTM_OPENAI_EMBEDDING_MODEL", "")
+	t.Setenv("LGTM_EMBEDDING_DIMENSIONS", "")
 	for width, want := range map[int]string{
 		3072: "text-embedding-3-large",
 		1536: "text-embedding-3-small",

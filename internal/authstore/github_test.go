@@ -16,7 +16,7 @@ import (
 func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GITHUB_CLIENT_ID", "client-id")
@@ -41,7 +41,7 @@ func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("TOTALITY_GITHUB_ACCESS_TOKEN_URL", server.URL)
+	t.Setenv("LGTM_GITHUB_ACCESS_TOKEN_URL", server.URL)
 
 	account := GitHubKeychainAccount("user_1", "joe")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -81,7 +81,7 @@ func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -94,7 +94,7 @@ func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testin
 		t.Fatal("expected expired token error")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "tx auth login") {
+	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "lgtm auth login") {
 		t.Fatalf("error = %q, want re-login instruction", message)
 	}
 }
@@ -102,7 +102,7 @@ func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testin
 func TestGitHubAccessTokenEnvOverridesExpiredStoredToken(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "env-token")
 	t.Setenv("GITHUB_TOKEN", "")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -122,7 +122,7 @@ func TestGitHubAccessTokenEnvOverridesExpiredStoredToken(t *testing.T) {
 func TestGitHubAccessTokenMigratesLegacyTokenToKeychain(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 

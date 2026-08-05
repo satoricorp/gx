@@ -11,7 +11,7 @@ import (
 
 func TestDefaultMachineIDCreatesOnce(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 
 	id1, err := DefaultMachineID()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestDefaultMachineIDCreatesOnce(t *testing.T) {
 
 func TestSaveLoadClearCloudCredentials(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 
 	if _, err := DefaultMachineID(); err != nil {
 		t.Fatalf("DefaultMachineID() error = %v", err)
@@ -107,7 +107,7 @@ func TestSaveLoadClearCloudCredentials(t *testing.T) {
 
 func TestGitHubAccessTokenResolution(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -138,7 +138,7 @@ func TestGitHubAccessTokenResolution(t *testing.T) {
 
 func TestCloudAPITokenPrefersCLISessionToken(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -159,7 +159,7 @@ func TestCloudAPITokenPrefersCLISessionToken(t *testing.T) {
 
 func TestCloudAPITokenWithKindReportsCLISession(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -173,14 +173,14 @@ func TestCloudAPITokenWithKindReportsCLISession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CloudAPITokenWithKind() error = %v", err)
 	}
-	if token != "stored-cli-token" || kind != "totality-cli" {
+	if token != "stored-cli-token" || kind != "lgtm-cli" {
 		t.Fatalf("CloudAPITokenWithKind() = (%q, %q), want CLI session token", token, kind)
 	}
 }
 
 func TestCloudAPITokenFallsBackToGitHubTokenForOldCredentials(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -200,7 +200,7 @@ func TestCloudAPITokenFallsBackToGitHubTokenForOldCredentials(t *testing.T) {
 
 func TestCloudAPITokenRejectsExpiredCLISession(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -218,7 +218,7 @@ func TestCloudAPITokenRejectsExpiredCLISession(t *testing.T) {
 
 func TestCloudAPITokenRequiresStoredToken(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -229,17 +229,17 @@ func TestCloudAPITokenRequiresStoredToken(t *testing.T) {
 
 func TestCloudAPITokenRequiresStoredTokenForMCP(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("TOTALITY_MCP", "1")
+	t.Setenv("LGTM_MCP", "1")
 
 	_, err := CloudAPIToken()
 	if err == nil {
 		t.Fatal("expected error when GitHub token is missing")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "run `tx auth login` in a terminal") {
+	if !strings.Contains(message, "run `lgtm auth login` in a terminal") {
 		t.Fatalf("missing MCP login hint: %q", message)
 	}
 	if strings.Contains(message, "GH_TOKEN") || strings.Contains(message, "GITHUB_TOKEN") {

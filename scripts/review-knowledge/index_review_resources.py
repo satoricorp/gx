@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build and index the Totality review corpus.
+"""Build and index the lgtm review corpus.
 
 The v2 corpus is source-manifest driven:
 - review guidance indexes into review-corpus-v2;
 - research papers index into research-corpus-v1;
-- the existing totality-review-knowledge namespace is never deleted or overwritten.
+- the existing lgtm-review-knowledge namespace is never deleted or overwritten.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ DEFAULT_OPENAI_BASE_URL = "https://api.openai.com"
 DEFAULT_EMBED_MODEL = "text-embedding-3-small"
 DEFAULT_EMBED_DIMS = 512
 DEFAULT_TPUF_BASE_URL = "https://gcp-us-central1.turbopuffer.com"
-DEFAULT_PRODUCTION_NAMESPACE = "totality-review-knowledge"
+DEFAULT_PRODUCTION_NAMESPACE = "lgtm-review-knowledge"
 DEFAULT_REVIEW_NAMESPACE = "review-corpus-v2"
 DEFAULT_RESEARCH_NAMESPACE = "research-corpus-v1"
 DEFAULT_BATCH_SIZE = 256
@@ -167,17 +167,17 @@ class LinkExtractor(html.parser.HTMLParser):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build and index Totality review corpus resources.")
+    parser = argparse.ArgumentParser(description="Build and index lgtm review corpus resources.")
     parser.add_argument("command", nargs="?", choices=["dry-run", "fetch", "chunk", "index", "eval", "promote", "refresh"], help="Pipeline command")
     parser.add_argument("--manifest", default=DEFAULT_MANIFEST)
     parser.add_argument("--artifact-dir", default=DEFAULT_ARTIFACT_DIR)
-    parser.add_argument("--review-namespace", default=os.getenv("TOTALITY_REVIEW_CANDIDATE_NAMESPACE", DEFAULT_REVIEW_NAMESPACE))
-    parser.add_argument("--baseline-namespace", default=os.getenv("TOTALITY_REVIEW_BASELINE_NAMESPACE", DEFAULT_PRODUCTION_NAMESPACE))
-    parser.add_argument("--production-namespace", default=os.getenv("TOTALITY_REVIEW_KNOWLEDGE_NAMESPACE", DEFAULT_PRODUCTION_NAMESPACE))
-    parser.add_argument("--research-namespace", default=os.getenv("TOTALITY_RESEARCH_CORPUS_NAMESPACE", DEFAULT_RESEARCH_NAMESPACE))
+    parser.add_argument("--review-namespace", default=os.getenv("LGTM_REVIEW_CANDIDATE_NAMESPACE", DEFAULT_REVIEW_NAMESPACE))
+    parser.add_argument("--baseline-namespace", default=os.getenv("LGTM_REVIEW_BASELINE_NAMESPACE", DEFAULT_PRODUCTION_NAMESPACE))
+    parser.add_argument("--production-namespace", default=os.getenv("LGTM_REVIEW_KNOWLEDGE_NAMESPACE", DEFAULT_PRODUCTION_NAMESPACE))
+    parser.add_argument("--research-namespace", default=os.getenv("LGTM_RESEARCH_CORPUS_NAMESPACE", DEFAULT_RESEARCH_NAMESPACE))
     parser.add_argument("--limit", type=int, default=0, help="Limit sources for smoke tests")
     parser.add_argument("--timeout", type=float, default=20.0)
-    parser.add_argument("--batch-size", type=int, default=env_int("TOTALITY_SEMANTIC_BATCH_SIZE", DEFAULT_BATCH_SIZE))
+    parser.add_argument("--batch-size", type=int, default=env_int("LGTM_SEMANTIC_BATCH_SIZE", DEFAULT_BATCH_SIZE))
     parser.add_argument("--seed-only", action="store_true", help="Chunk/index manifest seed notes only")
     parser.add_argument("--dry-run", action="store_true", help="Validate manifest without network/API calls")
     parser.add_argument("--golden", default="scripts/review-knowledge/golden_queries.yaml")
@@ -411,7 +411,7 @@ def robots_allowed(url: str, robots: dict[str, urllib.robotparser.RobotFileParse
         except Exception:
             return True
         robots[root] = parser
-    return parser.can_fetch("tx-review-corpus-indexer/0.2", url)
+    return parser.can_fetch("lgtm-review-corpus-indexer/0.2", url)
 
 
 def throttle(url: str, last_by_domain: dict[str, float]) -> None:
@@ -426,7 +426,7 @@ def throttle(url: str, last_by_domain: dict[str, float]) -> None:
 def fetch_url(url: str, timeout: float) -> tuple[bytes, str, int, str]:
     headers = {
         "Accept": "text/html,text/markdown,text/plain,application/pdf;q=0.9,*/*;q=0.1",
-        "User-Agent": "tx-review-corpus-indexer/0.2",
+        "User-Agent": "lgtm-review-corpus-indexer/0.2",
     }
     last_error: Exception | None = None
     for attempt in range(3):
@@ -704,8 +704,8 @@ def write_build_log(chunks: list[Chunk], sources: list[Source], artifact_dir: Pa
     counts = collections.Counter(chunk.attributes["source_id"] for chunk in chunks)
     tokens = [rough_token_count(chunk.body) for chunk in chunks]
     lines = ["# Review Corpus Build Log", "", f"generated_at: {utc_today()}", f"chunks: {len(chunks)}", ""]
-    lines.append(f"embedding_model: {os.getenv('TOTALITY_OPENAI_EMBEDDING_MODEL', DEFAULT_EMBED_MODEL)}")
-    lines.append(f"embedding_dimensions: {env_int('TOTALITY_EMBEDDING_DIMENSIONS', DEFAULT_EMBED_DIMS)}")
+    lines.append(f"embedding_model: {os.getenv('LGTM_OPENAI_EMBEDDING_MODEL', DEFAULT_EMBED_MODEL)}")
+    lines.append(f"embedding_dimensions: {env_int('LGTM_EMBEDDING_DIMENSIONS', DEFAULT_EMBED_DIMS)}")
     if tokens:
         lines.append(f"token_histogram: min={min(tokens)} p50={int(statistics.median(tokens))} max={max(tokens)}")
     lines.append("")
@@ -729,21 +729,21 @@ def index_chunks(chunks: list[Chunk], args: argparse.Namespace) -> int:
         return 2
     embedder = OpenAIEmbedder(
         api_key=openai_key,
-        base_url=os.getenv("TOTALITY_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
-        model=os.getenv("TOTALITY_OPENAI_EMBEDDING_MODEL", DEFAULT_EMBED_MODEL),
-        dimensions=env_int("TOTALITY_EMBEDDING_DIMENSIONS", DEFAULT_EMBED_DIMS),
+        base_url=os.getenv("LGTM_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
+        model=os.getenv("LGTM_OPENAI_EMBEDDING_MODEL", DEFAULT_EMBED_MODEL),
+        dimensions=env_int("LGTM_EMBEDDING_DIMENSIONS", DEFAULT_EMBED_DIMS),
     )
     stores = {
         args.review_namespace: TurboPufferStore(
             api_key=tpuf_key,
-            base_url=os.getenv("TOTALITY_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL),
+            base_url=os.getenv("LGTM_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL),
             namespace=args.review_namespace,
             dimensions=embedder.dimensions,
             production_compatible=args.review_namespace == getattr(args, "production_namespace", ""),
         ),
         args.research_namespace: TurboPufferStore(
             api_key=tpuf_key,
-            base_url=os.getenv("TOTALITY_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL),
+            base_url=os.getenv("LGTM_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL),
             namespace=args.research_namespace,
             dimensions=embedder.dimensions,
         ),
@@ -791,12 +791,12 @@ def run_eval(golden_path: str, baseline_namespace: str, candidate_namespace: str
         return 0
     embedder = OpenAIEmbedder(
         api_key=openai_key,
-        base_url=os.getenv("TOTALITY_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
-        model=os.getenv("TOTALITY_OPENAI_EMBEDDING_MODEL", DEFAULT_EMBED_MODEL),
-        dimensions=env_int("TOTALITY_EMBEDDING_DIMENSIONS", DEFAULT_EMBED_DIMS),
+        base_url=os.getenv("LGTM_OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
+        model=os.getenv("LGTM_OPENAI_EMBEDDING_MODEL", DEFAULT_EMBED_MODEL),
+        dimensions=env_int("LGTM_EMBEDDING_DIMENSIONS", DEFAULT_EMBED_DIMS),
     )
-    baseline_store = TurboPufferStore(api_key=tpuf_key, base_url=os.getenv("TOTALITY_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL), namespace=baseline_namespace, dimensions=embedder.dimensions)
-    candidate_store = TurboPufferStore(api_key=tpuf_key, base_url=os.getenv("TOTALITY_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL), namespace=candidate_namespace, dimensions=embedder.dimensions)
+    baseline_store = TurboPufferStore(api_key=tpuf_key, base_url=os.getenv("LGTM_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL), namespace=baseline_namespace, dimensions=embedder.dimensions)
+    candidate_store = TurboPufferStore(api_key=tpuf_key, base_url=os.getenv("LGTM_TPUF_BASE_URL", DEFAULT_TPUF_BASE_URL), namespace=candidate_namespace, dimensions=embedder.dimensions)
     baseline_hits = 0
     candidate_hits = 0
     precedence_violations: list[str] = []

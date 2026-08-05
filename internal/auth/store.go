@@ -10,32 +10,32 @@ import (
 
 const uploadFileName = "upload.json"
 
-// UploadCredentials hold CLI upload auth for the Totality capture server.
+// UploadCredentials hold CLI upload auth for the lgtm capture server.
 type UploadCredentials struct {
 	APIURL string `json:"api_url"`
 	Token  string `json:"token"`
 	OrgID  string `json:"org_id,omitempty"`
 }
 
-// UploadPath returns ~/.totality/upload.json (or $TOTALITY_HOME/upload.json).
+// UploadPath returns ~/.lgtm/upload.json (or $LGTM_HOME/upload.json).
 func UploadPath() (string, error) {
-	if home := strings.TrimSpace(os.Getenv("TOTALITY_HOME")); home != "" {
+	if home := strings.TrimSpace(os.Getenv("LGTM_HOME")); home != "" {
 		return filepath.Join(home, uploadFileName), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".totality", uploadFileName), nil
+	return filepath.Join(home, ".lgtm", uploadFileName), nil
 }
 
 // LoadUpload reads upload credentials from env (overrides file) and upload.json.
 func LoadUpload() (UploadCredentials, bool) {
 	c := UploadCredentials{
-		APIURL: strings.TrimRight(strings.TrimSpace(os.Getenv("TOTALITY_API_URL")), "/"),
-		Token:  strings.TrimSpace(os.Getenv("TOTALITY_UPLOAD_TOKEN")),
+		APIURL: strings.TrimRight(strings.TrimSpace(os.Getenv("LGTM_API_URL")), "/"),
+		Token:  strings.TrimSpace(os.Getenv("LGTM_UPLOAD_TOKEN")),
 	}
-	if org := strings.TrimSpace(os.Getenv("TOTALITY_ORG_ID")); org != "" {
+	if org := strings.TrimSpace(os.Getenv("LGTM_ORG_ID")); org != "" {
 		c.OrgID = org
 	}
 	if c.APIURL == "" {
@@ -69,14 +69,14 @@ func LoadUpload() (UploadCredentials, bool) {
 	return c, true
 }
 
-// SaveUpload persists upload credentials to ~/.totality/upload.json (0600).
+// SaveUpload persists upload credentials to ~/.lgtm/upload.json (0600).
 func SaveUpload(creds UploadCredentials) error {
 	path, err := UploadPath()
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create tx dir: %w", err)
+		return fmt.Errorf("create lgtm dir: %w", err)
 	}
 	creds.APIURL = strings.TrimRight(strings.TrimSpace(creds.APIURL), "/")
 	if creds.APIURL == "" {

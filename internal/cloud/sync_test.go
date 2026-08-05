@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/buildconfig"
-	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/lgtm/internal/buildconfig"
+	"github.com/satoricorp/lgtm/internal/reviewbundle"
 )
 
 func TestSyncPushBearerAndReviewURL(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	disableSemanticIndex(t)
 
 	if err := SaveCloudCredentials(CloudCredentials{
@@ -49,7 +49,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.UploadReviewArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tx.pr",
+		Event:         "lgtm.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: t.TempDir(), Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -61,7 +61,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 	if gotAuth != "Bearer tlcs_sync" {
 		t.Fatalf("authorization = %q", gotAuth)
 	}
-	if gotPayload.SchemaVersion != reviewbundle.SchemaVersion || gotPayload.Event != "tx.pr" || gotPayload.Push.HeadCommitID != "abc123" {
+	if gotPayload.SchemaVersion != reviewbundle.SchemaVersion || gotPayload.Event != "lgtm.pr" || gotPayload.Push.HeadCommitID != "abc123" {
 		t.Fatalf("payload = %#v, want canonical artifact shape", gotPayload)
 	}
 	if gotPayload.ReviewID != "" || gotPayload.ReviewURL != "" {
@@ -75,7 +75,7 @@ func TestSyncPushBearerAndReviewURL(t *testing.T) {
 
 func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	disableSemanticIndex(t)
 
 	if err := SaveCloudCredentials(CloudCredentials{
@@ -86,7 +86,7 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 	}
 
 	response := reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tx.pr",
+		Event:         "lgtm.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -107,7 +107,7 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.UploadReviewArtifact(context.Background(), reviewbundle.NewArtifact(reviewbundle.Bundle{
-		Event:         "tx.pr",
+		Event:         "lgtm.pr",
 		SchemaVersion: reviewbundle.SchemaVersion,
 		Repo:          reviewbundle.RepoPayload{RootPath: "/repo", Backend: "jj"},
 		Push:          reviewbundle.PushPayload{HeadCommitID: "abc123"},
@@ -125,7 +125,7 @@ func TestUploadReviewArtifactAcceptsCanonicalArtifactResponse(t *testing.T) {
 }
 
 func TestSyncPushRequiresTokenWhenCloudURLSet(t *testing.T) {
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	disableSemanticIndex(t)
 
 	client := &Client{url: "http://example.invalid", http: http.DefaultClient}
@@ -133,14 +133,14 @@ func TestSyncPushRequiresTokenWhenCloudURLSet(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without credentials")
 	}
-	if !strings.Contains(err.Error(), "tx auth login") {
+	if !strings.Contains(err.Error(), "lgtm auth login") {
 		t.Fatalf("error = %v, want login hint", err)
 	}
 }
 
 func TestNewClientUsesCloudURL(t *testing.T) {
-	os.Unsetenv("TOTALITY_CLOUD_URL")
-	buildconfig.CloudURL = "https://api.example.com/tx/pr"
+	os.Unsetenv("LGTM_CLOUD_URL")
+	buildconfig.CloudURL = "https://api.example.com/lgtm/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	client := NewClient()
@@ -153,8 +153,8 @@ func TestNewClientUsesCloudURL(t *testing.T) {
 }
 
 func TestNewClientEnvOverridesBakedDefault(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3201")
-	buildconfig.CloudURL = "https://api.example.com/tx/pr"
+	t.Setenv("LGTM_CLOUD_URL", "http://localhost:3201")
+	buildconfig.CloudURL = "https://api.example.com/lgtm/pr"
 	t.Cleanup(func() { buildconfig.CloudURL = "" })
 
 	client := NewClient()
@@ -167,8 +167,8 @@ func TestNewClientEnvOverridesBakedDefault(t *testing.T) {
 }
 
 func TestNewClientUsesUploadTimeoutEnv(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "http://localhost:3201")
-	t.Setenv("TOTALITY_CLOUD_UPLOAD_TIMEOUT", "250ms")
+	t.Setenv("LGTM_CLOUD_URL", "http://localhost:3201")
+	t.Setenv("LGTM_CLOUD_UPLOAD_TIMEOUT", "250ms")
 
 	client := NewClient()
 	if client == nil {
@@ -180,7 +180,7 @@ func TestNewClientUsesUploadTimeoutEnv(t *testing.T) {
 }
 
 func TestNewClientNilWhenUnset(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("LGTM_CLOUD_URL", "")
 	buildconfig.CloudURL = ""
 	if client := NewClient(); client != nil {
 		t.Fatalf("expected nil client, got %+v", client)
@@ -189,8 +189,8 @@ func TestNewClientNilWhenUnset(t *testing.T) {
 
 func disableSemanticIndex(t *testing.T) {
 	t.Helper()
-	t.Setenv("TOTALITY_SEMANTIC_INDEX", "")
-	t.Setenv("TOTALITY_TPUF_NAMESPACE", "")
+	t.Setenv("LGTM_SEMANTIC_INDEX", "")
+	t.Setenv("LGTM_TPUF_NAMESPACE", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("TURBOPUFFER_API_KEY", "")
 }

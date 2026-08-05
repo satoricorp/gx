@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/totalitytest"
+	"github.com/satoricorp/lgtm/internal/lgtmtest"
 )
 
 // requireLiveRetrievalCredentials skips unless real keys are present. These
@@ -15,8 +15,8 @@ import (
 func requireLiveRetrievalCredentials(t *testing.T) {
 	t.Helper()
 	// Checking only for keys is not a guard: it arms this test on the machine
-	// of everyone who has them exported, which is everyone working on Totality.
-	totalitytest.RequireNoNetwork(t)
+	// of everyone who has them exported, which is everyone working on lgtm.
+	lgtmtest.RequireNoNetwork(t)
 	if strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")) == "" {
 		t.Skip("TURBOPUFFER_API_KEY is not set; skipping live retrieval test")
 	}
@@ -29,7 +29,7 @@ func liveIndexStore(t *testing.T) turboPufferIndexStore {
 	t.Helper()
 	return newTurboPufferIndexStore(
 		strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")),
-		firstNonEmpty(os.Getenv("TOTALITY_TPUF_BASE_URL"), defaultReviewResourceBaseURL),
+		firstNonEmpty(os.Getenv("LGTM_TPUF_BASE_URL"), defaultReviewResourceBaseURL),
 	)
 }
 
@@ -42,7 +42,7 @@ func TestLiveProbeReadsRealNamespaceSchemas(t *testing.T) {
 	defer cancel()
 	store := liveIndexStore(t)
 
-	probe := store.Probe(ctx, "repo-satoricorp-totality")
+	probe := store.Probe(ctx, "repo-satoricorp-lgtm")
 	if probe.Err != nil {
 		t.Fatalf("probe error = %v", probe.Err)
 	}
@@ -70,8 +70,8 @@ func TestLiveCodeIndexRetrievalFindsThisRepositorysCode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	store := liveIndexStore(t)
-	if !store.Probe(ctx, "repo-satoricorp-totality").Usable() {
-		t.Skip("repo-satoricorp-totality is not available; skipping")
+	if !store.Probe(ctx, "repo-satoricorp-lgtm").Usable() {
+		t.Skip("repo-satoricorp-lgtm is not available; skipping")
 	}
 
 	in := RetrieveInput{
@@ -86,7 +86,7 @@ func TestLiveCodeIndexRetrievalFindsThisRepositorysCode(t *testing.T) {
 	}
 	retriever := CodeIndexRetriever{
 		Store:      store,
-		Namespaces: []codeIndexTarget{{Namespace: "repo-satoricorp-totality", Origin: "Totality Cloud code index"}},
+		Namespaces: []codeIndexTarget{{Namespace: "repo-satoricorp-lgtm", Origin: "lgtm Cloud code index"}},
 		Limit:      8,
 	}
 	snippets, err := retriever.Retrieve(ctx, in)
@@ -121,7 +121,7 @@ func TestLiveCodeIndexRetrievalFindsThisRepositorysCode(t *testing.T) {
 	}
 }
 
-// TestLiveMissingNamespaceDegradesVisibly is the yeet case: a repository Totality has
+// TestLiveMissingNamespaceDegradesVisibly is the yeet case: a repository lgtm has
 // never indexed must produce a stated absence, not a silently thinner review.
 func TestLiveMissingNamespaceDegradesVisibly(t *testing.T) {
 	requireLiveRetrievalCredentials(t)
@@ -137,7 +137,7 @@ func TestLiveMissingNamespaceDegradesVisibly(t *testing.T) {
 	}
 	retriever := CodeIndexRetriever{
 		Store:      liveIndexStore(t),
-		Namespaces: []codeIndexTarget{{Namespace: "repo-satoricorp-yeet", Origin: "Totality Cloud code index"}},
+		Namespaces: []codeIndexTarget{{Namespace: "repo-satoricorp-yeet", Origin: "lgtm Cloud code index"}},
 	}
 	snippets, err := retriever.Retrieve(ctx, in)
 	if err != nil {

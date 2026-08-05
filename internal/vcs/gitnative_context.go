@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-const pendingCommitContextName = "totality-pending-commit.json"
+const pendingCommitContextName = "lgtm-pending-commit.json"
 
 // PendingCommitContext carries commit metadata consumed by lifecycle hooks.
 // The post-commit hook tolerates a missing file and falls back to a zero value.

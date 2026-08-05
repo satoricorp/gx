@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/capture/redact"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/telemetry"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/orchestrator"
+	"github.com/satoricorp/lgtm/internal/capture/redact"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/telemetry"
 )
 
 // Result summarizes one reparse run.

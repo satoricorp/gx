@@ -79,7 +79,7 @@ import (
 // compares each candidate against its group's seed rather than a growing union,
 // so A~B and B~C cannot drag in a C that matches neither.
 //
-// With no adjudicator reachable (no credentials, TOTALITY_REVIEW_DEDUPE=0, or a failed
+// With no adjudicator reachable (no credentials, LGTM_REVIEW_DEDUPE=0, or a failed
 // call) nothing semantic is merged. The fallback collapses only near-verbatim
 // copies — dedupeVerbatimThreshold on both title and body — which is the old
 // behavior and is safe because it is barely a judgement at all. A review that

@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/auth"
-	"github.com/satoricorp/totality/internal/semantic"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/auth"
+	"github.com/satoricorp/lgtm/internal/semantic"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
 // newIndexCommand exposes repository indexing as a command so an index can be
@@ -87,8 +87,8 @@ func newIndexCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-// indexRepoRoot resolves the repository without requiring `tx init`, matching
-// how review resolves it: indexing must work on a checkout Totality has never
+// indexRepoRoot resolves the repository without requiring `lgtm init`, matching
+// how review resolves it: indexing must work on a checkout lgtm has never
 // touched, which is the entire point of on-demand indexing.
 func indexRepoRoot(ctx context.Context) (string, error) {
 	repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)

@@ -8,27 +8,27 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/hooks"
+	"github.com/satoricorp/lgtm/internal/hooks"
 )
 
-// isolateGlobalGitConfig points HOME, TOTALITY_HOME and git's global/system config
+// isolateGlobalGitConfig points HOME, LGTM_HOME and git's global/system config
 // files at a throwaway directory so these tests can exercise
 // `git config --global` without ever touching the developer's real config.
 func isolateGlobalGitConfig(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	configPath := filepath.Join(home, "gitconfig")
-	if err := os.WriteFile(configPath, []byte("[tx]\n\tisolationprobe = temp\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("[lgtm]\n\tisolationprobe = temp\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
-	t.Setenv("TOTALITY_HOME", filepath.Join(home, "tx"))
+	t.Setenv("LGTM_HOME", filepath.Join(home, "lgtm"))
 	t.Setenv("GIT_CONFIG_GLOBAL", configPath)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	// Refuse to run if this git ignores GIT_CONFIG_GLOBAL (added in git 2.32):
 	// every write below would otherwise land in the real ~/.gitconfig.
-	out, err := exec.Command("git", "config", "--global", "--get", "tx.isolationprobe").Output()
+	out, err := exec.Command("git", "config", "--global", "--get", "lgtm.isolationprobe").Output()
 	if err != nil || strings.TrimSpace(string(out)) != "temp" {
 		t.Skipf("git does not honor GIT_CONFIG_GLOBAL, refusing to touch the real global config: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestInstallGlobalWritesChainingScripts(t *testing.T) {
 
 	result, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{
 		HooksDir:     hooksDir,
-		TotalityPath: "/usr/local/bin/tx",
+		LgtmPath: "/usr/local/bin/lgtm",
 	})
 	if err != nil {
 		t.Fatalf("InstallGlobal() error = %v", err)
@@ -82,29 +82,29 @@ func TestInstallGlobalWritesChainingScripts(t *testing.T) {
 		{
 			name: "prepare-commit-msg",
 			want: []string{
-				"# tx lifecycle hooks",
-				"# tx global lifecycle hooks",
+				"# lgtm lifecycle hooks",
+				"# lgtm global lifecycle hooks",
 				"__hooks prepare-commit-msg",
-				"command -v tx",
-				"tx_resolve_local_hook prepare-commit-msg",
-				`exec "$tx_local_hook" "$@"`,
+				"command -v lgtm",
+				"lgtm_resolve_local_hook prepare-commit-msg",
+				`exec "$lgtm_local_hook" "$@"`,
 			},
 		},
 		{
 			name: "post-commit",
 			want: []string{
 				"__hooks post-commit",
-				"tx_resolve_local_hook post-commit",
-				`exec "$tx_local_hook" "$@"`,
+				"lgtm_resolve_local_hook post-commit",
+				`exec "$lgtm_local_hook" "$@"`,
 			},
 		},
 		{
 			name: "post-rewrite",
 			want: []string{
 				"__hooks post-rewrite",
-				`cat > "$tx_stdin"`,
-				"tx_resolve_local_hook post-rewrite",
-				`"$tx_local_hook" "$@" < "$tx_stdin"`,
+				`cat > "$lgtm_stdin"`,
+				"lgtm_resolve_local_hook post-rewrite",
+				`"$lgtm_local_hook" "$@" < "$lgtm_stdin"`,
 				"exit $?",
 			},
 		},
@@ -112,28 +112,28 @@ func TestInstallGlobalWritesChainingScripts(t *testing.T) {
 			name: "pre-push",
 			want: []string{
 				"capture push",
-				"command -v tx",
-				`cat > "$tx_stdin"`,
-				`done < "$tx_stdin"`,
-				"tx_resolve_local_hook pre-push",
-				`"$tx_local_hook" "$@" < "$tx_stdin"`,
+				"command -v lgtm",
+				`cat > "$lgtm_stdin"`,
+				`done < "$lgtm_stdin"`,
+				"lgtm_resolve_local_hook pre-push",
+				`"$lgtm_local_hook" "$@" < "$lgtm_stdin"`,
 				"exit $?",
 			},
 		},
 		{
 			name: "pre-commit",
 			want: []string{
-				"tx_resolve_local_hook pre-commit",
-				`exec "$tx_local_hook" "$@"`,
+				"lgtm_resolve_local_hook pre-commit",
+				`exec "$lgtm_local_hook" "$@"`,
 			},
-			// Pure forwarders must not run Totality work or read stdin git never sends.
+			// Pure forwarders must not run lgtm work or read stdin git never sends.
 			avoid: []string{"__hooks", "capture push", "cat > /dev/null"},
 		},
 		{
 			name: "reference-transaction",
 			want: []string{
-				"tx_resolve_local_hook reference-transaction",
-				`exec "$tx_local_hook" "$@"`,
+				"lgtm_resolve_local_hook reference-transaction",
+				`exec "$lgtm_local_hook" "$@"`,
 				"cat > /dev/null",
 			},
 			avoid: []string{"__hooks", "capture push"},
@@ -169,7 +169,7 @@ func TestGlobalHookScriptsAreValidShell(t *testing.T) {
 	hooksDir := filepath.Join(t.TempDir(), "hooks")
 	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{
 		HooksDir:     hooksDir,
-		TotalityPath: "/usr/local/bin/tx",
+		LgtmPath: "/usr/local/bin/lgtm",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,11 +189,11 @@ func TestInstallGlobalRefusesForeignHooksPath(t *testing.T) {
 	}
 	hooksDir := filepath.Join(t.TempDir(), "hooks")
 
-	_, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, TotalityPath: "/bin/tx"})
+	_, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, LgtmPath: "/bin/lgtm"})
 	if err == nil {
 		t.Fatal("InstallGlobal() error = nil, want refusal")
 	}
-	for _, want := range []string{"not managed by Totality", foreign} {
+	for _, want := range []string{"not managed by lgtm", foreign} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("InstallGlobal() error = %q, want mention of %q", err, want)
 		}
@@ -209,7 +209,7 @@ func TestInstallGlobalRefusesForeignHooksPath(t *testing.T) {
 func TestInstallGlobalIsIdempotent(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	hooksDir := filepath.Join(t.TempDir(), "hooks")
-	opts := hooks.GlobalInstallOptions{HooksDir: hooksDir, TotalityPath: "/usr/local/bin/tx"}
+	opts := hooks.GlobalInstallOptions{HooksDir: hooksDir, LgtmPath: "/usr/local/bin/lgtm"}
 
 	first, err := hooks.InstallGlobal(t.Context(), opts)
 	if err != nil {
@@ -249,7 +249,7 @@ func TestGlobalStatusTracksInstallAndConflict(t *testing.T) {
 		t.Fatalf("GlobalStatus() before install = %+v, want empty state", before)
 	}
 
-	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{TotalityPath: "/usr/local/bin/tx"}); err != nil {
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
 		t.Fatal(err)
 	}
 	after, err := hooks.GlobalStatus(t.Context())
@@ -276,7 +276,7 @@ func TestGlobalStatusTracksInstallAndConflict(t *testing.T) {
 func TestGlobalHookRunsRepoHookAndPropagatesExit(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	hooksDir := filepath.Join(t.TempDir(), "hooks")
-	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, TotalityPath: "/bin/false"}); err != nil {
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, LgtmPath: "/bin/false"}); err != nil {
 		t.Fatal(err)
 	}
 	repo := t.TempDir()
@@ -295,19 +295,19 @@ exit 3
 	}
 }
 
-func TestGlobalHookSkipsTotalityOwnedRepoHook(t *testing.T) {
+func TestGlobalHookSkipsLgtmOwnedRepoHook(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	hooksDir := filepath.Join(t.TempDir(), "hooks")
-	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, TotalityPath: "/bin/true"}); err != nil {
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, LgtmPath: "/bin/true"}); err != nil {
 		t.Fatal(err)
 	}
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	// A repo that ran plain `tx init` keeps its own Totality hooks; the global script
-	// must not chain into them or Totality work would run twice.
+	// A repo that ran plain `lgtm init` keeps its own lgtm hooks; the global script
+	// must not chain into them or lgtm work would run twice.
 	writeExecutable(t, filepath.Join(repo, ".git", "hooks", "pre-commit"), `#!/bin/sh
-# tx lifecycle hooks
-echo "tx owned repo hook ran"
+# lgtm lifecycle hooks
+echo "lgtm owned repo hook ran"
 exit 5
 `)
 
@@ -315,20 +315,20 @@ exit 5
 	if err != nil {
 		t.Fatalf("global pre-commit error = %v, output:\n%s", err, out)
 	}
-	if strings.Contains(out, "tx owned repo hook ran") {
-		t.Fatalf("global hook chained into a Totality-owned repo hook:\n%s", out)
+	if strings.Contains(out, "lgtm owned repo hook ran") {
+		t.Fatalf("global hook chained into a lgtm-owned repo hook:\n%s", out)
 	}
 }
 
-func TestGlobalPrePushHookFeedsTotalityAndRepoHookStdin(t *testing.T) {
+func TestGlobalPrePushHookFeedsLgtmAndRepoHookStdin(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	work := t.TempDir()
-	txLog := filepath.Join(work, "tx.log")
-	fakeTotality := filepath.Join(work, "tx")
-	writeExecutable(t, fakeTotality, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+txLog+"\"\n")
+	lgtmLog := filepath.Join(work, "lgtm.log")
+	fakeLgtm := filepath.Join(work, "lgtm")
+	writeExecutable(t, fakeLgtm, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+lgtmLog+"\"\n")
 
 	hooksDir := filepath.Join(work, "hooks")
-	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, TotalityPath: fakeTotality}); err != nil {
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{HooksDir: hooksDir, LgtmPath: fakeLgtm}); err != nil {
 		t.Fatal(err)
 	}
 	repo := t.TempDir()
@@ -345,7 +345,7 @@ exit 9
 		t.Fatalf("global pre-push exit = %v (want 9), output:\n%s", err, out)
 	}
 
-	txArgs := readFile(t, txLog)
+	lgtmArgs := readFile(t, lgtmLog)
 	for _, want := range []string{
 		"capture push",
 		"--remote origin",
@@ -353,8 +353,8 @@ exit 9
 		"--local-ref refs/heads/main",
 		"--head-sha aaaa111",
 	} {
-		if !strings.Contains(txArgs, want) {
-			t.Fatalf("tx capture push args missing %q:\n%s", want, txArgs)
+		if !strings.Contains(lgtmArgs, want) {
+			t.Fatalf("lgtm capture push args missing %q:\n%s", want, lgtmArgs)
 		}
 	}
 
@@ -362,24 +362,24 @@ exit 9
 	if !strings.Contains(repoStdin, "args: origin git@example.com:acme/app.git") {
 		t.Fatalf("repo pre-push hook missing forwarded args:\n%s", repoStdin)
 	}
-	// Totality consumed stdin first; the repo hook must still receive every ref.
+	// lgtm consumed stdin first; the repo hook must still receive every ref.
 	if !strings.Contains(repoStdin, "refs/heads/main aaaa111 refs/heads/main bbbb222") {
 		t.Fatalf("repo pre-push hook did not receive replayed stdin:\n%s", repoStdin)
 	}
 }
 
-// TestGlobalPrePushChainsWhenTotalityIsMissing pins the failure mode that matters
-// most under core.hooksPath: when tx cannot be resolved at all, the global
-// script must skip Totality work silently but still replay stdin to the
+// TestGlobalPrePushChainsWhenLgtmIsMissing pins the failure mode that matters
+// most under core.hooksPath: when lgtm cannot be resolved at all, the global
+// script must skip lgtm work silently but still replay stdin to the
 // repository's own hook — exiting early would disable every repo hook on the
 // machine.
-func TestGlobalPrePushChainsWhenTotalityIsMissing(t *testing.T) {
+func TestGlobalPrePushChainsWhenLgtmIsMissing(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	work := t.TempDir()
 	hooksDir := filepath.Join(work, "hooks")
 	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{
 		HooksDir:     hooksDir,
-		TotalityPath: filepath.Join(work, "missing", "tx"),
+		LgtmPath: filepath.Join(work, "missing", "lgtm"),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestGlobalPrePushChainsWhenTotalityIsMissing(t *testing.T) {
 exit 7
 `)
 
-	// PATH holds git and the shell utilities the script needs, but no tx.
+	// PATH holds git and the shell utilities the script needs, but no lgtm.
 	pathDir := filepath.Join(work, "pathbin")
 	for _, tool := range []string{"git", "mktemp", "cat", "rm", "grep"} {
 		resolved, err := exec.LookPath(tool)
@@ -418,8 +418,8 @@ exit 7
 	if !strings.Contains(repoStdin, "refs/heads/main aaaa111 refs/heads/main bbbb222") {
 		t.Fatalf("repo pre-push hook did not receive replayed stdin:\n%s", repoStdin)
 	}
-	if strings.Contains(string(out), "tx") {
-		t.Fatalf("missing tx must be silent, got:\n%s", out)
+	if strings.Contains(string(out), "lgtm") {
+		t.Fatalf("missing lgtm must be silent, got:\n%s", out)
 	}
 }
 
@@ -427,7 +427,7 @@ func TestPerRepoInstallUnaffectedByGlobalSupport(t *testing.T) {
 	isolateGlobalGitConfig(t)
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
 		t.Fatal(err)
 	}
 	if !hooks.IsInstalled(repo) {
@@ -435,10 +435,10 @@ func TestPerRepoInstallUnaffectedByGlobalSupport(t *testing.T) {
 	}
 	for _, name := range []string{"prepare-commit-msg", "post-commit", "post-rewrite", "pre-push"} {
 		content := readFile(t, filepath.Join(repo, ".git", "hooks", name))
-		if !strings.Contains(content, "# tx lifecycle hooks") {
+		if !strings.Contains(content, "# lgtm lifecycle hooks") {
 			t.Fatalf("per-repo %s hook missing marker:\n%s", name, content)
 		}
-		if strings.Contains(content, "# tx global lifecycle hooks") {
+		if strings.Contains(content, "# lgtm global lifecycle hooks") {
 			t.Fatalf("per-repo %s hook picked up global chaining script:\n%s", name, content)
 		}
 	}
@@ -446,7 +446,7 @@ func TestPerRepoInstallUnaffectedByGlobalSupport(t *testing.T) {
 
 func TestPerRepoInstallDoesNotClobberGlobalHooks(t *testing.T) {
 	isolateGlobalGitConfig(t)
-	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{TotalityPath: "/usr/local/bin/tx"}); err != nil {
+	if _, err := hooks.InstallGlobal(t.Context(), hooks.GlobalInstallOptions{LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
 		t.Fatal(err)
 	}
 	globalDir, err := hooks.GlobalHooksDir()
@@ -456,17 +456,17 @@ func TestPerRepoInstallDoesNotClobberGlobalHooks(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
 
-	// git now resolves this repo's hooks dir to the shared Totality directory; a
+	// git now resolves this repo's hooks dir to the shared lgtm directory; a
 	// per-repo install must not replace the chaining scripts there.
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/usr/local/bin/tx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/usr/local/bin/lgtm"}); err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
 	for _, name := range []string{"pre-push", "post-commit"} {
 		content := readFile(t, filepath.Join(globalDir, name))
-		if !strings.Contains(content, "# tx global lifecycle hooks") {
+		if !strings.Contains(content, "# lgtm global lifecycle hooks") {
 			t.Fatalf("global %s hook was overwritten by a per-repo install:\n%s", name, content)
 		}
-		if !strings.Contains(content, "tx_resolve_local_hook "+name) {
+		if !strings.Contains(content, "lgtm_resolve_local_hook "+name) {
 			t.Fatalf("global %s hook lost its chaining logic:\n%s", name, content)
 		}
 	}
@@ -489,9 +489,9 @@ func TestEnabledForRepoHonorsOptOut(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.value == "" {
-				_ = exec.Command("git", "-C", repo, "config", "--unset", "tx.enabled").Run()
+				_ = exec.Command("git", "-C", repo, "config", "--unset", "lgtm.enabled").Run()
 			} else {
-				runGitInRepo(t, repo, "config", "tx.enabled", tc.value)
+				runGitInRepo(t, repo, "config", "lgtm.enabled", tc.value)
 			}
 			if got := hooks.EnabledForRepo(t.Context(), repo); got != tc.want {
 				t.Fatalf("EnabledForRepo(%s) = %v, want %v", tc.name, got, tc.want)
@@ -503,7 +503,7 @@ func TestEnabledForRepoHonorsOptOut(t *testing.T) {
 func TestPrepareCommitMsgRespectsRepoOptOut(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	runGitInRepo(t, repo, "config", "tx.enabled", "false")
+	runGitInRepo(t, repo, "config", "lgtm.enabled", "false")
 	messagePath := filepath.Join(repo, "COMMIT_EDITMSG")
 	if err := os.WriteFile(messagePath, []byte("add feature\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -511,8 +511,8 @@ func TestPrepareCommitMsgRespectsRepoOptOut(t *testing.T) {
 	if err := hooks.PrepareCommitMsg(hooks.PrepareCommitMsgOptions{RepoRoot: repo, MessagePath: messagePath}); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, messagePath); strings.Contains(got, "Totality: https://totality.sh/r/") {
-		t.Fatalf("opted-out repo still got a Totality trailer: %q", got)
+	if got := readFile(t, messagePath); strings.Contains(got, "lgtm: https://lgtm.cx/r/") {
+		t.Fatalf("opted-out repo still got a lgtm trailer: %q", got)
 	}
 }
 

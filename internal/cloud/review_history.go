@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/lgtm/internal/version"
 )
 
 type CodeReviewFindingRecord struct {
@@ -129,15 +129,15 @@ func (c *Client) SearchCodeReviewHistory(ctx context.Context, reqBody CodeReview
 func (c *Client) postJSON(ctx context.Context, path string, payload any, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal tx cloud request: %w", err)
+		return fmt.Errorf("marshal lgtm cloud request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cloudURLWithPath(c.url, path), bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create tx cloud request: %w", err)
+		return fmt.Errorf("create lgtm cloud request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "tx/"+version.Current())
+	req.Header.Set("User-Agent", "lgtm/"+version.Current())
 	token, err := CloudAPIToken()
 	if err != nil {
 		return err
@@ -146,20 +146,20 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, out any
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("send tx cloud request: %w", err)
+		return fmt.Errorf("send lgtm cloud request: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		detail := strings.TrimSpace(string(raw))
 		if detail != "" {
-			return fmt.Errorf("tx cloud request %s: status %s: %s", path, resp.Status, detail)
+			return fmt.Errorf("lgtm cloud request %s: status %s: %s", path, resp.Status, detail)
 		}
-		return fmt.Errorf("tx cloud request %s: status %s", path, resp.Status)
+		return fmt.Errorf("lgtm cloud request %s: status %s", path, resp.Status)
 	}
 	if out != nil && len(raw) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("decode tx cloud response: %w", err)
+			return fmt.Errorf("decode lgtm cloud response: %w", err)
 		}
 	}
 	return nil

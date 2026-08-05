@@ -29,7 +29,7 @@ func TestInstallSlashCommandsWritesForDetectedAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"description:", "$ARGUMENTS", "tx_review", slashCommandMarker} {
+	for _, fragment := range []string{"description:", "$ARGUMENTS", "lgtm_review", slashCommandMarker} {
 		if !strings.Contains(string(claude), fragment) {
 			t.Fatalf("claude command missing %q:\n%s", fragment, claude)
 		}
@@ -72,8 +72,8 @@ func TestInstallSlashCommandsCursorBodyHasNoPlaceholder(t *testing.T) {
 	if strings.Contains(string(cursor), "$ARGUMENTS") {
 		t.Fatalf("cursor command must not use $ARGUMENTS:\n%s", cursor)
 	}
-	if !strings.Contains(string(cursor), "tx_review") {
-		t.Fatalf("cursor command missing tx_review:\n%s", cursor)
+	if !strings.Contains(string(cursor), "lgtm_review") {
+		t.Fatalf("cursor command missing lgtm_review:\n%s", cursor)
 	}
 }
 
@@ -133,7 +133,57 @@ func TestInstallSlashCommandsRefreshesManagedFile(t *testing.T) {
 	if strings.Contains(string(data), "old template") {
 		t.Fatalf("managed file was not refreshed:\n%s", data)
 	}
-	if !strings.Contains(string(data), "tx_review") {
+	if !strings.Contains(string(data), "lgtm_review") {
 		t.Fatalf("refreshed file missing template body:\n%s", data)
+	}
+}
+
+func TestInstallSlashCommandsRemovesRenamedPredecessor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".claude", "commands")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A file this tool installed under the old name, carrying the old marker.
+	legacy := filepath.Join(dir, "better-review.md")
+	if err := os.WriteFile(legacy, []byte(legacySlashCommandMarkers[0]+"\n\nold command\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := installSlashCommands(); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(legacy); !os.IsNotExist(statErr) {
+		t.Error("renamed predecessor should be removed, leaving one command not two")
+	}
+	if _, err := os.Stat(filepath.Join(dir, slashCommandName+".md")); err != nil {
+		t.Errorf("current command missing: %v", err)
+	}
+}
+
+func TestInstallSlashCommandsKeepsUserOwnedPredecessor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".claude", "commands")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Same old name, but the user removed the marker: it is their file now.
+	legacy := filepath.Join(dir, "better-review.md")
+	custom := "my own review command\n"
+	if err := os.WriteFile(legacy, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := installSlashCommands(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(legacy)
+	if err != nil {
+		t.Fatalf("user-owned predecessor was deleted: %v", err)
+	}
+	if string(data) != custom {
+		t.Errorf("user-owned predecessor was modified:\n%s", data)
 	}
 }

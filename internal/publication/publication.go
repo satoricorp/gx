@@ -9,11 +9,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/reviewbundle"
-	"github.com/satoricorp/totality/internal/semantic"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/cloud"
+	"github.com/satoricorp/lgtm/internal/reviewbundle"
+	"github.com/satoricorp/lgtm/internal/semantic"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
 type Uploader interface {
@@ -166,7 +166,7 @@ func configuredPublisher(publisher *Publisher) (*Publisher, error) {
 	}
 	client := cloud.NewClient()
 	if client == nil {
-		return nil, fmt.Errorf("tx cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
+		return nil, fmt.Errorf("lgtm cloud is not configured; set LGTM_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	return NewPublisher(client), nil
 }

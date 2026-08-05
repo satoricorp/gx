@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/hooks"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/capture/orchestrator"
+	"github.com/satoricorp/lgtm/internal/hooks"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 // TestCapturePushSurfacesHookError pins the diagnostic contract of the push
@@ -68,14 +68,14 @@ func TestCapturePushWarnsAboutSkippedTools(t *testing.T) {
 // TestCapturePushDistinguishesSkipsFromFailures pins the meaning of the
 // staging line. RunPush returns an empty outcome on four separate paths, and
 // the command printed the staging line unconditionally, so a paused capture and
-// a repo opted out with `git config tx.enabled false` emitted the byte-for-byte
+// a repo opted out with `git config lgtm.enabled false` emitted the byte-for-byte
 // signature of an errored run — `capture staged extract= sessions=0 …` — with
 // nothing on stderr. An empty extract id has to mean exactly one thing.
 func TestCapturePushDistinguishesSkipsFromFailures(t *testing.T) {
 	restore := runPushHook
 	runPushHook = func(context.Context, hooks.PushOptions) (hooks.PushOutcome, error) {
 		return hooks.PushOutcome{
-			SkipReason: "this repository opted out (git config tx.enabled false)",
+			SkipReason: "this repository opted out (git config lgtm.enabled false)",
 		}, nil
 	}
 	t.Cleanup(func() { runPushHook = restore })
@@ -100,7 +100,7 @@ func TestCapturePushDistinguishesSkipsFromFailures(t *testing.T) {
 }
 
 // TestCapturePushSurfacesFailingUploads is the last link in the only chain by
-// which a failed upload can reach a human: `tx capture sync` runs detached with
+// which a failed upload can reach a human: `lgtm capture sync` runs detached with
 // both streams on os.DevNull, so the push that starts it cannot report its
 // result and the next push has to. Without this, 32 rows could 400 on every
 // push for weeks behind a clean-looking capture line.
@@ -137,7 +137,7 @@ func TestCapturePushSurfacesFailingUploads(t *testing.T) {
 // TestCapturePushSurfacesDroppedWork covers the two errors the hook used to
 // discard outright: a failed shareable-marking pass, and a publication that was
 // never enqueued. Both leave the push looking successful while the PR silently
-// gets no Totality artifact and the staged rows never upload.
+// gets no lgtm artifact and the staged rows never upload.
 func TestCapturePushSurfacesDroppedWork(t *testing.T) {
 	restore := runPushHook
 	runPushHook = func(context.Context, hooks.PushOptions) (hooks.PushOutcome, error) {
@@ -160,7 +160,7 @@ func TestCapturePushSurfacesDroppedWork(t *testing.T) {
 	if !strings.Contains(stderr.String(), "database is locked") {
 		t.Fatalf("stderr = %q, want the marking failure reported", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "queued no Totality review artifact") {
+	if !strings.Contains(stderr.String(), "queued no lgtm review artifact") {
 		t.Fatalf("stderr = %q, want the missing publication reported", stderr.String())
 	}
 }

@@ -9,43 +9,43 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 const (
-	// globalHookMarker identifies scripts written by `tx init --global`. Every
-	// global script also carries hookMarker so the existing Totality-ownership checks
-	// (totalityOwnedHook / IsInstalled) keep recognizing them.
-	globalHookMarker = "# tx global lifecycle hooks"
+	// globalHookMarker identifies scripts written by `lgtm init --global`. Every
+	// global script also carries hookMarker so the existing lgtm-ownership checks
+	// (lgtmOwnedHook / IsInstalled) keep recognizing them.
+	globalHookMarker = "# lgtm global lifecycle hooks"
 
 	// hooksPathConfigKey is the git config key a global install points at the
-	// Totality hooks directory.
+	// lgtm hooks directory.
 	hooksPathConfigKey = "core.hooksPath"
 
-	// RepoEnabledConfigKey is the per-repo opt-out. `git config tx.enabled false`
-	// inside a repository stops Totality lifecycle work there while leaving the
+	// RepoEnabledConfigKey is the per-repo opt-out. `git config lgtm.enabled false`
+	// inside a repository stops lgtm lifecycle work there while leaving the
 	// machine-wide install (and the repo's own hooks) intact.
-	RepoEnabledConfigKey = "tx.enabled"
+	RepoEnabledConfigKey = "lgtm.enabled"
 )
 
-// globalHookSpec describes one script installed into the Totality global hooks
+// globalHookSpec describes one script installed into the lgtm global hooks
 // directory.
 //
 // A global core.hooksPath makes git ignore every repository's own
-// .git/hooks/*, so Totality has to shim more than the four hooks it cares about:
+// .git/hooks/*, so lgtm has to shim more than the four hooks it cares about:
 // each script here chains to the repository's own hook of the same name.
 type globalHookSpec struct {
 	name string
 	// stdin marks hooks git feeds data on stdin. Those scripts must drain
 	// stdin even when there is nothing to do, and must replay it to the
-	// chained repo hook when Totality consumed it first.
+	// chained repo hook when lgtm consumed it first.
 	stdin bool
-	// tx names the Totality lifecycle behavior this script runs before chaining.
+	// lgtm names the lgtm lifecycle behavior this script runs before chaining.
 	// Empty means the script is a pure forwarder.
-	tx string
+	lgtm string
 }
 
-// globalHookSpecs lists every hook `tx init --global` installs.
+// globalHookSpecs lists every hook `lgtm init --global` installs.
 //
 // Deliberately excluded, because their mere existence changes what git does
 // and a shim that exits 0 would silently replace the built-in behavior:
@@ -54,13 +54,13 @@ type globalHookSpec struct {
 // (p4-*) are excluded as well; they only matter to git-p4 users.
 func globalHookSpecs() []globalHookSpec {
 	return []globalHookSpec{
-		// Totality lifecycle hooks: Totality work first (never fatal), then the repo hook.
-		{name: "prepare-commit-msg", tx: "prepare-commit-msg"},
-		{name: "post-commit", tx: "post-commit"},
-		{name: "post-rewrite", tx: "post-rewrite", stdin: true},
-		{name: "pre-push", tx: "pre-push", stdin: true},
+		// lgtm lifecycle hooks: lgtm work first (never fatal), then the repo hook.
+		{name: "prepare-commit-msg", lgtm: "prepare-commit-msg"},
+		{name: "post-commit", lgtm: "post-commit"},
+		{name: "post-rewrite", lgtm: "post-rewrite", stdin: true},
+		{name: "pre-push", lgtm: "pre-push", stdin: true},
 
-		// Pure forwarders: Totality does nothing, but the repo's hook must still run.
+		// Pure forwarders: lgtm does nothing, but the repo's hook must still run.
 		{name: "applypatch-msg"},
 		{name: "pre-applypatch"},
 		{name: "post-applypatch"},
@@ -91,8 +91,8 @@ func GlobalHookNames() []string {
 	return names
 }
 
-// GlobalHooksDir returns the machine-wide Totality hooks directory: $TOTALITY_HOME/hooks
-// when TOTALITY_HOME is set, otherwise ~/.totality/hooks.
+// GlobalHooksDir returns the machine-wide lgtm hooks directory: $LGTM_HOME/hooks
+// when LGTM_HOME is set, otherwise ~/.lgtm/hooks.
 func GlobalHooksDir() (string, error) {
 	dir, err := storage.DefaultDir()
 	if err != nil {
@@ -103,10 +103,10 @@ func GlobalHooksDir() (string, error) {
 
 // GlobalInstallOptions configures a machine-wide hook install.
 type GlobalInstallOptions struct {
-	// HooksDir overrides the Totality hooks directory. Defaults to GlobalHooksDir().
+	// HooksDir overrides the lgtm hooks directory. Defaults to GlobalHooksDir().
 	HooksDir string
-	// TotalityPath overrides the tx binary baked into the scripts.
-	TotalityPath string
+	// LgtmPath overrides the lgtm binary baked into the scripts.
+	LgtmPath string
 }
 
 // GlobalInstallResult reports what a machine-wide install changed.
@@ -130,7 +130,7 @@ type GlobalState struct {
 
 // NeedsRepair reports whether a machine-wide install exists but is not fully
 // wired up: scripts written without core.hooksPath pointing at them, or
-// core.hooksPath pointing at a Totality directory with scripts missing.
+// core.hooksPath pointing at a lgtm directory with scripts missing.
 func (s GlobalState) NeedsRepair() bool {
 	if s.Enabled {
 		return !s.Installed
@@ -138,7 +138,7 @@ func (s GlobalState) NeedsRepair() bool {
 	return s.Installed
 }
 
-// InstallGlobal writes the chaining lifecycle hooks into the Totality hooks
+// InstallGlobal writes the chaining lifecycle hooks into the lgtm hooks
 // directory and points git's global core.hooksPath at it. It never needs to
 // run inside a repository.
 //
@@ -163,11 +163,11 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 	}
 	result.HooksDir = hooksDir
 
-	txPath := strings.TrimSpace(opts.TotalityPath)
-	if txPath == "" {
-		txPath, err = installTotalityPath()
+	lgtmPath := strings.TrimSpace(opts.LgtmPath)
+	if lgtmPath == "" {
+		lgtmPath, err = installLgtmPath()
 		if err != nil {
-			return result, fmt.Errorf("resolve tx binary: %w", err)
+			return result, fmt.Errorf("resolve lgtm binary: %w", err)
 		}
 	}
 
@@ -176,12 +176,12 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 		return result, err
 	}
 	result.PreviousPath = current
-	if current != "" && !sameHooksPath(current, hooksDir) && !totalityOwnedHooksDir(current) {
+	if current != "" && !sameHooksPath(current, hooksDir) && !lgtmOwnedHooksDir(current) {
 		return result, fmt.Errorf(
-			"git config --global %s is already set to %s, which is not managed by Totality; "+
-				"Totality chains to each repository's own hooks but will not take over another global hooks directory. "+
+			"git config --global %s is already set to %s, which is not managed by lgtm; "+
+				"lgtm chains to each repository's own hooks but will not take over another global hooks directory. "+
 				"Move those hooks into %s (they will be chained from there) or unset the config with "+
-				"`git config --global --unset %s`, then re-run `tx init --global`",
+				"`git config --global --unset %s`, then re-run `lgtm init --global`",
 			hooksPathConfigKey, current, hooksDir, hooksPathConfigKey)
 	}
 
@@ -190,14 +190,14 @@ func InstallGlobal(ctx context.Context, opts GlobalInstallOptions) (GlobalInstal
 	}
 	for _, spec := range globalHookSpecs() {
 		result.Scripts = append(result.Scripts, spec.name)
-		script := globalHookScript(spec, txPath, hooksDir)
+		script := globalHookScript(spec, lgtmPath, hooksDir)
 		path := filepath.Join(hooksDir, spec.name)
 		if data, readErr := os.ReadFile(path); readErr == nil {
 			if string(data) == script {
 				continue
 			}
-			if !totalityOwnedHook(spec.name, string(data)) {
-				return result, fmt.Errorf("refusing to overwrite non-Totality script at %s; move it aside before retrying `tx init --global`", path)
+			if !lgtmOwnedHook(spec.name, string(data)) {
+				return result, fmt.Errorf("refusing to overwrite non-lgtm script at %s; move it aside before retrying `lgtm init --global`", path)
 			}
 		}
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -242,7 +242,7 @@ func GlobalStatus(ctx context.Context) (GlobalState, error) {
 			state.MissingScripts = append(state.MissingScripts, name)
 		}
 	}
-	// Only call a foreign hooksPath a conflict once Totality global hooks actually
+	// Only call a foreign hooksPath a conflict once lgtm global hooks actually
 	// exist; otherwise every husky/lefthook user would see a phantom problem.
 	if !state.Enabled && current != "" && len(state.MissingScripts) < len(GlobalHookNames()) {
 		state.Conflict = current
@@ -250,10 +250,10 @@ func GlobalStatus(ctx context.Context) (GlobalState, error) {
 	return state, nil
 }
 
-// EnabledForRepo reports whether Totality lifecycle work should run in repoRoot.
+// EnabledForRepo reports whether lgtm lifecycle work should run in repoRoot.
 //
-// A repository opts out with `git config tx.enabled false`, which is how a
-// user excludes one repo from a machine-wide `tx init --global` install. Unset
+// A repository opts out with `git config lgtm.enabled false`, which is how a
+// user excludes one repo from a machine-wide `lgtm init --global` install. Unset
 // or unreadable means enabled.
 func EnabledForRepo(ctx context.Context, repoRoot string) bool {
 	repoRoot = strings.TrimSpace(repoRoot)
@@ -293,8 +293,8 @@ func setGlobalHooksPath(ctx context.Context, hooksDir string) error {
 	return nil
 }
 
-// totalityOwnedHooksDir reports whether dir holds Totality-written global hook scripts.
-func totalityOwnedHooksDir(dir string) bool {
+// lgtmOwnedHooksDir reports whether dir holds lgtm-written global hook scripts.
+func lgtmOwnedHooksDir(dir string) bool {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return false
@@ -333,7 +333,7 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// globalHookPreamble emits the shared header plus tx_resolve_local_hook, which
+// globalHookPreamble emits the shared header plus lgtm_resolve_local_hook, which
 // finds the repository's own hook of the given name.
 //
 // It must not use `git rev-parse --git-path hooks/<name>`: that call honors
@@ -345,118 +345,118 @@ func globalHookPreamble(hooksDir string) string {
 	return fmt.Sprintf(`#!/bin/sh
 %[1]s
 %[2]s
-# Installed by `+"`tx init --global`"+`. A global core.hooksPath makes git ignore
-# every repository's own .git/hooks, so each script here does Totality's work (if any)
+# Installed by `+"`lgtm init --global`"+`. A global core.hooksPath makes git ignore
+# every repository's own .git/hooks, so each script here does lgtm's work (if any)
 # and then runs the repository's own hook of the same name.
 # Opt a repository out with: git config %[3]s false
 
-tx_global_hooks_dir=%[4]s
-tx_local_hook=""
+lgtm_global_hooks_dir=%[4]s
+lgtm_local_hook=""
 
-tx_resolve_local_hook() {
-  tx_local_hook=""
-  tx_hook_name="$1"
-  # Masking the global/system config keeps this from resolving to the Totality dir.
-  tx_dir="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git config --get %[5]s 2>/dev/null)"
-  if [ -z "$tx_dir" ]; then
-    tx_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-    [ -n "$tx_dir" ] || return 0
-    tx_dir="$tx_dir/hooks"
+lgtm_resolve_local_hook() {
+  lgtm_local_hook=""
+  lgtm_hook_name="$1"
+  # Masking the global/system config keeps this from resolving to the lgtm dir.
+  lgtm_dir="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git config --get %[5]s 2>/dev/null)"
+  if [ -z "$lgtm_dir" ]; then
+    lgtm_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+    [ -n "$lgtm_dir" ] || return 0
+    lgtm_dir="$lgtm_dir/hooks"
   fi
-  case "$tx_dir" in
+  case "$lgtm_dir" in
     /*) ;;
-    *) tx_dir="$(git rev-parse --show-toplevel 2>/dev/null)/$tx_dir" ;;
+    *) lgtm_dir="$(git rev-parse --show-toplevel 2>/dev/null)/$lgtm_dir" ;;
   esac
   # Never chain back into this directory: that would recurse forever.
-  if [ "$tx_dir" = "$tx_global_hooks_dir" ]; then
+  if [ "$lgtm_dir" = "$lgtm_global_hooks_dir" ]; then
     return 0
   fi
-  case "$tx_dir" in
+  case "$lgtm_dir" in
     %[4]s/*) return 0 ;;
   esac
-  tx_candidate="$tx_dir/$tx_hook_name"
-  [ -f "$tx_candidate" ] && [ -x "$tx_candidate" ] || return 0
-  # A repo that ran plain `+"`tx init`"+` has Totality's own hook here; running it would
+  lgtm_candidate="$lgtm_dir/$lgtm_hook_name"
+  [ -f "$lgtm_candidate" ] && [ -x "$lgtm_candidate" ] || return 0
+  # A repo that ran plain `+"`lgtm init`"+` has lgtm's own hook here; running it would
   # repeat the work this script just did.
-  if grep -q '%[1]s' "$tx_candidate" 2>/dev/null; then
+  if grep -q '%[1]s' "$lgtm_candidate" 2>/dev/null; then
     return 0
   fi
-  tx_local_hook="$tx_candidate"
+  lgtm_local_hook="$lgtm_candidate"
 }
 `, hookMarker, globalHookMarker, RepoEnabledConfigKey, quotedDir, hooksPathConfigKey)
 }
 
-// globalTotalityResolver emits shell that resolves tx at run time: the pinned
-// install-time path when it is still an executable file, else tx from PATH.
-// Unlike the per-repo hooks, a global script must never exit when tx is
-// missing — it still has to chain to the repository's own hook — so tx_bin is
-// left empty and the Totality work is skipped instead.
-func globalTotalityResolver(txPath string) string {
-	if strings.TrimSpace(txPath) == "" {
-		txPath = "tx"
+// globalLgtmResolver emits shell that resolves lgtm at run time: the pinned
+// install-time path when it is still an executable file, else lgtm from PATH.
+// Unlike the per-repo hooks, a global script must never exit when lgtm is
+// missing — it still has to chain to the repository's own hook — so lgtm_bin is
+// left empty and the lgtm work is skipped instead.
+func globalLgtmResolver(lgtmPath string) string {
+	if strings.TrimSpace(lgtmPath) == "" {
+		lgtmPath = "lgtm"
 	}
-	return fmt.Sprintf(`tx_bin=%s
-case "$tx_bin" in /*) ;; *) tx_bin="" ;; esac
-if [ ! -f "$tx_bin" ] || [ ! -x "$tx_bin" ]; then
-  tx_bin="$(command -v tx 2>/dev/null)" || tx_bin=""
-fi`, shellSingleQuote(txPath))
+	return fmt.Sprintf(`lgtm_bin=%s
+case "$lgtm_bin" in /*) ;; *) lgtm_bin="" ;; esac
+if [ ! -f "$lgtm_bin" ] || [ ! -x "$lgtm_bin" ]; then
+  lgtm_bin="$(command -v lgtm 2>/dev/null)" || lgtm_bin=""
+fi`, shellSingleQuote(lgtmPath))
 }
 
 // globalHookScript renders one global hook script.
-func globalHookScript(spec globalHookSpec, txPath, hooksDir string) string {
+func globalHookScript(spec globalHookSpec, lgtmPath, hooksDir string) string {
 	preamble := globalHookPreamble(hooksDir)
-	resolver := globalTotalityResolver(txPath)
-	switch spec.tx {
+	resolver := globalLgtmResolver(lgtmPath)
+	switch spec.lgtm {
 	case "prepare-commit-msg":
 		return preamble + fmt.Sprintf(`
 %s
-tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tx_bin" ] && [ -n "$tx_repo" ]; then
-  "$tx_bin" __hooks prepare-commit-msg --repo "$tx_repo" --message-path "$1" || {
-    echo "tx prepare-commit-msg failed; commit continues without a Totality trailer" >&2
+lgtm_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$lgtm_bin" ] && [ -n "$lgtm_repo" ]; then
+  "$lgtm_bin" __hooks prepare-commit-msg --repo "$lgtm_repo" --message-path "$1" || {
+    echo "lgtm prepare-commit-msg failed; commit continues without a lgtm trailer" >&2
   }
 fi
-tx_resolve_local_hook prepare-commit-msg
-if [ -n "$tx_local_hook" ]; then
-  exec "$tx_local_hook" "$@"
+lgtm_resolve_local_hook prepare-commit-msg
+if [ -n "$lgtm_local_hook" ]; then
+  exec "$lgtm_local_hook" "$@"
 fi
 exit 0
 `, resolver)
 	case "post-commit":
 		return preamble + fmt.Sprintf(`
 %s
-tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tx_bin" ] && [ -n "$tx_repo" ]; then
-  "$tx_bin" __hooks post-commit --repo "$tx_repo" || {
-    echo "tx post-commit metadata recording failed" >&2
+lgtm_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$lgtm_bin" ] && [ -n "$lgtm_repo" ]; then
+  "$lgtm_bin" __hooks post-commit --repo "$lgtm_repo" || {
+    echo "lgtm post-commit metadata recording failed" >&2
   }
 fi
-tx_resolve_local_hook post-commit
-if [ -n "$tx_local_hook" ]; then
-  exec "$tx_local_hook" "$@"
+lgtm_resolve_local_hook post-commit
+if [ -n "$lgtm_local_hook" ]; then
+  exec "$lgtm_local_hook" "$@"
 fi
 exit 0
 `, resolver)
 	case "post-rewrite":
 		return preamble + fmt.Sprintf(`
 %s
-tx_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-post-rewrite.XXXXXX" 2>/dev/null)" || tx_stdin=""
-if [ -n "$tx_stdin" ]; then
-  trap 'rm -f "$tx_stdin"' EXIT
-  cat > "$tx_stdin"
+lgtm_stdin="$(mktemp "${TMPDIR:-/tmp}/lgtm-post-rewrite.XXXXXX" 2>/dev/null)" || lgtm_stdin=""
+if [ -n "$lgtm_stdin" ]; then
+  trap 'rm -f "$lgtm_stdin"' EXIT
+  cat > "$lgtm_stdin"
 fi
-tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tx_bin" ] && [ -n "$tx_repo" ] && [ -n "$tx_stdin" ]; then
-  "$tx_bin" __hooks post-rewrite --repo "$tx_repo" < "$tx_stdin" || {
-    echo "tx post-rewrite metadata update failed" >&2
+lgtm_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$lgtm_bin" ] && [ -n "$lgtm_repo" ] && [ -n "$lgtm_stdin" ]; then
+  "$lgtm_bin" __hooks post-rewrite --repo "$lgtm_repo" < "$lgtm_stdin" || {
+    echo "lgtm post-rewrite metadata update failed" >&2
   }
 fi
-tx_resolve_local_hook post-rewrite
-if [ -n "$tx_local_hook" ]; then
-  if [ -n "$tx_stdin" ]; then
-    "$tx_local_hook" "$@" < "$tx_stdin"
+lgtm_resolve_local_hook post-rewrite
+if [ -n "$lgtm_local_hook" ]; then
+  if [ -n "$lgtm_stdin" ]; then
+    "$lgtm_local_hook" "$@" < "$lgtm_stdin"
   else
-    "$tx_local_hook" "$@" < /dev/null
+    "$lgtm_local_hook" "$@" < /dev/null
   fi
   exit $?
 fi
@@ -465,37 +465,37 @@ exit 0
 	case "pre-push":
 		return preamble + fmt.Sprintf(`
 %s
-tx_remote="$1"
-tx_url="$2"
-tx_stdin="$(mktemp "${TMPDIR:-/tmp}/totality-pre-push.XXXXXX" 2>/dev/null)" || tx_stdin=""
-if [ -n "$tx_stdin" ]; then
-  trap 'rm -f "$tx_stdin"' EXIT
-  cat > "$tx_stdin"
+lgtm_remote="$1"
+lgtm_url="$2"
+lgtm_stdin="$(mktemp "${TMPDIR:-/tmp}/lgtm-pre-push.XXXXXX" 2>/dev/null)" || lgtm_stdin=""
+if [ -n "$lgtm_stdin" ]; then
+  trap 'rm -f "$lgtm_stdin"' EXIT
+  cat > "$lgtm_stdin"
 else
   # Always drain stdin so git never blocks writing refs to this hook.
   cat > /dev/null
 fi
-tx_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$tx_bin" ] && [ -n "$tx_repo" ] && [ -n "$tx_stdin" ]; then
-  while read tx_local_ref tx_local_sha tx_remote_ref tx_remote_sha
+lgtm_repo="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$lgtm_bin" ] && [ -n "$lgtm_repo" ] && [ -n "$lgtm_stdin" ]; then
+  while read lgtm_local_ref lgtm_local_sha lgtm_remote_ref lgtm_remote_sha
   do
-    if [ "$tx_local_sha" = "0000000000000000000000000000000000000000" ]; then
+    if [ "$lgtm_local_sha" = "0000000000000000000000000000000000000000" ]; then
       continue
     fi
-    if [ "$tx_remote_sha" = "0000000000000000000000000000000000000000" ]; then
-      tx_range="$tx_local_sha"
+    if [ "$lgtm_remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      lgtm_range="$lgtm_local_sha"
     else
-      tx_range="${tx_remote_sha}..${tx_local_sha}"
+      lgtm_range="${lgtm_remote_sha}..${lgtm_local_sha}"
     fi
-    "$tx_bin" capture push --remote "$tx_remote" --ref-range "$tx_range" --local-ref "$tx_local_ref" --head-sha "$tx_local_sha" --repo "$tx_repo" || true
-  done < "$tx_stdin"
+    "$lgtm_bin" capture push --remote "$lgtm_remote" --ref-range "$lgtm_range" --local-ref "$lgtm_local_ref" --head-sha "$lgtm_local_sha" --repo "$lgtm_repo" || true
+  done < "$lgtm_stdin"
 fi
-tx_resolve_local_hook pre-push
-if [ -n "$tx_local_hook" ]; then
-  if [ -n "$tx_stdin" ]; then
-    "$tx_local_hook" "$@" < "$tx_stdin"
+lgtm_resolve_local_hook pre-push
+if [ -n "$lgtm_local_hook" ]; then
+  if [ -n "$lgtm_stdin" ]; then
+    "$lgtm_local_hook" "$@" < "$lgtm_stdin"
   else
-    "$tx_local_hook" "$@" < /dev/null
+    "$lgtm_local_hook" "$@" < /dev/null
   fi
   exit $?
 fi
@@ -508,9 +508,9 @@ exit 0
 		drain = "# Drain the data git feeds this hook so it never sees a short write.\ncat > /dev/null\n"
 	}
 	return preamble + fmt.Sprintf(`
-tx_resolve_local_hook %s
-if [ -n "$tx_local_hook" ]; then
-  exec "$tx_local_hook" "$@"
+lgtm_resolve_local_hook %s
+if [ -n "$lgtm_local_hook" ]; then
+  exec "$lgtm_local_hook" "$@"
 fi
 %sexit 0
 `, spec.name, drain)

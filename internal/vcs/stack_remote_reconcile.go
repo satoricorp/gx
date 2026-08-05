@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 func repoRemoteName(repo RepoInfo) string {

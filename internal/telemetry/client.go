@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/buildconfig"
+	"github.com/satoricorp/lgtm/internal/buildconfig"
 )
 
-const defaultPostHogHost = "https://f.totality.sh"
+const defaultPostHogHost = "https://f.lgtm.cx"
 
 // ClientImpl sends events to PostHog when configured.
 type ClientImpl struct {
@@ -20,7 +20,7 @@ type ClientImpl struct {
 	http   *http.Client
 }
 
-// NewFromEnv returns a PostHog client or a no-op when TOTALITY_POSTHOG_KEY is unset.
+// NewFromEnv returns a PostHog client or a no-op when LGTM_POSTHOG_KEY is unset.
 func NewFromEnv() Client {
 	key := postHogKey()
 	if key == "" {

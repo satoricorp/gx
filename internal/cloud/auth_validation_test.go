@@ -21,7 +21,7 @@ func TestValidateGitHubAccessToken(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("TOTALITY_GITHUB_USER_URL", server.URL)
+	t.Setenv("LGTM_GITHUB_USER_URL", server.URL)
 
 	valid, err := ValidateGitHubAccessToken(context.Background(), server.Client(), "gho_ok")
 	if err != nil {
@@ -56,7 +56,7 @@ func TestValidateCloudAPISession(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("TOTALITY_CLOUD_URL", server.URL)
+	t.Setenv("LGTM_CLOUD_URL", server.URL)
 
 	valid, err := ValidateCloudAPISession(context.Background(), server.Client(), "tlcs_ok")
 	if err != nil {

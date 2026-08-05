@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/lgtm/internal/reviewbundle"
 )
 
 // BuildRepositoryChunks chunks every source file in a bundle's checkout.
 //
 // It shares one chunker with the on-demand repository indexer
 // (ChunkSourceFile), so a chunk written by the publish path and one written by
-// `tx index` are byte-identical and share a row id, instead of being two
+// `lgtm index` are byte-identical and share a row id, instead of being two
 // incompatible shapes inside the same namespace.
 func BuildRepositoryChunks(bundle reviewbundle.Bundle) []Chunk {
 	root := strings.TrimSpace(bundle.Repo.RootPath)

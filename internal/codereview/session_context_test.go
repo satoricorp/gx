@@ -22,19 +22,19 @@ func sessionTestInput() RetrieveInput {
 func TestSessionContextRetrieverEmitsSessionSnippets(t *testing.T) {
 	store := &fakeIndexStore{
 		probes: map[string]indexProbe{
-			"totality-org-repo-v2": {
+			"lgtm-org-repo-v2": {
 				Exists: true, Dimensions: 512, BodyField: "text",
 				Filterable: map[string]bool{"source_kind": true, "repo_full_name": true},
 			},
 		},
 		rows: map[string][]indexRow{
-			"totality-org-repo-v2": {{
+			"lgtm-org-repo-v2": {{
 				"source_kind":    "published_session_context",
 				"source_id":      "sess-1#0",
 				"session_id":     "sess-1",
 				"request_id":     "req-9",
-				"repo_full_name": "satoricorp/totality",
-				"branch_name":    "tx-review",
+				"repo_full_name": "satoricorp/lgtm",
+				"branch_name":    "lgtm-review",
 				"text":           "The agent was told to keep retries idempotent and left the backoff for later.",
 			}},
 		},
@@ -42,7 +42,7 @@ func TestSessionContextRetrieverEmitsSessionSnippets(t *testing.T) {
 	in := sessionTestInput()
 	retriever := SessionContextRetriever{
 		Store:       store,
-		Namespaces:  []codeIndexTarget{{Namespace: "totality-org-repo-v2", Origin: "org session namespace"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "lgtm-org-repo-v2", Origin: "org session namespace"}},
 		Limit:       5,
 		EmbedderFor: func(width int) (reviewResourceEmbedder, string, bool) { return staticEmbedder(width)(width) },
 	}
@@ -102,17 +102,17 @@ func TestSessionContextRetrieverFiltersByKindAndRepo(t *testing.T) {
 }
 
 func TestSessionFiltersUseOnlyDeclaredAttributes(t *testing.T) {
-	both := sessionFilters(indexProbe{Filterable: map[string]bool{"source_kind": true, "repo_full_name": true}}, "satoricorp/totality")
+	both := sessionFilters(indexProbe{Filterable: map[string]bool{"source_kind": true, "repo_full_name": true}}, "satoricorp/lgtm")
 	conditions, ok := both.([]any)
 	if !ok || len(conditions) != 2 || conditions[0] != "And" {
 		t.Fatalf("filters = %#v, want a two-condition And", both)
 	}
-	onlyKind := sessionFilters(indexProbe{Filterable: map[string]bool{"source_kind": true}}, "satoricorp/totality")
+	onlyKind := sessionFilters(indexProbe{Filterable: map[string]bool{"source_kind": true}}, "satoricorp/lgtm")
 	clause, ok := onlyKind.([]any)
 	if !ok || clause[0] != "source_kind" {
 		t.Fatalf("filters = %#v, want a bare source_kind clause", onlyKind)
 	}
-	if sessionFilters(indexProbe{}, "satoricorp/totality") != nil {
+	if sessionFilters(indexProbe{}, "satoricorp/lgtm") != nil {
 		t.Fatal("a namespace declaring neither attribute must not be filtered")
 	}
 }
@@ -121,7 +121,7 @@ func TestSessionContextRetrieverReportsMissingNamespace(t *testing.T) {
 	in := sessionTestInput()
 	retriever := SessionContextRetriever{
 		Store:       &fakeIndexStore{},
-		Namespaces:  []codeIndexTarget{{Namespace: "totality-sessions-dev", Origin: "legacy session namespace"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "lgtm-sessions-dev", Origin: "legacy session namespace"}},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
 	snippets, err := retriever.Retrieve(context.Background(), in)
@@ -139,7 +139,7 @@ func TestSessionContextRetrieverReportsMissingNamespace(t *testing.T) {
 	// what to do; an internal namespace id is neither. It stays in the
 	// structured evidence, which is where anyone diagnosing a lookup looks.
 	statuses := in.Evidence.Statuses()
-	if len(statuses) != 1 || statuses[0].Namespace != "totality-sessions-dev" {
+	if len(statuses) != 1 || statuses[0].Namespace != "lgtm-sessions-dev" {
 		t.Fatalf("statuses = %#v, want the searched namespace recorded", statuses)
 	}
 }

@@ -20,7 +20,7 @@ const (
 )
 
 // PushedCommitsInGitRange describes every commit in a pushed ref range,
-// oldest first: SHA, full message, Totality trailer revision ID (empty when the
+// oldest first: SHA, full message, lgtm trailer revision ID (empty when the
 // commit has none), changed files, and the unified diff.
 func PushedCommitsInGitRange(ctx context.Context, repoRoot, refRange string) ([]PushedCommit, error) {
 	repoRoot = strings.TrimSpace(repoRoot)

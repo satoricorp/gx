@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import txReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/tx-review";
+import lgtmReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/lgtm-review";
 import { withUpdateNotice } from "./update";
 
 type ToolModule = {
@@ -16,17 +16,17 @@ type ToolModule = {
 };
 
 const instructions = [
-  "Totality MCP exposes tx_review, a read-only tool.",
-  "It never initializes a repository; if the repo is not set up for Totality yet, run tx init there first.",
-  "Save work with plain Git: git add, then git commit. Totality installs Git hooks that stamp each commit with its Totality revision trailer and record it, so no Totality-specific commit verb is needed.",
-  "To amend the latest commit message or restage work, use git commit --amend and preserve the Totality revision trailer.",
-  "Publish with plain git push, then open the PR with gh pr create. The Totality pre-push hook captures the agent session, links edits to the changed hunks, and publishes the Totality metadata that becomes the PR summary. Do not run tx push or tx capture push; they bypass or suppress that hook.",
-  "Run tx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
+  "lgtm MCP exposes lgtm_review, a read-only tool.",
+  "It never initializes a repository; if the repo is not set up for lgtm yet, run lgtm init there first.",
+  "Save work with plain Git: git add, then git commit. lgtm installs Git hooks that stamp each commit with its lgtm revision trailer and record it, so no lgtm-specific commit verb is needed.",
+  "To amend the latest commit message or restage work, use git commit --amend and preserve the lgtm revision trailer.",
+  "Publish with plain git push, then open the PR with gh pr create. The lgtm pre-push hook captures the agent session, links edits to the changed hunks, and publishes the lgtm metadata that becomes the PR summary. Do not run lgtm push or lgtm capture push; they bypass or suppress that hook.",
+  "Run lgtm_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
   "Use git status for inspection.",
 ].join(" ");
 
 const tools: ToolModule[] = [
-  defineTool(reviewMetadata, reviewSchema, txReview),
+  defineTool(reviewMetadata, reviewSchema, lgtmReview),
 ];
 
 function defineTool(
@@ -66,9 +66,9 @@ async function main() {
   redirectConsoleToStderr();
   const server = new McpServer(
     {
-      name: "Totality MCP",
+      name: "lgtm MCP",
       version: "0.1.0",
-      description: "Totality MCP stdio server",
+      description: "lgtm MCP stdio server",
     },
     { instructions },
   );

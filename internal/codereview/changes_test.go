@@ -117,7 +117,7 @@ func TestResolveChangeSetReportsNothingToReview(t *testing.T) {
 		t.Fatalf("Mode = %q, Reviewed = %v; want %q and false", changes.Mode, changes.Reviewed(), ReviewModeNone)
 	}
 	if !strings.Contains(changes.Target, "main") || !strings.Contains(changes.Target, "HEAD~1") {
-		t.Fatalf("Target = %q, want the refs tx looked at", changes.Target)
+		t.Fatalf("Target = %q, want the refs lgtm looked at", changes.Target)
 	}
 }
 

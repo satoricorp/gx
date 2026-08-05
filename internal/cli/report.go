@@ -14,24 +14,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/publication"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/telemetry"
-	"github.com/satoricorp/totality/internal/vcs"
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/lgtm/internal/cloud"
+	"github.com/satoricorp/lgtm/internal/publication"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/telemetry"
+	"github.com/satoricorp/lgtm/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/version"
 )
 
 const reportLogByteLimit = 32 * 1024
 
-// newReportCommand keeps `tx report` resolvable for one release after the
-// behavior moved to `tx doctor --report`. Hidden and ungrouped: existing muscle
+// newReportCommand keeps `lgtm report` resolvable for one release after the
+// behavior moved to `lgtm doctor --report`. Hidden and ungrouped: existing muscle
 // memory and doc links keep working, but the public surface has one spelling.
 func newReportCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:    "report",
-		Short:  "Send logs to support (alias for tx doctor --report)",
+		Short:  "Send logs to support (alias for lgtm doctor --report)",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,14 +50,14 @@ func newReportCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-// sendSupportReport packages the local support bundle — recent tx logs, cloud
-// identity, and the publish-outbox error — and posts it to Totality Cloud. Callers
-// pass anything they gathered first as attachments; `tx doctor --report` sends
+// sendSupportReport packages the local support bundle — recent lgtm logs, cloud
+// identity, and the publish-outbox error — and posts it to lgtm Cloud. Callers
+// pass anything they gathered first as attachments; `lgtm doctor --report` sends
 // its diagnosis that way, so both entry points share this one implementation.
 func sendSupportReport(ctx context.Context, attachments []cloud.ReportLogFile) (cloud.ReportLogResult, error) {
 	client := cloud.NewClient()
 	if client == nil {
-		return cloud.ReportLogResult{}, fmt.Errorf("tx cloud is not configured; set TOTALITY_CLOUD_URL or rebuild with cloud endpoints")
+		return cloud.ReportLogResult{}, fmt.Errorf("lgtm cloud is not configured; set LGTM_CLOUD_URL or rebuild with cloud endpoints")
 	}
 	report := buildReportLogRequest(ctx, "")
 	report.Logs = append(report.Logs, attachments...)
@@ -102,13 +102,13 @@ func stripANSI(text string) string {
 	return ansiEscapePattern.ReplaceAllString(text, "")
 }
 
-// Reporting logs to Totality Cloud is a deliberate act: `tx report` and `tx doctor
+// Reporting logs to lgtm Cloud is a deliberate act: `lgtm report` and `lgtm doctor
 // --report` send them because the user asked. Nothing uploads on its own.
 //
-// `tx review` used to auto-report its failures, and it was the only command
+// `lgtm review` used to auto-report its failures, and it was the only command
 // that did. That put a read-only command — one built to run as a CI gate and
 // on checkouts the reviewer does not own — in the position of shipping log
-// tails and repo identity to Totality Cloud on every failing run, including the
+// tails and repo identity to lgtm Cloud on every failing run, including the
 // ordinary "N findings at or above high" that means the gate is working. The
 // upload is gone rather than narrowed: a review that fails is the user's
 // business, not telemetry.
@@ -119,7 +119,7 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 		OS:        runtime.GOOS,
 		Arch:      runtime.GOARCH,
 		CloudURL:  cloud.CloudBaseURL(),
-		Logs:      recentTotalityLogs(),
+		Logs:      recentLgtmLogs(),
 	}
 	if creds, err := cloud.LoadCloudCredentials(); err == nil && creds != nil {
 		report.UserID = strings.TrimSpace(creds.UserID)
@@ -128,9 +128,9 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 	}
 	if report.MachineID == "" {
 		// Read the machine ID, never mint one. Minting writes machine_id.json,
-		// which creates $TOTALITY_HOME as a side effect — so a command that only
-		// reports a failure would leave Totality state on a machine that has never
-		// run tx. A report without a machine ID is worth more than that.
+		// which creates $LGTM_HOME as a side effect — so a command that only
+		// reports a failure would leave lgtm state on a machine that has never
+		// run lgtm. A report without a machine ID is worth more than that.
 		if machineID, err := cloud.ExistingMachineID(); err == nil {
 			report.MachineID = strings.TrimSpace(machineID)
 		}
@@ -154,7 +154,7 @@ func buildReportLogRequest(ctx context.Context, overrideError string) cloud.Repo
 	return report
 }
 
-func recentTotalityLogs() []cloud.ReportLogFile {
+func recentLgtmLogs() []cloud.ReportLogFile {
 	dir, err := storage.DefaultDir()
 	if err != nil {
 		return nil
@@ -221,7 +221,10 @@ var reportRedactors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,]+`),
 	regexp.MustCompile(`(?i)((token|api[_-]?key|password|secret)\s*[:=]\s*)[^\s,]+`),
 	regexp.MustCompile(`gh[opsu]_[A-Za-z0-9_]+`),
-	regexp.MustCompile(`tlcs_[A-Za-z0-9._-]+`),
+	// CLI session tokens. Every prefix this product has minted under, because a
+	// report is uploaded and the tokens in an old config are as live as new
+	// ones: `lgtmcs_` today, `gxcs_` and `tlcs_` before the renames.
+	regexp.MustCompile(`(?:lgtm|gx|tl)cs_[A-Za-z0-9._-]+`),
 }
 
 func redactSensitive(text string) string {

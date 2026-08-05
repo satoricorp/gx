@@ -1,7 +1,9 @@
 .DS_Store
 .env
 .env.local
-.totality/
+.lgtm/
+/lgtm
+# Stale binary from before the lgtm rename.
 /tx
 dist/
 node_modules/
@@ -13,7 +15,7 @@ mcp/xmcp-env.d.ts
 .gstack/
 
 # Personal Claude Code settings. The shared .claude/settings.json carries the
-# Totality capture hooks; this one is per-developer and must never be committed.
+# lgtm capture hooks; this one is per-developer and must never be committed.
 .claude/settings.local.json
 
 # Fumadocs site (docs-site/) generated output

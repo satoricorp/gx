@@ -4,13 +4,13 @@ import (
 	"context"
 	"os"
 
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
 type InitOptions = vcs.InitOptions
 type InitResult = vcs.InitResult
 
-// Engine is Totality's authoring seam. CLI and MCP adapters call this module
+// Engine is lgtm's authoring seam. CLI and MCP adapters call this module
 // instead of owning Git/storage mechanics directly.
 type Engine struct {
 	vcs *vcs.Service

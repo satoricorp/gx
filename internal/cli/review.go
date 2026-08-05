@@ -4,21 +4,23 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/codereview"
-	"github.com/satoricorp/totality/internal/telemetry"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/cloud"
+	"github.com/satoricorp/lgtm/internal/codereview"
+	"github.com/satoricorp/lgtm/internal/telemetry"
+	"github.com/satoricorp/lgtm/internal/vcs"
 	"github.com/spf13/cobra"
 )
 
-// Exit codes for `tx review` as an automated gate. Both are distinct from the
+// Exit codes for `lgtm review` as an automated gate. Both are distinct from the
 // generic failure exit so a CI step can tell a policy failure from a crash.
 const (
 	// reviewFindingsExitCode means findings at or above --fail-on survived.
@@ -44,15 +46,16 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	var failOn string
 	var noPublish bool
+	var fast bool
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
-		Aliases: []string{"txr"},
+		Aliases: []string{"lgtmr"},
 		Short:   "Review changes based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Everything below runs under a context that forbids writing Totality
+			// Everything below runs under a context that forbids writing lgtm
 			// state, so review's own telemetry reports without minting a
-			// machine ID into a $TOTALITY_HOME that may not exist.
+			// machine ID into a $LGTM_HOME that may not exist.
 			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
@@ -68,8 +71,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			if len(args) > 0 {
 				prompt = strings.TrimSpace(args[0])
 			}
-			// Store-free on purpose: review must leave no Totality state behind in a
-			// repo (or on a machine) that has never run `tx init`.
+			// Store-free on purpose: review must leave no lgtm state behind in a
+			// repo (or on a machine) that has never run `lgtm init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
 				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
@@ -84,6 +87,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 					WholeRepo:      wholeRepo,
 					Prompt:         prompt,
 					Verbose:        verbose,
+					Fast:           fast,
 					ProgressWriter: progress,
 					Color:          !jsonOut,
 				})
@@ -107,6 +111,13 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			} else {
 				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
 			}
+			// The saved-report notice goes to stderr so --json stdout stays
+			// pure report.
+			if reportPath, saveErr := saveReviewReport(repo.RootPath, report, startedAt); saveErr != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Report", saveErr.Error()))
+			} else if reportPath != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), labelValue("Report", muted("saved to "+reportPath)))
+			}
 			// Nothing was reviewed: publishing would overwrite a real review
 			// comment with a no-op, and there is no review to record.
 			if !noPublish && report.Reviewed {
@@ -125,6 +136,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
 	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
+	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd
 }
 
@@ -132,6 +144,106 @@ func writeReviewJSON(out io.Writer, report codereview.Report) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
+}
+
+// saveReviewReport persists the full JSON report to
+// <repoRoot>/review/review-findings-<timestamp>.json so a review survives the
+// terminal it was printed in. Returns the repo-relative path, or "" when the
+// review inspected nothing (an empty report is not worth a file).
+func saveReviewReport(repoRoot string, report codereview.Report, startedAt time.Time) (string, error) {
+	if !report.Reviewed {
+		return "", nil
+	}
+	dir := filepath.Join(repoRoot, "review")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	// Best-effort: without the exclude entry a saved report dirties
+	// `git status` and shows up as a changed file in the NEXT review, but a
+	// failure to write it should not cost the report itself.
+	_ = ensureReviewDirIgnored(repoRoot)
+	name := "review-findings-" + startedAt.UTC().Format("20060102-150405") + ".json"
+	file, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		return "", err
+	}
+	if err := writeReviewJSON(file, report); err != nil {
+		file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return filepath.Join("review", name), nil
+}
+
+// ensureReviewDirIgnored appends /review/ to .git/info/exclude so saved
+// reports never show as untracked files. The exclude file is repo-local and
+// never committed, so the ignore does not reach collaborators — a team that
+// wants reports tracked can still add them explicitly with `git add -f`.
+func ensureReviewDirIgnored(repoRoot string) error {
+	gitDir, err := resolveGitCommonDir(repoRoot)
+	if err != nil {
+		return err
+	}
+	excludePath := filepath.Join(gitDir, "info", "exclude")
+	existing, err := os.ReadFile(excludePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == "/review/" {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		return err
+	}
+	content := string(existing)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += "/review/\n"
+	return os.WriteFile(excludePath, []byte(content), 0o644)
+}
+
+// resolveGitCommonDir finds the directory whose info/exclude git actually
+// reads: .git itself for a normal checkout, the pointed-to gitdir for a
+// linked worktree — and, when that gitdir carries a commondir file, the
+// shared common directory (per-worktree gitdirs' info/exclude is ignored by
+// git).
+func resolveGitCommonDir(repoRoot string) (string, error) {
+	gitPath := filepath.Join(repoRoot, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return "", err
+	}
+	gitDir := gitPath
+	if !info.IsDir() {
+		data, readErr := os.ReadFile(gitPath)
+		if readErr != nil {
+			return "", readErr
+		}
+		pointer := strings.TrimSpace(string(data))
+		const prefix = "gitdir:"
+		if !strings.HasPrefix(pointer, prefix) {
+			return "", fmt.Errorf(".git is neither a directory nor a gitdir pointer")
+		}
+		gitDir = strings.TrimSpace(strings.TrimPrefix(pointer, prefix))
+		if !filepath.IsAbs(gitDir) {
+			// Git resolves relative gitdir pointers against the directory
+			// containing the .git file, not the repo root.
+			gitDir = filepath.Join(filepath.Dir(gitPath), gitDir)
+		}
+	}
+	if data, readErr := os.ReadFile(filepath.Join(gitDir, "commondir")); readErr == nil {
+		common := strings.TrimSpace(string(data))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(gitDir, common)
+		}
+		gitDir = common
+	}
+	return filepath.Clean(gitDir), nil
 }
 
 // reviewGateError turns a review outcome into an exit code. "Nothing to
@@ -148,7 +260,7 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 		if target == "" {
 			target = "the working tree"
 		}
-		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("tx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("lgtm review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
 	}
 	// A degraded run is not a clean run with fewer findings. When no model ran,
 	// `findings` is whatever the deterministic checks produced — usually nothing
@@ -156,13 +268,13 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	// request merged reporting a review that never happened. The rendered report
 	// says so in a banner, but an exit code is the only thing a CI step reads.
 	if reason := gateDegradedReason(report); reason != "" {
-		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("tx review: %s; refusing to pass a gate on an incomplete review", reason))
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("lgtm review: %s; refusing to pass a gate on an incomplete review", reason))
 	}
 	failures := report.GateFailures(level)
 	if len(failures) == 0 {
 		return nil
 	}
-	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("tx review: %d finding(s) at or above %q", len(failures), string(level)))
+	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("lgtm review: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
 // gateDegradedReason states why this review cannot answer the gate's question,
@@ -215,7 +327,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 		props["reviewer"] = report.Reviewer
 	}
 	// Which wire the review ran over, so a fleet-wide latency or failure spike
-	// can be attributed to the Totality Cloud hop or to direct AWS calls instead of
+	// can be attributed to the lgtm Cloud hop or to direct AWS calls instead of
 	// being averaged across both. The models go with it: the panel is two
 	// competing legs plus a judge, and "review got slower" is a different
 	// investigation depending on which of them changed.
@@ -234,7 +346,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
 }
 
-// reviewRunMode labels a review run for Totality Cloud history and telemetry. Both
+// reviewRunMode labels a review run for lgtm Cloud history and telemetry. Both
 // call it so the two records of the same run cannot disagree.
 //
 // WholeRepo comes first because it names the subject: a run recorded as
@@ -268,7 +380,7 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		return
 	}
 	if _, err := cloud.CloudAPIToken(); err != nil {
-		// Signed out: history is an extra Totality Cloud records for authenticated
+		// Signed out: history is an extra lgtm Cloud records for authenticated
 		// users, not something a read-only review depends on.
 		return
 	}

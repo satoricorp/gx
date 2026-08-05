@@ -4,38 +4,38 @@ set dotenv-load := true
 repo_root := `pwd`
 
 # `just build` / `just build-release` / `just install` bake public auth/client endpoints from .env into buildconfig.
-tx_ldflags := "\
-  -X github.com/satoricorp/totality/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
-  -X github.com/satoricorp/totality/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
-  -X github.com/satoricorp/totality/internal/buildconfig.CloudURL=${TOTALITY_CLOUD_URL:-} \
-  -X github.com/satoricorp/totality/internal/buildconfig.PostHogKey=${TOTALITY_POSTHOG_KEY:-} \
-  -X github.com/satoricorp/totality/internal/buildconfig.PostHogHost=${TOTALITY_POSTHOG_HOST:-} \
-  -X github.com/satoricorp/totality/internal/version.Version=${VERSION:-dev}"
+lgtm_ldflags := "\
+  -X github.com/satoricorp/lgtm/internal/buildconfig.GitHubClientID=${GITHUB_CLIENT_ID:-} \
+  -X github.com/satoricorp/lgtm/internal/buildconfig.ConvexSiteURL=${CONVEX_SITE_URL:-} \
+  -X github.com/satoricorp/lgtm/internal/buildconfig.CloudURL=${LGTM_CLOUD_URL:-} \
+  -X github.com/satoricorp/lgtm/internal/buildconfig.PostHogKey=${LGTM_POSTHOG_KEY:-} \
+  -X github.com/satoricorp/lgtm/internal/buildconfig.PostHogHost=${LGTM_POSTHOG_HOST:-} \
+  -X github.com/satoricorp/lgtm/internal/version.Version=${VERSION:-dev}"
 
 build:
-  go build -ldflags "{{tx_ldflags}}" -o tx ./cmd/tx
+  go build -ldflags "{{lgtm_ldflags}}" -o lgtm ./cmd/lgtm
 
 build-release:
-  go build -ldflags "{{tx_ldflags}}" -o tx ./cmd/tx
+  go build -ldflags "{{lgtm_ldflags}}" -o lgtm ./cmd/lgtm
 
 package-cli:
   scripts/package-cli.sh
 
 install-completions:
   mkdir -p ~/.local/share/bash-completion/completions ~/.zfunc
-  go run ./cmd/tx-gen-completions ~/.local/share/bash-completion/completions/tx ~/.zfunc/_tx
+  go run ./cmd/lgtm-gen-completions ~/.local/share/bash-completion/completions/lgtm ~/.zfunc/_lgtm
 
 install:
   mkdir -p ~/.local/bin
   just build
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./tx || true
-  cp ./tx ~/.local/bin/tx
-  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/tx || true
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ./lgtm || true
+  cp ./lgtm ~/.local/bin/lgtm
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - ~/.local/bin/lgtm || true
   just install-completions
-  just verify-bake ./tx
-  just verify-bake ~/.local/bin/tx
+  just verify-bake ./lgtm
+  just verify-bake ~/.local/bin/lgtm
 
-verify-bake bin="tx":
+verify-bake bin="lgtm":
   #!/usr/bin/env bash
   set -euo pipefail
   bin="{{bin}}"
@@ -55,9 +55,9 @@ verify-bake bin="tx":
   }
   check GITHUB_CLIENT_ID "${GITHUB_CLIENT_ID:-}"
   check CONVEX_SITE_URL "${CONVEX_SITE_URL:-}"
-  check TOTALITY_CLOUD_URL "${TOTALITY_CLOUD_URL:-}"
-  check TOTALITY_POSTHOG_KEY "${TOTALITY_POSTHOG_KEY:-}"
-  check TOTALITY_POSTHOG_HOST "${TOTALITY_POSTHOG_HOST:-}"
+  check LGTM_CLOUD_URL "${LGTM_CLOUD_URL:-}"
+  check LGTM_POSTHOG_KEY "${LGTM_POSTHOG_KEY:-}"
+  check LGTM_POSTHOG_HOST "${LGTM_POSTHOG_HOST:-}"
   if [[ "$missing" -ne 0 ]]; then
     exit 1
   fi
@@ -66,15 +66,15 @@ verify-bake bin="tx":
 test:
   go test ./...
 
-# Build the MCP: xmcp JS output plus the standalone dist/tx-mcp binary.
+# Build the MCP: xmcp JS output plus the standalone dist/lgtm-mcp binary.
 mcp-build:
   cd mcp && bun install && bun run build
 
-# Publish @satoricorp/totality to npm. prepublishOnly rebuilds and tests first.
+# Publish @satoricorp/lgtm to npm. prepublishOnly rebuilds and tests first.
 # CI equivalent: push a tag like mcp-v0.1.0 (see .github/workflows/mcp.yml).
 mcp-publish:
   cd mcp && bun install --frozen-lockfile && npm publish
 
 run *args:
-  {{repo_root}}/tx {{args}}
+  {{repo_root}}/lgtm {{args}}
 

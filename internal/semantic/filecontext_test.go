@@ -12,7 +12,7 @@ const contextFixture = `package review
 import "fmt"
 
 // Modes name what a review actually looked at. They are the honest answer to
-// "what did tx read?".
+// "what did lgtm read?".
 const (
 	ModeWorkingTree = "working-tree"
 	ModeNone        = "none"

@@ -1,4 +1,4 @@
-# Totality
+# lgtm
 
 Git for Agents.
 
@@ -9,47 +9,47 @@ supplement your pull requests.
 
 Many changes that happen during a coding session are otherwise lost. Those
 details can help teammates and other agents understand the intent and decisions
-behind the work. Alongside Git history and other resources, Totality gives your team a
+behind the work. Alongside Git history and other resources, lgtm gives your team a
 stronger review system for moving faster while maintaining high-quality
 software.
 
 ## Setup
 
 ```bash
-curl -fsSL https://download.totality.sh/install.sh | sh
+curl -fsSL https://download.lgtm.cx/install.sh | sh
 ```
 
 Re-run the same command to upgrade or repair an existing installation. The
-installer replaces only the Totality-managed `tx` and `tx-mcp` binaries and refreshes
-the `txr` alias. It does not remove `~/.totality`, repository metadata, or
+installer replaces only the lgtm-managed `lgtm` and `lgtm-mcp` binaries and refreshes
+the `lgtmr` alias. It does not remove `~/.lgtm`, repository metadata, or
 hooks.
 
 ```bash
-tx version
-tx doctor
+lgtm version
+lgtm doctor
 ```
 
 From your repo:
 
 ```bash
-tx init
+lgtm init
 ```
 
-This configures your Totality identity, installs Git lifecycle hooks to identify and
-record revisions plus a pre-push hook to publish session data, registers the Totality
-MCP server, and offers to add Totality workflow instructions to `AGENTS.md`.
+This configures your lgtm identity, installs Git lifecycle hooks to identify and
+record revisions plus a pre-push hook to publish session data, registers the lgtm
+MCP server, and offers to add lgtm workflow instructions to `AGENTS.md`.
 
 To uninstall the CLI:
 
 ```bash
-rm -f ~/.local/bin/tx ~/.local/bin/txr ~/.local/bin/tx-mcp
+rm -f ~/.local/bin/lgtm ~/.local/bin/lgtmr ~/.local/bin/lgtm-mcp
 ```
 
-This removes the installed binaries only. Local Totality data remains in `~/.totality`.
+This removes the installed binaries only. Local lgtm data remains in `~/.lgtm`.
 
 ## Set An API Key
 
-Totality reads a model key from the environment:
+lgtm reads a model key from the environment:
 
 ```bash
 ANTHROPIC_API_KEY
@@ -59,102 +59,102 @@ OPENAI_API_KEY
 ## Auth
 
 ```bash
-tx auth login
-tx auth status
+lgtm auth login
+lgtm auth status
 ```
 
-Logging into Totality allows you to push metadata and captured context to Totality Cloud.
-This is required to use Totality code review.
+Logging into lgtm allows you to push metadata and captured context to lgtm Cloud.
+This is required to use lgtm code review.
 
 ## Add Instructions To Your AGENTS.md
 
 ```md
-Version control: plain Git. Once `tx init` installs the hooks, Totality records and
-publishes automatically — there is no Totality save verb.
+Version control: plain Git. Once `lgtm init` installs the hooks, lgtm records and
+publishes automatically — there is no lgtm save verb.
 
 Save work:
 - `git add` to stage.
-- `git commit -m "..."` to save. A Totality hook records the commit as a reviewable revision.
-- `git status` to inspect; `tx review` for AI review of the current change.
+- `git commit -m "..."` to save. A lgtm hook records the commit as a reviewable revision.
+- `git status` to inspect; `lgtm review` for AI review of the current change.
 
-Publish with plain `git push` (the Totality pre-push hook captures the session and publishes),
-then open the PR with `gh pr create`. Do not run `tx push` or `tx capture push` — they
+Publish with plain `git push` (the lgtm pre-push hook captures the session and publishes),
+then open the PR with `gh pr create`. Do not run `lgtm push` or `lgtm capture push` — they
 bypass or suppress the hook.
 
-When the user says "save work", "save using tx", or "save with tx", stage with
+When the user says "save work", "save using lgtm", or "save with lgtm", stage with
 `git add`, save with `git commit`, and publish with plain `git push` unless the user
 asks to keep the work local.
 
-To amend, use `git commit --amend` and preserve the Totality revision trailer.
+To amend, use `git commit --amend` and preserve the lgtm revision trailer.
 
-Use `tx_review` (MCP) or `tx review` (CLI) for review context on the current change.
+Use `lgtm_review` (MCP) or `lgtm review` (CLI) for review context on the current change.
 
-Totality PR summaries are posted for PRs whose branch was pushed through Totality with `git push`
+lgtm PR summaries are posted for PRs whose branch was pushed through lgtm with `git push`
 while the pre-push hook is installed. A PR opened before that push will not get a summary
-until the branch is pushed through Totality.
+until the branch is pushed through lgtm.
 
 If your agent client supports tool policies, require approval for destructive reset and
 branch deletion.
 ```
 
-The installer gives you the `tx` CLI and `tx-mcp`.
-When a repo is initialized with `tx init`, Totality
+The installer gives you the `lgtm` CLI and `lgtm-mcp`.
+When a repo is initialized with `lgtm init`, lgtm
 installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
-hooks. They preserve durable Totality revision IDs across normal Git commits and
-rewrites, capture Claude/Codex/Cursor session context into `~/.totality/totality.db`, mark
-pushed Totality revisions shareable, and drain uploads in the background when
+hooks. They preserve durable lgtm revision IDs across normal Git commits and
+rewrites, capture Claude/Codex/Cursor session context into `~/.lgtm/lgtm.db`, mark
+pushed lgtm revisions shareable, and drain uploads in the background when
 credentials are configured.
 
 ## Basic Workflow
 
 ```bash
 git add <files>
-git commit -m "describe this change"   # a Totality hook records the revision
+git commit -m "describe this change"   # a lgtm hook records the revision
 git status                             # inspect with plain Git
-git push                               # push code; Totality hook publishes sessions and PR summaries
+git push                               # push code; lgtm hook publishes sessions and PR summaries
 ```
 
 Useful review commands:
 
 ```bash
-txr                                              # tx review, patch-focused
-tx review --repo "how does capture work?"        # ask about the codebase
-tx review --base origin/main --fail-on strong --no-publish   # CI gate
+lgtmr                                              # lgtm review, patch-focused
+lgtm review --repo "how does capture work?"        # ask about the codebase
+lgtm review --base origin/main --fail-on strong --no-publish   # CI gate
 ```
 
-`tx review` is read-only: it never runs `tx init`, writes `~/.totality`, or touches
+`lgtm review` is read-only: it never runs `lgtm init`, writes `~/.lgtm`, or touches
 `.git/index`, so it is safe in CI and on a checkout you do not own. Under
 `--fail-on` it exits `3` when findings survive and `4` when nothing was
 reviewed. See [the reference](docs-site/content/docs/cli.mdx) for the full surface.
 
 ## MCP
 
-Totality ships with a stdio MCP server.
+lgtm ships with a stdio MCP server.
 
-Install includes `tx-mcp`:
+Install includes `lgtm-mcp`:
 
 ```bash
-command -v tx-mcp
+command -v lgtm-mcp
 ```
 
 Cursor:
 
 ```bash
-cursor mcp add tx -- env TOTALITY_BINARY=$HOME/.local/bin/tx $HOME/.local/bin/tx-mcp
+cursor mcp add lgtm -- env LGTM_BINARY=$HOME/.local/bin/lgtm $HOME/.local/bin/lgtm-mcp
 ```
 
 Claude Code:
 
 ```bash
-claude mcp add tx -- env TOTALITY_BINARY=$HOME/.local/bin/tx $HOME/.local/bin/tx-mcp
+claude mcp add lgtm -- env LGTM_BINARY=$HOME/.local/bin/lgtm $HOME/.local/bin/lgtm-mcp
 ```
 
 Then ask your agent:
 
 ```text
 save work
-save using tx
-save with tx
+save using lgtm
+save with lgtm
 ```
 
 Expected flow:
@@ -163,6 +163,6 @@ Expected flow:
 git add -> git commit -> git push -> gh pr create
 ```
 
-MCP exposes `tx_review` only; saving and publishing are plain Git.
+MCP exposes `lgtm_review` only; saving and publishing are plain Git.
 
-Publish with plain `git push` only. Do not run `tx push` or `tx capture push`.
+Publish with plain `git push` only. Do not run `lgtm push` or `lgtm capture push`.

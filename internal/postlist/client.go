@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	envURL    = "TOTALITY_POSTLIST_URL"
-	envAPIKey = "TOTALITY_POSTLIST_API_KEY"
+	envURL    = "LGTM_POSTLIST_URL"
+	envAPIKey = "LGTM_POSTLIST_API_KEY"
 )
 
 type Client struct {
@@ -27,7 +27,7 @@ type Identity struct {
 	Name      string `json:"name"`
 	Email     string `json:"email"`
 	Source    string `json:"source"`
-	TLVersion string `json:"tx_version,omitempty"`
+	TLVersion string `json:"lgtm_version,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
@@ -58,7 +58,7 @@ func (c *Client) UpsertIdentity(ctx context.Context, identity Identity) error {
 	u.RawQuery = query.Encode()
 
 	if identity.Source == "" {
-		identity.Source = "tx"
+		identity.Source = "lgtm"
 	}
 	if identity.UpdatedAt == "" {
 		identity.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

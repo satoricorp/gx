@@ -2,13 +2,13 @@ package cli
 
 // Legacy ambient-capture cleanup.
 //
-// Totality used to install a launchd LaunchAgent (dev.totality.capture) that ran a local
+// lgtm used to install a launchd LaunchAgent (dev.lgtm.capture) that ran a local
 // proxy daemon and pointed coding agents at it through launchctl environment
 // variables and managed blocks in shell profiles. That capture model is gone —
 // transcript capture is hook-driven — but machines that ran the old
-// `tx ops capture install` still have the agent loaded. This best-effort
-// cleanup runs during `tx init` and repo auto-init: it stops and removes the
-// LaunchAgent, strips the managed shell-profile blocks, clears the tx
+// `lgtm ops capture install` still have the agent loaded. This best-effort
+// cleanup runs during `lgtm init` and repo auto-init: it stops and removes the
+// LaunchAgent, strips the managed shell-profile blocks, clears the lgtm
 // launchctl env vars, and reverts ~/.codex/config.toml when it still routes
 // Codex through the retired local proxy. It is a silent no-op when nothing
 // legacy is present and never fails the caller; problems surface as warnings
@@ -30,13 +30,13 @@ import (
 )
 
 const (
-	legacyLaunchAgentLabel = "dev.totality.capture"
+	legacyLaunchAgentLabel = "dev.lgtm.capture"
 	legacyDefaultProxyAddr = "127.0.0.1:43123"
-	legacyShellBlockOpen   = "# >>> tx ambient capture >>>"
-	legacyShellBlockClose  = "# <<< tx ambient capture <<<"
+	legacyShellBlockOpen   = "# >>> lgtm ambient capture >>>"
+	legacyShellBlockClose  = "# <<< lgtm ambient capture <<<"
 	legacyEnvAnthropicKey  = "ANTHROPIC_BASE_URL"
 	legacyEnvOpenAIKey     = "OPENAI_BASE_URL"
-	legacyCodexProviderID  = "totality-openai"
+	legacyCodexProviderID  = "lgtm-openai"
 )
 
 // legacyRunner abstracts launchctl invocations so the cleanup decision logic
@@ -60,7 +60,7 @@ func (r legacyCleanupResult) cleanedAny() bool {
 }
 
 // legacyLaunchAgentPath returns the plist path the retired
-// `tx ops capture install` wrote: ~/Library/LaunchAgents/dev.totality.capture.plist.
+// `lgtm ops capture install` wrote: ~/Library/LaunchAgents/dev.lgtm.capture.plist.
 func legacyLaunchAgentPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -70,16 +70,16 @@ func legacyLaunchAgentPath() (string, error) {
 }
 
 // legacyLaunchAgentTarget is the launchctl service target for the retired
-// agent, e.g. gui/501/dev.totality.capture.
+// agent, e.g. gui/501/dev.lgtm.capture.
 func legacyLaunchAgentTarget() string {
 	return "gui/" + strconv.Itoa(os.Getuid()) + "/" + legacyLaunchAgentLabel
 }
 
 // legacyProxyBaseURLs returns the base URLs the retired proxy advertised.
-// TOTALITY_PROXY_ADDR was the old override knob; it is honored here only so cleanup
+// LGTM_PROXY_ADDR was the old override knob; it is honored here only so cleanup
 // recognizes env values written by a customized install.
 func legacyProxyBaseURLs() (anthropicURL, openaiURL string) {
-	addr := strings.TrimSpace(os.Getenv("TOTALITY_PROXY_ADDR"))
+	addr := strings.TrimSpace(os.Getenv("LGTM_PROXY_ADDR"))
 	if addr == "" {
 		addr = legacyDefaultProxyAddr
 	}
@@ -155,10 +155,10 @@ func legacyCodexConfigPath() (string, error) {
 
 // legacyCodexProxyHosts returns the host:port values recognized as the
 // retired local proxy: the default listen address plus, when set, the old
-// TOTALITY_PROXY_ADDR override a customized install wrote into base_url.
+// LGTM_PROXY_ADDR override a customized install wrote into base_url.
 func legacyCodexProxyHosts() []string {
 	hosts := []string{legacyDefaultProxyAddr}
-	if addr := strings.TrimSpace(os.Getenv("TOTALITY_PROXY_ADDR")); addr != "" && addr != legacyDefaultProxyAddr {
+	if addr := strings.TrimSpace(os.Getenv("LGTM_PROXY_ADDR")); addr != "" && addr != legacyDefaultProxyAddr {
 		hosts = append(hosts, addr)
 	}
 	return hosts
@@ -239,8 +239,8 @@ func legacyCodexBaseURLPointsAtProxy(baseURL string) bool {
 // legacyCodexConfigPointsAtRetiredProxy is the gate for the revert: only
 // configs that provably still route Codex through the dead proxy are touched.
 // With the provider block present that proof is its base_url; without the
-// block, a bare `model_provider = "totality-openai"` assignment is still the old
-// install's leftover (the provider id is Totality's own) and it breaks Codex by
+// block, a bare `model_provider = "lgtm-openai"` assignment is still the old
+// install's leftover (the provider id is lgtm's own) and it breaks Codex by
 // selecting a provider that no longer exists.
 func legacyCodexConfigPointsAtRetiredProxy(text string) bool {
 	if legacyCodexHasProviderBlock(text) {
@@ -251,7 +251,7 @@ func legacyCodexConfigPointsAtRetiredProxy(text string) bool {
 }
 
 // removeLegacyCodexProviderAssignment drops the root-level
-// `model_provider = "totality-openai"` line. Assignments selecting any other
+// `model_provider = "lgtm-openai"` line. Assignments selecting any other
 // provider are left alone.
 func removeLegacyCodexProviderAssignment(lines []string) ([]string, bool) {
 	for i, line := range lines {
@@ -274,7 +274,7 @@ func removeLegacyCodexProviderAssignment(lines []string) ([]string, bool) {
 	return lines, false
 }
 
-// removeLegacyCodexProviderBlock drops the [model_providers.totality-openai] table:
+// removeLegacyCodexProviderBlock drops the [model_providers.lgtm-openai] table:
 // its header through the line before the next table header, or through EOF.
 func removeLegacyCodexProviderBlock(lines []string) ([]string, bool) {
 	header := "[model_providers." + legacyCodexProviderID + "]"
@@ -311,8 +311,8 @@ func removeLegacyCodexProviderBlock(lines []string) ([]string, bool) {
 }
 
 // revertLegacyCodexConfigText removes the retired proxy wiring — the
-// `model_provider = "totality-openai"` assignment and the
-// [model_providers.totality-openai] block — leaving every other line byte-identical.
+// `model_provider = "lgtm-openai"` assignment and the
+// [model_providers.lgtm-openai] block — leaving every other line byte-identical.
 func revertLegacyCodexConfigText(text string) (string, bool) {
 	lines := strings.Split(text, "\n")
 	lines, removedAssignment := removeLegacyCodexProviderAssignment(lines)
@@ -344,7 +344,7 @@ func revertLegacyCodexConfigFile(path string) (bool, error) {
 	if !changed {
 		return false, nil
 	}
-	backup := fmt.Sprintf("%s.totality-backup-%d", path, time.Now().Unix())
+	backup := fmt.Sprintf("%s.lgtm-backup-%d", path, time.Now().Unix())
 	if err := os.WriteFile(backup, data, 0o600); err != nil {
 		return false, fmt.Errorf("write codex config backup: %w", err)
 	}
@@ -388,7 +388,7 @@ func cleanupLegacyAmbientCapture(ctx context.Context, run legacyRunner) legacyCl
 	for _, path := range legacyShellProfilePaths() {
 		removed, err := removeLegacyShellBlockFromFile(path)
 		if err != nil {
-			warnf("remove tx ambient capture block from %s: %v", path, err)
+			warnf("remove lgtm ambient capture block from %s: %v", path, err)
 			continue
 		}
 		if removed {
@@ -448,7 +448,7 @@ func cleanupLegacyAmbientCaptureQuiet(ctx context.Context, errOut io.Writer) {
 	}
 }
 
-// cleanupLegacyAmbientCaptureFromInit runs during `tx init`, reporting a
+// cleanupLegacyAmbientCaptureFromInit runs during `lgtm init`, reporting a
 // one-line note when the retired service was actually removed.
 func cleanupLegacyAmbientCaptureFromInit(ctx context.Context, cmd *cobra.Command, quiet bool) {
 	result := cleanupLegacyAmbientCapture(ctx, nil)

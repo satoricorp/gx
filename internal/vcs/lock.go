@@ -8,7 +8,7 @@ import (
 )
 
 func repoLockPath(repoRoot string) string {
-	return filepath.Join(repoRoot, ".totality", "repo.lock")
+	return filepath.Join(repoRoot, ".lgtm", "repo.lock")
 }
 
 func withLockFile(lockPath string, fn func() error) error {

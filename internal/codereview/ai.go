@@ -50,7 +50,7 @@ const (
 	maxAIWholeRepoContextSnippets = 128
 	// maxAIRepoInventoryBytes is the file listing's own budget. A map of the
 	// repository is worth its bytes: at ~45 bytes a path this holds roughly
-	// 4,000 files, which is every file in both repositories tx reviews today.
+	// 4,000 files, which is every file in both repositories lgtm reviews today.
 	maxAIRepoInventoryBytes = 180000
 	// Diff snippets are the primary evidence for what changed, so they get their
 	// own budget rather than sharing the retrieved-context one. A PR summary
@@ -73,16 +73,27 @@ const (
 //
 // Two flagship reviewers cost max(A,B) in wall clock, not A+B, because
 // multiAIReviewer already runs its legs concurrently — so the second opinion is
-// close to free in latency and only costs tokens. The pair is deliberately two
-// Opus models from DIFFERENT GENERATIONS rather than one Opus plus a smaller
-// same-generation sibling: a sibling trained alongside its larger cousin tends
-// to miss the same things it does, and correlated misses are exactly what a
-// second reviewer is supposed to catch.
+// close to free in latency and only costs tokens. Both reviewer legs MUST be
+// 1M-context models: repo-mode review briefs regularly exceed 200K tokens, and
+// a 200K leg (the previous default, Opus 4.5) fails every batch with "prompt is
+// too long" rather than degrading. The pair is Opus + Sonnet across tiers
+// rather than two same-tier siblings, so the second reviewer's misses are less
+// correlated with the first's. It would ideally also span generations, but as
+// of 2026-08 the 4.6 family is the only 1M-context generation this deployment's
+// AWS account has Bedrock access to — when Opus 4.7+/Sonnet 5 access is granted
+// in the Bedrock console, prefer moving leg B there (or override with
+// LGTM_REVIEW_BEDROCK_MODEL_B).
 //
-// The judge is a third model on purpose. It decides which candidate findings
-// survive, and a model grading its own output is not a filter. It also sits on
-// the sequential path after both reviewers return, which is where latency hurts
-// most, so it is the smaller Sonnet rather than a third Opus.
+// The judge would ideally be a third model — it decides which candidate
+// findings survive, and a model grading its own output is not a filter. That
+// is not currently possible here: repo-mode VERIFICATION batches carry
+// per-finding evidence and exceed 200K tokens (measured 2026-08-04: a Sonnet
+// 4.5 judge failed all 8 verification batches with "Input is too long"), so
+// the judge also needs a 1M-context model, and the 4.6 pair above is all this
+// account has. Sharing Sonnet 4.6 with leg B is the lesser evil — leg A's
+// findings are still independently judged, and a judge that cannot run
+// verifies nothing. When newer-model access is granted, give the judge its
+// own model again (LGTM_REVIEW_JUDGE_MODEL overrides it today).
 //
 // Every ID here MUST be the `us.`-prefixed inference profile form. Bare
 // `anthropic.*` model IDs are rejected by bedrock-runtime for on-demand
@@ -92,7 +103,7 @@ const (
 // and TestDefaultBedrockModelsAreInferenceProfiles is the regression test.
 const (
 	defaultBedrockReviewModelA = "us.anthropic.claude-opus-4-6-v1"
-	defaultBedrockReviewModelB = "us.anthropic.claude-opus-4-5-20251101-v1:0"
+	defaultBedrockReviewModelB = "us.anthropic.claude-sonnet-4-6"
 	defaultBedrockJudgeModel   = "us.anthropic.claude-sonnet-4-6"
 	// defaultBedrockRegion was us-east-1, which is not where these inference
 	// profiles are enabled for this deployment; a model that exists in one
@@ -126,7 +137,7 @@ type AIReviewerWithSummary interface {
 type ReviewerInfo struct {
 	Models []string
 	// Transport is how the panel reached bedrock-runtime, phrased for a human
-	// ("Totality Cloud (https://api.totality.sh)" / "direct AWS credentials (us-west-2)").
+	// ("lgtm Cloud (https://api.lgtm.cx)" / "direct AWS credentials (us-west-2)").
 	// It is reported rather than inferred because the two have different
 	// latency and different failure modes, and a review that does not say which
 	// one ran leaves both questions unanswerable after the fact.
@@ -264,8 +275,19 @@ func ReviewerTransport(reviewer AIReviewer) string {
 // Embeddings are unaffected: internal/semantic reads OPENAI_API_KEY directly
 // (see defaultEmbedderFactory in turbopuffer_index.go) and never goes through an
 // AIReviewer, so the code index still embeds on OpenAI.
-func reviewerFromEnv() AIReviewer {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_AI")), "0") {
+func reviewerFromEnv() AIReviewer { return reviewerFromEnvFast(false) }
+
+// reviewerFromEnvFast builds the panel, optionally reduced to its first leg.
+//
+// Fast keeps leg A rather than picking a quicker model: measurement on the
+// planted-bug fixture showed model choice barely moves wall clock (Opus 4.6 and
+// Sonnet 4.6 both generate ~33-35 tokens/second, so latency tracks how much a
+// model writes, not which model writes it), while dropping the second leg and
+// the verification pass moves it a lot. Haiku is 2.4x faster per token and was
+// the one model that found none of the planted defects, so speed alone is not
+// a reason to switch reviewers.
+func reviewerFromEnvFast(fast bool) AIReviewer {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_AI")), "0") {
 		return nil
 	}
 	plan, err := resolveBedrockTransportPlan()
@@ -281,17 +303,44 @@ func reviewerFromEnv() AIReviewer {
 		}
 	}
 	modelA, modelB := resolveBedrockReviewModels()
-	return multiAIReviewer{
-		reviewers: []namedAIReviewer{
-			{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)},
-			{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)},
-		},
+	if fast {
+		// One leg, and it is leg A: the panel exists so two models' misses are
+		// uncorrelated, and keeping whichever leg the operator configured first
+		// is more predictable than picking by model name.
+		if modelA != "" {
+			modelB = ""
+		} else {
+			modelA, modelB = modelB, ""
+		}
+	}
+	var reviewers []namedAIReviewer
+	if modelA != "" {
+		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)})
+	}
+	if modelB != "" {
+		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)})
+	}
+	if len(reviewers) == 0 {
+		// Both legs off is a configuration mistake, not a request for a review
+		// with no reviewer: say so rather than reporting a clean review.
+		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{
+			reason: "every Bedrock review leg is disabled; set LGTM_REVIEW_BEDROCK_MODEL_A to a model ID",
+		}})
+	}
+	panel := multiAIReviewer{
+		reviewers:   reviewers,
 		legFailures: newLegFailureLog(),
+	}
+	// A single-leg panel produces no cross-leg duplicates, so it needs no
+	// adjudicator — and building one would spend a model call per candidate
+	// pair deciding whether a finding duplicates itself.
+	if len(reviewers) > 1 {
 		// Built here rather than passed in because this is the only place that
 		// knows a panel of two legs exists at all, and a panel is what produces
 		// the duplicates.
-		adjudicator: duplicateAdjudicatorFromEnv(),
+		panel.adjudicator = duplicateAdjudicatorFromEnv()
 	}
+	return panel
 }
 
 // reviewerDuplicateAdjudicator hands back the panel's own adjudicator so the
@@ -753,12 +802,34 @@ func reviewDeveloperPrompt(brief ReviewBrief) string {
 	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo {
 		lines = append(lines, wholeRepoPromptLines()...)
 	}
+	if brief.Concise {
+		lines = append(lines, concisePromptLines()...)
+	}
 	return strings.Join(lines, "\n")
+}
+
+// concisePromptLines shorten what a finding says without changing what counts
+// as a finding.
+//
+// This is the one prompt-side latency control that works. A Bedrock model
+// generates output at a roughly fixed rate, so a review's wall clock is very
+// nearly its output-token count divided by that rate: the same review answered
+// in half the words takes half the time. Everything here therefore targets the
+// long-form parts of a finding — the worked code example most of all — and
+// nothing here tells the model to look less hard or report less.
+func concisePromptLines() []string {
+	return []string{
+		"Write for an engineer reading in a terminal who is waiting on this review.",
+		"Keep each recommendation to a few sentences. State the defect, the risk, and the first concrete action, and stop.",
+		"Do not include code blocks, diffs, or before/after examples. Name the file, symbol, and line to change and describe the fix in prose instead.",
+		"Do not restate the change, summarize what the code does, or explain why a well-known practice is good.",
+		"Report every defect you would otherwise report. Concision applies to how each finding is written, never to how many you look for or how hard you look.",
+	}
 }
 
 func baseReviewDeveloperPromptLines() []string {
 	return []string{
-		"You are Totality Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
+		"You are lgtm Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
@@ -813,7 +884,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func aiReviewRequestedFromEnv() bool {
-	value := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_AI"))
+	value := strings.TrimSpace(os.Getenv("LGTM_REVIEW_AI"))
 	if value == "" {
 		return true
 	}

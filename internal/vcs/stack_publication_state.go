@@ -3,7 +3,7 @@ package vcs
 import (
 	"strings"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 type StackPublicationState struct {

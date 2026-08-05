@@ -4,24 +4,24 @@ import (
 	"context"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/storage/storagetest"
-	"github.com/satoricorp/totality/internal/totalitytest"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/storage/storagetest"
+	"github.com/satoricorp/lgtm/internal/lgtmtest"
 )
 
 // TestDriftedRepoIdentityReproducesTheLiveTwoRowState proves the shape actually
 // builds the state it claims to, so tests that depend on it are not quietly
 // running against a single-row database again.
 //
-// The reference is the author's real ~/.totality/totality.db, where /Users/joe/git/tx has
-// TWO repos rows: id 1 (root_path=/Users/joe/git/tx, git_common_dir the same,
-// 17 stale changes) and id 16 (root_path="", git_common_dir=.../tx/.git, 21
+// The reference is the author's real ~/.lgtm/lgtm.db, where /Users/joe/git/lgtm has
+// TWO repos rows: id 1 (root_path=/Users/joe/git/lgtm, git_common_dir the same,
+// 17 stale changes) and id 16 (root_path="", git_common_dir=.../lgtm/.git, 21
 // changes, all of them newer). Both rows are built here through
 // storage.Store.UpsertRepo, so the state is one a real sequence of pushes
 // produces rather than one a raw INSERT invented.
 func TestDriftedRepoIdentityReproducesTheLiveTwoRowState(t *testing.T) {
-	const root = "/Users/joe/git/tx"
-	const commonDir = "/Users/joe/git/tx/.git"
+	const root = "/Users/joe/git/lgtm"
+	const commonDir = "/Users/joe/git/lgtm/.git"
 
 	h := storagetest.New(t, storagetest.DriftedRepoIdentity(root, commonDir), storagetest.WeatheredNeighbourRepos())
 
@@ -62,7 +62,7 @@ func TestDriftedRepoIdentityReproducesTheLiveTwoRowState(t *testing.T) {
 // git paths, where git_common_dir is genuinely <root>/.git rather than a string
 // the test made up.
 func TestDriftedRepoIdentityFromRealWorktreePaths(t *testing.T) {
-	world := totalitytest.NewWorld(t)
+	world := lgtmtest.NewWorld(t)
 	repo := world.NewRepo(t)
 	h := storagetest.NewInWorld(t, world, storagetest.DriftedRepoIdentity(repo.Root, repo.GitCommonDir))
 
@@ -95,7 +95,7 @@ func TestDriftedRepoIdentityFromRealWorktreePaths(t *testing.T) {
 // falls into: a registrant with a root path of its own.
 func TestDriftedRowSurvivesAnUnrelatedRepositoryRegistering(t *testing.T) {
 	ctx := context.Background()
-	world := totalitytest.NewWorld(t)
+	world := lgtmtest.NewWorld(t)
 	victim := world.NewRepo(t)
 	h := storagetest.NewInWorld(t, world, storagetest.DriftedRepoIdentity(victim.Root, victim.GitCommonDir))
 
@@ -132,7 +132,7 @@ func TestDriftedRowSurvivesAnUnrelatedRepositoryRegistering(t *testing.T) {
 // older binary wrote, and every other test opens a database that was empty a
 // microsecond earlier.
 func TestFossilCommitSelfReportSessionIsRemovedOnReopen(t *testing.T) {
-	world := totalitytest.NewWorld(t)
+	world := lgtmtest.NewWorld(t)
 	repo := world.NewRepo(t)
 	h := storagetest.NewInWorld(t, world,
 		storagetest.DriftedRepoIdentity(repo.Root, repo.GitCommonDir),

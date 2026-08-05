@@ -14,10 +14,10 @@ import (
 // channel, not a convenience.
 //
 // It used to be `append(os.Environ(), ...)`, so the child got everything the
-// reviewer's shell had. On a Totality developer machine that is ANTHROPIC_API_KEY,
-// OPENAI_API_KEY, TURBOPUFFER_API_KEY, GITHUB_TOKEN, TOTALITY_UPLOAD_TOKEN and the
+// reviewer's shell had. On a lgtm developer machine that is ANTHROPIC_API_KEY,
+// OPENAI_API_KEY, TURBOPUFFER_API_KEY, GITHUB_TOKEN, LGTM_UPLOAD_TOKEN and the
 // AWS_* triple; in CI it is whatever the workflow exported into the step that
-// runs `tx review`. A TestMain that prints os.Environ() exfiltrates all of it,
+// runs `lgtm review`. A TestMain that prints os.Environ() exfiltrates all of it,
 // and the review output would even carry it back — runStaticTool captures the
 // child's stdout and stderr into the report.
 //
@@ -59,7 +59,7 @@ var staticToolEnvAllowed = buildStaticToolEnvAllowlist(
 	// output differ from what the same command prints in the user's shell.
 	"LANG", "LANGUAGE", "LC_ALL", "TZ", "TERM",
 	// XDG paths relocate the caches the tools above write to. A reviewer who
-	// redirects XDG_CACHE_HOME expects tx to honour it like everything else.
+	// redirects XDG_CACHE_HOME expects lgtm to honour it like everything else.
 	"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
 	// Corporate networks put every toolchain's fetches through a proxy and a
 	// private CA. Without these, `go test` on a module that is not already in
@@ -72,7 +72,7 @@ var staticToolEnvAllowed = buildStaticToolEnvAllowlist(
 	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "FTP_PROXY",
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 	// Many linters and test harnesses (eslint, cargo, pytest) change their
-	// output when CI is set. tx review is a CI gate; let them know.
+	// output when CI is set. lgtm review is a CI gate; let them know.
 	"CI",
 	// Windows. Environment variables are how Windows locates the system at
 	// all: Go's own runtime needs SystemRoot for crypto/rand, and exec needs
@@ -107,7 +107,7 @@ var staticToolEnvAllowed = buildStaticToolEnvAllowlist(
 	"PKG_CONFIG", "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR",
 	// Node. npm_config_* is deliberately absent: npm materializes registry
 	// auth into npm_config__authToken and npm_config__auth when it runs a
-	// script, so a tx invoked from an npm script would leak the registry token
+	// script, so a lgtm invoked from an npm script would leak the registry token
 	// under a prefix rule.
 	"NODE_PATH", "NODE_OPTIONS", "NODE_ENV", "NODE_EXTRA_CA_CERTS",
 	"NVM_DIR", "NVM_BIN",
@@ -157,7 +157,7 @@ func staticToolChildEnv(parent []string) []string {
 	// artifacts must not land in the reviewer's own build cache, and a review
 	// of someone else's checkout should not evict the entries the reviewer's
 	// day job depends on.
-	values["GOCACHE"] = filepath.Join(os.TempDir(), "tx-review-gocache")
+	values["GOCACHE"] = filepath.Join(os.TempDir(), "lgtm-review-gocache")
 	out := make([]string, 0, len(values))
 	for name, value := range values {
 		out = append(out, name+"="+value)

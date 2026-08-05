@@ -9,7 +9,7 @@ import (
 )
 
 func TestRegisterPublishUsesV1Endpoint(t *testing.T) {
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	if err := SaveCloudCredentials(CloudCredentials{
 		GitHubAccessToken: "gho_publish",
 		CLISessionToken:   "tlcs_publish",
@@ -31,12 +31,12 @@ func TestRegisterPublishUsesV1Endpoint(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		if body.RepoFullName != "satoricorp/totality" || body.HeadCommitID != "abc123" {
+		if body.RepoFullName != "satoricorp/lgtm" || body.HeadCommitID != "abc123" {
 			t.Fatalf("request body = %+v", body)
 		}
 		_ = json.NewEncoder(w).Encode(PublishRegistrationResult{
 			ID:           "bookmark-1",
-			RepoFullName: "satoricorp/totality",
+			RepoFullName: "satoricorp/lgtm",
 			BranchName:   "main",
 		})
 	}))
@@ -44,7 +44,7 @@ func TestRegisterPublishUsesV1Endpoint(t *testing.T) {
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.RegisterPublish(context.Background(), PublishRegistration{
-		RepoFullName: "satoricorp/totality",
+		RepoFullName: "satoricorp/lgtm",
 		BranchName:   "main",
 		HeadCommitID: "abc123",
 	})

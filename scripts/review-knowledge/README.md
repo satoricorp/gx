@@ -1,9 +1,9 @@
 # Review Knowledge Index
 
-This directory builds the versioned TurboPuffer corpora used by `tx review
+This directory builds the versioned TurboPuffer corpora used by `lgtm review
 --deep` and GitHub PR review generation.
 
-The corpus is retrieval context, not a replacement for Totality heuristics. Keep the
+The corpus is retrieval context, not a replacement for lgtm heuristics. Keep the
 deterministic review rules in code. Use this index for official standards,
 language guidance, tool guidance, and repo-independent review knowledge that a
 model can cite or use as supporting context.
@@ -61,26 +61,26 @@ export TURBOPUFFER_API_KEY=...
 Optional:
 
 ```bash
-export TOTALITY_OPENAI_BASE_URL=https://api.openai.com
-export TOTALITY_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-export TOTALITY_EMBEDDING_DIMENSIONS=512
-export TOTALITY_TPUF_BASE_URL=https://gcp-us-central1.turbopuffer.com
-export TOTALITY_REVIEW_CANDIDATE_NAMESPACE=review-corpus-v2
-export TOTALITY_REVIEW_KNOWLEDGE_NAMESPACE=totality-review-knowledge
-export TOTALITY_RESEARCH_CORPUS_NAMESPACE=research-corpus-v1
-export TOTALITY_REVIEW_RESOURCES=1
-export TOTALITY_REVIEW_RESOURCES_TOP_K=8
+export LGTM_OPENAI_BASE_URL=https://api.openai.com
+export LGTM_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+export LGTM_EMBEDDING_DIMENSIONS=512
+export LGTM_TPUF_BASE_URL=https://gcp-us-central1.turbopuffer.com
+export LGTM_REVIEW_CANDIDATE_NAMESPACE=review-corpus-v2
+export LGTM_REVIEW_KNOWLEDGE_NAMESPACE=lgtm-review-knowledge
+export LGTM_RESEARCH_CORPUS_NAMESPACE=research-corpus-v1
+export LGTM_REVIEW_RESOURCES=1
+export LGTM_REVIEW_RESOURCES_TOP_K=8
 ```
 
-The default namespace is intentionally separate from `TOTALITY_TPUF_NAMESPACE`
-(`totality-sessions`) so review knowledge does not mix with session transcripts and
+The default namespace is intentionally separate from `LGTM_TPUF_NAMESPACE`
+(`lgtm-sessions`) so review knowledge does not mix with session transcripts and
 repository code chunks.
 
-`tx review` queries this namespace when both `OPENAI_API_KEY` and
-`TURBOPUFFER_API_KEY` are available. Set `TOTALITY_REVIEW_RESOURCES=0` to disable
-review-resource retrieval for a run. `TOTALITY_REVIEW_RESOURCES_TOP_K` controls the
+`lgtm review` queries this namespace when both `OPENAI_API_KEY` and
+`TURBOPUFFER_API_KEY` are available. Set `LGTM_REVIEW_RESOURCES=0` to disable
+review-resource retrieval for a run. `LGTM_REVIEW_RESOURCES_TOP_K` controls the
 shallow retrieval limit; the default is 8 so repo-local policy files can remain
-in the model context alongside review resources. `tx review --deep` raises the
+in the model context alongside review resources. `lgtm review --deep` raises the
 minimum resource limit to 24.
 
 The v2 index stores filterable metadata including `tier`, `languages`,
@@ -124,7 +124,7 @@ python3 scripts/review-knowledge/index_review_resources.py chunk --limit 3 --see
 ```
 
 Run the eval gate. Without API credentials this writes a skipped report; with
-`OPENAI_API_KEY` and `TURBOPUFFER_API_KEY` it compares `totality-review-knowledge`
+`OPENAI_API_KEY` and `TURBOPUFFER_API_KEY` it compares `lgtm-review-knowledge`
 against `review-corpus-v2` and writes recall/precedence results:
 
 ```bash
@@ -132,14 +132,14 @@ python3 scripts/review-knowledge/index_review_resources.py eval
 ```
 
 After the eval gate passes, promote the same v2 review chunks into the
-production namespace (`totality-review-knowledge`) so production can cut over without
+production namespace (`lgtm-review-knowledge`) so production can cut over without
 changing namespace names:
 
 ```bash
 python3 scripts/review-knowledge/index_review_resources.py promote
 ```
 
-`promote` upserts `source_kind=review_corpus` rows into `totality-review-knowledge`.
+`promote` upserts `source_kind=review_corpus` rows into `lgtm-review-knowledge`.
 It does not delete legacy `source_kind=review_knowledge` rows, so old readers
 continue working during the application rollout.
 
@@ -164,4 +164,4 @@ Do not delete legacy `source_kind=review_knowledge` rows until v2 passes the
 eval gate and completes the 7-day soak.
 
 This keeps the index useful without making imported guidance more authoritative
-than repo-local policy or deterministic Totality findings.
+than repo-local policy or deterministic lgtm findings.

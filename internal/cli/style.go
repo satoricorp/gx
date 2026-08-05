@@ -11,9 +11,9 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/inference"
-	"github.com/satoricorp/totality/internal/termstyle"
+	"github.com/satoricorp/lgtm/internal/cloud"
+	"github.com/satoricorp/lgtm/internal/inference"
+	"github.com/satoricorp/lgtm/internal/termstyle"
 )
 
 func enableColor() bool {
@@ -60,7 +60,7 @@ func installHelpStyling(root *cobra.Command) {
 }
 
 func helpBodyTemplate() string {
-	intro := `{{if not (eq .CommandPath "tx")}}{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}{{end}}
+	intro := `{{if not (eq .CommandPath "lgtm")}}{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}{{end}}
 
 {{end}}`
 
@@ -87,13 +87,13 @@ func helpBodyTemplate() string {
 {{section "Additional Help Topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{commandPadded .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
-{{if eq .CommandPath "tx"}}{{muted (printf "Use \"%s [command] --help\" for more information about a command." .CommandPath)}}{{end}}{{end}}
+{{if eq .CommandPath "lgtm"}}{{muted (printf "Use \"%s [command] --help\" for more information about a command." .CommandPath)}}{{end}}{{end}}
 `
 }
 
 func printRootIntro(out io.Writer) {
 	fmt.Fprintln(out, renderStaticLogo())
-	fmt.Fprintln(out, muted(txTagline))
+	fmt.Fprintln(out, muted(lgtmTagline))
 	fmt.Fprintln(out, rootAuthStatusLine())
 	fmt.Fprintln(out, rootInferenceStatusLine())
 	fmt.Fprintln(out)
@@ -104,7 +104,7 @@ func rootAuthStatusLine() string {
 	if err == nil && authKindForCredentials(creds) != "none" && strings.TrimSpace(creds.Login) != "" {
 		return success("●") + " " + value("Signed in as "+strings.TrimSpace(creds.Login))
 	}
-	return danger("●") + " " + muted("Not signed in") + "  " + logoText("tx auth login")
+	return danger("●") + " " + muted("Not signed in") + "  " + logoText("lgtm auth login")
 }
 
 func rootInferenceStatusLine() string {
@@ -150,7 +150,7 @@ func helpInvocation(cmd *cobra.Command) string {
 		return ""
 	}
 	if cmd.Root() == cmd {
-		return "tx help"
+		return "lgtm help"
 	}
 	if cmd.Name() == "help" {
 		return path

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Credentials hold CLI upload auth for the Totality server.
+// Credentials hold CLI upload auth for the lgtm server.
 type Credentials struct {
 	APIURL string `json:"api_url"`
 	Token  string `json:"token"`
@@ -17,7 +17,7 @@ type Credentials struct {
 // DefaultAPIURL is the local dev server port from server/src/index.ts.
 const DefaultAPIURL = "http://localhost:3201"
 
-// Load reads upload credentials from env or ~/.totality/upload.json.
+// Load reads upload credentials from env or ~/.lgtm/upload.json.
 func Load() (Credentials, bool) {
 	upload, ok := LoadUpload()
 	if !ok {
@@ -36,7 +36,7 @@ func HasUploadCredentials() bool {
 	return ok
 }
 
-// Save persists upload credentials (used by tx login).
+// Save persists upload credentials (used by lgtm login).
 func Save(creds Credentials) error {
 	return SaveUpload(UploadCredentials{
 		APIURL: creds.APIURL,
@@ -46,7 +46,7 @@ func Save(creds Credentials) error {
 }
 
 func uploadCredentialsPath() (string, error) {
-	if home := strings.TrimSpace(os.Getenv("TOTALITY_HOME")); home != "" {
+	if home := strings.TrimSpace(os.Getenv("LGTM_HOME")); home != "" {
 		return filepath.Join(home, "upload.json"), nil
 	}
 	return UploadPath()

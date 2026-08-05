@@ -3,8 +3,8 @@ package matcher_test
 import (
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
 )
 
 func TestBuildHunkLinks_AgentMatch(t *testing.T) {

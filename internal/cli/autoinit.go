@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/authoring"
-	"github.com/satoricorp/totality/internal/telemetry"
+	"github.com/satoricorp/lgtm/internal/authoring"
+	"github.com/satoricorp/lgtm/internal/telemetry"
 )
 
 func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cmd *cobra.Command) error {
@@ -25,14 +25,14 @@ func ensureAutoInitializedRepo(ctx context.Context, engine *authoring.Engine, cm
 		return err
 	}
 	if result.Prepared && !commandRequestsJSON(cmd) {
-		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing tx for this repository..."))
+		fmt.Fprintln(cmd.ErrOrStderr(), muted("Initializing lgtm for this repository..."))
 	}
 	if result.Repo.RootPath != "" {
 		if hookErr := installCaptureHookQuiet(cmd, result.Repo.RootPath); hookErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: Totality lifecycle hooks not installed: %v\n", hookErr)
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: lgtm lifecycle hooks not installed: %v\n", hookErr)
 		}
 		// Existing installs may still run the retired ambient-capture
-		// LaunchAgent; retire it the next time tx touches an initialized repo.
+		// LaunchAgent; retire it the next time lgtm touches an initialized repo.
 		cleanupLegacyAmbientCaptureQuiet(ctx, cmd.ErrOrStderr())
 	}
 	return nil
@@ -54,30 +54,30 @@ func commandRequestsJSON(cmd *cobra.Command) bool {
 // commandTelemetryContext marks read-only commands so telemetry reports
 // without writing anything to the machine.
 func commandTelemetryContext(ctx context.Context, cmd *cobra.Command) context.Context {
-	if commandMustNotWriteTotalityState(cmd) {
+	if commandMustNotWriteLgtmState(cmd) {
 		return telemetry.WithoutStateWrites(ctx)
 	}
 	return ctx
 }
 
-// commandMustNotWriteTotalityState names the commands that promise to leave no Totality
+// commandMustNotWriteLgtmState names the commands that promise to leave no lgtm
 // state behind. This is narrower than shouldSkipAutoInit, which also exempts
-// commands like `init` and `login` whose whole job is to write Totality state — they
+// commands like `init` and `login` whose whole job is to write lgtm state — they
 // skip auto-init because they set it up themselves, not because they must not.
-func commandMustNotWriteTotalityState(cmd *cobra.Command) bool {
+func commandMustNotWriteLgtmState(cmd *cobra.Command) bool {
 	if cmd == nil {
 		return false
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
 		// `review` must work as a CI gate and on someone else's checkout
-		// without leaving Totality state on the machine running it.
+		// without leaving lgtm state on the machine running it.
 		case "review":
 			return true
 		// `version` answers one question about the binary. Dockerfiles and CI
 		// steps run it to check what they installed, and minting a machine ID
-		// and an install sentinel to answer it means `tx version` creates
-		// $TOTALITY_HOME on a machine that has not yet decided to use tx. The
+		// and an install sentinel to answer it means `lgtm version` creates
+		// $LGTM_HOME on a machine that has not yet decided to use lgtm. The
 		// install event is not worth that; the first command that actually
 		// does something records it.
 		case "version":
@@ -97,7 +97,7 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
 		// `review` is read-only: it must work as a CI gate and on someone
-		// else's checkout without installing hooks or writing Totality state into a
+		// else's checkout without installing hooks or writing lgtm state into a
 		// repo the reviewer does not own.
 		case "init", "version", "login", "auth", "review":
 			return true

@@ -9,7 +9,7 @@ import (
 )
 
 func TestReportLogsUsesReportedLogsEndpoint(t *testing.T) {
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	if err := SaveCloudCredentials(CloudCredentials{
 		GitHubAccessToken: "gho_report",
 		CLISessionToken:   "tlcs_report",
@@ -31,7 +31,7 @@ func TestReportLogsUsesReportedLogsEndpoint(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		_ = json.NewEncoder(w).Encode(ReportLogResult{ID: "report-1", URL: "https://totality.sh/reports/report-1"})
+		_ = json.NewEncoder(w).Encode(ReportLogResult{ID: "report-1", URL: "https://lgtm.cx/reports/report-1"})
 	}))
 	defer server.Close()
 

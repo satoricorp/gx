@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/lgtm/internal/reviewbundle"
 )
 
 func TestIndexerIndexesBundleChunks(t *testing.T) {

@@ -3,7 +3,7 @@ package semantic
 import (
 	"testing"
 
-	"github.com/satoricorp/totality/internal/reviewbundle"
+	"github.com/satoricorp/lgtm/internal/reviewbundle"
 )
 
 func TestBuildRepositoryChunksIndexesSourceFiles(t *testing.T) {
@@ -39,7 +39,7 @@ func Run() {
 		chunk.Attributes[codeFieldLanguage] != "go" {
 		t.Fatalf("attributes = %#v", chunk.Attributes)
 	}
-	// The publish path and `tx index` must mint the same id for the same
+	// The publish path and `lgtm index` must mint the same id for the same
 	// chunk, otherwise one namespace ends up holding two copies of every file.
 	if chunk.ID != CodeRowID("acme/widgets", "src/app.go", 0) {
 		t.Fatalf("chunk id = %q, want the shared content-addressed code row id", chunk.ID)
@@ -67,9 +67,9 @@ func TestDocTypeFromPath(t *testing.T) {
 
 func TestRepoFullNameFromRemoteURL(t *testing.T) {
 	cases := map[string]string{
-		"git@github.com:satoricorp/totality.git":     "satoricorp/totality",
-		"https://github.com/satoricorp/totality.git": "satoricorp/totality",
-		"https://github.com/satoricorp/totality":     "satoricorp/totality",
+		"git@github.com:satoricorp/lgtm.git":     "satoricorp/lgtm",
+		"https://github.com/satoricorp/lgtm.git": "satoricorp/lgtm",
+		"https://github.com/satoricorp/lgtm":     "satoricorp/lgtm",
 		"https://example.com/not/github":             "",
 		"":                                           "",
 	}

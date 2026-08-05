@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/hooks"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/lgtm/internal/hooks"
+	"github.com/satoricorp/lgtm/internal/storage"
+	"github.com/satoricorp/lgtm/internal/vcs"
 )
 
 func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
@@ -18,8 +18,8 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 	runGitInRepo(t, repo, "init")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	txPath := buildTotalityBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: txPath}); err != nil {
+	lgtmPath := buildLgtmBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: lgtmPath}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -31,7 +31,7 @@ func TestInstallLifecycleHooksUsesGitHooksDir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s hook: %v", name, err)
 		}
-		if !strings.Contains(string(data), "# tx lifecycle hooks") {
+		if !strings.Contains(string(data), "# lgtm lifecycle hooks") {
 			t.Fatalf("%s hook missing marker:\n%s", name, data)
 		}
 	}
@@ -54,19 +54,19 @@ func TestPrepareCommitMsgHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "Totality: https://totality.sh/r/") {
-		t.Fatalf("message = %q, want Totality trailer", string(data))
+	if !strings.Contains(string(data), "lgtm: https://lgtm.cx/r/") {
+		t.Fatalf("message = %q, want lgtm trailer", string(data))
 	}
 }
 
 func TestPlainGitCommitWithInstalledHooks(t *testing.T) {
 	repo := t.TempDir()
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	runGitInRepo(t, repo, "init", "-b", "main")
 	runGitInRepo(t, repo, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, repo, "config", "user.name", "Dev")
-	txPath := buildTotalityBinary(t)
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: txPath}); err != nil {
+	lgtmPath := buildLgtmBinary(t)
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: lgtmPath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
@@ -75,8 +75,8 @@ func TestPlainGitCommitWithInstalledHooks(t *testing.T) {
 	runGitInRepo(t, repo, "add", "feature.txt")
 	runGitInRepo(t, repo, "commit", "-m", "add feature")
 	message := gitOutput(t, repo, "log", "-1", "--format=%B")
-	if strings.Count(message, "Totality: https://totality.sh/r/") != 1 {
-		t.Fatalf("commit message = %q, want exactly one Totality trailer", message)
+	if strings.Count(message, "lgtm: https://lgtm.cx/r/") != 1 {
+		t.Fatalf("commit message = %q, want exactly one lgtm trailer", message)
 	}
 }
 
@@ -91,13 +91,13 @@ func TestInstallRefusesForeignHook(t *testing.T) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\necho foreign\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tx"})
+	err = hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/bin/lgtm"})
 	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
 		t.Fatalf("Install() error = %v, want refusal", err)
 	}
 }
 
-func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
+func TestInstallUpgradesLegacyLgtmPrePushHook(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -105,18 +105,18 @@ func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(hooksDir, "pre-push")
-	legacy := "#!/bin/sh\n# tx capture pre-push hook\ntt capture push || true\n"
+	legacy := "#!/bin/sh\n# lgtm capture pre-push hook\ntt capture push || true\n"
 	if err := os.WriteFile(path, []byte(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/bin/tx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/bin/lgtm"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "# tx lifecycle hooks") || strings.Contains(string(data), "# tx capture pre-push hook") {
+	if !strings.Contains(string(data), "# lgtm lifecycle hooks") || strings.Contains(string(data), "# lgtm capture pre-push hook") {
 		t.Fatalf("legacy pre-push hook was not upgraded:\n%s", data)
 	}
 }
@@ -124,7 +124,7 @@ func TestInstallUpgradesLegacyTotalityPrePushHook(t *testing.T) {
 func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 	repo := t.TempDir()
 	runGitInRepo(t, repo, "init")
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, TotalityPath: "/missing/tx"}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repo, LgtmPath: "/missing/lgtm"}); err != nil {
 		t.Fatal(err)
 	}
 	hooksDir, err := hooks.ResolveHooksDir(t.Context(), repo)
@@ -145,9 +145,9 @@ func TestPostLifecycleHooksWarnWithoutBlocking(t *testing.T) {
 
 func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	primary := t.TempDir()
-	totalityHome := t.TempDir()
-	t.Setenv("TOTALITY_HOME", totalityHome)
-	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
+	lgtmHome := t.TempDir()
+	t.Setenv("LGTM_HOME", lgtmHome)
+	t.Setenv("LGTM_DISABLE_BACKGROUND_WORKERS", "1")
 	runGitInRepo(t, primary, "init", "-b", "main")
 	runGitInRepo(t, primary, "config", "user.email", "dev@example.com")
 	runGitInRepo(t, primary, "config", "user.name", "Dev")
@@ -170,14 +170,14 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	runGitInRepo(t, linked, "add", "linked.txt")
-	// Any tx command run inside the linked worktree bootstraps the repo and
+	// Any lgtm command run inside the linked worktree bootstraps the repo and
 	// installs the lifecycle hooks; the commit itself is plain git.
-	txPath := buildTotalityBinary(t)
-	cmd := exec.Command(txPath, "doctor")
+	lgtmPath := buildLgtmBinary(t)
+	cmd := exec.Command(lgtmPath, "doctor")
 	cmd.Dir = linked
-	cmd.Env = append(os.Environ(), "TOTALITY_HOME="+totalityHome, "TOTALITY_DISABLE_BACKGROUND_WORKERS=1")
+	cmd.Env = append(os.Environ(), "LGTM_HOME="+lgtmHome, "LGTM_DISABLE_BACKGROUND_WORKERS=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("tx doctor: %v\n%s", err, out)
+		t.Fatalf("lgtm doctor: %v\n%s", err, out)
 	}
 
 	if !hooks.IsInstalled(linked) {
@@ -192,7 +192,7 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	linkedOID := strings.TrimSpace(gitOutput(t, linked, "rev-parse", "HEAD"))
 
 	service := vcs.NewService()
-	repo, err := service.ResolveTotalityRepoAtPath(context.Background(), linked)
+	repo, err := service.ResolveLgtmRepoAtPath(context.Background(), linked)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestBootstrapFromLinkedWorktree(t *testing.T) {
 	}
 	amendedRevisionIDs := vcs.ParseRevisionIDsFromMessage(gitOutput(t, linked, "log", "-1", "--format=%B"))
 	if len(amendedRevisionIDs) != 1 || amendedRevisionIDs[0] != plainRevisionIDs[0] {
-		t.Fatalf("amend changed Totality revision identity: before=%v after=%v", plainRevisionIDs, amendedRevisionIDs)
+		t.Fatalf("amend changed lgtm revision identity: before=%v after=%v", plainRevisionIDs, amendedRevisionIDs)
 	}
 	plainChange, err := store.FindChangeByJJChangeID(context.Background(), repoRow.ID, plainRevisionIDs[0])
 	if err != nil || plainChange == nil || plainChange.CurrentCommitID != amendedOID {
@@ -318,13 +318,13 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func buildTotalityBinary(t *testing.T) string {
+func buildLgtmBinary(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "tx")
-	cmd := exec.Command("go", "build", "-o", out, "./cmd/tx")
+	out := filepath.Join(t.TempDir(), "lgtm")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/lgtm")
 	cmd.Dir = mustRepoRoot(t)
 	if combined, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build tx: %v\n%s", err, combined)
+		t.Fatalf("go build lgtm: %v\n%s", err, combined)
 	}
 	return out
 }

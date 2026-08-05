@@ -21,7 +21,7 @@ const (
 	// unparseable one that costs every candidate in the batch its verdict.
 	//
 	// The measurement that set this: replaying the real 21-candidate judge
-	// request captured from a live tx review against
+	// request captured from a live lgtm review against
 	// us.anthropic.claude-sonnet-4-6, with the cap high enough that the reply's
 	// natural length was what got measured, produced 7,019 to 8,326 output
 	// tokens. Scaled to a full judgeBatchSize of 24 that is roughly 9.5K on the
@@ -145,14 +145,14 @@ type judgeResult struct {
 // cheaper Sonnet rather than a third Opus.
 //
 // Precedence is env > REVIEW.md hint > default here, inverted from the reviewer
-// legs. That asymmetry is pre-existing (TOTALITY_REVIEW_JUDGE_MODEL has always won
+// legs. That asymmetry is pre-existing (LGTM_REVIEW_JUDGE_MODEL has always won
 // over the policy hint) and is preserved rather than tidied: a repo pins which
 // models review its code, but an operator debugging a verification failure
 // needs to be able to override the judge from the environment without editing
 // the repo's REVIEW.md.
 //
 // The judge takes the same transport precedence as the reviewer legs — local
-// AWS credentials if present, totality-cloud otherwise — resolved by the same
+// AWS credentials if present, lgtm-cloud otherwise — resolved by the same
 // function, so a review cannot end up with reviewers on one wire and its judge
 // on another and no way to tell from the output.
 //
@@ -177,13 +177,13 @@ func judgeFromEnv() FindingJudge {
 // not get a say in which model verifies the findings against it.
 func resolveBedrockJudgeModel() string {
 	return normalizeBedrockModelID(firstNonEmpty(
-		os.Getenv("TOTALITY_REVIEW_JUDGE_MODEL"),
+		os.Getenv("LGTM_REVIEW_JUDGE_MODEL"),
 		defaultBedrockJudgeModel,
 	))
 }
 
 func judgeDisabledFromEnv() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_JUDGE")), "0")
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("LGTM_REVIEW_JUDGE")), "0")
 }
 
 func (j bedrockReviewJudge) Available() bool {
@@ -400,7 +400,7 @@ func judgeAvailable(judge FindingJudge) bool {
 // response_format:json_object, and the two mechanisms that would enforce a shape
 // from the request side — Anthropic structured outputs and forced tool_choice —
 // are both unavailable here: the request body for the cloud transport is a fixed
-// struct that Totality Cloud's /tx/bedrock/fight normalizes, so a field only the
+// struct that lgtm Cloud's /lgtm/bedrock/fight normalizes, so a field only the
 // direct-AWS path could send would leave the judge behaving differently
 // depending on which wire the user is on, which is precisely the split this
 // package refuses to ship. So the prompt is the enforcement, and
@@ -426,7 +426,7 @@ func judgeAvailable(judge FindingJudge) bool {
 // can do its job: inside the object, before the verdict it justifies.
 func judgeDeveloperPrompt() string {
 	return strings.Join([]string{
-		"You are Totality Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
+		"You are lgtm Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
 		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
@@ -443,9 +443,9 @@ func judgeDeveloperPrompt() string {
 		"- functional: affects behavior, an API or contract, or maintainability in a way a reviewer should weigh.",
 		"- cosmetic: style, naming, wording, or clarity only — nothing that can break.",
 		"- none: not a real issue.",
-		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — Totality will not surface those.",
+		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — lgtm will not surface those.",
 		"Severity is 1-5. Confidence is 0-1. verification_note is one line for the reader, summarizing the analysis.",
-		"Emit exactly one result object per candidate_id you were given, in the order given. A candidate you leave out is a finding Totality must ship unverified, so leave none out.",
+		"Emit exactly one result object per candidate_id you were given, in the order given. A candidate you leave out is a finding lgtm must ship unverified, so leave none out.",
 		"Reply with the JSON object alone. No preamble, no fence, no trailing remarks.",
 	}, "\n")
 }

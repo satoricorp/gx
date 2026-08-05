@@ -7,20 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/claudehooks"
+	"github.com/satoricorp/lgtm/internal/capture/claudehooks"
 )
 
 func TestMergeSettingsCreatesHooks(t *testing.T) {
 	repo := t.TempDir()
-	txPath := filepath.Join(repo, "bin", "tx")
-	if err := os.MkdirAll(filepath.Dir(txPath), 0o755); err != nil {
+	lgtmPath := filepath.Join(repo, "bin", "lgtm")
+	if err := os.MkdirAll(filepath.Dir(lgtmPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(txPath, []byte("stub"), 0o755); err != nil {
+	if err := os.WriteFile(lgtmPath, []byte("stub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := claudehooks.MergeSettings(repo, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repo, lgtmPath); err != nil {
 		t.Fatal(err)
 	}
 	settingsPath := filepath.Join(repo, ".claude", "settings.json")
@@ -64,37 +64,37 @@ func TestMergeSettingsPreservesExistingHooks(t *testing.T) {
 	if err := os.WriteFile(settingsPath, []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	txPath := filepath.Join(repo, "tx")
-	if err := os.WriteFile(txPath, []byte("stub"), 0o755); err != nil {
+	lgtmPath := filepath.Join(repo, "lgtm")
+	if err := os.WriteFile(lgtmPath, []byte("stub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := claudehooks.MergeSettings(repo, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repo, lgtmPath); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsAll(string(data), "echo keep-me", "tx capture transcript") {
+	if !containsAll(string(data), "echo keep-me", "lgtm capture transcript") {
 		t.Fatalf("merged settings missing entries: %s", data)
 	}
 }
 
 func TestMergeSettingsIdempotent(t *testing.T) {
 	repo := t.TempDir()
-	txPath := filepath.Join(repo, "tx")
-	if err := os.WriteFile(txPath, []byte("stub"), 0o755); err != nil {
+	lgtmPath := filepath.Join(repo, "lgtm")
+	if err := os.WriteFile(lgtmPath, []byte("stub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := claudehooks.MergeSettings(repo, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repo, lgtmPath); err != nil {
 		t.Fatal(err)
 	}
 	first, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := claudehooks.MergeSettings(repo, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repo, lgtmPath); err != nil {
 		t.Fatal(err)
 	}
 	second, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
@@ -136,9 +136,9 @@ func TestMergeSettingsSubstitutesHomeWithVariable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	repo := t.TempDir()
-	txPath := filepath.Join(home, ".local", "bin", "tx")
+	lgtmPath := filepath.Join(home, ".local", "bin", "lgtm")
 
-	if err := claudehooks.MergeSettings(repo, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repo, lgtmPath); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
@@ -146,7 +146,7 @@ func TestMergeSettingsSubstitutesHomeWithVariable(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := string(data)
-	if !strings.Contains(settings, `"\"$HOME/.local/bin/tx\" capture transcript"`) {
+	if !strings.Contains(settings, `"\"$HOME/.local/bin/lgtm\" capture transcript"`) {
 		t.Fatalf("settings do not carry the $HOME-relative command:\n%s", settings)
 	}
 	if strings.Contains(settings, home) {
@@ -159,14 +159,14 @@ func TestMergeSettingsKeepsNonHomePathsAbsolute(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	repo := t.TempDir()
 
-	if err := claudehooks.MergeSettings(repo, "/opt/tx/bin/tx"); err != nil {
+	if err := claudehooks.MergeSettings(repo, "/opt/lgtm/bin/lgtm"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "/opt/tx/bin/tx capture transcript") {
+	if !strings.Contains(string(data), "/opt/lgtm/bin/lgtm capture transcript") {
 		t.Fatalf("settings = %s, want the absolute non-home path kept", data)
 	}
 }

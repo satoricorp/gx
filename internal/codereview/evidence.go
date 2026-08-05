@@ -122,7 +122,7 @@ func (l *EvidenceLog) Statuses() []EvidenceStatus {
 // A source is judged whole rather than per namespace, because a retriever probes
 // several namespaces without knowing in advance which one holds the repository.
 // Reporting each probe separately produced the review's most misleading line:
-// "review evidence unavailable — code index (repo-satoricorp-yeet): Totality Cloud has
+// "review evidence unavailable — code index (repo-satoricorp-yeet): lgtm Cloud has
 // never indexed this repository. Findings are based on the change and the
 // checkout only" — printed at the top of a review whose code index had just
 // answered with 96 snippets from a different namespace.

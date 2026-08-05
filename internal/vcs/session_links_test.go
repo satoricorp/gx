@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/capture/matcher"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 func newSessionLinkStore(t *testing.T) (*storage.Store, *sql.DB, context.Context) {
 	t.Helper()
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("LGTM_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := storage.Open(ctx)
 	if err != nil {

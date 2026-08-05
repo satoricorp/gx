@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/parsers/codex"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/parsers/codex"
 )
 
 func TestParseCodex_Golden(t *testing.T) {

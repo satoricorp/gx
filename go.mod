@@ -1,4 +1,4 @@
-module github.com/satoricorp/totality
+module github.com/satoricorp/lgtm
 
 go 1.25.8
 

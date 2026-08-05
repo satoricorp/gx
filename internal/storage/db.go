@@ -28,24 +28,24 @@ type changeRow struct {
 	UpdatedAt       int64
 }
 
-// DefaultDir is where tx keeps its machine-wide state: $TOTALITY_HOME when set,
-// otherwise ~/.totality.
+// DefaultDir is where lgtm keeps its machine-wide state: $LGTM_HOME when set,
+// otherwise ~/.lgtm.
 //
-// The override is trimmed because every other reader of TOTALITY_HOME trims it —
+// The override is trimmed because every other reader of LGTM_HOME trims it —
 // internal/auth, internal/semantic, internal/capture, internal/hooks — and this
 // one did not. A whitespace-only value put the database in a directory named
-// two spaces while the rest of tx carried on using ~/.totality, which is the
+// two spaces while the rest of lgtm carried on using ~/.lgtm, which is the
 // reader-and-writer-disagree shape this codebase has already paid for more than
 // once.
 func DefaultDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("TOTALITY_HOME")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("LGTM_HOME")); override != "" {
 		return override, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home dir: %w", err)
 	}
-	return filepath.Join(home, ".totality"), nil
+	return filepath.Join(home, ".lgtm"), nil
 }
 
 func DefaultDBPath() (string, error) {
@@ -53,7 +53,7 @@ func DefaultDBPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "totality.db"), nil
+	return filepath.Join(dir, "lgtm.db"), nil
 }
 
 func Open(ctx context.Context) (*sql.DB, error) {
@@ -62,7 +62,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create tx dir: %w", err)
+		return nil, fmt.Errorf("create lgtm dir: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -117,7 +117,7 @@ func Open(ctx context.Context) (*sql.DB, error) {
 	// rows cascade off in the same open.
 	if err := deleteCommitSelfReportSession(ctx, db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("remove tx commit self-report session: %w", err)
+		return nil, fmt.Errorf("remove lgtm commit self-report session: %w", err)
 	}
 	if err := repairDanglingSessionLinks(ctx, db); err != nil {
 		_ = db.Close()
@@ -406,11 +406,11 @@ func ensureSessionIndexes(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// commitSelfReportSessionID is the fossil left by the retired `tx commit`
+// commitSelfReportSessionID is the fossil left by the retired `lgtm commit`
 // self-report. It has cwd=” and repo_root=NULL, so it can never match a repo
 // and only ever contributed noise to the change_sessions table. Nothing writes
 // it any more, so removing it on open is a one-way cleanup.
-const commitSelfReportSessionID = "totality-commit-self-report"
+const commitSelfReportSessionID = "lgtm-commit-self-report"
 
 func deleteCommitSelfReportSession(ctx context.Context, db *sql.DB) error {
 	for _, stmt := range []string{
@@ -686,18 +686,18 @@ func repairChangeRows(ctx context.Context, db *sql.DB) error {
 }
 
 func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJChangeID string) error {
-	tx, err := db.BeginTx(ctx, nil)
+	lgtm, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			_ = lgtm.Rollback()
 		}
 	}()
 
 	var canonicalID int64
-	err = tx.QueryRowContext(ctx, `
+	err = lgtm.QueryRowContext(ctx, `
 		SELECT id
 		FROM changes
 		WHERE repo_id = ? AND jj_change_id = ?
@@ -707,21 +707,21 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 	}
 
 	if err == sql.ErrNoRows {
-		if _, err = tx.ExecContext(ctx, `
+		if _, err = lgtm.ExecContext(ctx, `
 			UPDATE changes
 			SET jj_change_id = ?
 			WHERE id = ?
 		`, cleanJJChangeID, dirty.ID); err != nil {
 			return err
 		}
-		return tx.Commit()
+		return lgtm.Commit()
 	}
 
 	if canonicalID == dirty.ID {
-		return tx.Commit()
+		return lgtm.Commit()
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		UPDATE changes
 		SET current_commit_id = ?, description = ?, parent_change_id = ?, status = ?, updated_at = ?
 		WHERE id = ?
@@ -729,7 +729,7 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		UPDATE pushes
 		SET current_change_id = ?
 		WHERE current_change_id = ?
@@ -737,7 +737,7 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		UPDATE modify_events
 		SET target_change_id = ?
 		WHERE target_change_id = ?
@@ -745,7 +745,7 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		UPDATE modify_events
 		SET previous_current_change_id = ?
 		WHERE previous_current_change_id = ?
@@ -753,7 +753,7 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		INSERT OR IGNORE INTO change_revisions (change_id, jj_commit_id, jj_operation_id, changed_files_json, created_at)
 		SELECT ?, jj_commit_id, jj_operation_id, changed_files_json, created_at
 		FROM change_revisions
@@ -761,11 +761,11 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 	`, canonicalID, dirty.ID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM change_revisions WHERE change_id = ?`, dirty.ID); err != nil {
+	if _, err = lgtm.ExecContext(ctx, `DELETE FROM change_revisions WHERE change_id = ?`, dirty.ID); err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		INSERT OR IGNORE INTO change_sessions (change_id, session_id, created_at)
 		SELECT ?, session_id, created_at
 		FROM change_sessions
@@ -773,11 +773,11 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 	`, canonicalID, dirty.ID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM change_sessions WHERE change_id = ?`, dirty.ID); err != nil {
+	if _, err = lgtm.ExecContext(ctx, `DELETE FROM change_sessions WHERE change_id = ?`, dirty.ID); err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		INSERT OR IGNORE INTO change_session_provenance (
 			change_id, session_id, agent_tool, provider, model_id, source, process_name, created_at
 		)
@@ -787,11 +787,11 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 	`, canonicalID, dirty.ID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM change_session_provenance WHERE change_id = ?`, dirty.ID); err != nil {
+	if _, err = lgtm.ExecContext(ctx, `DELETE FROM change_session_provenance WHERE change_id = ?`, dirty.ID); err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `
+	if _, err = lgtm.ExecContext(ctx, `
 		INSERT OR IGNORE INTO change_demux_evidence (
 			change_id, demux_proposal_id, revision_proposal_id, intent, files_json,
 			hunk_ids_json, use_hunks, confidence, provenance_status, evidence_json, created_at
@@ -803,15 +803,15 @@ func repairChangeRow(ctx context.Context, db *sql.DB, dirty changeRow, cleanJJCh
 	`, canonicalID, dirty.ID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM change_demux_evidence WHERE change_id = ?`, dirty.ID); err != nil {
+	if _, err = lgtm.ExecContext(ctx, `DELETE FROM change_demux_evidence WHERE change_id = ?`, dirty.ID); err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, `DELETE FROM changes WHERE id = ?`, dirty.ID); err != nil {
+	if _, err = lgtm.ExecContext(ctx, `DELETE FROM changes WHERE id = ?`, dirty.ID); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	return lgtm.Commit()
 }
 
 func normalizeJJChangeID(value string) string {

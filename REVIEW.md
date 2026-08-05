@@ -2,7 +2,7 @@
 
 ## high-risk paths
 
-risk-path: internal/storage/** — Storage and schema changes can affect existing repositories and status/read-model correctness across Totality.
+risk-path: internal/storage/** — Storage and schema changes can affect existing repositories and status/read-model correctness across lgtm.
 risk-path: internal/github/** — This code talks to GitHub, so review auth, ownership, retry/error behavior, and whether user-authored PR content is preserved.
-risk-path: internal/publication/** — Publication code coordinates Totality Cloud, local artifacts, and GitHub updates. Review ordering and partial-failure behavior.
+risk-path: internal/publication/** — Publication code coordinates lgtm Cloud, local artifacts, and GitHub updates. Review ordering and partial-failure behavior.
 risk-path: internal/vcs/** — VCS service changes affect branch push, PR creation, and local metadata. Review state transitions and failure paths.

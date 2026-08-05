@@ -3,14 +3,14 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-export type TxRunOptions = {
+export type LgtmRunOptions = {
   cwd?: string;
   sessionId?: string;
   sessionIds?: string[];
   timeoutMs?: number;
 };
 
-export type TxRunResult = {
+export type LgtmRunResult = {
   command: string[];
   cwd: string;
   exitCode: number;
@@ -28,15 +28,15 @@ export type FormatOptions = {
 };
 
 export function resolveTlBinary() {
-  const override = (process.env.TOTALITY_BINARY || "").trim();
+  const override = (process.env.LGTM_BINARY || "").trim();
   if (override) {
     return override;
   }
-  const installed = join(homedir(), ".local", "bin", "tx");
+  const installed = join(homedir(), ".local", "bin", "lgtm");
   if (existsSync(installed)) {
     return installed;
   }
-  return "tx";
+  return "lgtm";
 }
 
 function resolveCwd(raw?: string) {
@@ -56,8 +56,8 @@ function resolveCwd(raw?: string) {
 
 export function commandEnvironment() {
   const env = { ...process.env };
-  env.TOTALITY_REVIEW_AI = "1";
-  env.TOTALITY_MCP = "1";
+  env.LGTM_REVIEW_AI = "1";
+  env.LGTM_MCP = "1";
   const pathEntries = [
     join(homedir(), ".local", "bin"),
     env.PATH || "",
@@ -71,7 +71,7 @@ export function commandEnvironment() {
   return env;
 }
 
-export function runTt(args: string[], options: TxRunOptions = {}): Promise<TxRunResult> {
+export function runTt(args: string[], options: LgtmRunOptions = {}): Promise<LgtmRunResult> {
   const cwd = resolveCwd(options.cwd);
   const env = commandEnvironment();
   const binary = resolveTlBinary();
@@ -81,9 +81,9 @@ export function runTt(args: string[], options: TxRunOptions = {}): Promise<TxRun
   }
   const cleanedSessionIds = [...new Set(sessionIds.map((id) => id.trim()).filter(Boolean))];
   if (cleanedSessionIds.length === 1) {
-    env.TOTALITY_SESSION_ID = cleanedSessionIds[0];
+    env.LGTM_SESSION_ID = cleanedSessionIds[0];
   } else if (cleanedSessionIds.length > 1) {
-    env.TOTALITY_SESSION_IDS = cleanedSessionIds.join(",");
+    env.LGTM_SESSION_IDS = cleanedSessionIds.join(",");
   }
 
   return new Promise((resolve, reject) => {
@@ -124,9 +124,9 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
   let out = value;
   const names = [
     "OPENAI_API_KEY",
-    "TOTALITY_OPENAI_API_KEY",
+    "LGTM_OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "TOTALITY_UPLOAD_TOKEN",
+    "LGTM_UPLOAD_TOKEN",
     "AWS_SECRET_ACCESS_KEY",
   ];
   for (const name of names) {
@@ -138,7 +138,7 @@ function redact(value: string, env: NodeJS.ProcessEnv) {
   return out;
 }
 
-function envelope(result: TxRunResult, options: FormatOptions = {}) {
+function envelope(result: LgtmRunResult, options: FormatOptions = {}) {
   return {
     ok: result.exitCode === 0,
     action: options.action,
@@ -153,12 +153,12 @@ function envelope(result: TxRunResult, options: FormatOptions = {}) {
   };
 }
 
-export function formatResult(result: TxRunResult, options: FormatOptions = {}): string {
+export function formatResult(result: LgtmRunResult, options: FormatOptions = {}): string {
   return JSON.stringify(envelope(result, options), null, 2);
 }
 
 export function formatError(error: unknown, options: FormatOptions = {}): string {
-  const maybeResult = (error as { result?: TxRunResult }).result;
+  const maybeResult = (error as { result?: LgtmRunResult }).result;
   if (maybeResult) {
     return formatResult(maybeResult, withAuthGuidance(`${maybeResult.stderr}\n${maybeResult.stdout}`, options));
   }
@@ -203,21 +203,21 @@ function authGuidance(message: string): { display: string; nextAction: string } 
   if (!text.trim()) {
     return undefined;
   }
-  const mentionsLogin = text.includes("tx auth login");
+  const mentionsLogin = text.includes("lgtm auth login");
   const missingToken = text.includes("github token is not configured") || text.includes("not logged in");
   if (!mentionsLogin && !missingToken) {
     return undefined;
   }
-  if (text.includes("tx auth logout") || text.includes("session expired")) {
-    const nextAction = "Run `tx auth logout` then `tx auth login` in a terminal, then retry the MCP tool.";
+  if (text.includes("lgtm auth logout") || text.includes("session expired")) {
+    const nextAction = "Run `lgtm auth logout` then `lgtm auth login` in a terminal, then retry the MCP tool.";
     return {
-      display: `Totality cloud authentication needs to be refreshed. ${nextAction}`,
+      display: `lgtm cloud authentication needs to be refreshed. ${nextAction}`,
       nextAction,
     };
   }
-  const nextAction = "Run `tx auth login` in a terminal, then retry the MCP tool.";
+  const nextAction = "Run `lgtm auth login` in a terminal, then retry the MCP tool.";
   return {
-    display: `Totality cloud authentication is required. ${nextAction}`,
+    display: `lgtm cloud authentication is required. ${nextAction}`,
     nextAction,
   };
 }

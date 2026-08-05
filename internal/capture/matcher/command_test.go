@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture"
 )
 
 // The change this exists for: an agent that edits with a heredoc, `sed -i` or
@@ -15,7 +15,7 @@ func TestCommandTextClaimsHunksNoEditEventCanClaim(t *testing.T) {
 	added := []string{
 		"func resolveBedrockJudgeModel() string {",
 		"	return normalizeBedrockModelID(firstNonEmpty(",
-		"		os.Getenv(\"TOTALITY_REVIEW_JUDGE_MODEL\"),",
+		"		os.Getenv(\"LGTM_REVIEW_JUDGE_MODEL\"),",
 		"		defaultBedrockJudgeModel,",
 		"	))",
 		"}",
@@ -86,7 +86,7 @@ func TestCommandMatchNeverDowngradesAnEditEventMatch(t *testing.T) {
 	added := []string{
 		"func resolveBedrockJudgeModel() string {",
 		"	return normalizeBedrockModelID(firstNonEmpty(",
-		"		os.Getenv(\"TOTALITY_REVIEW_JUDGE_MODEL\"),",
+		"		os.Getenv(\"LGTM_REVIEW_JUDGE_MODEL\"),",
 		"		defaultBedrockJudgeModel,",
 		"	))",
 		"}",
@@ -122,7 +122,7 @@ func TestCommandMatchRespectsTheTemporalWindow(t *testing.T) {
 	added := []string{
 		"func resolveBedrockJudgeModel() string {",
 		"	return normalizeBedrockModelID(firstNonEmpty(",
-		"		os.Getenv(\"TOTALITY_REVIEW_JUDGE_MODEL\"),",
+		"		os.Getenv(\"LGTM_REVIEW_JUDGE_MODEL\"),",
 		"		defaultBedrockJudgeModel,",
 		"	))",
 		"}",
@@ -148,13 +148,13 @@ func TestCommandMatchToleratesTheGapBetweenCommandAndCommittedBytes(t *testing.T
 	added := []string{
 		"func resolveBedrockJudgeModel() string {",
 		"	return normalizeBedrockModelID(firstNonEmpty(",
-		"		os.Getenv(\"TOTALITY_REVIEW_JUDGE_MODEL\"),",
+		"		os.Getenv(\"LGTM_REVIEW_JUDGE_MODEL\"),",
 		"		defaultBedrockJudgeModel,",
 		"	))",
 		"}",
 		"",
 		"func judgeDisabledFromEnv() bool {",
-		"	return strings.EqualFold(strings.TrimSpace(os.Getenv(\"TOTALITY_REVIEW_JUDGE\")), \"0\")",
+		"	return strings.EqualFold(strings.TrimSpace(os.Getenv(\"LGTM_REVIEW_JUDGE\")), \"0\")",
 		"}",
 	}
 	hunks := []HunkRef{{Index: 0, FilePath: "internal/codereview/judge.go", AddedLines: added, CommitTime: 1_000_000}}

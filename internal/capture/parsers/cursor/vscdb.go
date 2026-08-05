@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture"
 )
 
 // unknownEndGrace is how long past createdAt a composer with no lastUpdatedAt

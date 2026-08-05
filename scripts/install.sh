@@ -1,31 +1,31 @@
 #!/bin/sh
 set -eu
 
-base_url="${TOTALITY_INSTALL_BASE_URL:-https://download.totality.sh}"
-install_dir="${TOTALITY_INSTALL_DIR:-$HOME/.local/bin}"
-tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t totality-install)"
+base_url="${LGTM_INSTALL_BASE_URL:-https://download.lgtm.cx}"
+install_dir="${LGTM_INSTALL_DIR:-$HOME/.local/bin}"
+tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t lgtm-install)"
 
 fail() {
-  echo "tx install: $*" >&2
+  echo "lgtm install: $*" >&2
   exit 1
 }
 
 usage() {
   cat <<EOF
-Totality installer
+lgtm installer
 
-Default install: tx CLI, tx-mcp, shell completions.
-Repo git hooks are installed later by tx init.
+Default install: lgtm CLI, lgtm-mcp, shell completions.
+Repo git hooks are installed later by lgtm init.
 
 Usage:
-  curl -fsSL https://download.totality.sh/install.sh | sh
+  curl -fsSL https://download.lgtm.cx/install.sh | sh
 
 Options:
   -h, --help       Show this help
 
 Environment:
-  TOTALITY_INSTALL_BASE_URL   Download base URL (default: https://download.totality.sh)
-  TOTALITY_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
+  LGTM_INSTALL_BASE_URL   Download base URL (default: https://download.lgtm.cx)
+  LGTM_INSTALL_DIR        CLI install directory (default: ~/.local/bin)
 EOF
 }
 
@@ -80,7 +80,7 @@ need awk
 need mkdir
 
 base_url="${base_url%/}"
-archive="tx_${os}_${arch}.tar.gz"
+archive="lgtm_${os}_${arch}.tar.gz"
 archive_url="$base_url/cli/latest/$archive"
 checksum_url="$archive_url.sha256"
 archive_path="$tmp_dir/$archive"
@@ -104,36 +104,36 @@ if [ "$expected" != "$actual" ]; then
 fi
 
 tar -xzf "$archive_path" -C "$tmp_dir"
-test -x "$tmp_dir/tx/bin/tx" || fail "archive is missing tx"
-test -x "$tmp_dir/tx/bin/tx-mcp" || fail "archive is missing tx-mcp"
+test -x "$tmp_dir/lgtm/bin/lgtm" || fail "archive is missing lgtm"
+test -x "$tmp_dir/lgtm/bin/lgtm-mcp" || fail "archive is missing lgtm-mcp"
 
 mkdir -p "$install_dir"
-install -m 755 "$tmp_dir/tx/bin/tx" "$install_dir/tx"
-install -m 755 "$tmp_dir/tx/bin/tx-mcp" "$install_dir/tx-mcp"
-ln -sf tx "$install_dir/txr"
+install -m 755 "$tmp_dir/lgtm/bin/lgtm" "$install_dir/lgtm"
+install -m 755 "$tmp_dir/lgtm/bin/lgtm-mcp" "$install_dir/lgtm-mcp"
+ln -sf lgtm "$install_dir/lgtmr"
 
-if [ -f "$tmp_dir/tx/completions/tx.bash" ]; then
+if [ -f "$tmp_dir/lgtm/completions/lgtm.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"
-  install -m 644 "$tmp_dir/tx/completions/tx.bash" "$HOME/.local/share/bash-completion/completions/tx"
+  install -m 644 "$tmp_dir/lgtm/completions/lgtm.bash" "$HOME/.local/share/bash-completion/completions/lgtm"
 fi
-if [ -f "$tmp_dir/tx/completions/_tx" ]; then
+if [ -f "$tmp_dir/lgtm/completions/_lgtm" ]; then
   mkdir -p "$HOME/.zfunc"
-  install -m 644 "$tmp_dir/tx/completions/_tx" "$HOME/.zfunc/_tx"
+  install -m 644 "$tmp_dir/lgtm/completions/_lgtm" "$HOME/.zfunc/_lgtm"
 fi
 
-echo "Installed tx to $install_dir/tx"
+echo "Installed lgtm to $install_dir/lgtm"
 echo "Installed MCP and aliases"
-if ! command -v tx >/dev/null 2>&1; then
-  echo "Add $install_dir to PATH before running tx."
+if ! command -v lgtm >/dev/null 2>&1; then
+  echo "Add $install_dir to PATH before running lgtm."
 fi
-# Cyan ANSI 6 + bold matches tx version / logo (internal/cli/logo.go).
-tx_auth_login="tx auth login"
-tx_init="tx init"
+# Cyan ANSI 6 + bold matches lgtm version / logo (internal/cli/logo.go).
+lgtm_auth_login="lgtm auth login"
+lgtm_init="lgtm init"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  tx_auth_login="$(printf '\033[1;36mtl auth login\033[0m')"
-  tx_init="$(printf '\033[1;36mtl init\033[0m')"
+  lgtm_auth_login="$(printf '\033[1;36mtl auth login\033[0m')"
+  lgtm_init="$(printf '\033[1;36mtl init\033[0m')"
 fi
 echo ""
-printf '\tRun %s to login.\n' "$tx_auth_login"
-printf '\tRun %s in each repo to initialize tx.\n' "$tx_init"
-"$install_dir/tx" version
+printf '\tRun %s to login.\n' "$lgtm_auth_login"
+printf '\tRun %s in each repo to initialize lgtm.\n' "$lgtm_init"
+"$install_dir/lgtm" version

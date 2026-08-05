@@ -1,18 +1,18 @@
-// Package totalitytest builds the filesystem and git world a tx test runs in: a
-// TOTALITY_HOME, real git repositories, linked worktrees, trailer-stamped commits and
+// Package lgtmtest builds the filesystem and git world a lgtm test runs in: a
+// LGTM_HOME, real git repositories, linked worktrees, trailer-stamped commits and
 // agent transcripts.
 //
-// It imports nothing from tx beyond the standard library, and that is a
+// It imports nothing from lgtm beyond the standard library, and that is a
 // constraint rather than an accident. internal/storage/storagetest layers the
 // database state builder on top of this package, and internal/vcs already
-// imports internal/storage — so a tx import here would either cycle or drag
+// imports internal/storage — so a lgtm import here would either cycle or drag
 // internal/vcs and its git-probing package init into the fast test binaries of
 // internal/storage, internal/reviewbundle and internal/provenance.
 //
-// The one production constant this forces a copy of is the Totality revision trailer
+// The one production constant this forces a copy of is the lgtm revision trailer
 // (see RevisionTrailerFormat), and that copy is pinned against the real one by
-// TestTotalityTestRevisionTrailerMatchesProduction in internal/hooks.
-package totalitytest
+// TestLgtmTestRevisionTrailerMatchesProduction in internal/hooks.
+package lgtmtest
 
 import (
 	"crypto/rand"
@@ -33,14 +33,14 @@ import (
 // sessions attached to it — if it carries this trailer, so a harness that got
 // the format wrong would build repositories in which every session assertion
 // silently passes vacuously.
-const RevisionTrailerFormat = "Totality: https://totality.sh/r/%s"
+const RevisionTrailerFormat = "lgtm: https://lgtm.cx/r/%s"
 
-// World is one isolated tx installation: a TOTALITY_HOME nothing else writes to and a
+// World is one isolated lgtm installation: a LGTM_HOME nothing else writes to and a
 // home directory to hang agent transcripts off.
 type World struct {
-	// TotalityHome is the value of TOTALITY_HOME for the duration of the test. Every
-	// storage.Open in this test resolves ~/.totality to this directory.
-	TotalityHome string
+	// LgtmHome is the value of LGTM_HOME for the duration of the test. Every
+	// storage.Open in this test resolves ~/.lgtm to this directory.
+	LgtmHome string
 	// Home is the fake user home. It is handed to callers explicitly (as
 	// hooks.PushOptions.HomeDir) rather than exported through the HOME
 	// environment variable, because moving HOME would also move git's global
@@ -48,24 +48,24 @@ type World struct {
 	Home string
 }
 
-// NewWorld isolates the test from the developer's real ~/.totality.
+// NewWorld isolates the test from the developer's real ~/.lgtm.
 //
-// storage.DefaultDir falls back to ~/.totality whenever TOTALITY_HOME is unset, and 32 rows
+// storage.DefaultDir falls back to ~/.lgtm whenever LGTM_HOME is unset, and 32 rows
 // in the author's real database are the receipts of tests that forgot to set
 // it. Going through this constructor is what makes that impossible.
 func NewWorld(t *testing.T) *World {
 	t.Helper()
-	world := &World{TotalityHome: t.TempDir(), Home: t.TempDir()}
-	t.Setenv("TOTALITY_HOME", world.TotalityHome)
+	world := &World{LgtmHome: t.TempDir(), Home: t.TempDir()}
+	t.Setenv("LGTM_HOME", world.LgtmHome)
 	// Background upload workers would race the test's own database handles and
 	// occasionally reach the network.
-	t.Setenv("TOTALITY_DISABLE_BACKGROUND_WORKERS", "1")
+	t.Setenv("LGTM_DISABLE_BACKGROUND_WORKERS", "1")
 	return world
 }
 
 // Repo is one git worktree plus the git metadata directories that identify it.
 //
-// GitCommonDir is the repository identity tx keys `repos` rows on, and for a
+// GitCommonDir is the repository identity lgtm keys `repos` rows on, and for a
 // linked worktree it is the MAIN checkout's common dir while Root and GitDir
 // are the worktree's own. Keeping the three separate is the whole point: a
 // harness that collapsed them could not express the state Bug B lived in.
@@ -143,7 +143,7 @@ type Commit struct {
 	RevisionID string
 }
 
-// Commit writes files and commits them carrying a Totality revision trailer, so the
+// Commit writes files and commits them carrying a lgtm revision trailer, so the
 // push path's RecoverMissingRevisions can create the `changes` row that
 // sessions attach to.
 func (r *Repo) Commit(t *testing.T, files map[string]string, subject string) Commit {
@@ -199,7 +199,7 @@ func GitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// NewRevisionID mints a Totality revision identifier in the same shape
+// NewRevisionID mints a lgtm revision identifier in the same shape
 // vcs.GenerateRevisionID produces: a URL-safe base64 encoding of 128 random
 // bits, which vcs.ValidRevisionID accepts.
 func NewRevisionID(t *testing.T) string {
@@ -211,7 +211,7 @@ func NewRevisionID(t *testing.T) string {
 	return base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
-// RevisionTrailerLine renders the Totality identity trailer for a revision.
+// RevisionTrailerLine renders the lgtm identity trailer for a revision.
 func RevisionTrailerLine(revisionID string) string {
 	revisionID = strings.TrimSpace(revisionID)
 	if revisionID == "" {
@@ -220,7 +220,7 @@ func RevisionTrailerLine(revisionID string) string {
 	return fmt.Sprintf(RevisionTrailerFormat, revisionID)
 }
 
-// StampRevisionTrailer appends the Totality identity trailer to a commit subject.
+// StampRevisionTrailer appends the lgtm identity trailer to a commit subject.
 func StampRevisionTrailer(message, revisionID string) string {
 	trailer := RevisionTrailerLine(revisionID)
 	if trailer == "" {

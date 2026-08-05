@@ -13,13 +13,13 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/satoricorp/totality/internal/buildconfig"
+	"github.com/satoricorp/lgtm/internal/buildconfig"
 )
 
 func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 	t.Setenv("CONVEX_SITE_URL", "")
 
@@ -137,7 +137,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 	t.Setenv("CONVEX_SITE_URL", "")
 
@@ -184,7 +184,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected login to reject unverified console session")
 	}
-	if !strings.Contains(err.Error(), "verify tx console session") || !strings.Contains(err.Error(), "wrong environment") {
+	if !strings.Contains(err.Error(), "verify lgtm console session") || !strings.Contains(err.Error(), "wrong environment") {
 		t.Fatalf("error = %v, want console verification failure", err)
 	}
 	if creds, loadErr := LoadCloudCredentials(); loadErr != nil || creds != nil {
@@ -195,7 +195,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 func TestLoginPollsUntilAuthorized(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 
 	var pollCount int
@@ -245,7 +245,7 @@ func TestLoginPollsUntilAuthorized(t *testing.T) {
 func TestLoginUsesBakedDefaults(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "")
 	t.Setenv("CONVEX_SITE_URL", "")
 	buildconfig.GitHubClientID = "baked-client"
@@ -316,7 +316,7 @@ func TestLoginNotConfiguredInDevBuild(t *testing.T) {
 func TestLogoutRevokesAndClears(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("LGTM_HOME", home)
 	t.Setenv("CONVEX_SITE_URL", "")
 
 	if err := SaveCloudCredentials(CloudCredentials{

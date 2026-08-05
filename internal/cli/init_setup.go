@@ -18,16 +18,16 @@ const agentsMDSnippetMarker = "Version control: plain Git"
 
 const agentsMDSnippet = `# Agents
 
-Version control: plain Git. Once ` + "`tx init`" + ` installs the hooks, Totality records and publishes automatically — there is no Totality save verb.
+Version control: plain Git. Once ` + "`lgtm init`" + ` installs the hooks, lgtm records and publishes automatically — there is no lgtm save verb.
 
 Default flow:
 - Run ` + "`git add`" + ` to stage the files for this revision.
-- Run ` + "`git commit -m \"...\"`" + ` to save. A Totality hook records the commit as a reviewable revision.
-- Run plain ` + "`git push`" + ` to publish. The Totality pre-push hook captures the session and publishes code changes, sessions, and Totality metadata to Totality Cloud automatically — do not run ` + "`tx push`" + ` or ` + "`tx capture push`" + ` yourself; they bypass the hook.
-- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; Totality Cloud appends the rich summary below once the PR exists.
-- To amend, use ` + "`git commit --amend`" + ` and preserve the Totality revision trailer in the message.
+- Run ` + "`git commit -m \"...\"`" + ` to save. A lgtm hook records the commit as a reviewable revision.
+- Run plain ` + "`git push`" + ` to publish. The lgtm pre-push hook captures the session and publishes code changes, sessions, and lgtm metadata to lgtm Cloud automatically — do not run ` + "`lgtm push`" + ` or ` + "`lgtm capture push`" + ` yourself; they bypass the hook.
+- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; lgtm Cloud appends the rich summary below once the PR exists.
+- To amend, use ` + "`git commit --amend`" + ` and preserve the lgtm revision trailer in the message.
 
-For AI review, run the ` + "`tx_review`" + ` MCP tool (or the ` + "`tx review`" + ` CLI) on the current change.
+For AI review, run the ` + "`lgtm_review`" + ` MCP tool (or the ` + "`lgtm review`" + ` CLI) on the current change.
 `
 
 type initSetupOptions struct {
@@ -39,17 +39,17 @@ type initSetupOptions struct {
 }
 
 func runInitRepoSetup(opts initSetupOptions) error {
-	txPath, err := os.Executable()
+	lgtmPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	mcpPath, err := resolveMCPBinary(txPath)
+	mcpPath, err := resolveMCPBinary(lgtmPath)
 	if err != nil {
 		if !opts.Quiet && opts.Err != nil {
 			fmt.Fprintln(opts.Err, labelWarningValue("MCP", err.Error()))
 		}
 	} else {
-		registered := registerMCPClients(context.Background(), txPath, mcpPath)
+		registered := registerMCPClients(context.Background(), lgtmPath, mcpPath)
 		if !opts.Quiet && opts.Out != nil {
 			if len(registered) == 0 {
 				fmt.Fprintln(opts.Out, labelValue("MCP", muted("skipped (no supported agent CLI found)")))
@@ -81,31 +81,31 @@ func runInitRepoSetup(opts initSetupOptions) error {
 	return nil
 }
 
-func resolveMCPBinary(txPath string) (string, error) {
-	dir := filepath.Dir(txPath)
-	candidate := filepath.Join(dir, "tx-mcp")
+func resolveMCPBinary(lgtmPath string) (string, error) {
+	dir := filepath.Dir(lgtmPath)
+	candidate := filepath.Join(dir, "lgtm-mcp")
 	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 		return candidate, nil
 	}
-	if mcpPath, err := exec.LookPath("tx-mcp"); err == nil && mcpPath != "" {
+	if mcpPath, err := exec.LookPath("lgtm-mcp"); err == nil && mcpPath != "" {
 		return mcpPath, nil
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		candidate = filepath.Join(home, ".local", "bin", "tx-mcp")
+		candidate = filepath.Join(home, ".local", "bin", "lgtm-mcp")
 		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("tx-mcp not found; install Totality CLI package first")
+	return "", fmt.Errorf("lgtm-mcp not found; install lgtm CLI package first")
 }
 
-func mcpLaunchCommand(txPath, mcpPath string) []string {
-	return []string{"env", "TOTALITY_BINARY=" + txPath, mcpPath}
+func mcpLaunchCommand(lgtmPath, mcpPath string) []string {
+	return []string{"env", "LGTM_BINARY=" + lgtmPath, mcpPath}
 }
 
-func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
-	args := mcpLaunchCommand(txPath, mcpPath)
+func registerMCPClients(ctx context.Context, lgtmPath, mcpPath string) []string {
+	args := mcpLaunchCommand(lgtmPath, mcpPath)
 	var registered []string
 	for _, spec := range []struct {
 		name    string
@@ -115,12 +115,12 @@ func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
 		{
 			name:    "Cursor",
 			binary:  "cursor",
-			command: append([]string{"mcp", "add", "tx", "--"}, args...),
+			command: append([]string{"mcp", "add", "lgtm", "--"}, args...),
 		},
 		{
 			name:    "Claude Code",
 			binary:  "claude",
-			command: append([]string{"mcp", "add", "tx", "--"}, args...),
+			command: append([]string{"mcp", "add", "lgtm", "--"}, args...),
 		},
 	} {
 		if _, err := exec.LookPath(spec.binary); err != nil {
@@ -138,7 +138,7 @@ func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
 		}
 		registered = append(registered, spec.name)
 	}
-	if updated, err := mergeCodexMCPServer(txPath, mcpPath); err == nil && updated {
+	if updated, err := mergeCodexMCPServer(lgtmPath, mcpPath); err == nil && updated {
 		registered = append(registered, "Codex")
 	}
 	return registered
@@ -150,7 +150,7 @@ func runCombined(ctx context.Context, name string, args ...string) (string, erro
 	return string(out), err
 }
 
-func mergeCodexMCPServer(txPath, mcpPath string) (bool, error) {
+func mergeCodexMCPServer(lgtmPath, mcpPath string) (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, err
@@ -164,14 +164,14 @@ func mergeCodexMCPServer(txPath, mcpPath string) (bool, error) {
 		return false, err
 	}
 	content := string(data)
-	if strings.Contains(content, "[mcp_servers.totality]") {
+	if strings.Contains(content, "[mcp_servers.lgtm]") {
 		return false, nil
 	}
 	block := strings.Join([]string{
 		"",
-		"[mcp_servers.totality]",
+		"[mcp_servers.lgtm]",
 		`command = "env"`,
-		fmt.Sprintf(`args = ["TOTALITY_BINARY=%s", %q]`, txPath, mcpPath),
+		fmt.Sprintf(`args = ["LGTM_BINARY=%s", %q]`, lgtmPath, mcpPath),
 		"",
 	}, "\n")
 	if err := os.WriteFile(configPath, append(data, []byte(block)...), 0o644); err != nil {
@@ -188,7 +188,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	}
 	if agentsMDContainsSnippet(string(existing)) {
 		if !opts.Quiet && opts.Out != nil {
-			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": Totality instructions already present"))
+			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": lgtm instructions already present"))
 		}
 		return nil
 	}
@@ -204,7 +204,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	fmt.Fprintf(out, "%s ", muted("Add Totality workflow instructions to AGENTS.md? [Y/n]"))
+	fmt.Fprintf(out, "%s ", muted("Add lgtm workflow instructions to AGENTS.md? [Y/n]"))
 	reader := bufio.NewReader(in)
 	raw, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -222,7 +222,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 		return err
 	}
 	if appended && out != nil {
-		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added Totality workflow instructions"))
+		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added lgtm workflow instructions"))
 	}
 	return nil
 }

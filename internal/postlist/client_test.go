@@ -56,7 +56,7 @@ func TestUpsertIdentity(t *testing.T) {
 	if len(payload) != 1 {
 		t.Fatalf("payload len = %d, want 1", len(payload))
 	}
-	if payload[0].Name != "Joe Example" || payload[0].Email != "joe@example.com" || payload[0].Source != "tx" {
+	if payload[0].Name != "Joe Example" || payload[0].Email != "joe@example.com" || payload[0].Source != "lgtm" {
 		t.Fatalf("unexpected payload: %+v", payload[0])
 	}
 }

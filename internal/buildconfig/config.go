@@ -30,13 +30,13 @@ func ConvexSiteURLFromEnv() string {
 }
 
 func CloudURLFromEnvOrEmbedded() string {
-	return strings.TrimSpace(envOrEmbedded("TOTALITY_CLOUD_URL", CloudURL))
+	return strings.TrimSpace(envOrEmbedded("LGTM_CLOUD_URL", CloudURL))
 }
 
 func PostHogKeyFromEnvOrEmbedded() string {
-	return envOrEmbedded("TOTALITY_POSTHOG_KEY", PostHogKey)
+	return envOrEmbedded("LGTM_POSTHOG_KEY", PostHogKey)
 }
 
 func PostHogHostFromEnvOrEmbedded() string {
-	return strings.TrimRight(envOrEmbedded("TOTALITY_POSTHOG_HOST", PostHogHost), "/")
+	return strings.TrimRight(envOrEmbedded("LGTM_POSTHOG_HOST", PostHogHost), "/")
 }

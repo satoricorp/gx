@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/lgtm/internal/capture"
+	"github.com/satoricorp/lgtm/internal/capture/orchestrator"
+	"github.com/satoricorp/lgtm/internal/storage"
 )
 
 // A session that worked in this repository is context worth keeping even when
@@ -25,7 +25,7 @@ import (
 // session: where did this run?
 func TestOrchestrator_StagesAnUnmatchedSessionBoundToThisRepo(t *testing.T) {
 	repo := initTestGitRepo(t)
-	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/totality.git")
+	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/lgtm.git")
 	commitDistinctiveWork(t, repo)
 
 	// The transcript edits a file in this repository, but its content has
@@ -33,9 +33,9 @@ func TestOrchestrator_StagesAnUnmatchedSessionBoundToThisRepo(t *testing.T) {
 	claudeDir := t.TempDir()
 	writeUnmatchedTranscript(t, claudeDir, repo, "totally unrelated exploration that was never committed\n")
 
-	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_CLOUD_URL", "")
-	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("LGTM_CLOUD_URL", "")
+	t.Setenv("LGTM_UPLOAD_TOKEN", "")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -57,8 +57,8 @@ func TestOrchestrator_StagesAnUnmatchedSessionBoundToThisRepo(t *testing.T) {
 	}
 
 	origin, _ := stagedBinding(t, ctx)
-	if origin != "github.com/satoricorp/totality" {
-		t.Fatalf("staged session origin = %q, want github.com/satoricorp/totality", origin)
+	if origin != "github.com/satoricorp/lgtm" {
+		t.Fatalf("staged session origin = %q, want github.com/satoricorp/lgtm", origin)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestOrchestrator_StagesAnUnmatchedSessionBoundToThisRepo(t *testing.T) {
 // so it has to hold on its own.
 func TestOrchestrator_IgnoresAnUnmatchedSessionFromAnotherRepo(t *testing.T) {
 	repo := initTestGitRepo(t)
-	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/totality.git")
+	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/lgtm.git")
 	commitDistinctiveWork(t, repo)
 
 	// A separate checkout, mentioning this repository's path so discovery still
@@ -82,8 +82,8 @@ func TestOrchestrator_IgnoresAnUnmatchedSessionFromAnotherRepo(t *testing.T) {
 	writeUnmatchedTranscript(t, claudeDir, elsewhere,
 		"looked at "+filepath.Join(repo, "internal", "app", "binding.go")+" while working elsewhere\n")
 
-	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("LGTM_HOME", t.TempDir())
+	t.Setenv("LGTM_CLOUD_URL", "")
 
 	ctx := context.Background()
 	result, err := orchestrator.Run(ctx, orchestrator.RunOptions{

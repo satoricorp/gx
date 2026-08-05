@@ -324,14 +324,14 @@ func TestIndexRepositoryWritesRetrievalAttributes(t *testing.T) {
 }
 
 func TestNamespaceForRepoMatchesConsoleShape(t *testing.T) {
-	got := NamespaceForRepo("2f273110-b6ce-4b3b-95d3-e7c0ca802e83", "satoricorp/totality", "/Users/joe/git/tx")
-	want := "totality-2f273110-b6ce-4b3b-95d3-e7c0ca802e83-satoricorp-totality-v2"
+	got := NamespaceForRepo("2f273110-b6ce-4b3b-95d3-e7c0ca802e83", "satoricorp/lgtm", "/Users/joe/git/lgtm")
+	want := "lgtm-2f273110-b6ce-4b3b-95d3-e7c0ca802e83-satoricorp-lgtm-v2"
 	if got != want {
 		t.Fatalf("NamespaceForRepo() = %q, want %q", got, want)
 	}
 	local := NamespaceForRepo("", "", "/Users/joe/git/yeet")
-	if !strings.HasPrefix(local, "totality-local-yeet-") || !strings.HasSuffix(local, "-v2") {
-		t.Fatalf("local namespace = %q, want a totality-local-yeet-<hash>-v2 name", local)
+	if !strings.HasPrefix(local, "lgtm-local-yeet-") || !strings.HasSuffix(local, "-v2") {
+		t.Fatalf("local namespace = %q, want a lgtm-local-yeet-<hash>-v2 name", local)
 	}
 	if NamespaceForRepo("", "", "/Users/joe/git/yeet") != local {
 		t.Fatal("local namespace is not stable for the same checkout")
