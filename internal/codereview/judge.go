@@ -34,7 +34,26 @@ const (
 	// A cap is not a reservation: unused budget is neither billed nor waited on,
 	// so the headroom is free and there is no reason to run close to the line.
 	defaultJudgeMaxOutputTokens = 32000
-	maxJudgeCandidateBytes      = 24 * 1024
+	// maxJudgeFileBytes bounds ONE FILE's excerpt, deduplicated across the
+	// batch. It was previously a per-candidate budget, so the same file could
+	// consume it once for every candidate that named it.
+	maxJudgeFileBytes = 24 * 1024
+	// maxJudgeBatchBytes bounds the whole batch's file content. Dedupe and
+	// windowing should keep a normal batch far under this; it exists so a
+	// review touching an unusual number of large files degrades by dropping
+	// excerpts it can name as dropped, rather than by building a request whose
+	// size only shows up as latency.
+	maxJudgeBatchBytes = 256 * 1024
+	// judgeWindowContextLines is how much of a file either side of an anchored
+	// line the judge is shown.
+	//
+	// The judge's question is always local — "does this line do what the
+	// finding says" — so the answer is in the lines around it, not in the first
+	// 600 lines of the file, which is what a head-truncated excerpt supplied
+	// regardless of where the finding pointed. 80 either side is a full screen
+	// of context in both directions: enough to see a function's signature,
+	// guards and returns around a body claim.
+	judgeWindowContextLines = 80
 	// minSurfaceConfidence is the confidence floor for surfacing a confirmed
 	// finding whose impact is only functional (not breaking).
 	minSurfaceConfidence = 0.5
@@ -81,23 +100,40 @@ type unavailableReviewJudge struct {
 	reason string
 }
 
+// judgeRequest carries file content ONCE per batch rather than once per
+// candidate.
+//
+// Findings cluster in files — several candidates about the same file is the
+// common case, not the edge case — and the per-candidate layout re-read and
+// re-sent that file's bytes for every one of them. A batch of 24 candidates
+// spread over 4 files sent those 4 files 24 times. The judge gained nothing
+// from the copies: it is one call, reading one prompt.
+//
+// RepoRoot is deliberately absent. It was an absolute path on the machine
+// running the review ("/Users/…/git/…"), which the model cannot act on and
+// which has no business crossing into a cloud call. Every path elsewhere in
+// this request is repository-relative.
 type judgeRequest struct {
-	RepoRoot     string           `json:"repo_root"`
-	ChangedFiles []string         `json:"changed_files"`
-	Candidates   []judgeCandidate `json:"candidates"`
+	ChangedFiles []string              `json:"changed_files"`
+	Files        []judgeContentSnippet `json:"files"`
+	Candidates   []judgeCandidate      `json:"candidates"`
 }
 
+// judgeCandidate names its files; the content lives in judgeRequest.Files.
 type judgeCandidate struct {
-	ID                  string                `json:"candidate_id"`
-	Title               string                `json:"title"`
-	Summary             string                `json:"summary"`
-	Recommendation      string                `json:"recommendation"`
-	Evidence            []string              `json:"evidence"`
-	SourcePublishers    []string              `json:"source_publishers,omitempty"`
-	NamedFiles          []string              `json:"named_files"`
-	FileContentSnippets []judgeContentSnippet `json:"file_content_snippets"`
+	ID               string   `json:"candidate_id"`
+	Title            string   `json:"title"`
+	Summary          string   `json:"summary"`
+	Recommendation   string   `json:"recommendation"`
+	Evidence         []string `json:"evidence"`
+	SourcePublishers []string `json:"source_publishers,omitempty"`
+	NamedFiles       []string `json:"named_files"`
 }
 
+// judgeContentSnippet is one file's content as the judge sees it: a
+// line-numbered excerpt built around the lines the batch's findings point at,
+// not the head of the file. Text carries `N| ` prefixes so a claim about a
+// specific line can be checked against that line.
 type judgeContentSnippet struct {
 	File string `json:"file"`
 	Text string `json:"text"`
@@ -423,6 +459,9 @@ func judgeAvailable(judge FindingJudge) bool {
 func judgeDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You are gx Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
+		"INPUT SHAPE: file content is in the top-level `files` array, once per file, shared by every candidate in this batch. A candidate's `named_files` lists which of those files it concerns — look them up there. A file named by a candidate but absent from `files` was not provided at all.",
+		"Each file's `text` is a line-numbered excerpt, not the whole file. Every line is prefixed with its real 1-based line number and `| `, so a claim about a line number can be checked against that exact line. The excerpt is built around the lines the findings point at.",
+		"A line reading `[... N line(s) omitted ...]` means that stretch of the file was not sent. Absent from the excerpt is NOT absent from the file: never treat an omitted stretch as proof that something does not exist. If deciding a candidate needs code that fell in an omitted stretch, answer unverifiable rather than guessing from what you were shown.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
 		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
@@ -432,7 +471,7 @@ func judgeDeveloperPrompt() string {
 		"analysis and verification_note are JSON string values, so quote code inside them with backticks and never with a raw double quote. One unescaped \" makes the whole reply undecodable and costs every candidate in this batch its verdict, not just the one you were writing about.",
 		"Verdict must be confirmed, unverified, wrong, or unverifiable. confirmed survives; unverified means you checked and the claim is weak; wrong means the file content refutes it; unverifiable means you could not check it at all.",
 		"Use unverifiable ONLY when the file content you needed was not provided. Do not mark such a candidate wrong or unverified: those say you checked, and gx deletes them. unverifiable surfaces the finding to the reviewer as unverified and reports the review as degraded, which is the honest outcome when the evidence never reached you. Rejecting what you could not check silently discards real findings.",
-		"Confirm only when the named files and file content snippets support the title, summary, recommendation, and evidence. A finding whose conclusion may be right but whose stated mechanism the file content refutes is wrong, not confirmed — a reviewer acting on it would look for a bug that is not there.",
+		"Confirm only when the named files and the excerpts in `files` support the title, summary, recommendation, and evidence. A finding whose conclusion may be right but whose stated mechanism the file content refutes is wrong, not confirmed — a reviewer acting on it would look for a bug that is not there.",
 		"Read absolute claims literally. When a candidate says something never happens, always happens, or appears nowhere in a file, one counter-example in the provided content refutes it; look for that counter-example before you confirm, and say in the analysis whether you found one.",
 		"If a candidate names no file, treat that as a strike and do not confirm unless static tool evidence conclusively proves it.",
 		"impact rates the real-world consequence if the finding is acted on or ignored:",
@@ -459,6 +498,11 @@ func prepareFindingsForJudge(ctx context.Context, adjudicator duplicateAdjudicat
 func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
 	candidates := make([]judgeCandidate, 0, len(findings))
 	sourcePublishers := sourcePublisherMap(ctx.Sources)
+	// files in first-named order, so the request is deterministic for a given
+	// batch and diffable between runs.
+	var ordered []string
+	seen := map[string]struct{}{}
+	hints := map[string][]int{}
 	for _, finding := range findings {
 		candidate := judgeCandidate{
 			ID:               finding.ID,
@@ -469,14 +513,45 @@ func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
 			SourcePublishers: uniqueStrings(append(append([]string{}, finding.SourcePublishers...), findingSourcePublishers(finding.SourceIDs, sourcePublishers)...)),
 		}
 		candidate.NamedFiles = namedFilesForFinding(ctx, finding)
-		candidate.FileContentSnippets = judgeFileContentSnippets(ctx.Brief.RepoRoot, candidate.NamedFiles)
+		for _, file := range candidate.NamedFiles {
+			if _, ok := seen[file]; !ok {
+				seen[file] = struct{}{}
+				ordered = append(ordered, file)
+			}
+		}
+		for file, lines := range findingLineHints(finding) {
+			hints[file] = append(hints[file], lines...)
+		}
 		candidates = append(candidates, candidate)
 	}
 	return judgeRequest{
-		RepoRoot:     ctx.Brief.RepoRoot,
 		ChangedFiles: normalizedChangedFiles(ctx.Brief.Static.ChangedFiles),
+		Files:        judgeFileContentSnippets(ctx.Brief.RepoRoot, ordered, hints),
 		Candidates:   candidates,
 	}
+}
+
+// findingLineHints is where in each file this finding says the problem is,
+// keyed by the same normalized path namedFilesForFinding produces so the two
+// agree on what counts as the same file.
+//
+// The location was always on the finding — `file`/`line` and every anchor —
+// and was thrown away at exactly the point it was useful. Reading it here is
+// what lets the excerpt be built around the claim instead of around line 1.
+func findingLineHints(finding Finding) map[string][]int {
+	out := map[string][]int{}
+	add := func(rawFile string, line int) {
+		file := normalizeReviewPath(rawFile)
+		if file == "" || line <= 0 {
+			return
+		}
+		out[file] = append(out[file], line)
+	}
+	add(finding.File, finding.Line)
+	for _, anchor := range finding.Anchors {
+		add(anchor.File, anchor.Line)
+	}
+	return out
 }
 
 // applyJudgeResults keeps only confirmed findings the judge considers worth a
@@ -569,11 +644,43 @@ func strengthFromImpact(impact string) string {
 // Re-measured on Bedrock after the judge moved there, and again after the
 // analysis field landed: a real 21-candidate request now costs 7.0K to 8.3K
 // output tokens, so a full batch of 24 sits at roughly 9.5K, under a third of
-// defaultJudgeMaxOutputTokens. The size is kept at 24 rather than widened with
-// the budget, because the batch is also the blast radius: one unparseable reply
-// costs every candidate in its batch a verdict, and two concurrent batches cost
-// less wall clock than one call twice the size.
-const judgeBatchSize = 24
+// defaultJudgeMaxOutputTokens. The size is kept well under what the budget
+// would allow, because the batch is also the blast radius: one unparseable
+// reply costs every candidate in its batch a verdict, and concurrent batches
+// cost less wall clock than one call the size of all of them.
+//
+// 8 rather than 24, because output length is what the judge's wall clock is
+// made of and batches already run concurrently. At 24 a review with 24 or
+// fewer findings — the ordinary case — produced exactly ONE batch, so the
+// concurrency below never engaged and the whole verification was one serial
+// call emitting ~9.5K tokens. Splitting the same findings three ways runs
+// three calls at once, each answering for a third as many candidates. On the
+// numbers above the per-call output falls to roughly a third, and a batch
+// carries almost no shared context (changed_files and the files its own
+// candidates name), so the split duplicates very little.
+const defaultJudgeBatchSize = 8
+
+// maxConcurrentJudgeBatches caps how many judge calls are in flight at once.
+//
+// Smaller batches mean more of them, and the transport this runs over has no
+// retry (see cloudBedrockTransport.complete), so a throttle is not a slow
+// batch, it is a lost one. This bounds the fan-out a large review can aim at
+// Bedrock while still leaving the ordinary review fully parallel.
+const maxConcurrentJudgeBatches = 6
+
+// resolveJudgeBatchSize applies env > default, so the size can be tuned
+// against a real repository without a rebuild.
+func resolveJudgeBatchSize() int {
+	raw := strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE_BATCH_SIZE"))
+	if raw == "" {
+		return defaultJudgeBatchSize
+	}
+	size, err := strconv.Atoi(raw)
+	if err != nil || size <= 0 {
+		return defaultJudgeBatchSize
+	}
+	return size
+}
 
 // judgeBatchOutcome is what one batch of candidates came back with.
 type judgeBatchOutcome struct {
@@ -610,9 +717,10 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 	if len(candidates) == 0 {
 		return judgeBatchOutcome{}
 	}
+	batchSize := resolveJudgeBatchSize()
 	var batches [][]Finding
-	for start := 0; start < len(candidates); start += judgeBatchSize {
-		end := start + judgeBatchSize
+	for start := 0; start < len(candidates); start += batchSize {
+		end := start + batchSize
 		if end > len(candidates) {
 			end = len(candidates)
 		}
@@ -623,12 +731,15 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		err     error
 	}
 	out := make([]batchResult, len(batches))
+	slots := make(chan struct{}, maxConcurrentJudgeBatches)
 	var wg sync.WaitGroup
 	for i, batch := range batches {
 		i, batch := i, batch
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
 			results, err := judge.Judge(ctx, buildJudgeRequest(reviewContext, batch))
 			out[i] = batchResult{results: results, err: err}
 		}()
@@ -929,29 +1040,122 @@ func normalizeReviewPath(raw string) string {
 	return raw
 }
 
-func judgeFileContentSnippets(repoRoot string, files []string) []judgeContentSnippet {
+// judgeFileContentSnippets reads each file ONCE for the whole batch and returns
+// the excerpt the judge is shown, in the order the files were first named.
+//
+// files must already be deduplicated; hints maps a file to the lines the
+// batch's findings point at, which is what decides which part of it is worth
+// sending.
+func judgeFileContentSnippets(repoRoot string, files []string, hints map[string][]int) []judgeContentSnippet {
 	if strings.TrimSpace(repoRoot) == "" {
 		return nil
 	}
-	remaining := maxJudgeCandidateBytes
+	remaining := maxJudgeBatchBytes
 	var out []judgeContentSnippet
 	for _, file := range files {
 		if remaining <= 0 {
 			break
 		}
-		path := filepath.Join(repoRoot, filepath.FromSlash(file))
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(file)))
 		if err != nil {
 			continue
 		}
-		text := string(data)
-		if len(text) > remaining {
-			text = text[:remaining] + "\n[truncated]\n"
+		text := judgeFileExcerpt(string(data), hints[file], min(maxJudgeFileBytes, remaining))
+		if text == "" {
+			continue
 		}
 		remaining -= len(text)
 		out = append(out, judgeContentSnippet{File: file, Text: text})
 	}
 	return out
+}
+
+// judgeLineRange is an inclusive, 1-based span of a file.
+type judgeLineRange struct{ start, end int }
+
+// judgeLineRanges turns the lines a batch's findings pointed at into merged,
+// in-bounds spans to show.
+//
+// With no usable line the whole file is one span, which the caller's budget
+// then truncates — the old head-of-file behavior, kept only for the findings
+// that genuinely name no line. A line past the end of the file counts as no
+// line: a claim about line 5000 of a 100-line file is one the judge should see
+// the whole file to reject.
+func judgeLineRanges(lines []int, total int) []judgeLineRange {
+	var anchors []int
+	for _, line := range lines {
+		if line > 0 && line <= total {
+			anchors = append(anchors, line)
+		}
+	}
+	if len(anchors) == 0 {
+		return []judgeLineRange{{start: 1, end: total}}
+	}
+	sort.Ints(anchors)
+	var out []judgeLineRange
+	for _, line := range anchors {
+		next := judgeLineRange{
+			start: max(1, line-judgeWindowContextLines),
+			end:   min(total, line+judgeWindowContextLines),
+		}
+		// Merge windows that touch or overlap, so two findings a few lines
+		// apart produce one span rather than two copies of the same code.
+		if n := len(out); n > 0 && next.start <= out[n-1].end+1 {
+			out[n-1].end = max(out[n-1].end, next.end)
+			continue
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+// judgeFileExcerpt renders the spans of one file worth showing, with 1-based
+// line numbers.
+//
+// The numbers are the point: the judge is checking a claim about a location, so
+// it has to be able to tell which line it is looking at. Omitted stretches are
+// marked rather than silently spliced, so the model can tell "not in the file"
+// apart from "not in the excerpt" — the distinction its unverifiable verdict
+// depends on.
+func judgeFileExcerpt(content string, lines []int, budget int) string {
+	if budget <= 0 {
+		return ""
+	}
+	fileLines := strings.Split(content, "\n")
+	// A trailing newline splits into a final empty element that is not a line.
+	if n := len(fileLines); n > 0 && fileLines[n-1] == "" {
+		fileLines = fileLines[:n-1]
+	}
+	if len(fileLines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	shown := 0
+	truncated := false
+	for _, span := range judgeLineRanges(lines, len(fileLines)) {
+		if span.start > shown+1 {
+			fmt.Fprintf(&b, "[... %d line(s) omitted ...]\n", span.start-shown-1)
+		}
+		for n := span.start; n <= span.end; n++ {
+			line := fmt.Sprintf("%d| %s\n", n, fileLines[n-1])
+			if b.Len()+len(line) > budget {
+				truncated = true
+				break
+			}
+			b.WriteString(line)
+			shown = n
+		}
+		if truncated {
+			break
+		}
+	}
+	switch {
+	case truncated:
+		b.WriteString("[... truncated at the size limit ...]\n")
+	case shown < len(fileLines):
+		fmt.Fprintf(&b, "[... %d line(s) omitted ...]\n", len(fileLines)-shown)
+	}
+	return b.String()
 }
 
 func uniqueStrings(values []string) []string {
