@@ -46,12 +46,15 @@ until the branch is pushed through gx.
 
 | Tool | CLI | Purpose |
 |------|-----|---------|
-| `gx_review` | `gx review --no-publish [prompt]` | Gather local review/context with AI reviewers enabled |
+| `gx_review` | `gx review --no-comment --client mcp [prompt]` | Gather local review/context with AI reviewers enabled |
 
-`gx_review` always passes `--no-publish`. `gx review` on its own posts a review
-comment on the matching GitHub pull request and records the run to gx Cloud,
-which an agent calling the tool for context mid-codegen should never do — so
-publishing stays with the CLI, where a human typed the command.
+`gx_review` always passes `--no-comment` and `--client mcp`. `gx review` on its
+own posts a review comment on the matching GitHub pull request, which an agent
+calling the tool for context mid-codegen should never do — so commenting stays
+with the CLI, where a human typed the command. The run itself still records to
+gx Cloud review history, labeled as an MCP invocation, so per-surface review
+counts include MCP runs; `--no-publish` remains the flag that suppresses the
+history record too.
 
 Saving and publishing are not MCP tools. Record work with plain `git add` + `git commit`
 (gx's hooks stamp and record the revision), push the stack with plain `git push` (the
