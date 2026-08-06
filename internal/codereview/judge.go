@@ -1129,20 +1129,38 @@ func judgeFileExcerpt(content string, lines []int, budget int) string {
 	if len(fileLines) == 0 {
 		return ""
 	}
+	const truncationNote = "[... truncated at the size limit ...]\n"
+	// Every write goes through the budget, including the omission markers.
+	// They are content: a file with many anchors emits many of them, and
+	// checking only the source lines let an excerpt drift past its cap by their
+	// combined size. The limit also holds back room for the closing note, so
+	// the result honors the budget whether it ends by running out of file or by
+	// running out of room.
+	limit := budget - len(truncationNote)
+	if limit <= 0 {
+		return ""
+	}
 	var b strings.Builder
 	shown := 0
 	truncated := false
+	write := func(text string) bool {
+		if b.Len()+len(text) > limit {
+			truncated = true
+			return false
+		}
+		b.WriteString(text)
+		return true
+	}
 	for _, span := range judgeLineRanges(lines, len(fileLines)) {
 		if span.start > shown+1 {
-			fmt.Fprintf(&b, "[... %d line(s) omitted ...]\n", span.start-shown-1)
-		}
-		for n := span.start; n <= span.end; n++ {
-			line := fmt.Sprintf("%d| %s\n", n, fileLines[n-1])
-			if b.Len()+len(line) > budget {
-				truncated = true
+			if !write(fmt.Sprintf("[... %d line(s) omitted ...]\n", span.start-shown-1)) {
 				break
 			}
-			b.WriteString(line)
+		}
+		for n := span.start; n <= span.end; n++ {
+			if !write(fmt.Sprintf("%d| %s\n", n, fileLines[n-1])) {
+				break
+			}
 			shown = n
 		}
 		if truncated {
@@ -1151,9 +1169,11 @@ func judgeFileExcerpt(content string, lines []int, budget int) string {
 	}
 	switch {
 	case truncated:
-		b.WriteString("[... truncated at the size limit ...]\n")
+		b.WriteString(truncationNote)
 	case shown < len(fileLines):
-		fmt.Fprintf(&b, "[... %d line(s) omitted ...]\n", len(fileLines)-shown)
+		if !write(fmt.Sprintf("[... %d line(s) omitted ...]\n", len(fileLines)-shown)) {
+			b.WriteString(truncationNote)
+		}
 	}
 	return b.String()
 }

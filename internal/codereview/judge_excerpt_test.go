@@ -188,11 +188,31 @@ func TestJudgeRequestCarriesNoLocalAbsolutePath(t *testing.T) {
 func TestJudgeExcerptRespectsItsBudget(t *testing.T) {
 	text := judgeFileExcerpt(numberedLines(10000), nil, 2048)
 
-	if len(text) > 2048+len("[... truncated at the size limit ...]\n") {
+	if len(text) > 2048 {
 		t.Fatalf("excerpt is %d bytes, want it bounded by the 2048 budget", len(text))
 	}
 	if !strings.Contains(text, "truncated") {
 		t.Error("excerpt was cut at the budget without saying so")
+	}
+}
+
+// Omission markers are content, and a file with many scattered anchors emits
+// one per gap. Counting only the source lines let their combined size carry the
+// excerpt past its cap.
+func TestJudgeExcerptCountsOmissionMarkersAgainstTheBudget(t *testing.T) {
+	// Anchors far enough apart that every window is its own span, so each gap
+	// between them produces a marker.
+	var anchors []int
+	for line := 200; line <= 9800; line += 400 {
+		anchors = append(anchors, line)
+	}
+
+	for _, budget := range []int{512, 2048, 8192} {
+		text := judgeFileExcerpt(numberedLines(10000), anchors, budget)
+		if len(text) > budget {
+			t.Errorf("budget %d: excerpt is %d bytes, over cap by %d",
+				budget, len(text), len(text)-budget)
+		}
 	}
 }
 
