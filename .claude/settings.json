@@ -9,99 +9,9 @@
             "type": "command"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "async": true,
-            "command": "\"$HOME/.local/bin/gx\" capture transcript",
-            "type": "command"
-          }
-        ]
-      },
       {
         "hooks": [
           {
