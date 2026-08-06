@@ -430,7 +430,8 @@ func judgeDeveloperPrompt() string {
 		"Take as many sentences in analysis as the candidate needs. An analysis that only restates the claim is a verdict guessed rather than checked, and a wrong confirmation costs a reviewer more than a long analysis costs you.",
 		"analysis is the only place reasoning may appear. Never write it outside the JSON object. Every result object must carry a non-empty analysis; a result without one has skipped the check the field exists to force.",
 		"analysis and verification_note are JSON string values, so quote code inside them with backticks and never with a raw double quote. One unescaped \" makes the whole reply undecodable and costs every candidate in this batch its verdict, not just the one you were writing about.",
-		"Verdict must be confirmed, unverified, or wrong. Only confirmed findings survive; mark weak or unsupported claims unverified or wrong.",
+		"Verdict must be confirmed, unverified, wrong, or unverifiable. confirmed survives; unverified means you checked and the claim is weak; wrong means the file content refutes it; unverifiable means you could not check it at all.",
+		"Use unverifiable ONLY when the file content you needed was not provided. Do not mark such a candidate wrong or unverified: those say you checked, and gx deletes them. unverifiable surfaces the finding to the reviewer as unverified and reports the review as degraded, which is the honest outcome when the evidence never reached you. Rejecting what you could not check silently discards real findings.",
 		"Confirm only when the named files and file content snippets support the title, summary, recommendation, and evidence. A finding whose conclusion may be right but whose stated mechanism the file content refutes is wrong, not confirmed — a reviewer acting on it would look for a bug that is not there.",
 		"Read absolute claims literally. When a candidate says something never happens, always happens, or appears nowhere in a file, one counter-example in the provided content refutes it; look for that counter-example before you confirm, and say in the analysis whether you found one.",
 		"If a candidate names no file, treat that as a strike and do not confirm unless static tool evidence conclusively proves it.",
@@ -677,15 +678,45 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 
 // answeredCandidateIDs is the set of candidates a verdict set speaks to. A
 // verdict with no candidate_id speaks to nothing and is ignored, as it is in
-// applyJudgeResults.
+// applyJudgeResults. A verdict that says the judge could not check the claim is
+// likewise not an answer — see judgeCouldNotVerify.
 func answeredCandidateIDs(results []judgeResult) map[string]struct{} {
 	out := make(map[string]struct{}, len(results))
 	for _, result := range results {
+		if judgeCouldNotVerify(result) {
+			continue
+		}
 		if id := strings.TrimSpace(result.CandidateID); id != "" {
 			out[id] = struct{}{}
 		}
 	}
 	return out
+}
+
+// judgeCouldNotVerify reports a verdict that declines to decide.
+//
+// "I could not check this" and "I checked this and it is wrong" are different
+// answers, and applyJudgeResults cannot tell them apart: it keeps `confirmed`
+// and drops everything else, so an honest abstention deletes a real finding as
+// efficiently as a refutation does. Routing abstentions here sends them to the
+// unjudged fallback instead, where they surface unverified and are counted in
+// the degraded reasons — the same treatment as a candidate the judge never
+// mentioned, which is exactly what an abstention is.
+//
+// This matters most in the case that motivated it: a judge given no file
+// content cannot verify anything, and the failure is silent because rejecting
+// every candidate looks identical in the output to a review that found nothing.
+func judgeCouldNotVerify(result judgeResult) bool {
+	switch strings.ToLower(strings.TrimSpace(result.Verdict)) {
+	case "unverifiable", "insufficient_evidence", "insufficient evidence",
+		"cannot_verify", "cannot verify", "abstain", "indeterminate":
+		return true
+	}
+	// Deliberately NOT "unverified": in this contract that means "I checked and
+	// the claim is weak", which is a real judgement and should drop the finding.
+	// Conflating it with abstention would surface every weak claim the judge
+	// correctly filtered out.
+	return false
 }
 
 func capAdvisoryFindings(findings []Finding, limit int) []Finding {
@@ -772,11 +803,37 @@ func findingEvidenceStrings(evidence []Evidence) []string {
 	return out
 }
 
+// namedFilesForFinding is what decides whether the judge gets any source to
+// verify against, so it reads the finding's STRUCTURED location first and only
+// then falls back to scraping paths out of its prose.
+//
+// Prose-only was the original implementation and it silently starved the judge.
+// A finding carries `file`/`line` and `anchors` precisely so the location does
+// not have to be restated in a sentence, and a model that fills those fields
+// and writes "the ownership check is missing" — correct, idiomatic output —
+// produced no named files, hence no file content, hence a judge asked to verify
+// a claim about source it was never shown. It then answers in prose instead of
+// its verdict block and the whole batch loses its verdicts. The symptom is a
+// review that reports nothing while reading as complete, which is the exact
+// failure --fail-on exists to prevent.
 func namedFilesForFinding(ctx ReviewContext, finding Finding) []string {
 	known := knownReviewFiles(ctx)
 	changed := normalizedChangedFiles(ctx.Brief.Static.ChangedFiles)
 	seen := map[string]struct{}{}
 	var parsed []string
+	// Structured fields first: they are unambiguous, and they are what the
+	// finding schema asks the model to fill in.
+	for _, candidate := range structuredFindingFiles(finding) {
+		file := normalizeReviewPath(candidate)
+		if file == "" {
+			continue
+		}
+		if _, ok := seen[file]; ok {
+			continue
+		}
+		seen[file] = struct{}{}
+		parsed = append(parsed, file)
+	}
 	for _, text := range []string{finding.Title, finding.Summary, finding.Recommendation, evidenceText(finding.Evidence)} {
 		for _, file := range parseReviewFilePaths(text, known, ctx.Brief.RepoRoot) {
 			if _, ok := seen[file]; ok {
@@ -910,6 +967,26 @@ func uniqueStrings(values []string) []string {
 		}
 		seen[value] = struct{}{}
 		out = append(out, value)
+	}
+	return out
+}
+
+// structuredFindingFiles lists the file paths a finding states outright, in the
+// order a reader would trust them: the finding's own File field, then every
+// anchor. These are deliberately NOT filtered against the known-file set the
+// way prose paths are — prose needs that filter because scraping sentences
+// yields false positives, whereas a path in a structured field is a claim the
+// reviewer made on purpose. Filtering it would reintroduce the starvation this
+// exists to fix whenever the repository scan is incomplete.
+func structuredFindingFiles(finding Finding) []string {
+	var out []string
+	if file := strings.TrimSpace(finding.File); file != "" {
+		out = append(out, file)
+	}
+	for _, anchor := range finding.Anchors {
+		if file := strings.TrimSpace(anchor.File); file != "" {
+			out = append(out, file)
+		}
 	}
 	return out
 }
