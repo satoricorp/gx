@@ -26,8 +26,9 @@ Run an AI code review of the current change with gx.
 Use the ` + "`gx_review`" + ` MCP tool if it is available, passing "$ARGUMENTS" as the
 ` + "`prompt`" + ` parameter (omit the parameter when it is empty) and ` + "`fast: true`" + `.
 If the MCP tool is unavailable, run the CLI instead:
-` + "`" + `gx review --fast "$ARGUMENTS"` + "`" + ` (plain ` + "`gx review --fast`" + ` when there is
-no prompt).
+` + "`" + `GX_CLIENT=slash-gx gx review --fast "$ARGUMENTS"` + "`" + ` (plain
+` + "`GX_CLIENT=slash-gx gx review --fast`" + ` when there is no prompt). Keep the
+` + "`GX_CLIENT=slash-gx`" + ` prefix — it labels the run as a /gx invocation.
 
 ` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes
@@ -45,8 +46,10 @@ Run an AI code review of the current change with gx.
 
 Use the ` + "`gx_review`" + ` MCP tool if it is available, with ` + "`fast: true`" + `. If the
 user added instructions after the command, pass them as the ` + "`prompt`" + `
-parameter. If the MCP tool is unavailable, run ` + "`gx review --fast`" + ` instead,
-quoting those instructions as the positional prompt argument.
+parameter. If the MCP tool is unavailable, run
+` + "`GX_CLIENT=slash-gx gx review --fast`" + ` instead, quoting those instructions as
+the positional prompt argument. Keep the ` + "`GX_CLIENT=slash-gx`" + ` prefix — it
+labels the run as a /gx invocation.
 
 ` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes

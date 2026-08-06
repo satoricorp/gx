@@ -138,3 +138,30 @@ func Entrypoint() string {
 	}
 	return "cli"
 }
+
+// clientSurfaces are the surfaces a review can be invoked from. The set is
+// closed on purpose: this value becomes a low-cardinality analytics dimension,
+// and an arbitrary environment string would let one misconfigured machine mint
+// unbounded new categories.
+var clientSurfaces = map[string]bool{
+	"cli":      true,
+	"mcp":      true,
+	"skill":    true,
+	"slash-gx": true,
+}
+
+// ClientSurface resolves which surface invoked this run: an explicit override
+// (a --client flag) wins, then $GX_CLIENT, then the same $GX_MCP signal
+// Entrypoint reads, then "cli". Unknown values fall through rather than being
+// reported, so the fallback chain — not the caller — owns the vocabulary.
+func ClientSurface(override string) string {
+	for _, candidate := range []string{override, os.Getenv("GX_CLIENT")} {
+		if value := strings.TrimSpace(candidate); clientSurfaces[value] {
+			return value
+		}
+	}
+	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
+		return "mcp"
+	}
+	return "cli"
+}

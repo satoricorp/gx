@@ -46,8 +46,10 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var jsonOut bool
 	var failOn string
 	var noPublish bool
+	var noComment bool
 	var fast bool
 	var maxFindings int
+	var clientOverride string
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
 		Aliases: []string{"gxr"},
@@ -59,6 +61,9 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			// machine ID into a $GX_HOME that may not exist.
 			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
+			// Resolved once so telemetry and the cloud history row cannot
+			// disagree about which surface invoked this run.
+			client := telemetry.ClientSurface(clientOverride)
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
 			if err != nil {
 				return err
@@ -76,7 +81,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			// repo (or on a machine) that has never run `gx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				emitReviewRunTelemetry(ctx, codereview.Report{}, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
+				emitReviewRunTelemetry(ctx, codereview.Report{}, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 				return err
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
@@ -102,7 +107,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			} else {
 				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
-			emitReviewRunTelemetry(ctx, report, err, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
+			emitReviewRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -122,9 +127,15 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			}
 			// Nothing was reviewed: publishing would overwrite a real review
 			// comment with a no-op, and there is no review to record.
+			// --no-comment suppresses only the outward-facing PR comment;
+			// history still records so per-surface review counts stay honest.
+			// --no-publish remains full suppression for runs that must leave
+			// no trace in gx Cloud.
 			if !noPublish && report.Reviewed {
-				postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
-				recordReviewHistory(ctx, repo, report, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
+				if !noComment {
+					postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
+				}
+				recordReviewHistory(ctx, repo, report, client, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}
 			return reviewGateError(report, failOnLevel)
 		},
@@ -138,6 +149,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
 	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
+	cmd.Flags().BoolVar(&noComment, "no-comment", false, "skip posting the PR review comment but still record review history; use --no-publish to suppress both")
+	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this review, overriding $GX_CLIENT: cli, mcp, skill, slash-gx")
 	cmd.Flags().IntVar(&maxFindings, "max-findings", 0, "cap how many recommendations the review reports (0 uses the default); applies to both what the model is asked for and what is reported")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd
@@ -296,7 +309,7 @@ func gateDegradedReason(report codereview.Report) string {
 	return ""
 }
 
-func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
+func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, client string, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
 	status := "success"
 	if runErr != nil {
 		status = "error"
@@ -311,6 +324,7 @@ func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runEr
 	}
 	props := map[string]any{
 		"status":                status,
+		"client":                client,
 		"mode":                  mode,
 		"scope":                 effectiveScope,
 		"scope_explicit":        scopeExplicit,
@@ -372,7 +386,7 @@ func reviewRunMode(prompt string, scopeExplicit bool, deep bool, wholeRepo bool)
 	}
 }
 
-func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, prompt string, scopeExplicit bool, deep bool, wholeRepo bool, stderr io.Writer) {
+func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, clientSurface string, prompt string, scopeExplicit bool, deep bool, wholeRepo bool, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)
 	repoFullName := cloud.RepoFullNameFromRemoteURL(remoteURL)
 	if strings.TrimSpace(repoFullName) == "" {
@@ -393,6 +407,7 @@ func recordReviewHistory(ctx context.Context, repo vcs.RepoInfo, report coderevi
 		BranchName:   pointerString(repo.BranchName),
 		HeadCommitID: currentHeadCommit(ctx, repo.RootPath),
 		SourceKind:   "session_intent",
+		Client:       clientSurface,
 		Prompt:       prompt,
 		Scope:        firstNonEmptyString(report.Scope, codereview.DefaultScope),
 		Mode:         reviewRunMode(prompt, scopeExplicit, deep, wholeRepo),

@@ -35,6 +35,7 @@ type CodeReviewHistoryRecordRequest struct {
 	HeadCommitID string                    `json:"headCommitId,omitempty"`
 	SourceKind   string                    `json:"sourceKind,omitempty"`
 	SourceRef    string                    `json:"sourceRef,omitempty"`
+	Client       string                    `json:"client,omitempty"`
 	Prompt       string                    `json:"prompt,omitempty"`
 	Scope        string                    `json:"scope,omitempty"`
 	Mode         string                    `json:"mode,omitempty"`
