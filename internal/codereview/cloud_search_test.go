@@ -232,6 +232,12 @@ func TestKnowledgeRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	if searcher.requests[0].Target != "knowledge" {
 		t.Fatalf("target = %q, want knowledge", searcher.requests[0].Target)
 	}
+	if !containsString(searcher.requests[0].Languages, "go") {
+		t.Fatalf("languages = %v, want the change's language signals", searcher.requests[0].Languages)
+	}
+	if len(searcher.requests[0].Categories) == 0 {
+		t.Fatalf("categories = %v, want the review's category signals", searcher.requests[0].Categories)
+	}
 	status := evidenceFor(t, in.Evidence, reviewKnowledgeEvidenceSource)
 	if status.State != EvidenceOK || status.Namespace != "gx-review-knowledge" {
 		t.Fatalf("evidence = %#v, want OK against the shared corpus", status)
