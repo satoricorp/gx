@@ -121,6 +121,19 @@ var staticToolEnvAllowed = buildStaticToolEnvAllowlist(
 	"CARGO_HOME", "RUSTUP_HOME", "RUSTUP_TOOLCHAIN", "RUSTC", "RUSTC_WRAPPER",
 	"RUSTFLAGS", "CARGO_TARGET_DIR", "CARGO_BUILD_TARGET", "CARGO_NET_OFFLINE",
 	"RUST_BACKTRACE",
+	// .NET. DOTNET_ROOT is how a dotnet not installed system-wide finds its own
+	// SDK; the NUGET_* pair relocates the package caches the same way GOMODCACHE
+	// does. The telemetry, nologo and first-time-experience switches keep the
+	// CLI from chattering into captured review output, and
+	// MSBUILDDISABLENODEREUSE stops MSBuild leaving worker processes behind
+	// after the review exits.
+	"DOTNET_ROOT", "DOTNET_CLI_HOME", "DOTNET_CLI_TELEMETRY_OPTOUT", "DOTNET_NOLOGO",
+	"DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "NUGET_PACKAGES", "NUGET_HTTP_CACHE_PATH",
+	"MSBUILDDISABLENODEREUSE",
+	// Dart and Flutter. PUB_CACHE and PUB_HOSTED_URL are pub's cache and
+	// registry knobs; FLUTTER_ROOT and DART_SDK are how the flutter tool and
+	// editor shims locate the SDK they wrap.
+	"PUB_CACHE", "PUB_HOSTED_URL", "FLUTTER_ROOT", "DART_SDK",
 )
 
 // staticToolEnvAllowedPrefixes covers the one family whose members cannot be

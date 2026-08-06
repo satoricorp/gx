@@ -14,6 +14,8 @@ func TestIsVendoredOrGeneratedPath(t *testing.T) {
 		"ios/Pods/Alamofire/Source/A.swift",
 		"infra/.terraform/providers/aws",
 		"app/coverage/lcov-report/index.html",
+		"svc/obj/Debug/net8.0/App.dll",
+		"mobile/.dart_tool/package_config.json",
 	}
 	for _, path := range vendored {
 		if !isVendoredOrGeneratedPath(path) {
@@ -31,6 +33,10 @@ func TestIsVendoredOrGeneratedPath(t *testing.T) {
 		"app/outbound/mailer.ts",
 		"lib/vendored-notes.md",
 		"src/components/BuildBanner.tsx",
+		// bin/ is deliberately not vendored: repos keep hand-written
+		// entrypoints there (Rails binstubs, bin/setup).
+		"bin/setup",
+		"app/bin/console.rb",
 	}
 	for _, path := range source {
 		if isVendoredOrGeneratedPath(path) {
