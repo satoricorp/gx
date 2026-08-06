@@ -1,16 +1,16 @@
-// Package storagetest builds tx databases that look like the ones on real
+// Package storagetest builds gx databases that look like the ones on real
 // machines instead of the pristine one a fresh migration produces.
 //
 // Why this exists. Two production defects shipped past a fully green suite for
-// the same reason: every test did `t.Setenv("TOTALITY_HOME", t.TempDir())` against a
+// the same reason: every test did `t.Setenv("GX_HOME", t.TempDir())` against a
 // freshly migrated database, and on such a database the states the bugs lived
 // in are not merely absent, they are unrepresentable.
 //
 //   - The `repos` table on the author's machine holds TWO rows for one
-//     repository: an old one with root_path=/Users/joe/git/tx and
-//     git_common_dir=/Users/joe/git/tx (the pre-git_common_dir backfill shape,
+//     repository: an old one with root_path=/Users/joe/git/gx and
+//     git_common_dir=/Users/joe/git/gx (the pre-git_common_dir backfill shape,
 //     48% of live rows), and a newer one with root_path="" and
-//     git_common_dir=/Users/joe/git/tx/.git carrying every recent change. The
+//     git_common_dir=/Users/joe/git/gx/.git carrying every recent change. The
 //     write path resolved the second, the read path resolved the first, and
 //     171 of 174 published bundles shipped `sessions: []`. Every bundle test
 //     seeded its repo without a GitCommonDir, so UpsertRepo backfilled
@@ -27,8 +27,8 @@
 // never reach, which is exactly what store.WriteSession did for the session
 // bug. TestSeedersAreProductionWriters enforces that rule mechanically.
 //
-// Layering. This package imports internal/storage and internal/totalitytest and
-// nothing else from tx. internal/vcs imports internal/storage, so importing
+// Layering. This package imports internal/storage and internal/gxtest and
+// nothing else from gx. internal/vcs imports internal/storage, so importing
 // vcs here would both risk a cycle and drag vcs's package init into the fast
 // test binaries of internal/storage, internal/reviewbundle and
 // internal/provenance.
@@ -42,16 +42,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/totalitytest"
+	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 // CommitSelfReportSessionID is the fossil session id left behind by the retired
-// `tx commit` self-report. storage.Open deletes it and its links on every open;
+// `gx commit` self-report. storage.Open deletes it and its links on every open;
 // nothing else in the tree covers that migration.
-const CommitSelfReportSessionID = "totality-commit-self-report"
+const CommitSelfReportSessionID = "gx-commit-self-report"
 
-// Harness is an open tx database plus the ids the shapes created in it.
+// Harness is an open gx database plus the ids the shapes created in it.
 type Harness struct {
 	// Store is the production writer surface.
 	Store *storage.Store
@@ -59,7 +59,7 @@ type Harness struct {
 	// how the hook tests read the database back.
 	DB *sql.DB
 	// World is the filesystem/git world this database belongs to.
-	World *totalitytest.World
+	World *gxtest.World
 
 	// LegacyRepoID is the pre-git_common_dir row: root_path set,
 	// git_common_dir equal to it. Live analogue: repos id 1.
@@ -74,16 +74,16 @@ type Harness struct {
 // real machine. Shapes are applied in the order they are passed.
 type Shape func(t *testing.T, h *Harness)
 
-// New opens an isolated tx database in its own totalitytest.World and applies shapes.
+// New opens an isolated gx database in its own gxtest.World and applies shapes.
 func New(t *testing.T, shapes ...Shape) *Harness {
 	t.Helper()
-	return NewInWorld(t, totalitytest.NewWorld(t), shapes...)
+	return NewInWorld(t, gxtest.NewWorld(t), shapes...)
 }
 
-// NewInWorld opens the tx database belonging to an existing world, so a test
+// NewInWorld opens the gx database belonging to an existing world, so a test
 // can create its git repositories first and then shape the database around
 // their real paths.
-func NewInWorld(t *testing.T, world *totalitytest.World, shapes ...Shape) *Harness {
+func NewInWorld(t *testing.T, world *gxtest.World, shapes ...Shape) *Harness {
 	t.Helper()
 	ctx := context.Background()
 	db, err := storage.Open(ctx)
@@ -202,7 +202,7 @@ func (h *Harness) SeedObservedSession(t *testing.T, changeID int64, sessionID, t
 		CreatedAt: 1,
 		Command:   tool,
 		Cwd:       repoRoot,
-		TLVersion: "test",
+		GxVersion: "test",
 		Source:    &tool,
 		RepoRoot:  &repoRoot,
 	}); err != nil {
@@ -219,8 +219,8 @@ func (h *Harness) SeedObservedSession(t *testing.T, changeID int64, sessionID, t
 // DriftedRepoIdentity reproduces the two-row `repos` state one repository
 // actually occupies on the author's machine.
 //
-//	id 1  root_path=/Users/joe/git/tx  git_common_dir=/Users/joe/git/tx
-//	id 16 root_path=""                 git_common_dir=/Users/joe/git/tx/.git
+//	id 1  root_path=/Users/joe/git/gx  git_common_dir=/Users/joe/git/gx
+//	id 16 root_path=""                 git_common_dir=/Users/joe/git/gx/.git
 //
 // Row one is what the git_common_dir backfill leaves when `git rev-parse` fails
 // (it falls back to the root path); 54 of 113 live rows are in that shape, and
@@ -362,8 +362,8 @@ func LegacyCaptureSessions(rows ...LegacyStagedSession) Shape {
 	}
 }
 
-// FossilCommitSelfReportSession writes the `totality-commit-self-report` sessions row
-// an older tx binary left behind.
+// FossilCommitSelfReportSession writes the `gx-commit-self-report` sessions row
+// an older gx binary left behind.
 //
 // It is the only fossil storage.Open actively deletes, the deletion runs on
 // every single open, and it has zero test coverage anywhere in the tree — the
@@ -378,11 +378,11 @@ func FossilCommitSelfReportSession() Shape {
 		if err := h.Store.UpsertObservedSession(context.Background(), storage.Session{
 			ID:        CommitSelfReportSessionID,
 			CreatedAt: 1,
-			Command:   "tx commit",
+			Command:   "gx commit",
 			// cwd='' and repo_root NULL are what makes it a fossil: it can
 			// never match a repository, so it only ever contributed noise.
 			Cwd:       empty,
-			TLVersion: "0.0.0",
+			GxVersion: "0.0.0",
 		}); err != nil {
 			t.Fatalf("seed %s error = %v", CommitSelfReportSessionID, err)
 		}

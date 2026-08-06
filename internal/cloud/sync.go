@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/reviewbundle"
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/gx/internal/reviewbundle"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 type Client struct {
@@ -42,7 +42,7 @@ func NewClient() *Client {
 }
 
 func cloudUploadTimeout() time.Duration {
-	value := strings.TrimSpace(os.Getenv("TOTALITY_CLOUD_UPLOAD_TIMEOUT"))
+	value := strings.TrimSpace(os.Getenv("GX_CLOUD_UPLOAD_TIMEOUT"))
 	if value == "" {
 		return defaultUploadTimeout
 	}
@@ -59,14 +59,14 @@ func (c *Client) UploadReviewArtifact(ctx context.Context, artifact reviewbundle
 	}
 	body, err := json.Marshal(artifact)
 	if err != nil {
-		return reviewbundle.Artifact{}, fmt.Errorf("marshal tx cloud payload: %w", err)
+		return reviewbundle.Artifact{}, fmt.Errorf("marshal gx cloud payload: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cloudURLWithPath(c.url, "/v1/publish"), bytes.NewReader(body))
 	if err != nil {
-		return reviewbundle.Artifact{}, fmt.Errorf("create tx cloud request: %w", err)
+		return reviewbundle.Artifact{}, fmt.Errorf("create gx cloud request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "tx/"+version.Current())
+	req.Header.Set("User-Agent", "gx/"+version.Current())
 
 	token, err := CloudAPIToken()
 	if err != nil {
@@ -79,32 +79,32 @@ func (c *Client) UploadReviewArtifact(ctx context.Context, artifact reviewbundle
 		if os.IsTimeout(err) {
 			timeout := c.http.Timeout
 			if timeout <= 0 {
-				return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload timed out; the server may still persist it, and the queued item retries on your next push (or `tx doctor`): %w", err)
+				return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out; the server may still persist it, and the queued item retries on your next push (or `gx doctor`): %w", err)
 			}
-			return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload timed out after %s; the server may still persist it, and the queued item retries on your next push (or `tx doctor`): %w", timeout, err)
+			return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload timed out after %s; the server may still persist it, and the queued item retries on your next push (or `gx doctor`): %w", timeout, err)
 		}
-		return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload: %w", err)
+		return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		detail := strings.TrimSpace(string(msg))
 		if resp.StatusCode == http.StatusUnauthorized {
-			hint := "run `tx auth logout` then `tx auth login`"
+			hint := "run `gx auth logout` then `gx auth login`"
 			if detail != "" {
-				return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload: status %s: %s (%s)", resp.Status, detail, hint)
+				return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: status %s: %s (%s)", resp.Status, detail, hint)
 			}
-			return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload: status %s (%s)", resp.Status, hint)
+			return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: status %s (%s)", resp.Status, hint)
 		}
 		if detail != "" {
-			return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload: status %s: %s", resp.Status, detail)
+			return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: status %s: %s", resp.Status, detail)
 		}
-		return reviewbundle.Artifact{}, fmt.Errorf("upload tx cloud payload: status %s", resp.Status)
+		return reviewbundle.Artifact{}, fmt.Errorf("upload gx cloud payload: status %s", resp.Status)
 	}
 
 	var raw json.RawMessage
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return reviewbundle.Artifact{}, fmt.Errorf("decode tx cloud response: %w", err)
+		return reviewbundle.Artifact{}, fmt.Errorf("decode gx cloud response: %w", err)
 	}
 	result := artifact
 	if len(raw) > 0 && json.Valid(raw) {

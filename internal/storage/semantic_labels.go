@@ -81,23 +81,23 @@ func (s *Store) WriteSemanticLabels(ctx context.Context, labels []SemanticLabelW
 	if len(labels) == 0 {
 		return nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	gx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin semantic labels: %w", err)
 	}
-	defer tx.Rollback()
+	defer gx.Rollback()
 	for _, write := range labels {
-		labelID, err := upsertSemanticLabel(ctx, tx, write.Label)
+		labelID, err := upsertSemanticLabel(ctx, gx, write.Label)
 		if err != nil {
 			return err
 		}
 		link := write.Link
 		link.LabelID = labelID
-		if err := writeSemanticLabelLink(ctx, tx, link); err != nil {
+		if err := writeSemanticLabelLink(ctx, gx, link); err != nil {
 			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := gx.Commit(); err != nil {
 		return fmt.Errorf("commit semantic labels: %w", err)
 	}
 	return nil

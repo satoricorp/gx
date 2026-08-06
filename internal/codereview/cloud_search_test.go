@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
 // Cloud-mode retrieval: every onboarded user's path. These tests pin that a
@@ -73,7 +73,7 @@ func evidenceFor(t *testing.T, log *EvidenceLog, source string) EvidenceStatus {
 func TestCodeIndexRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	searcher := &fakeCloudSearcher{result: cloud.ReviewSearchResult{
 		Available: true,
-		Namespace: "totality-org-uuid-acme-app-v2",
+		Namespace: "gx-org-uuid-acme-app-v2",
 		Exists:    true,
 		Rows: []cloud.ReviewSearchRow{{
 			ID:   "row-1",
@@ -122,10 +122,10 @@ func TestCodeIndexRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	if status.State != EvidenceOK || status.Snippets != 1 {
 		t.Fatalf("evidence = %#v, want OK with 1 snippet", status)
 	}
-	if status.Namespace != "totality-org-uuid-acme-app-v2" {
+	if status.Namespace != "gx-org-uuid-acme-app-v2" {
 		t.Fatalf("evidence namespace = %q, want the server-resolved one", status.Namespace)
 	}
-	if !strings.Contains(status.Detail, "via tx cloud") {
+	if !strings.Contains(status.Detail, "via gx cloud") {
 		t.Fatalf("evidence detail = %q, want the cloud attribution", status.Detail)
 	}
 }
@@ -133,7 +133,7 @@ func TestCodeIndexRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 func TestCodeIndexCloudMissingNamespaceOffersConnectRemedy(t *testing.T) {
 	searcher := &fakeCloudSearcher{result: cloud.ReviewSearchResult{
 		Available: true,
-		Namespace: "totality-org-uuid-acme-app-v2",
+		Namespace: "gx-org-uuid-acme-app-v2",
 		Exists:    false,
 	}}
 	in := cloudRetrieveInput(t)
@@ -173,7 +173,7 @@ func TestCodeIndexCloudFailureIsUnavailableNotFatal(t *testing.T) {
 func TestSessionRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	searcher := &fakeCloudSearcher{result: cloud.ReviewSearchResult{
 		Available: true,
-		Namespace: "totality-org-uuid-acme-app-v2",
+		Namespace: "gx-org-uuid-acme-app-v2",
 		Exists:    true,
 		Rows: []cloud.ReviewSearchRow{{
 			ID:   "sess-row",
@@ -207,7 +207,7 @@ func TestSessionRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 func TestKnowledgeRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 	searcher := &fakeCloudSearcher{result: cloud.ReviewSearchResult{
 		Available: true,
-		Namespace: "totality-review-knowledge",
+		Namespace: "gx-review-knowledge",
 		Exists:    true,
 		Rows: []cloud.ReviewSearchRow{{
 			ID:   "kn-1",
@@ -233,7 +233,7 @@ func TestKnowledgeRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 		t.Fatalf("target = %q, want knowledge", searcher.requests[0].Target)
 	}
 	status := evidenceFor(t, in.Evidence, reviewKnowledgeEvidenceSource)
-	if status.State != EvidenceOK || status.Namespace != "totality-review-knowledge" {
+	if status.State != EvidenceOK || status.Namespace != "gx-review-knowledge" {
 		t.Fatalf("evidence = %#v, want OK against the shared corpus", status)
 	}
 }
@@ -242,9 +242,9 @@ func TestKnowledgeRetrieverUsesCloudWhenSignedIn(t *testing.T) {
 // used to be silently absent — no retriever, no evidence line, and no way to
 // tell an uninformed review from an informed one.
 func TestKnowledgeSourceReportsDisabledWhenNothingConfigured(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "off")
+	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("TOTALITY_OPENAI_API_KEY", "")
+	t.Setenv("GX_OPENAI_API_KEY", "")
 	t.Setenv("TURBOPUFFER_API_KEY", "")
 
 	retriever := reviewResourceRetrieverFromEnv()
@@ -260,13 +260,13 @@ func TestKnowledgeSourceReportsDisabledWhenNothingConfigured(t *testing.T) {
 	if status.State != EvidenceDisabled {
 		t.Fatalf("evidence state = %q, want disabled", status.State)
 	}
-	if !strings.Contains(status.Remedy, "tx auth login") {
+	if !strings.Contains(status.Remedy, "gx auth login") {
 		t.Fatalf("remedy = %q, want the sign-in remedy", status.Remedy)
 	}
 }
 
 func TestCodeIndexSourceReportsSignInRemedyWhenNothingConfigured(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "off")
+	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("TURBOPUFFER_API_KEY", "")
 
 	in := cloudRetrieveInput(t)
@@ -276,7 +276,7 @@ func TestCodeIndexSourceReportsSignInRemedyWhenNothingConfigured(t *testing.T) {
 		t.Fatalf("Retrieve() = %d snippets, %v; want none", len(snippets), err)
 	}
 	status := evidenceFor(t, in.Evidence, codeIndexEvidenceSource)
-	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "tx auth login") {
+	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "gx auth login") {
 		t.Fatalf("evidence = %#v, want disabled with the sign-in remedy", status)
 	}
 }

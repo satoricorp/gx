@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/satoricorp/totality/internal/cli"
+	"github.com/satoricorp/gx/internal/cli"
 )
 
 func main() {

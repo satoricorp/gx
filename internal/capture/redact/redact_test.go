@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/redact"
+	"github.com/satoricorp/gx/internal/capture/redact"
 )
 
 func TestRedact_AWSKey(t *testing.T) {

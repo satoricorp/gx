@@ -11,17 +11,17 @@ import (
 )
 
 // reviewerCredentialEnv is the set this whole file exists to keep out of the
-// reviewed checkout's processes. These are the real names a Totality developer has
+// reviewed checkout's processes. These are the real names a gx developer has
 // exported (see internal/cloud/credentials.go and internal/telemetry) plus the
-// two cloud conventions a CI runner exports into the step that runs tx review.
+// two cloud conventions a CI runner exports into the step that runs gx review.
 var reviewerCredentialEnv = map[string]string{
 	"ANTHROPIC_API_KEY":              "sk-ant-leaked",
 	"OPENAI_API_KEY":                 "sk-openai-leaked",
 	"TURBOPUFFER_API_KEY":            "tpuf-leaked",
 	"GITHUB_TOKEN":                   "ghp-leaked",
 	"GH_TOKEN":                       "gho-leaked",
-	"TOTALITY_UPLOAD_TOKEN":          "totality-leaked",
-	"TOTALITY_API_URL":               "https://internal.example.invalid",
+	"GX_UPLOAD_TOKEN":                "gx-leaked",
+	"GX_API_URL":                     "https://internal.example.invalid",
 	"AWS_ACCESS_KEY_ID":              "AKIALEAKED",
 	"AWS_SECRET_ACCESS_KEY":          "aws-secret-leaked",
 	"AWS_SESSION_TOKEN":              "aws-session-leaked",
@@ -100,7 +100,7 @@ func TestStaticToolChildEnvKeepsTheVariablesTheToolchainsNeed(t *testing.T) {
 			t.Fatalf("child environment lost %s=%q (got %q); the toolchains need it", name, value, got[name])
 		}
 	}
-	if got["GOCACHE"] != filepath.Join(os.TempDir(), "tx-review-gocache") {
+	if got["GOCACHE"] != filepath.Join(os.TempDir(), "gx-review-gocache") {
 		t.Fatalf("GOCACHE = %q, want the review-owned build cache", got["GOCACHE"])
 	}
 	// Duplicate keys make the child's getenv pick a winner we did not choose,
@@ -128,7 +128,7 @@ func TestGoStaticToolsRunWithoutHandingTheCheckoutTheReviewersCredentials(t *tes
 	for name, value := range reviewerCredentialEnv {
 		t.Setenv(name, value)
 	}
-	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	// GOTOOLCHAIN=local keeps the fixture from trying to download a toolchain,
 	// and doubles as the positive control: it is allowlisted and set here to a
 	// known value, so the fixture reading it back proves the child got a
@@ -162,7 +162,7 @@ func TestGoStaticToolsRunWithoutHandingTheCheckoutTheReviewersCredentials(t *tes
 // The other half of a leak is the return path: runStaticTool captures the
 // child's stdout and stderr into StaticToolResult.Output, which becomes part of
 // the AI reviewer's prompt and of a published report. A checkout that printed
-// the reviewer's environment would be exfiltrating it through tx itself.
+// the reviewer's environment would be exfiltrating it through gx itself.
 //
 // The fixture here fails on purpose, because that is the only way the output
 // travels: `go test` without -v discards a passing test's stdout, so the
@@ -180,7 +180,7 @@ func TestFailingCheckoutTestsCarryNoReviewerCredentialsBackIntoTheReport(t *test
 	for name, value := range reviewerCredentialEnv {
 		t.Setenv(name, value)
 	}
-	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	t.Setenv("GOTOOLCHAIN", "local")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, []string{"app/app.go"})
@@ -195,7 +195,7 @@ func TestFailingCheckoutTestsCarryNoReviewerCredentialsBackIntoTheReport(t *test
 	}
 	for name, value := range reviewerCredentialEnv {
 		if strings.Contains(output, "CHILD-ENV "+name+"=") {
-			t.Fatalf("the reviewed checkout read %s and tx carried it back into the report:\n%s", name, output)
+			t.Fatalf("the reviewed checkout read %s and gx carried it back into the report:\n%s", name, output)
 		}
 		if value != "" && strings.Contains(output, value) {
 			t.Fatalf("the value of %s surfaced in the captured report output:\n%s", name, output)
@@ -217,7 +217,7 @@ import (
 func TestWhatTheReviewedCheckoutCanSee(t *testing.T) {
 	for _, name := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "TURBOPUFFER_API_KEY",
-		"GITHUB_TOKEN", "GH_TOKEN", "TOTALITY_UPLOAD_TOKEN", "TOTALITY_API_URL",
+		"GITHUB_TOKEN", "GH_TOKEN", "GX_UPLOAD_TOKEN", "GX_API_URL",
 		"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
 		"GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS",
 		"NPM_TOKEN", "npm_config__authToken", "DATABASE_URL",
@@ -243,7 +243,7 @@ func TestWhatTheReviewedCheckoutCanSee(t *testing.T) {
 
 // staticToolLeakFixtureTest is the shape a hostile pull request would take: an
 // ordinary-looking test that prints everything it was handed and then fails, so
-// that tx captures the dump and carries it into the review report.
+// that gx captures the dump and carries it into the review report.
 const staticToolLeakFixtureTest = `package app
 
 import (
@@ -276,7 +276,7 @@ func TestNonGoStaticToolsRunWithoutHandingTheCheckoutTheReviewersCredentials(t *
 	for name, value := range reviewerCredentialEnv {
 		t.Setenv(name, value)
 	}
-	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, []string{"src/a.js"})
 	if len(results) != 1 || results[0].Command != "eslint ./src/a.js" {
@@ -346,7 +346,7 @@ func TestRealToolchainsBehaveTheSameUnderTheScrubbedEnvironment(t *testing.T) {
 			for name, value := range reviewerCredentialEnv {
 				t.Setenv(name, value)
 			}
-			t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "1")
+			t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 			results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, test.changed)
 			if len(results) != 1 || results[0].Command != test.command {
 				t.Fatalf("results = %#v, want %q", results, test.command)
@@ -373,7 +373,7 @@ type inheritedEnvRun struct {
 }
 
 // runWithInheritedEnv is the baseline half of the differential above: the same
-// command the static tool stage would run, with the environment tx itself has.
+// command the static tool stage would run, with the environment gx itself has.
 // It runs before the credential fixtures are set so the baseline is the
 // reviewer's real environment and not a doctored one.
 func runWithInheritedEnv(t *testing.T, root, bin string, args []string) inheritedEnvRun {

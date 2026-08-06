@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/codereview"
+	"github.com/satoricorp/gx/internal/codereview"
 )
 
 // newReviewGateRepo builds a repo whose work is committed and whose tree is
@@ -37,31 +37,31 @@ func commitOnBranch(t *testing.T, root string) {
 
 func setReviewGateEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_API_URL", "")
-	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
-	t.Setenv("TOTALITY_REVIEW_AI", "0")
-	t.Setenv("TOTALITY_REVIEW_JUDGE", "0")
-	t.Setenv("TOTALITY_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("TOTALITY_REVIEW_RESOURCES", "0")
-	t.Setenv("TOTALITY_REVIEW_INDEXED_CONTEXT", "0")
-	t.Setenv("TOTALITY_REVIEW_HISTORY_CONTEXT", "0")
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GX_API_URL", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "")
+	t.Setenv("GX_REVIEW_AI", "0")
+	t.Setenv("GX_REVIEW_JUDGE", "0")
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
+	t.Setenv("GX_REVIEW_RESOURCES", "0")
+	t.Setenv("GX_REVIEW_INDEXED_CONTEXT", "0")
+	t.Setenv("GX_REVIEW_HISTORY_CONTEXT", "0")
 	denyReviewNetwork(t)
 }
 
 // denyReviewNetwork makes a review test hermetic.
 //
-// These tests inherit the developer's shell, and a developer working on Totality has
+// These tests inherit the developer's shell, and a developer working on gx has
 // OPENAI_API_KEY and TURBOPUFFER_API_KEY exported. Every review network path is
 // gated on those keys being present, so with them exported the gate tests were
 // not testing the offline path at all: each one embedded the fixture repository
 // through the real embeddings API and upserted it into the production
 // TurboPuffer account. The namespace is derived from the fixture's temp
 // directory (semantic.NamespaceForRepo), so every `go test ./internal/cli` run
-// created a brand new `totality-local-*` namespace that nothing would ever delete.
+// created a brand new `gx-local-*` namespace that nothing would ever delete.
 //
 // Clearing the credentials is the mechanism rather than a per-feature kill
-// switch such as TOTALITY_REVIEW_CODE_INDEX=0, because it shuts every door at once:
+// switch such as GX_REVIEW_CODE_INDEX=0, because it shuts every door at once:
 // a retriever added tomorrow is off here for the same reason it is off in CI,
 // without anyone having to remember to add its switch to this list.
 //
@@ -72,10 +72,10 @@ func denyReviewNetwork(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"OPENAI_API_KEY",
-		"TOTALITY_OPENAI_API_KEY",
+		"GX_OPENAI_API_KEY",
 		"TURBOPUFFER_API_KEY",
 		"ANTHROPIC_API_KEY",
-		"TOTALITY_TPUF_NAMESPACE",
+		"GX_TPUF_NAMESPACE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -84,8 +84,8 @@ func denyReviewNetwork(t *testing.T) {
 		http.Error(w, "network denied in tests", http.StatusForbidden)
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("TOTALITY_OPENAI_BASE_URL", server.URL)
-	t.Setenv("TOTALITY_TPUF_BASE_URL", server.URL)
+	t.Setenv("GX_OPENAI_BASE_URL", server.URL)
+	t.Setenv("GX_TPUF_BASE_URL", server.URL)
 }
 
 func runReviewCommand(t *testing.T, args ...string) (string, error) {
@@ -107,7 +107,7 @@ func TestReviewJSONReportsTheResolvedCommitRange(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --json error = %v\n%s", err, out)
+		t.Fatalf("gx review --json error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -144,7 +144,7 @@ func TestReviewJSONMarksNothingToReview(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --json error = %v\n%s", err, out)
+		t.Fatalf("gx review --json error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -154,7 +154,7 @@ func TestReviewJSONMarksNothingToReview(t *testing.T) {
 		t.Fatalf("reviewed/review_mode = %v/%q, want false/none:\n%s", report.Reviewed, report.ReviewMode, out)
 	}
 	if strings.TrimSpace(report.ReviewTarget) == "" {
-		t.Fatalf("review_target is empty, want the refs tx looked at:\n%s", out)
+		t.Fatalf("review_target is empty, want the refs gx looked at:\n%s", out)
 	}
 }
 
@@ -165,13 +165,13 @@ func TestReviewNothingToReviewDoesNotClaimACleanReview(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review error = %v\n%s", err, out)
+		t.Fatalf("gx review error = %v\n%s", err, out)
 	}
 	if strings.Contains(out, "No material issues found in this change.") {
-		t.Fatalf("tx review claimed a clean review without inspecting anything:\n%s", out)
+		t.Fatalf("gx review claimed a clean review without inspecting anything:\n%s", out)
 	}
 	if !strings.Contains(out, "Nothing to review") {
-		t.Fatalf("tx review output missing the nothing-to-review outcome:\n%s", out)
+		t.Fatalf("gx review output missing the nothing-to-review outcome:\n%s", out)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("tx review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
@@ -193,11 +193,11 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 
 	// The same review under a stricter threshold has nothing blocking.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "blocking", "--no-publish"); err != nil {
-		t.Fatalf("tx review --fail-on blocking error = %v\n%s", err, out)
+		t.Fatalf("gx review --fail-on blocking error = %v\n%s", err, out)
 	}
 	// And the default gate never fails.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--no-publish"); err != nil {
-		t.Fatalf("tx review without --fail-on error = %v\n%s", err, out)
+		t.Fatalf("gx review without --fail-on error = %v\n%s", err, out)
 	}
 }
 
@@ -210,7 +210,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
-		t.Fatalf("tx review --fail-on any exited 0 without reviewing anything:\n%s", out)
+		t.Fatalf("gx review --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, err)
@@ -221,7 +221,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 
 	// Without a gate the same run stays exit 0 for interactive use.
 	if _, err := runReviewCommand(t, "--no-publish"); err != nil {
-		t.Fatalf("tx review without --fail-on error = %v", err)
+		t.Fatalf("gx review without --fail-on error = %v", err)
 	}
 }
 
@@ -244,7 +244,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 
 			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--json", "--no-publish")...)
 			if err != nil {
-				t.Fatalf("tx review error = %v\n%s", err, out)
+				t.Fatalf("gx review error = %v\n%s", err, out)
 			}
 			var report codereview.Report
 			if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -256,7 +256,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 
 			gateOut, gateErr := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "any", "--no-publish")...)
 			if gateErr == nil {
-				t.Fatalf("tx review --fail-on any passed on an empty repo:\n%s", gateOut)
+				t.Fatalf("gx review --fail-on any passed on an empty repo:\n%s", gateOut)
 			}
 			if code := ExitCode(gateErr); code != reviewNothingToReviewExitCode {
 				t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, gateErr)
@@ -265,7 +265,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 	}
 }
 
-// The Totality Cloud history row and the PostHog event both label the run, and they
+// The gx Cloud history row and the PostHog event both label the run, and they
 // derive that label from the same place so they cannot disagree with each
 // other — or, more importantly, with the summary text stored beside them. A
 // run whose summary says "Reviewed the repository" must not be filed as a
@@ -308,7 +308,7 @@ func TestReviewBaseFlagSelectsTheRange(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--base", "main", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --base error = %v\n%s", err, out)
+		t.Fatalf("gx review --base error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -333,7 +333,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --repo error = %v\n%s", err, out)
+		t.Fatalf("gx review --repo error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -353,7 +353,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 	// Without the flag the same tree is a working-tree review, unchanged.
 	plain, err := runReviewCommand(t, "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review error = %v\n%s", err, plain)
+		t.Fatalf("gx review error = %v\n%s", err, plain)
 	}
 	var plainReport codereview.Report
 	if decodeErr := json.Unmarshal([]byte(plain), &plainReport); decodeErr != nil {
@@ -372,13 +372,13 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --repo error = %v\n%s", err, out)
+		t.Fatalf("gx review --repo error = %v\n%s", err, out)
 	}
 	if strings.Contains(out, "Nothing to review") {
-		t.Fatalf("tx review --repo reported nothing to review:\n%s", out)
+		t.Fatalf("gx review --repo reported nothing to review:\n%s", out)
 	}
 	if !strings.Contains(out, "Reviewed the repository") {
-		t.Fatalf("tx review --repo does not say what it reviewed:\n%s", out)
+		t.Fatalf("gx review --repo does not say what it reviewed:\n%s", out)
 	}
 
 	// Saying it reviewed the repository is only honest if it read the
@@ -386,7 +386,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	// from there: this repo has no diff of any kind.
 	jsonOut, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --repo --json error = %v\n%s", err, jsonOut)
+		t.Fatalf("gx review --repo --json error = %v\n%s", err, jsonOut)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(jsonOut), &report); decodeErr != nil {
@@ -402,10 +402,10 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	// The same repo without the flag is still honest about reading nothing.
 	plain, err := runReviewCommand(t, "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review error = %v\n%s", err, plain)
+		t.Fatalf("gx review error = %v\n%s", err, plain)
 	}
 	if !strings.Contains(plain, "Nothing to review") {
-		t.Fatalf("tx review lost the nothing-to-review outcome:\n%s", plain)
+		t.Fatalf("gx review lost the nothing-to-review outcome:\n%s", plain)
 	}
 }
 
@@ -419,7 +419,7 @@ func TestReviewRepoFlagWinsOverBaseAndSaysSo(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--base", "main", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("tx review --repo --base error = %v\n%s", err, out)
+		t.Fatalf("gx review --repo --base error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -445,7 +445,7 @@ func TestReviewRejectsUnknownFailOnLevel(t *testing.T) {
 
 	_, err := runReviewCommand(t, "--fail-on", "critical", "--no-publish")
 	if err == nil {
-		t.Fatal("tx review accepted an unknown --fail-on level")
+		t.Fatal("gx review accepted an unknown --fail-on level")
 	}
 	if !strings.Contains(err.Error(), "unsupported --fail-on level") {
 		t.Fatalf("error = %v, want an unsupported-level error", err)

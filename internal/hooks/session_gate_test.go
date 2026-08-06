@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 // Discovery deliberately casts a wide net: any transcript that mentions this
@@ -18,10 +18,10 @@ import (
 //
 // A session bound to a different repository must not become shareable here.
 func TestSessionsForThisRepoWithholdsForeignSessions(t *testing.T) {
-	repo := initGateRepo(t, "git@github.com:satoricorp/totality.git")
+	repo := initGateRepo(t, "git@github.com:satoricorp/gx.git")
 
 	stager := &fakeOriginStager{origins: map[string]string{
-		"own":       "github.com/satoricorp/totality",
+		"own":       "github.com/satoricorp/gx",
 		"other":     "github.com/satoricorp/console",
 		"personal":  "github.com/joe/side-project",
 		"unbound":   "",
@@ -69,7 +69,7 @@ func TestSessionsForThisRepoWithholdsNothingWithoutAnOrigin(t *testing.T) {
 // A gate that cannot read its own data narrows nothing rather than dropping
 // work on the floor.
 func TestSessionsForThisRepoKeepsEverythingWhenTheLookupFails(t *testing.T) {
-	repo := initGateRepo(t, "git@github.com:satoricorp/totality.git")
+	repo := initGateRepo(t, "git@github.com:satoricorp/gx.git")
 	stager := &fakeOriginStager{err: os.ErrClosed}
 
 	kept, withheld := sessionsForThisRepo(context.Background(), stager, repo, []string{"a", "b"})

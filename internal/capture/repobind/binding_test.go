@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture/repobind"
+	"github.com/satoricorp/gx/internal/capture/repobind"
 )
 
 // A session run in a linked worktree belongs to the repository, not to the
 // checkout. Agent sessions in this project run in .claude/worktrees/<name>, so
 // this is the ordinary case rather than an exotic one.
 func TestForDirectoryBindsWorktreesToOneRepository(t *testing.T) {
-	main := initRepo(t, "git@github.com:satoricorp/totality.git")
+	main := initRepo(t, "git@github.com:satoricorp/gx.git")
 	worktree := filepath.Join(main, ".claude", "worktrees", "feature")
 	runGit(t, main, "worktree", "add", "-q", "-b", "feature", worktree)
 
@@ -28,7 +28,7 @@ func TestForDirectoryBindsWorktreesToOneRepository(t *testing.T) {
 	if fromMain.Origin != fromWorktree.Origin {
 		t.Fatalf("worktree bound to a different repository: %q vs %q", fromMain.Origin, fromWorktree.Origin)
 	}
-	if fromMain.Origin != "github.com/satoricorp/totality" {
+	if fromMain.Origin != "github.com/satoricorp/gx" {
 		t.Fatalf("Origin = %q", fromMain.Origin)
 	}
 	// The checkouts differ; the repository does not.
@@ -90,12 +90,12 @@ func TestForDirectoryLeavesUnidentifiableDirectoriesUnbound(t *testing.T) {
 
 // Two repositories must never bind to the same identity.
 func TestForDirectoryKeepsRepositoriesApart(t *testing.T) {
-	tx := initRepo(t, "git@github.com:satoricorp/totality.git")
+	gx := initRepo(t, "git@github.com:satoricorp/gx.git")
 	yeet := initRepo(t, "git@github.com:joe/yeet.git")
 
 	r := repobind.NewResolver()
 	ctx := context.Background()
-	a := r.ForDirectory(ctx, tx)
+	a := r.ForDirectory(ctx, gx)
 	b := r.ForDirectory(ctx, yeet)
 	if a.Origin == b.Origin {
 		t.Fatalf("distinct repositories share an origin: %q", a.Origin)

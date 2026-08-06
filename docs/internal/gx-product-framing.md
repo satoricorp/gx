@@ -1,22 +1,22 @@
-# Totality Product Framing
+# gx Product Framing
 
 ## Core Definition
 
-Totality captures coding sessions and attaches them to revisions, then uses that context to publish stacked PRs and generate better review artifacts.
+gx captures coding sessions and attaches them to revisions, then uses that context to publish stacked PRs and generate better review artifacts.
 
-Totality is not primarily:
+gx is not primarily:
 
 - a Git wrapper
 - a JJ teaching tool
 - a generic VCS abstraction layer
 
-JJ is the local engine. Git is the remote compatibility layer. Totality is the product surface.
+JJ is the local engine. Git is the remote compatibility layer. gx is the product surface.
 
-## How Totality Differs From Graphite
+## How gx Differs From Graphite
 
 Graphite helps developers manually structure and publish stacked PRs.
 
-Totality is intended to:
+gx is intended to:
 
 - capture implementation context
 - attach that context to work
@@ -26,7 +26,7 @@ Totality is intended to:
 
 Graphite centers the branch or diff as the main unit.
 
-Totality centers the revision:
+gx centers the revision:
 
 - linked sessions
 - linked prompts and responses
@@ -35,7 +35,7 @@ Totality centers the revision:
 - linked revisions
 - linked PRs
 
-In Totality, stacked PRs are an output format, not the whole product.
+In gx, stacked PRs are an output format, not the whole product.
 
 ## Product Thesis
 
@@ -46,11 +46,11 @@ The product value is upstream of stacked PR publication:
 - review evidence
 - scope and failure-mode summaries
 
-That means Totality still has value before perfect stacked PR publishing exists.
+That means gx still has value before perfect stacked PR publishing exists.
 
 ## Product Objects
 
-Totality should revolve around three core objects:
+gx should revolve around three core objects:
 
 1. Session
    Prompts, responses, tool calls, commands, tests, files touched.
@@ -63,7 +63,7 @@ Totality should revolve around three core objects:
 
 ## Why JJ Fits
 
-JJ is useful because Totality is about evolving revisions, not raw commits.
+JJ is useful because gx is about evolving revisions, not raw commits.
 
 JJ provides:
 
@@ -71,13 +71,13 @@ JJ provides:
 - rewrite-friendly local history operations
 - better support for reshaping revisions before publication
 
-But JJ should not be the user-facing product. Totality should hide JJ’s awkward parts and own the workflow.
+But JJ should not be the user-facing product. gx should hide JJ’s awkward parts and own the workflow.
 
 ## Product Boundary
 
 Recommended framing:
 
-- Totality is the tool the developer uses.
+- gx is the tool the developer uses.
 - JJ is the internal local change engine.
 - Git is the publication and compatibility format.
 
@@ -88,30 +88,30 @@ The user should not have to think about bookmarks, detached HEAD, or manual ref 
 The intended flow should look like:
 
 ```bash
-tx init
-tx codex
+gx init
+gx codex
 git add .
-tx commit -m "scaffold app"
+gx commit -m "scaffold app"
 git add .
-tx commit -m "add database schema"
+gx commit -m "add database schema"
 git add .
-tx commit -m "add secure email ingestion"
+gx commit -m "add secure email ingestion"
 git push
 gh pr create
 ```
 
-Totality should then:
+gx should then:
 
 - attach session context to each revision
 - preserve the ordering of the revisions
 - publish them as stacked PRs (via `git push` + `gh pr create`)
-- generate review summaries for each PR (Totality Cloud comment)
+- generate review summaries for each PR (gx Cloud comment)
 
 ## Strategic Implication
 
-Totality is not just “stacked PRs made easier.”
+gx is not just “stacked PRs made easier.”
 
-Totality is a context-native software delivery tool:
+gx is a context-native software delivery tool:
 
 - it records how work was done
 - attaches that evidence to reviewable revisions

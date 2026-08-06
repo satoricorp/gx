@@ -13,13 +13,13 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/satoricorp/totality/internal/buildconfig"
+	"github.com/satoricorp/gx/internal/buildconfig"
 )
 
 func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 	t.Setenv("CONVEX_SITE_URL", "")
 
@@ -35,7 +35,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 			UserID:              "user_1",
 			Login:               "joe",
 			AvatarURL:           "https://avatars.githubusercontent.com/u/1?v=4",
-			CLISessionToken:     "tlcs_login",
+			CLISessionToken:     "gxcs_login",
 			CLISessionExpiresAt: time.Now().Add(90 * 24 * time.Hour).UnixMilli(),
 		})
 	}))
@@ -45,7 +45,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 		if r.URL.Path != "/v1/auth/me" || r.Method != http.MethodGet {
 			t.Fatalf("unexpected console request: %s %s", r.Method, r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer tlcs_login" {
+		if r.Header.Get("Authorization") != "Bearer gxcs_login" {
 			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -99,7 +99,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if creds.Login != "joe" || creds.GitHubAccessToken != "" || creds.CLISessionToken != "tlcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
+	if creds.Login != "joe" || creds.GitHubAccessToken != "" || creds.CLISessionToken != "gxcs_login" || creds.AvatarURL != "https://avatars.githubusercontent.com/u/1?v=4" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
 	if gotComplete.GitHubAccessToken != "ghu_test" {
@@ -122,7 +122,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCloudCredentials() error = %v", err)
 	}
-	if loaded == nil || loaded.GitHubAccessToken != "" || loaded.GitHubRefreshToken != "" || loaded.CLISessionToken != "tlcs_login" || loaded.GitHubKeychainAccount == "" {
+	if loaded == nil || loaded.GitHubAccessToken != "" || loaded.GitHubRefreshToken != "" || loaded.CLISessionToken != "gxcs_login" || loaded.GitHubKeychainAccount == "" {
 		t.Fatalf("saved credentials = %+v", loaded)
 	}
 	token, source, err := GitHubAccessTokenWithSource()
@@ -137,7 +137,7 @@ func TestLoginDeviceFlowAndComplete(t *testing.T) {
 func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 	t.Setenv("CONVEX_SITE_URL", "")
 
@@ -145,7 +145,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
 			UserID:          "user_1",
 			Login:           "joe",
-			CLISessionToken: "tlcs_bad",
+			CLISessionToken: "gxcs_bad",
 		})
 	}))
 	defer convex.Close()
@@ -184,7 +184,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected login to reject unverified console session")
 	}
-	if !strings.Contains(err.Error(), "verify tx console session") || !strings.Contains(err.Error(), "wrong environment") {
+	if !strings.Contains(err.Error(), "verify gx console session") || !strings.Contains(err.Error(), "wrong environment") {
 		t.Fatalf("error = %v, want console verification failure", err)
 	}
 	if creds, loadErr := LoadCloudCredentials(); loadErr != nil || creds != nil {
@@ -195,7 +195,7 @@ func TestLoginRejectsUnverifiedConsoleSession(t *testing.T) {
 func TestLoginPollsUntilAuthorized(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "test-client")
 
 	var pollCount int
@@ -245,7 +245,7 @@ func TestLoginPollsUntilAuthorized(t *testing.T) {
 func TestLoginUsesBakedDefaults(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GITHUB_CLIENT_ID", "")
 	t.Setenv("CONVEX_SITE_URL", "")
 	buildconfig.GitHubClientID = "baked-client"
@@ -316,7 +316,7 @@ func TestLoginNotConfiguredInDevBuild(t *testing.T) {
 func TestLogoutRevokesAndClears(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("CONVEX_SITE_URL", "")
 
 	if err := SaveCloudCredentials(CloudCredentials{

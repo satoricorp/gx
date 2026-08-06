@@ -217,7 +217,7 @@ func TestSplitIdentifierCoversCodeCasing(t *testing.T) {
 	cases := map[string][]string{
 		"AttachSessionsFromHunkLinks": {"attach", "sessions", "from", "hunk", "links"},
 		"renderRevisionLine":          {"render", "revision", "line"},
-		"TOTALITY_REVIEW_JUDGE":       {"totality", "review", "judge"},
+		"GX_REVIEW_JUDGE":             {"gx", "review", "judge"},
 		"max_upload_attempts":         {"max", "upload", "attempts"},
 		"HTTPServerConfig":            {"http", "server", "config"},
 		"turbopuffer":                 nil,
@@ -269,9 +269,9 @@ func TestCodeChunkTextCarriesProvenanceHeader(t *testing.T) {
 		EndLine:    42,
 		Body:       "func IndexRepository() {}",
 	}
-	text := chunk.Text("satoricorp/totality")
+	text := chunk.Text("satoricorp/gx")
 	for _, want := range []string{
-		"repo: satoricorp/totality",
+		"repo: satoricorp/gx",
 		"file: internal/semantic/codeindex.go",
 		"lines: 10-42",
 		"language: go",
@@ -288,12 +288,12 @@ func TestCodeChunkTextCarriesProvenanceHeader(t *testing.T) {
 }
 
 func TestCodeRowIDIsStableAcrossCommits(t *testing.T) {
-	first := CodeRowID("satoricorp/totality", "internal/semantic/codeindex.go", 3)
-	second := CodeRowID("satoricorp/totality", "internal/semantic/codeindex.go", 3)
+	first := CodeRowID("satoricorp/gx", "internal/semantic/codeindex.go", 3)
+	second := CodeRowID("satoricorp/gx", "internal/semantic/codeindex.go", 3)
 	if first != second || first == "" {
 		t.Fatalf("CodeRowID is not stable: %q vs %q", first, second)
 	}
-	if CodeRowID("satoricorp/totality", "internal/semantic/codeindex.go", 4) == first {
+	if CodeRowID("satoricorp/gx", "internal/semantic/codeindex.go", 4) == first {
 		t.Fatal("CodeRowID collides across chunk indexes")
 	}
 	if CodeRowID("satoricorp/console", "internal/semantic/codeindex.go", 3) == first {

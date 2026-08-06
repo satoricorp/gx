@@ -34,7 +34,7 @@ const (
 	// files and reporting "no material issues found in the repository" is a
 	// sentence about a repository that was not read. Coverage is the point of
 	// `--repo`, so the number is now large enough to mean "all of it" for any
-	// repository tx reviews, and the files are spread across shards rather than
+	// repository gx reviews, and the files are spread across shards rather than
 	// crammed into one prompt. It survives only as a guard against a repository
 	// far larger than that, and whatever it drops is counted and reported.
 	maxWholeRepoSourceFiles = 5000
@@ -390,7 +390,7 @@ func repoWideStaticToolScope(facts RepoFacts) []string {
 // wholeRepoPromptLines are appended to the review instructions only when the
 // brief's profile is whole_repo. They are additive for exactly that reason:
 // the PR summary pipeline shares this prompt, so a whole-repo instruction that
-// applied to every profile would change every summary Totality writes on push.
+// applied to every profile would change every summary gx writes on push.
 func wholeRepoPromptLines() []string {
 	return []string{
 		"review_profile is whole_repo: the repository itself is the subject of this review, not the current patch. The caller asked about the codebase.",

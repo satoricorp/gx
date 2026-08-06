@@ -301,7 +301,7 @@ sources:
     url: https://arxiv.org/abs/2501.15134
     tier: research
     fetch: pdf
-    notes: "BitsAI-CR (ByteDance, FSE 2025). Precision-tracked rule library in production. Closest prior art to Totality ruleset. READ FIRST."
+    notes: "BitsAI-CR (ByteDance, FSE 2025). Precision-tracked rule library in production. Closest prior art to gx ruleset. READ FIRST."
   - id: codereviewer-2022
     url: https://dl.acm.org/doi/10.1145/3540250.3549081
     tier: research

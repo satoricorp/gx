@@ -13,14 +13,14 @@ func TestIndexCommandIsRegisteredAsHidden(t *testing.T) {
 		t.Fatalf("Find(index) = cmd=%v err=%v, want the index command", cmd, err)
 	}
 	if !cmd.Hidden {
-		t.Fatal("tx index is a maintenance command and must stay hidden")
+		t.Fatal("gx index is a maintenance command and must stay hidden")
 	}
 	if cmd.GroupID != "" {
-		t.Fatalf("tx index GroupID = %q, want no group", cmd.GroupID)
+		t.Fatalf("gx index GroupID = %q, want no group", cmd.GroupID)
 	}
 	for _, flag := range []string{"full", "json", "quiet", "concurrency", "namespace"} {
 		if cmd.Flags().Lookup(flag) == nil {
-			t.Fatalf("tx index is missing the --%s flag", flag)
+			t.Fatalf("gx index is missing the --%s flag", flag)
 		}
 	}
 }
@@ -30,9 +30,9 @@ func TestIndexCommandReportsMissingCredentials(t *testing.T) {
 	// was the opposite: a missing key nulled the indexer and every publish
 	// reported success while writing nothing.
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("TOTALITY_OPENAI_API_KEY", "")
+	t.Setenv("GX_OPENAI_API_KEY", "")
 	t.Setenv("TURBOPUFFER_API_KEY", "")
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 
 	root := NewRoot(context.Background())
 	root.SetArgs([]string{"index", "--quiet"})
@@ -40,7 +40,7 @@ func TestIndexCommandReportsMissingCredentials(t *testing.T) {
 	root.SetErr(&strings.Builder{})
 	err := root.Execute()
 	if err == nil {
-		t.Fatal("tx index without credentials must return an error, not silently do nothing")
+		t.Fatal("gx index without credentials must return an error, not silently do nothing")
 	}
 	if !strings.Contains(err.Error(), "OPENAI_API_KEY") {
 		t.Fatalf("error = %q, want it to name the missing credential", err)

@@ -7,14 +7,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/auth"
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/matcher"
-	"github.com/satoricorp/totality/internal/capture/parsers"
-	"github.com/satoricorp/totality/internal/capture/redact"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/telemetry"
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/matcher"
+	"github.com/satoricorp/gx/internal/capture/parsers"
+	"github.com/satoricorp/gx/internal/capture/redact"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 // SyncResult summarizes a capture staging drain.
@@ -101,7 +101,7 @@ func uploadStagedExtract(ctx context.Context, client *Client, row storage.Staged
 		RepoRoot:   row.RepoRoot,
 		RefRange:   row.RefRange,
 		HeadCommit: head,
-		TxVersion:  version.Current(),
+		GxVersion:  version.Current(),
 		HunkLinks:  staged.HunkLinks,
 		FileStats:  staged.FileStats,
 	}
@@ -168,7 +168,7 @@ const maxSessionContentBytes = 1 << 20
 //
 // Two invariants, both learned the hard way:
 //
-// Format. The server promoter parses sessions_raw.content as Totality's own
+// Format. The server promoter parses sessions_raw.content as gx's own
 // line-oriented format (server/src/ingest/promote.ts, matching format.go) and
 // discards any line that is not "[tool] kind …". Raw transcript JSONL starts
 // with "{", so uploading source bytes promotes zero events — and promotion
@@ -269,7 +269,7 @@ func capSessionContent(content string) string {
 		cut = maxSessionContentBytes
 	}
 	omitted := len(content) - cut
-	return content[:cut] + fmt.Sprintf("\n[tx] truncated %d bytes omitted", omitted)
+	return content[:cut] + fmt.Sprintf("\n[gx] truncated %d bytes omitted", omitted)
 }
 
 func sourceLabel(row storage.StagedSession) string {

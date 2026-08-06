@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/termstyle"
+	"github.com/satoricorp/gx/internal/termstyle"
 )
 
 const (
@@ -51,6 +51,29 @@ type Options struct {
 	Verbose      bool
 	PatchFocused bool
 	ReviewPolicy *ReviewPolicy
+	// MaxFindings caps how many recommendations a review reports. Zero means
+	// defaultMaxFindings.
+	//
+	// It exists because the cap was previously three separate hidden numbers
+	// that did not agree: the prompt told the model "at most 5, prefer 2-3",
+	// the unjudged fallback path truncated to 3 in code, and neither was
+	// reachable by a caller. A repository with six real defects could not
+	// report six no matter what, and the output looked like the reviewer's
+	// judgement rather than a ceiling nobody could see.
+	MaxFindings int
+
+	// Fast trades panel breadth for wall clock: one reviewer leg instead of
+	// two, no verification pass, and findings written tightly rather than with
+	// worked code examples.
+	//
+	// It exists because an interactive review and a pull-request summary are
+	// different products. Nobody waits on a PR summary, so it should spend
+	// whatever it takes to be thorough; a developer who typed a command and is
+	// watching a spinner is paying for every second, and measurement says the
+	// second leg contributes far less than it costs on a single change (both
+	// legs found the same defects on the planted-bug fixture, and the second
+	// leg's slowest call sets the shard's wall clock).
+	Fast bool
 
 	ProgressWriter io.Writer
 	Color          bool
@@ -76,7 +99,7 @@ type Report struct {
 	// ReviewModels and ReviewTransport are which models answered and over which
 	// wire. Both questions come up the moment a review is slow or wrong, and
 	// neither is recoverable after the fact: the same panel run against local
-	// AWS credentials and run through Totality Cloud has different latency, different
+	// AWS credentials and run through gx Cloud has different latency, different
 	// quota behavior, and completely different failure modes.
 	ReviewModels      []string     `json:"review_models,omitempty"`
 	ReviewTransport   string       `json:"review_transport,omitempty"`
@@ -105,7 +128,7 @@ type Report struct {
 	ReviewMode  string `json:"review_mode,omitempty"`
 	ReviewBase  string `json:"review_base,omitempty"`
 	ReviewRange string `json:"review_range,omitempty"`
-	// ReviewTarget is the human phrase naming what was inspected, or where tx
+	// ReviewTarget is the human phrase naming what was inspected, or where gx
 	// looked when it found nothing.
 	ReviewTarget string `json:"review_target,omitempty"`
 }
@@ -180,7 +203,7 @@ func RenderMarkdown(report Report) string {
 		// also reached without the flag, when a scope-, prompt-, or
 		// deep-directed review finds no diff at all. That review reads the
 		// repository too, so it says so too — including in the PR comment and
-		// the Totality Cloud history entry this same text becomes. Both paths are
+		// the gx Cloud history entry this same text becomes. Both paths are
 		// pinned by tests so the wording cannot drift for one and not the
 		// other.
 		if target := strings.TrimSpace(report.ReviewTarget); target != "" {
@@ -743,7 +766,7 @@ func exists(root, rel string) bool {
 func skipDir(rel string) bool {
 	for _, part := range strings.Split(rel, "/") {
 		switch part {
-		case ".git", ".jj", ".totality", ".gocache", "node_modules", "dist", "build", ".next", "coverage", ".cache", ".turbo", "vendor":
+		case ".git", ".jj", ".gx", ".gocache", "node_modules", "dist", "build", ".next", "coverage", ".cache", ".turbo", "vendor":
 			return true
 		}
 	}
@@ -781,7 +804,7 @@ func isTestFile(rel string) bool {
 
 func changedFiles(ctx context.Context, repoRoot string) []string {
 	// --untracked-files=all, because the default collapses a new directory into
-	// a single `internal/totalitytest/` entry. That entry is not a file: it produces
+	// a single `internal/gxtest/` entry. That entry is not a file: it produces
 	// no diff, reads as nothing, and takes an entire directory of brand-new
 	// unreviewed code out of the review without anything saying so. Listing the
 	// files individually is what makes them reviewable and what makes the
@@ -802,10 +825,69 @@ func changedFiles(ctx context.Context, repoRoot string) []string {
 			parts := strings.Split(file, " -> ")
 			file = parts[len(parts)-1]
 		}
-		if file != "" {
+		if file != "" && !isVendoredOrGeneratedPath(file) {
 			files = append(files, file)
 		}
 	}
 	sort.Strings(files)
 	return files
+}
+
+// vendoredPathSegments are directory names whose contents are never a review
+// subject: installed dependencies, build output, and tool caches.
+//
+// `git status` only hides these when they are gitignored, and the moment a
+// sub-project is added without its .gitignore they all arrive as untracked
+// files. That is not hypothetical: a nine-line change in a repository with an
+// un-ignored `dotcom/` reported 21,122 changed files and fanned out to 18
+// shards — 36 model calls, two and a half minutes, to review nine lines. The
+// model spent that budget reading `node_modules`, and the findings it returned
+// were about the dependencies rather than the change.
+//
+// Filtering here rather than at the shard planner is deliberate: these files
+// are not "too many to read", they are not the change. Coverage counts should
+// never have included them, so a review that skips them is not a review that
+// dropped anything.
+var vendoredPathSegments = map[string]bool{
+	"node_modules":     true,
+	".next":            true,
+	".nuxt":            true,
+	".svelte-kit":      true,
+	".turbo":           true,
+	".parcel-cache":    true,
+	"bower_components": true,
+	"vendor":           true,
+	"dist":             true,
+	"build":            true,
+	"out":              true,
+	"target":           true,
+	".venv":            true,
+	"venv":             true,
+	"__pycache__":      true,
+	".mypy_cache":      true,
+	".pytest_cache":    true,
+	".tox":             true,
+	".gradle":          true,
+	".terraform":       true,
+	"coverage":         true,
+	".nyc_output":      true,
+	".cache":           true,
+	".output":          true,
+	"Pods":             true,
+	"DerivedData":      true,
+}
+
+// isVendoredOrGeneratedPath reports whether a repo-relative path lives inside a
+// dependency, build-output, or cache directory at any depth.
+func isVendoredOrGeneratedPath(rel string) bool {
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return false
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(rel), "/") {
+		if vendoredPathSegments[segment] {
+			return true
+		}
+	}
+	return false
 }

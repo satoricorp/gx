@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/claudehooks"
-	"github.com/satoricorp/totality/internal/capture/extract"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/capture/reparse"
-	"github.com/satoricorp/totality/internal/hooks"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/telemetry"
-	"github.com/satoricorp/totality/internal/uploadauth"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/claudehooks"
+	"github.com/satoricorp/gx/internal/capture/extract"
+	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/capture/reparse"
+	"github.com/satoricorp/gx/internal/hooks"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/telemetry"
+	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
 func newCaptureCommand(ctx context.Context) *cobra.Command {
@@ -39,7 +39,7 @@ func newCaptureSyncCommand(ctx context.Context) *cobra.Command {
 	var quiet bool
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Upload shareable capture staging rows to the Totality server",
+		Short: "Upload shareable capture staging rows to the gx server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCaptureSync(ctx, cmd.OutOrStdout(), quiet)
 		},
@@ -54,7 +54,7 @@ func runCaptureSync(ctx context.Context, out interface{ Write([]byte) (int, erro
 		if quiet {
 			return nil
 		}
-		return fmt.Errorf("not logged in for capture upload — run `tx auth login`")
+		return fmt.Errorf("not logged in for capture upload — run `gx auth login`")
 	}
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {
@@ -136,7 +136,7 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 				// the staging line reads as a verdict on the change.
 				if result.AttributionSuspect {
 					fmt.Fprintln(cmd.ErrOrStderr(), labelWarningValue("Warning", fmt.Sprintf(
-						"found agent sessions but linked none of %d changed hunk(s); session data was likely still being written. Re-run once the session settles: tx capture push --repo %s --ref-range %s",
+						"found agent sessions but linked none of %d changed hunk(s); session data was likely still being written. Re-run once the session settles: gx capture push --repo %s --ref-range %s",
 						result.EligibleHunks, repoRoot, result.RefRange,
 					)))
 				}
@@ -151,13 +151,13 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: capture rows staged but not marked uploadable: %s\n", outcome.ShareableError)
 			}
 			if outcome.RecoveryError != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: repair Totality revision metadata: %s\n", outcome.RecoveryError)
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: repair gx revision metadata: %s\n", outcome.RecoveryError)
 			}
 			if outcome.AttachError != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push's review artifact will list no sessions: %s\n", outcome.AttachError)
 			}
 			if outcome.PublicationError != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push queued no Totality review artifact: %s\n", outcome.PublicationError)
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push queued no gx review artifact: %s\n", outcome.PublicationError)
 			}
 			// Uploads happen in a detached process whose output goes nowhere,
 			// so this is the only place a failing upload can reach a human.
@@ -211,25 +211,25 @@ func installCaptureHookWithOutput(cmd *cobra.Command, repoRoot string, printSucc
 			return err
 		}
 	}
-	txPath, err := os.Executable()
+	gxPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repoRoot, TotalityPath: txPath}); err != nil {
+	if err := hooks.Install(hooks.InstallOptions{RepoRoot: repoRoot, GxPath: gxPath}); err != nil {
 		return err
 	}
 	if printSuccess {
-		fmt.Fprintln(cmd.OutOrStdout(), labelValue("Totality lifecycle hooks", success("ok")+": commit metadata and push capture"))
+		fmt.Fprintln(cmd.OutOrStdout(), labelValue("gx lifecycle hooks", success("ok")+": commit metadata and push capture"))
 	}
 	return nil
 }
 
 func installClaudeCaptureHooks(cmd *cobra.Command, repoRoot string, quiet bool) error {
-	txPath, err := os.Executable()
+	gxPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if err := claudehooks.MergeSettings(repoRoot, txPath); err != nil {
+	if err := claudehooks.MergeSettings(repoRoot, gxPath); err != nil {
 		return err
 	}
 	if !quiet {

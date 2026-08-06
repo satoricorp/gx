@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 const (
@@ -140,7 +140,7 @@ func pendingByID(t *testing.T, ctx context.Context, stager storage.CaptureStager
 //	    stays stable and the changed row becomes pending again.
 func TestSourceStaging_PointerRowsForMatchedSourcesOnly(t *testing.T) {
 	repo := initProbeRepo(t)
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 
 	claudeDir := filepath.Join(t.TempDir(), "projects")
@@ -260,7 +260,7 @@ func keysOf(rows map[string]storage.StagedSession) []string {
 // a single ingested transcript stages one pointer row, keyed by source, and
 // re-ingesting the same (grown) file updates it in place.
 func TestIngestRawSessionStagesPointer(t *testing.T) {
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	ctx := context.Background()
 	stager, err := storage.OpenCaptureStager(ctx)
 	if err != nil {

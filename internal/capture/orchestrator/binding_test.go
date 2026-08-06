@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/orchestrator"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/orchestrator"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 // A staged session records which repository it belongs to, independent of
@@ -21,15 +21,15 @@ import (
 // whose transcript had not finished being written.
 func TestOrchestrator_RecordsTheRepositoryASessionBelongsTo(t *testing.T) {
 	repo := initTestGitRepo(t)
-	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/totality.git")
+	runGit(t, repo, "remote", "add", "origin", "git@github.com:satoricorp/gx.git")
 	added := commitDistinctiveWork(t, repo)
 
 	claudeDir := t.TempDir()
 	writeBoundTranscript(t, claudeDir, repo, "internal/app/binding.go", added)
 
-	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_CLOUD_URL", "")
-	t.Setenv("TOTALITY_UPLOAD_TOKEN", "")
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GX_CLOUD_URL", "")
+	t.Setenv("GX_UPLOAD_TOKEN", "")
 
 	ctx := context.Background()
 	if _, err := orchestrator.Run(ctx, orchestrator.RunOptions{
@@ -44,8 +44,8 @@ func TestOrchestrator_RecordsTheRepositoryASessionBelongsTo(t *testing.T) {
 	}
 
 	origin, cwd := stagedBinding(t, ctx)
-	if origin != "github.com/satoricorp/totality" {
-		t.Fatalf("session_origin = %q, want github.com/satoricorp/totality", origin)
+	if origin != "github.com/satoricorp/gx" {
+		t.Fatalf("session_origin = %q, want github.com/satoricorp/gx", origin)
 	}
 	if cwd == "" {
 		t.Fatal("session_cwd was not recorded")
@@ -66,8 +66,8 @@ func TestOrchestrator_LeavesSessionsInRemotelessReposUnbound(t *testing.T) {
 	claudeDir := t.TempDir()
 	writeBoundTranscript(t, claudeDir, repo, "internal/app/binding.go", added)
 
-	t.Setenv("TOTALITY_HOME", t.TempDir())
-	t.Setenv("TOTALITY_CLOUD_URL", "")
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GX_CLOUD_URL", "")
 
 	ctx := context.Background()
 	if _, err := orchestrator.Run(ctx, orchestrator.RunOptions{

@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/semantic"
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 const (
-	defaultReviewKnowledgeNamespace = "totality-review-knowledge"
+	defaultReviewKnowledgeNamespace = "gx-review-knowledge"
 	defaultReviewResourceBaseURL    = "https://gcp-us-central1.turbopuffer.com"
 	defaultReviewResourceTopK       = 8
 	defaultReviewResourceDeepTopK   = 24
@@ -30,7 +30,7 @@ type ReviewResourceRetriever struct {
 	Store     reviewResourceStore
 	Namespace string
 	Limit     int
-	// CloudSearcher overrides the Totality Cloud retrieval client; injected in
+	// CloudSearcher overrides the gx Cloud retrieval client; injected in
 	// tests. When nil it is resolved from the signed-in credentials.
 	CloudSearcher reviewCloudSearcher
 }
@@ -61,38 +61,38 @@ type turboPufferReviewResourceStore struct {
 }
 
 func reviewResourceRetrieverFromEnv() ContextRetriever {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_RESOURCES")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_RESOURCES")), "0") {
 		return nil
 	}
 	retriever := ReviewResourceRetriever{
-		Limit: reviewEnvInt("TOTALITY_REVIEW_RESOURCES_TOP_K", defaultReviewResourceTopK),
+		Limit: reviewEnvInt("GX_REVIEW_RESOURCES_TOP_K", defaultReviewResourceTopK),
 	}
-	openAIKey := strings.TrimSpace(firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("TOTALITY_OPENAI_API_KEY")))
+	openAIKey := strings.TrimSpace(firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("GX_OPENAI_API_KEY")))
 	tpufKey := strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY"))
 	if openAIKey == "" || tpufKey == "" {
 		// No direct keys. The retriever is still returned: Retrieve goes
-		// through Totality Cloud when signed in, and otherwise records the source as
+		// through gx Cloud when signed in, and otherwise records the source as
 		// disabled. It used to return nil here, which made the shared
 		// knowledge corpus vanish from the review with no evidence line — the
 		// exact silent-degradation the evidence log exists to prevent.
 		return retriever
 	}
-	namespace := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_KNOWLEDGE_NAMESPACE"))
+	namespace := strings.TrimSpace(os.Getenv("GX_REVIEW_KNOWLEDGE_NAMESPACE"))
 	if namespace == "" {
 		namespace = defaultReviewKnowledgeNamespace
 	}
 	cfg := semantic.Config{
 		OpenAIAPIKey:         openAIKey,
-		OpenAIBaseURL:        normalizeReviewOpenAIBaseURL(firstNonEmpty(os.Getenv("TOTALITY_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL"), "https://api.openai.com")),
-		OpenAIEmbeddingModel: firstNonEmpty(os.Getenv("TOTALITY_OPENAI_EMBEDDING_MODEL"), "text-embedding-3-small"),
+		OpenAIBaseURL:        normalizeReviewOpenAIBaseURL(firstNonEmpty(os.Getenv("GX_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL"), "https://api.openai.com")),
+		OpenAIEmbeddingModel: firstNonEmpty(os.Getenv("GX_OPENAI_EMBEDDING_MODEL"), "text-embedding-3-small"),
 		// 512 stays pinned for the shared corpus: its ~35k rows were embedded
 		// at that width and TurboPuffer rejects a query at any other.
-		EmbeddingDimensions: reviewEnvInt("TOTALITY_EMBEDDING_DIMENSIONS", 512),
+		EmbeddingDimensions: reviewEnvInt("GX_EMBEDDING_DIMENSIONS", 512),
 	}
 	retriever.Embedder = semantic.NewOpenAIEmbedder(cfg)
 	retriever.Store = turboPufferReviewResourceStore{
 		apiKey:     tpufKey,
-		baseURL:    strings.TrimRight(firstNonEmpty(os.Getenv("TOTALITY_TPUF_BASE_URL"), defaultReviewResourceBaseURL), "/"),
+		baseURL:    strings.TrimRight(firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL), "/"),
 		namespace:  strings.Trim(namespace, "/"),
 		httpClient: &http.Client{Timeout: 20 * time.Second},
 	}
@@ -107,7 +107,7 @@ const reviewKnowledgeEvidenceSource = "review knowledge"
 func (ReviewResourceRetriever) EvidenceSource() string { return reviewKnowledgeEvidenceSource }
 
 // retrieveKnowledgeViaCloud searches the shared review-knowledge corpus
-// through Totality Cloud. The server embeds the query at the corpus's own width and
+// through gx Cloud. The server embeds the query at the corpus's own width and
 // applies the review_corpus filter; the tag-narrowed second query of the
 // direct path is not replicated — the broad hybrid search is what the server's
 // own summary broker uses for this corpus.
@@ -141,9 +141,9 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	switch {
 	case !result.Available:
 		status.State = EvidenceUnavailable
-		status.Detail = "tx cloud retrieval is not configured server-side"
+		status.Detail = "gx cloud retrieval is not configured server-side"
 		if result.Reason != "" {
-			status.Detail = "tx cloud: " + result.Reason
+			status.Detail = "gx cloud: " + result.Reason
 		}
 	case !result.Exists:
 		status.State = EvidenceMissing
@@ -162,7 +162,7 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	snippets := reviewResourceSnippets(rows, limit, result.Namespace)
 	status.State = EvidenceOK
 	status.Snippets = len(snippets)
-	status.Detail = "via tx cloud"
+	status.Detail = "via gx cloud"
 	in.Evidence.Record(status)
 	return snippets, nil
 }
@@ -179,7 +179,7 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	}
 	if r.Embedder == nil || r.Store == nil {
 		// No direct keys: the signed-in path retrieves the shared corpus
-		// through Totality Cloud, and with no login the source reports itself
+		// through gx Cloud, and with no login the source reports itself
 		// disabled instead of silently contributing nothing.
 		searcher := r.CloudSearcher
 		if searcher == nil {
@@ -189,7 +189,7 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 			in.Evidence.Record(EvidenceStatus{
 				Source: reviewKnowledgeEvidenceSource,
 				State:  EvidenceDisabled,
-				Detail: "not signed in to Totality Cloud, and no direct keys for the shared review corpus",
+				Detail: "not signed in to gx Cloud, and no direct keys for the shared review corpus",
 				Remedy: signInRemedy,
 			})
 			return nil, nil
@@ -274,7 +274,7 @@ func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewRes
 	// include_attributes is deliberately `true` rather than the caller's list.
 	// TurboPuffer rejects the entire query — HTTP 400, zero rows — when the list
 	// names an attribute the namespace does not declare, and the list did:
-	// totality-review-knowledge has no `publisher` column, so every review resource
+	// gx-review-knowledge has no `publisher` column, so every review resource
 	// query in production was failing and, because the composite retriever
 	// swallowed the error, failing invisibly. Asking for all attributes cannot
 	// be rejected. The caller's list is kept in the request as a record of what
@@ -394,7 +394,7 @@ func reviewResourceSignals(in RetrieveInput) reviewResourceSignalSet {
 
 func reviewResourceQueryText(opts Options, signals reviewResourceSignalSet) string {
 	parts := []string{
-		"Totality code review resource query",
+		"gx code review resource query",
 		"profile: " + reviewProfile(opts),
 		"scope: " + opts.Scope,
 		"depth: " + depthLabel(opts.Deep),

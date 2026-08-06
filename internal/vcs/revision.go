@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// ResolveStackRevision maps tx stack labels like r2 to a JJ change ID.
+// ResolveStackRevision maps gx stack labels like r2 to a JJ change ID.
 func ResolveStackRevision(rev string, units []UnitSummary) (string, error) {
 	rev = strings.TrimSpace(rev)
 	if rev == "" {

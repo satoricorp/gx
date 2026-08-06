@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Engine struct {
@@ -87,6 +90,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		retriever = LocalContextRetriever{}
 	}
 
+	reviewTimingReset()
 	reviewProgress(opts, "Scanning repository")
 	facts, err := scanner.Scan(ctx, repoRoot, strings.TrimSpace(opts.Focus))
 	if err != nil {
@@ -193,7 +197,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	reviewer := e.reviewer
 	autoLoadedReviewer := false
 	if reviewer == nil && e.autoReviewer {
-		reviewer = reviewerFromEnv()
+		reviewer = reviewerFromEnvFast(opts.Fast)
 		autoLoadedReviewer = true
 	}
 	wantAIReview := plan.RunAI && (!autoLoadedReviewer || aiReviewRequestedFromEnv())
@@ -269,7 +273,15 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		}
 		degradedReasons = append(degradedReasons, reason)
 	}
-	if !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisory) > 0 {
+	// Fast reviews skip verification. It is the single most expensive stage
+	// after the review call itself (measured ~15s of a 47s review), and its
+	// value is filtering a panel's disagreements — which a one-leg review does
+	// not produce. The findings it would have graded are still reported; they
+	// are reported unverified, which the report says.
+	if opts.Fast {
+		reviewProgress(opts, "Skipping verification (fast review)")
+	}
+	if !opts.Fast && !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisory) > 0 {
 		reviewProgress(opts, "Verifying review findings")
 		candidates := advisory
 		// Verification runs in concurrent batches so that a large finding set
@@ -283,11 +295,11 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			// Unverified candidates fall back to the deduped, strength-capped
 			// set rather than being dropped, because an unreachable judge is
 			// not a verdict.
-			advisory = append(advisory, capAdvisoryFindings(outcome.Unjudged)...)
+			advisory = append(advisory, capAdvisoryFindings(outcome.Unjudged, opts.MaxFindings)...)
 		}
 		if outcome.BatchesFailed > 0 {
 			// A failed verification used to be invisible: findings silently
-			// collapsed to at most maxAdvisoryFindings and the report still
+			// collapsed to at most the findings cap and the report still
 			// read as a completed review. Say so instead.
 			degradedReasons = append(degradedReasons, fmt.Sprintf(
 				"%d of %d finding verification batches failed: %v",
@@ -304,7 +316,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				outcome.Unanswered))
 		}
 	} else {
-		advisory = capAdvisoryFindings(advisory)
+		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)
 	}
 	findings = append(blocking, advisory...)
 
@@ -420,8 +432,60 @@ func dedupeScopes(scopes []string) []string {
 }
 
 func reviewProgress(opts Options, message string) {
-	if opts.ProgressWriter == nil || strings.TrimSpace(message) == "" {
+	if strings.TrimSpace(message) == "" {
+		return
+	}
+	reviewTimingMark(message)
+	if opts.ProgressWriter == nil {
 		return
 	}
 	_, _ = io.WriteString(opts.ProgressWriter, strings.TrimSpace(message)+"\n")
+}
+
+// Review phase timing, enabled with GX_REVIEW_TIMING=1.
+//
+// Progress messages already mark every phase boundary, so timing them costs one
+// clock read and answers the only question that matters when a review feels
+// slow: which phase spent the time. Without it the answer is a stopwatch and a
+// guess, and the guess is usually wrong — the first profile of a 2m30s review
+// found the model calls were not the problem at all.
+var (
+	reviewTimingMu    sync.Mutex
+	reviewTimingStart time.Time
+	reviewTimingLast  time.Time
+)
+
+func reviewTimingEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_REVIEW_TIMING"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// reviewTimingReset starts a new timing run. Without it a process that reviews
+// more than once — the MCP server, the test suite — would report every later
+// review's phases as offsets from the first review's start.
+func reviewTimingReset() {
+	if !reviewTimingEnabled() {
+		return
+	}
+	reviewTimingMu.Lock()
+	defer reviewTimingMu.Unlock()
+	reviewTimingStart, reviewTimingLast = time.Time{}, time.Time{}
+}
+
+func reviewTimingMark(message string) {
+	if !reviewTimingEnabled() {
+		return
+	}
+	now := time.Now()
+	reviewTimingMu.Lock()
+	defer reviewTimingMu.Unlock()
+	if reviewTimingStart.IsZero() {
+		reviewTimingStart, reviewTimingLast = now, now
+	}
+	fmt.Fprintf(os.Stderr, "[timing] %7.1fs (+%5.1fs) %s\n",
+		now.Sub(reviewTimingStart).Seconds(), now.Sub(reviewTimingLast).Seconds(), strings.TrimSpace(message))
+	reviewTimingLast = now
 }

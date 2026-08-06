@@ -62,7 +62,7 @@ func RepoIdentityKey(commonDir string) string {
 	return NormalizeGitCommonDir("", commonDir)
 }
 
-func (s *Service) ResolveTotalityRepoAtPath(ctx context.Context, startPath string) (RepoInfo, error) {
+func (s *Service) ResolveGxRepoAtPath(ctx context.Context, startPath string) (RepoInfo, error) {
 	paths, err := s.ResolveGitPaths(ctx, startPath)
 	if err != nil {
 		return RepoInfo{}, err

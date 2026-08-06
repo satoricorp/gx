@@ -1,10 +1,10 @@
 package parsers
 
 import (
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/parsers/claude"
-	"github.com/satoricorp/totality/internal/capture/parsers/codex"
-	cursorparser "github.com/satoricorp/totality/internal/capture/parsers/cursor"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/parsers/claude"
+	"github.com/satoricorp/gx/internal/capture/parsers/codex"
+	cursorparser "github.com/satoricorp/gx/internal/capture/parsers/cursor"
 )
 
 // ParseBytes normalizes one tool's transcript bytes into session events and

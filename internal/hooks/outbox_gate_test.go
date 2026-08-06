@@ -7,12 +7,12 @@ import (
 )
 
 // TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue covers the retry
-// path that used to belong to `tx sync`: a push that enqueues nothing must
+// path that used to belong to `gx sync`: a push that enqueues nothing must
 // still spawn the outbox worker when failed or pending items are sitting in
 // the outbox from an earlier push.
 func TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 
 	if shouldStartOutboxWorker(false) {
 		t.Fatal("shouldStartOutboxWorker(false) = true with an empty outbox")
@@ -25,19 +25,19 @@ func TestShouldStartOutboxWorkerRetriesBacklogWithoutNewEnqueue(t *testing.T) {
 	if err := os.MkdirAll(outboxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	failedItem := []byte(`{"id":"totality-context-deadbeef","status":"failed","attempts":1,"last_error":"upload tx cloud payload: status 500","created_at":1}`)
-	if err := os.WriteFile(filepath.Join(outboxDir, "totality-context-deadbeef.json"), failedItem, 0o600); err != nil {
+	failedItem := []byte(`{"id":"gx-context-deadbeef","status":"failed","attempts":1,"last_error":"upload gx cloud payload: status 500","created_at":1}`)
+	if err := os.WriteFile(filepath.Join(outboxDir, "gx-context-deadbeef.json"), failedItem, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if !shouldStartOutboxWorker(false) {
 		t.Fatal("shouldStartOutboxWorker(false) = false with a failed item; failed uploads would never retry")
 	}
 
-	if err := os.Remove(filepath.Join(outboxDir, "totality-context-deadbeef.json")); err != nil {
+	if err := os.Remove(filepath.Join(outboxDir, "gx-context-deadbeef.json")); err != nil {
 		t.Fatal(err)
 	}
-	pendingItem := []byte(`{"id":"totality-context-cafebabe","status":"pending","created_at":2}`)
-	if err := os.WriteFile(filepath.Join(outboxDir, "totality-context-cafebabe.json"), pendingItem, 0o600); err != nil {
+	pendingItem := []byte(`{"id":"gx-context-cafebabe","status":"pending","created_at":2}`)
+	if err := os.WriteFile(filepath.Join(outboxDir, "gx-context-cafebabe.json"), pendingItem, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if !shouldStartOutboxWorker(false) {

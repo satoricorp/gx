@@ -15,9 +15,9 @@ func TestDoctorAutoInitializesUnbornGitRepo(t *testing.T) {
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
 	writeTestFile(t, root, "README.md", "# repo\n")
 	t.Chdir(root)
-	totalityHome := t.TempDir()
-	writeTestTotalityConfig(t, totalityHome, "Joe Example", "joe@example.com")
-	t.Setenv("TOTALITY_HOME", totalityHome)
+	gxHome := t.TempDir()
+	writeTestGxConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TERM", "dumb")
@@ -31,20 +31,20 @@ func TestDoctorAutoInitializesUnbornGitRepo(t *testing.T) {
 	cmd.SetArgs([]string{"doctor"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tx doctor error = %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
+		t.Fatalf("gx doctor error = %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
 	}
 	combined := out.String() + errOut.String()
 	if strings.Contains(combined, "Revision `main` doesn't exist") {
-		t.Fatalf("tx doctor leaked jj main error:\n%s", combined)
+		t.Fatalf("gx doctor leaked jj main error:\n%s", combined)
 	}
 	if strings.Contains(combined, "jj log -r mutable()") {
-		t.Fatalf("tx doctor leaked raw jj command:\n%s", combined)
+		t.Fatalf("gx doctor leaked raw jj command:\n%s", combined)
 	}
-	if !strings.Contains(errOut.String(), "Initializing tx for this repository") {
-		t.Fatalf("tx doctor missing auto-init notice on stderr:\nstdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
+	if !strings.Contains(errOut.String(), "Initializing gx for this repository") {
+		t.Fatalf("gx doctor missing auto-init notice on stderr:\nstdout:\n%s\nstderr:\n%s", out.String(), errOut.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".jj")); !os.IsNotExist(err) {
-		t.Fatalf("tx doctor unexpectedly created .jj: %v", err)
+		t.Fatalf("gx doctor unexpectedly created .jj: %v", err)
 	}
 }
 
@@ -60,9 +60,9 @@ func TestDoctorWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
-	totalityHome := t.TempDir()
-	writeTestTotalityConfig(t, totalityHome, "Joe Example", "joe@example.com")
-	t.Setenv("TOTALITY_HOME", totalityHome)
+	gxHome := t.TempDir()
+	writeTestGxConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TERM", "dumb")
@@ -75,9 +75,9 @@ func TestDoctorWarnsWhenLifecycleHooksCannotBeInstalled(t *testing.T) {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{"doctor"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tx doctor should remain usable: %v\n%s", err, errOut.String())
+		t.Fatalf("gx doctor should remain usable: %v\n%s", err, errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "warning: Totality lifecycle hooks not installed:") {
+	if !strings.Contains(errOut.String(), "warning: gx lifecycle hooks not installed:") {
 		t.Fatalf("missing lifecycle hook warning:\n%s", errOut.String())
 	}
 }
@@ -88,9 +88,9 @@ func TestDoctorHandlesRegisteredRepoWithoutMain(t *testing.T) {
 	runGitTest(t, root, "config", "user.email", "joe@example.com")
 	writeTestFile(t, root, "README.md", "# repo\n")
 
-	totalityHome := t.TempDir()
-	writeTestTotalityConfig(t, totalityHome, "Joe Example", "joe@example.com")
-	t.Setenv("TOTALITY_HOME", totalityHome)
+	gxHome := t.TempDir()
+	writeTestGxConfig(t, gxHome, "Joe Example", "joe@example.com")
+	t.Setenv("GX_HOME", gxHome)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("TERM", "dumb")
@@ -111,24 +111,24 @@ func TestDoctorHandlesRegisteredRepoWithoutMain(t *testing.T) {
 	cmd.SetArgs([]string{"doctor"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("tx doctor error = %v\n%s", err, out.String())
+		t.Fatalf("gx doctor error = %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "doesn't exist") {
-		t.Fatalf("tx doctor reported a missing base revision:\n%s", out.String())
+		t.Fatalf("gx doctor reported a missing base revision:\n%s", out.String())
 	}
 }
 
 func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 	root := NewRoot(context.Background())
 	cases := map[string]bool{
-		"tx init":        true,
-		"tx version":     true,
-		"tx auth status": true,
-		"tx review":      true,
-		"tx doctor":      false,
+		"gx init":        true,
+		"gx version":     true,
+		"gx auth status": true,
+		"gx review":      true,
+		"gx doctor":      false,
 	}
 	for path, want := range cases {
-		cmd, _, err := root.Find(strings.Fields(strings.TrimPrefix(path, "tx ")))
+		cmd, _, err := root.Find(strings.Fields(strings.TrimPrefix(path, "gx ")))
 		if err != nil {
 			t.Fatalf("Find(%q) error = %v", path, err)
 		}

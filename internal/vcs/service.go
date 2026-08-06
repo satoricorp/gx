@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/totalityconfig"
+	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
-var ErrNoGitBranch = errors.New("tx requires an active branch; create or checkout a branch first")
+var ErrNoGitBranch = errors.New("gx requires an active branch; create or checkout a branch first")
 
 type Runner interface {
 	Run(ctx context.Context, dir, name string, args ...string) (string, error)
@@ -234,8 +234,8 @@ type PushResult struct {
 	GitHubPRStatus       string
 	HeadCommitID         string
 	RemoteName           *string
-	TotalityStackRef     string
-	TotalityBaseRef      string
+	GxStackRef           string
+	GxBaseRef            string
 	GitPublishedRef      string
 	GitCheckoutRef       string
 	Output               string
@@ -244,7 +244,7 @@ type PushResult struct {
 }
 
 // PushedCommit is one commit in the pushed range, oldest first. RevisionID is
-// the Totality trailer ID when the commit carries one, otherwise empty.
+// the gx trailer ID when the commit carries one, otherwise empty.
 type PushedCommit struct {
 	CommitID   string
 	RevisionID string
@@ -326,7 +326,7 @@ func (s *Service) InitWithOptions(ctx context.Context, opts InitOptions) (InitRe
 }
 
 func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOptions) (InitResult, error) {
-	repo, err := s.ResolveTotalityRepoAtPath(ctx, startPath)
+	repo, err := s.ResolveGxRepoAtPath(ctx, startPath)
 	if err != nil {
 		return InitResult{}, err
 	}
@@ -341,10 +341,10 @@ func (s *Service) InitAtPath(ctx context.Context, startPath string, opts InitOpt
 	if err != nil {
 		return InitResult{}, err
 	}
-	if err := s.ensureTotalityInternalIgnored(ctx, repo.RootPath); err != nil {
+	if err := s.ensureGxInternalIgnored(ctx, repo.RootPath); err != nil {
 		return InitResult{}, err
 	}
-	repo, err = s.ResolveTotalityRepoAtPath(ctx, repo.RootPath)
+	repo, err = s.ResolveGxRepoAtPath(ctx, repo.RootPath)
 	if err != nil {
 		return InitResult{}, err
 	}
@@ -384,7 +384,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 	if err != nil {
 		return RepairResult{}, err
 	}
-	repo, err := s.ResolveTotalityRepoAtPath(ctx, cwd)
+	repo, err := s.ResolveGxRepoAtPath(ctx, cwd)
 	if err != nil {
 		return RepairResult{}, err
 	}
@@ -393,7 +393,7 @@ func (s *Service) RepairWorkflow(ctx context.Context) (RepairResult, error) {
 
 // shouldReturnCleanCheckoutToBase reports whether workflow repair may move a
 // clean checkout back to the authoring base. Deliberate checkouts of regular
-// named branches stay put; only detached HEADs and legacy totality-internal refs
+// named branches stay put; only detached HEADs and legacy gx-internal refs
 // are returned to base.
 
 type PublishMode string
@@ -461,7 +461,7 @@ func (s *Service) Stack(ctx context.Context) (StackSummary, error) {
 		if cwdErr != nil {
 			return cwdErr
 		}
-		repo, err := s.ResolveTotalityRepoAtPath(ctx, cwd)
+		repo, err := s.ResolveGxRepoAtPath(ctx, cwd)
 		if err != nil {
 			return err
 		}
@@ -532,7 +532,7 @@ func (s *Service) stackMergedIntoBase(ctx context.Context, repoRoot, fallbackBas
 	return false
 }
 
-func stackVisibleInTotality(stack StackInfo) bool {
+func stackVisibleInGx(stack StackInfo) bool {
 	return !IsTerminalStackStatus(stack.Status)
 }
 
@@ -562,10 +562,10 @@ func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (R
 	return s.withStoredRepoConfigByIdentity(ctx, info), nil
 }
 
-// ResolveGitRepoWithoutStore resolves the repo from git alone. Opening the Totality
-// store creates ~/.totality and applies its schema, so a read-only command like
-// `tx review` must not go through ResolveGitRepo: it would leave Totality state
-// behind on a machine that has never run `tx init`. Everything review needs
+// ResolveGitRepoWithoutStore resolves the repo from git alone. Opening the gx
+// store creates ~/.gx and applies its schema, so a read-only command like
+// `gx review` must not go through ResolveGitRepo: it would leave gx state
+// behind on a machine that has never run `gx init`. Everything review needs
 // (root, remote, branch) comes from git; only AuthoringBase and a stored
 // backend override come from the store, and review uses neither.
 func (s *Service) ResolveGitRepoWithoutStore(ctx context.Context) (RepoInfo, error) {
@@ -816,7 +816,7 @@ func (s *Service) gitValue(ctx context.Context, dir string, args ...string) (str
 }
 
 func (s *Service) ensureIdentity(ctx context.Context, repoRoot string, opts InitOptions) (string, string, bool, error) {
-	cfg, err := totalityconfig.Load()
+	cfg, err := gxconfig.Load()
 	if err != nil {
 		return "", "", false, err
 	}
@@ -846,20 +846,20 @@ func (s *Service) ensureIdentity(ctx context.Context, repoRoot string, opts Init
 		promptName := strings.TrimSpace(opts.Name) == ""
 		promptEmail := strings.TrimSpace(opts.Email) == ""
 		if promptName || promptEmail {
-			fmt.Fprintf(out, "Your config is stored in %s\n", totalityconfig.DisplayPath())
-			fmt.Fprintln(out, "and by initializing with tx you share your email with tx.")
+			fmt.Fprintf(out, "Your config is stored in %s\n", gxconfig.DisplayPath())
+			fmt.Fprintln(out, "and by initializing with gx you share your email with gx.")
 			fmt.Fprintln(out)
 		}
 		if promptName {
 			var promptErr error
-			name, promptErr = promptRequiredValue(in, out, promptFocus("tx name"), name)
+			name, promptErr = promptRequiredValue(in, out, promptFocus("gx name"), name)
 			if promptErr != nil {
 				return "", "", false, promptErr
 			}
 		}
 		if promptEmail {
 			var promptErr error
-			email, promptErr = promptRequiredValue(in, out, promptFocus("tx email"), email)
+			email, promptErr = promptRequiredValue(in, out, promptFocus("gx email"), email)
 			if promptErr != nil {
 				return "", "", false, promptErr
 			}
@@ -874,7 +874,7 @@ func (s *Service) ensureIdentity(ctx context.Context, repoRoot string, opts Init
 	if cfg.User.Name != name || cfg.User.Email != email {
 		cfg.User.Name = name
 		cfg.User.Email = email
-		if err := totalityconfig.Save(cfg); err != nil {
+		if err := gxconfig.Save(cfg); err != nil {
 			return "", "", false, err
 		}
 		changed = true
@@ -892,7 +892,7 @@ func (s *Service) gitConfigValue(ctx context.Context, dir, name string) string {
 	return ""
 }
 
-func (s *Service) ensureTotalityInternalIgnored(ctx context.Context, repoRoot string) error {
+func (s *Service) ensureGxInternalIgnored(ctx context.Context, repoRoot string) error {
 	excludePath, err := s.gitValue(ctx, repoRoot, "rev-parse", "--git-path", "info/exclude")
 	if err != nil || strings.TrimSpace(excludePath) == "" {
 		return nil
@@ -906,7 +906,7 @@ func (s *Service) ensureTotalityInternalIgnored(ctx context.Context, repoRoot st
 		return err
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == ".totality/" {
+		if strings.TrimSpace(line) == ".gx/" {
 			return nil
 		}
 	}
@@ -923,7 +923,7 @@ func (s *Service) ensureTotalityInternalIgnored(ctx context.Context, repoRoot st
 			return err
 		}
 	}
-	_, err = file.WriteString(".totality/\n")
+	_, err = file.WriteString(".gx/\n")
 	return err
 }
 
@@ -938,7 +938,7 @@ func (s *Service) defaultStackBaseRef(repo RepoInfo) string {
 	}
 	if repo.BranchName != nil && strings.TrimSpace(*repo.BranchName) != "" {
 		branch := strings.TrimSpace(*repo.BranchName)
-		if base, ok := txAuthoringBaseFromCheckoutRef(branch); ok {
+		if base, ok := gxAuthoringBaseFromCheckoutRef(branch); ok {
 			return base
 		}
 	}
@@ -954,10 +954,10 @@ func (s *Service) publicStackBaseRef(ctx context.Context, repo RepoInfo, baseRef
 	if baseRef == "" {
 		return repo.defaultBaseBranch()
 	}
-	if legacyStackBookmarkName(baseRef) && !legacyTotalityInternalCheckoutRef(baseRef) {
+	if legacyStackBookmarkName(baseRef) && !legacyGxInternalCheckoutRef(baseRef) {
 		return stackBookmarkName(baseRef, "")
 	}
-	if base, ok := txAuthoringBaseFromCheckoutRef(baseRef); ok {
+	if base, ok := gxAuthoringBaseFromCheckoutRef(baseRef); ok {
 		if base == repo.defaultBaseBranch() {
 			if _, err := s.commitIDForRev(ctx, repo.RootPath, base); err == nil {
 				return base
@@ -971,7 +971,7 @@ func (s *Service) publicStackBaseRef(ctx context.Context, repo RepoInfo, baseRef
 			return base
 		}
 	}
-	if legacyTotalityInternalCheckoutRef(baseRef) {
+	if legacyGxInternalCheckoutRef(baseRef) {
 		if bookmark := s.publicBookmarkForRev(ctx, repo.RootPath, baseRef, repo.defaultBaseBranch()); bookmark != "" {
 			return bookmark
 		}
@@ -989,16 +989,16 @@ func (s *Service) publicBookmarkForRev(ctx context.Context, repoRoot, rev, defau
 	best := ""
 	for _, line := range splitLines(out) {
 		name := strings.TrimSpace(line)
-		if name == "" || legacyTotalityInternalCheckoutRef(name) {
+		if name == "" || legacyGxInternalCheckoutRef(name) {
 			continue
 		}
 		rank := 3
 		switch {
-		case name != defaultBranch && !isTotalityStackBookmark(name):
+		case name != defaultBranch && !isGxStackBookmark(name):
 			rank = 0
 		case name == defaultBranch:
 			rank = 1
-		case isTotalityStackBookmark(name):
+		case isGxStackBookmark(name):
 			rank = 2
 		}
 		if rank < bestRank || (rank == bestRank && (best == "" || name < best)) {
@@ -1115,16 +1115,16 @@ func (r RepoInfo) defaultBaseBranch() string {
 func (r RepoInfo) authoringBaseRef() string {
 	if r.AuthoringBase != nil && strings.TrimSpace(*r.AuthoringBase) != "" {
 		ref := strings.TrimPrefix(strings.TrimSpace(*r.AuthoringBase), "origin/")
-		if legacyStackBookmarkName(ref) && !legacyTotalityInternalCheckoutRef(ref) {
+		if legacyStackBookmarkName(ref) && !legacyGxInternalCheckoutRef(ref) {
 			return stackBookmarkName(ref, "")
 		}
-		if isTotalityStackBookmark(ref) {
+		if isGxStackBookmark(ref) {
 			return ref
 		}
-		if base, ok := txAuthoringBaseFromCheckoutRef(ref); ok {
+		if base, ok := gxAuthoringBaseFromCheckoutRef(ref); ok {
 			return base
 		}
-		if legacyTotalityInternalCheckoutRef(ref) {
+		if legacyGxInternalCheckoutRef(ref) {
 			return r.defaultBaseBranch()
 		}
 		return ref

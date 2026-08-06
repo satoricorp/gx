@@ -11,11 +11,11 @@ import (
 // A TurboPuffer namespace is a function of who the repository is, and the
 // writer and the reader have to agree on that function or the reader addresses
 // an empty namespace and reports the repository as never indexed. They did not
-// agree. `tx index` asked git one way and parsed the answer with one parser;
-// `tx review` asked git a different way and parsed the answer with a different
-// copy of the same parser. Verified live: a `tx index` run wrote
-// totality-local-yeet-8d862445e7e4-v2 while `tx review` in the same checkout looked in
-// totality-local-satoricorp-yeet-v2 and reported "Totality Cloud has never indexed this
+// agree. `gx index` asked git one way and parsed the answer with one parser;
+// `gx review` asked git a different way and parsed the answer with a different
+// copy of the same parser. Verified live: a `gx index` run wrote
+// gx-local-yeet-8d862445e7e4-v2 while `gx review` in the same checkout looked in
+// gx-local-satoricorp-yeet-v2 and reported "gx Cloud has never indexed this
 // repository" over an index that existed and was current.
 //
 // This is the third instance of one bug shape in this codebase — a writer and a
@@ -55,7 +55,7 @@ type RepoIdentity struct {
 	// and inventing one would silently give two different checkouts of the same
 	// directory name the same identity.
 	RepoFullName string
-	// OrgID is the signed-in Totality org, or "" for a local-only index.
+	// OrgID is the signed-in gx org, or "" for a local-only index.
 	OrgID string
 	// Namespace is where an index WRITE goes.
 	Namespace string
@@ -70,10 +70,10 @@ type NamespaceCandidate struct {
 
 // Namespace origins, as they appear in a review's evidence line.
 const (
-	NamespaceOriginPrimary = "tx code index"
+	NamespaceOriginPrimary = "gx code index"
 	// NamespaceOriginPreRemote is the name this repository's index was written
 	// under before the checkout gained a git remote.
-	NamespaceOriginPreRemote = "tx code index (pre-remote name)"
+	NamespaceOriginPreRemote = "gx code index (pre-remote name)"
 )
 
 // ResolveRepoIdentity derives a repository's identity from its checkout.
@@ -100,7 +100,7 @@ func ResolveRepoIdentity(ctx context.Context, repoRoot, orgID, repoFullName stri
 // Candidates lists the namespaces a read should try, most specific first.
 //
 // The primary is the one a write would go to now — and since the console,
-// the server, and this CLI all converged on `totality-<orgId>-<slug>-v2` (console
+// the server, and this CLI all converged on `gx-<orgId>-<slug>-v2` (console
 // #58), it is also the cloud indexers' name: there is no separate "console
 // namespace" to probe anymore. A `ConsoleNamespaceForRepo` guess at the old
 // `repo-<owner>-<repo>` name lived here until it silently drifted — the

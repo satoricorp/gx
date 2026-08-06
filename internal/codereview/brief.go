@@ -47,6 +47,16 @@ type ReviewBrief struct {
 	// travels in the brief so the model is told what it is missing, and so the
 	// report can say the same thing to the reader.
 	Evidence []EvidenceStatus `json:"evidence,omitempty"`
+	// Concise asks for the same findings written shorter. It rides in the brief
+	// rather than as a reviewer field because the prompt is built from the
+	// brief, and because a shard carries it to every leg without extra
+	// plumbing. json:"-" keeps it out of the payload: it shapes the developer
+	// prompt, and repeating it as data invites the model to treat concision as
+	// a subject of the review.
+	Concise bool `json:"-"`
+	// MaxFindings is the ceiling the developer prompt states. Like Concise it
+	// shapes the prompt rather than the payload, so it stays out of the JSON.
+	MaxFindings int `json:"-"`
 }
 
 // DegradedEvidence lists the evidence sources that failed this review.
@@ -195,6 +205,8 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		ReviewProfile: reviewProfile(opts),
 		Focus:         strings.TrimSpace(opts.Focus),
 		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
+		Concise:       opts.Fast,
+		MaxFindings:   resolveMaxFindings(opts.MaxFindings),
 		Triage:        in.Plan.Triage,
 		Static: StaticSnapshot{
 			FileCount:       in.Facts.TrackedFileCount,

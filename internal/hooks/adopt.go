@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/publication"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/gx/internal/publication"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 // AdoptPushOptions configures auto-adopt publication for a raw git push.
@@ -51,7 +51,7 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 	}
 	branch := branchNameFromRef(opts.LocalRef)
 	if branch == "" {
-		// Hooks installed by older tx versions do not pass --local-ref;
+		// Hooks installed by older gx versions do not pass --local-ref;
 		// without a branch the artifact routes to an "unknown" bookmark on
 		// the server and PR linkage is lost.
 		branch, _ = gitCurrentBranch(ctx, repoRoot)
@@ -65,8 +65,8 @@ func buildAdoptPushResult(ctx context.Context, opts AdoptPushOptions) (vcs.PushR
 		Backend:    "git",
 		BranchName: branchPtr,
 	}
-	if txRepo, err := vcs.NewService().ResolveTotalityRepoAtPath(ctx, repoRoot); err == nil {
-		repo = txRepo
+	if gxRepo, err := vcs.NewService().ResolveGxRepoAtPath(ctx, repoRoot); err == nil {
+		repo = gxRepo
 		repo.BranchName = branchPtr
 	}
 	if remotePtr != nil {

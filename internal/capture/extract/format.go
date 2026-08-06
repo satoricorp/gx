@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/capture"
+	"github.com/satoricorp/gx/internal/capture"
 )
 
 // SessionPayload is one session blob ready for upload.

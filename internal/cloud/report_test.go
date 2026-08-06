@@ -9,10 +9,10 @@ import (
 )
 
 func TestReportLogsUsesReportedLogsEndpoint(t *testing.T) {
-	t.Setenv("TOTALITY_HOME", t.TempDir())
+	t.Setenv("GX_HOME", t.TempDir())
 	if err := SaveCloudCredentials(CloudCredentials{
 		GitHubAccessToken: "gho_report",
-		CLISessionToken:   "tlcs_report",
+		CLISessionToken:   "gxcs_report",
 	}); err != nil {
 		t.Fatalf("SaveCloudCredentials() error = %v", err)
 	}
@@ -25,19 +25,19 @@ func TestReportLogsUsesReportedLogsEndpoint(t *testing.T) {
 		if r.URL.Path != "/v1/reported-logs" {
 			t.Fatalf("path = %s, want /v1/reported-logs", r.URL.Path)
 		}
-		if auth := r.Header.Get("Authorization"); auth != "Bearer tlcs_report" {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer gxcs_report" {
 			t.Fatalf("authorization = %q", auth)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		_ = json.NewEncoder(w).Encode(ReportLogResult{ID: "report-1", URL: "https://totality.sh/reports/report-1"})
+		_ = json.NewEncoder(w).Encode(ReportLogResult{ID: "report-1", URL: "https://gx.run/reports/report-1"})
 	}))
 	defer server.Close()
 
 	client := &Client{url: server.URL, http: server.Client()}
 	result, err := client.ReportLogs(context.Background(), ReportLogRequest{
-		TLVersion: "dev",
+		GxVersion: "dev",
 		Error:     "upload failed",
 		Logs:      []ReportLogFile{{Path: "publish-upload.log", Content: "failed"}},
 	})

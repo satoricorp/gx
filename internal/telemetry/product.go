@@ -7,22 +7,22 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/cloud"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/version"
+	"github.com/satoricorp/gx/internal/cloud"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/version"
 )
 
 // stateWritesKey marks a context as belonging to a command that must not
-// create Totality state on the machine.
+// create gx state on the machine.
 type stateWritesKeyType struct{}
 
 var stateWritesKey stateWritesKeyType
 
 // WithoutStateWrites marks ctx as read-only for the machine. Telemetry still
-// reports under it; it just never writes anything down to do so. `tx review`
+// reports under it; it just never writes anything down to do so. `gx review`
 // runs as a CI gate and on checkouts the reviewer does not own, and minting a
-// machine ID to label an event would leave $TOTALITY_HOME behind on a machine that
-// never ran tx — buying an analytics dimension with the promise the command
+// machine ID to label an event would leave $GX_HOME behind on a machine that
+// never ran gx — buying an analytics dimension with the promise the command
 // makes.
 func WithoutStateWrites(ctx context.Context) context.Context {
 	return context.WithValue(ctx, stateWritesKey, true)
@@ -48,8 +48,8 @@ func EmitInstallOnce(ctx context.Context) {
 	if !Configured() {
 		return
 	}
-	// The install event is remembered by writing a sentinel under $TOTALITY_HOME, so
-	// there is no way to send it without creating Totality state. A command that
+	// The install event is remembered by writing a sentinel under $GX_HOME, so
+	// there is no way to send it without creating gx state. A command that
 	// promised not to skips it rather than sending the event and forgetting.
 	if !stateWritesAllowed(ctx) {
 		return
@@ -73,7 +73,7 @@ func EmitInstallOnce(ctx context.Context) {
 
 func ProductProperties(ctx context.Context, properties map[string]any) map[string]any {
 	out := map[string]any{
-		"tx_version": version.Current(),
+		"gx_version": version.Current(),
 		"entrypoint": Entrypoint(),
 	}
 	if properties != nil {
@@ -100,9 +100,9 @@ func ProductProperties(ctx context.Context, properties map[string]any) map[strin
 		}
 	} else if _, ok := out["distinct_id"]; !ok {
 		// Signed out: fall back to the machine ID. Minting one writes
-		// machine_id.json and creates $TOTALITY_HOME, so a read-only command reads
+		// machine_id.json and creates $GX_HOME, so a read-only command reads
 		// the existing ID and otherwise reports anonymously. The first command
-		// that legitimately writes Totality state mints it for everyone after.
+		// that legitimately writes gx state mints it for everyone after.
 		machineID, err := "", error(nil)
 		if stateWritesAllowed(ctx) {
 			machineID, err = cloud.DefaultMachineID()
@@ -133,7 +133,7 @@ func installSentinelPath(source string) (string, error) {
 }
 
 func Entrypoint() string {
-	if strings.TrimSpace(os.Getenv("TOTALITY_MCP")) != "" {
+	if strings.TrimSpace(os.Getenv("GX_MCP")) != "" {
 		return "mcp"
 	}
 	return "cli"

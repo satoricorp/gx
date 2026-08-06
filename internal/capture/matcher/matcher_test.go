@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/exclude"
-	"github.com/satoricorp/totality/internal/capture/matcher"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/exclude"
+	"github.com/satoricorp/gx/internal/capture/matcher"
 )
 
 func TestMatcher_Tier1Exact(t *testing.T) {
@@ -88,7 +88,7 @@ func TestExcludeGenerated(t *testing.T) {
 	}{
 		{"go.sum", true},
 		{"internal/foo_gen.go", true},
-		{".totality/state.json", true},
+		{".gx/state.json", true},
 		{"internal/foo.go", false},
 	}
 	for _, tc := range cases {

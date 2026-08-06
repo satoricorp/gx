@@ -1,4 +1,4 @@
-package totalitytest
+package gxtest
 
 import (
 	"encoding/json"
@@ -19,8 +19,8 @@ import (
 // because the code behaved. That is how the review read-only assertion came to
 // be satisfied by accident for as long as it was.
 type IndexBackend struct {
-	// URL is the base URL to hand to both TOTALITY_OPENAI_BASE_URL and
-	// TOTALITY_TPUF_BASE_URL.
+	// URL is the base URL to hand to both GX_OPENAI_BASE_URL and
+	// GX_TPUF_BASE_URL.
 	URL string
 
 	mu       sync.Mutex
@@ -84,8 +84,8 @@ func (b *IndexBackend) Use(t *testing.T) {
 	t.Helper()
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	t.Setenv("TURBOPUFFER_API_KEY", "test-key")
-	t.Setenv("TOTALITY_OPENAI_BASE_URL", b.URL)
-	t.Setenv("TOTALITY_TPUF_BASE_URL", b.URL)
+	t.Setenv("GX_OPENAI_BASE_URL", b.URL)
+	t.Setenv("GX_TPUF_BASE_URL", b.URL)
 }
 
 func (b *IndexBackend) record(r *http.Request) {

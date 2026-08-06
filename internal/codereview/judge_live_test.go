@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/satoricorp/totality/internal/totalitytest"
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // liveJudgeRequest is the fixed three-candidate probe the live tests share: one
@@ -64,7 +64,7 @@ func liveJudgeVerdicts(t *testing.T) (bedrockCompletion, []judgeResult, judgeReq
 	t.Helper()
 	// Billable Bedrock inference, so reaching it has to be asked for rather
 	// than inherited from whichever AWS profile the shell happens to carry.
-	totalitytest.RequireNoNetwork(t)
+	gxtest.RequireNoNetwork(t)
 	if _, err := bedrockCredentialsFromEnv(); err != nil {
 		t.Skipf("no AWS credentials; skipping live judge test (%v)", err)
 	}
@@ -102,7 +102,7 @@ func liveJudgeVerdicts(t *testing.T) (bedrockCompletion, []judgeResult, judgeReq
 // a reply that opens with paragraphs of reasoning, quotes braces from source
 // code, and buries its JSON in a ```json fence — and whether a prompt still
 // works is a fact about the model, not about this repository. A model update can
-// withdraw that behavior without a line of tx changing.
+// withdraw that behavior without a line of gx changing.
 //
 // Measured before and after the contract landed, replaying a real 24-candidate
 // batch against us.anthropic.claude-sonnet-4-6 twenty times each: before, every

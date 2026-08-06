@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/parsers"
-	"github.com/satoricorp/totality/internal/capture/repobind"
-	"github.com/satoricorp/totality/internal/storage"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/parsers"
+	"github.com/satoricorp/gx/internal/capture/repobind"
+	"github.com/satoricorp/gx/internal/storage"
 )
 
 // sourceFingerprint describes one transcript file's bytes at one instant, so

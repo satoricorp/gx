@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-const hookMarker = "tx capture transcript"
+const hookMarker = "gx capture transcript"
 
-// MergeSettings registers Totality transcript capture hooks in .claude/settings.json
+// MergeSettings registers gx transcript capture hooks in .claude/settings.json
 // without replacing existing user hook entries.
-func MergeSettings(repoRoot, txPath string) error {
+func MergeSettings(repoRoot, gxPath string) error {
 	if strings.TrimSpace(repoRoot) == "" {
 		return fmt.Errorf("repo root required")
 	}
-	if strings.TrimSpace(txPath) == "" {
+	if strings.TrimSpace(gxPath) == "" {
 		var err error
-		txPath, err = os.Executable()
+		gxPath, err = os.Executable()
 		if err != nil {
 			return err
 		}
@@ -48,7 +48,7 @@ func MergeSettings(repoRoot, txPath string) error {
 		hooks = map[string]json.RawMessage{}
 	}
 
-	command := shellQuote(portableTlPath(txPath)) + " capture transcript"
+	command := shellQuote(portableTlPath(gxPath)) + " capture transcript"
 	for _, event := range []string{"Stop", "SessionEnd"} {
 		merged, err := mergeHookEvent(hooks[event], command)
 		if err != nil {
@@ -129,16 +129,16 @@ func hookGroupContainsMarker(group map[string]any) bool {
 // directory. Claude Code runs hook commands through a shell, so a
 // double-quoted $HOME expands per machine. A path outside the home directory
 // is left as-is: there is nothing portable to substitute.
-func portableTlPath(txPath string) string {
+func portableTlPath(gxPath string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
-		return txPath
+		return gxPath
 	}
 	home = strings.TrimRight(home, string(filepath.Separator))
-	if txPath == home || !strings.HasPrefix(txPath, home+string(filepath.Separator)) {
-		return txPath
+	if gxPath == home || !strings.HasPrefix(gxPath, home+string(filepath.Separator)) {
+		return gxPath
 	}
-	return "$HOME" + strings.TrimPrefix(txPath, home)
+	return "$HOME" + strings.TrimPrefix(gxPath, home)
 }
 
 func shellQuote(value string) string {

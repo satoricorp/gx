@@ -3,10 +3,10 @@
 ## Purpose
 
 This document preserves the product behavior, data contracts, type contracts,
-and executable specification of Totality's demux/generate implementation before its
+and executable specification of gx's demux/generate implementation before its
 jj-dependent code is removed.
 
-Use it to rebuild the feature only if Totality again needs to turn a mixed working
+Use it to rebuild the feature only if gx again needs to turn a mixed working
 tree into ordered, reviewable Revisions. A future implementation should be
 Git-native and should not restore the old jj checkout, bookmark, or operation
 machinery.
@@ -14,9 +14,9 @@ machinery.
 Historical source baseline:
 
 ```text
-Repository: satoricorp/totality
+Repository: satoricorp/gx
 Commit: 1abd91d
-User command at that commit: tx generate
+User command at that commit: gx generate
 Internal names: demux, compose
 ```
 
@@ -45,7 +45,7 @@ Given a source snapshot containing mixed changes, generate must:
 9. Preflight an accepted plan in disposable isolation before mutating the real
    checkout.
 10. Apply the complete accepted plan atomically, or restore the source state.
-11. Record planning and provenance evidence against each resulting Totality Revision.
+11. Record planning and provenance evidence against each resulting gx Revision.
 12. Leave unaccepted changes available for a later planning run.
 
 The valuable module is the plan graph:
@@ -57,7 +57,7 @@ SourceSnapshot
   -> PlanReview
   -> RepairHints
   -> Preflight
-  -> Applied Totality Revisions
+  -> Applied gx Revisions
   -> Review evidence
 ```
 
@@ -337,7 +337,7 @@ type AppliedRevision struct {
 }
 ```
 
-`RevisionID` is the durable Totality-owned ID described by the Git-native Revision
+`RevisionID` is the durable gx-owned ID described by the Git-native Revision
 ADR. `CommitID` is the current Git snapshot.
 
 ## Validation Invariants
@@ -433,8 +433,8 @@ accept warning diagnostics, but cannot bypass structural validation.
 - Acquire one repository lock based on Git common directory.
 - Recheck the source snapshot.
 - Create Revisions in dependency order.
-- Generate a durable Totality Revision ID for each commit.
-- Add the Totality trailer before each Git commit is created.
+- Generate a durable gx Revision ID for each commit.
+- Add the gx trailer before each Git commit is created.
 - Attach exact provenance and plan evidence.
 - Advance branch refs with compare-and-swap.
 - On failure, restore refs and the active worktree/index exactly.
@@ -627,7 +627,7 @@ Add missing scenarios before declaring a rebuild complete:
 - Concurrent linked-worktree planning.
 - Apply rollback after each mutation point.
 - Model timeout, malformed output, and adversarial catalog references.
-- Squash/rebase after apply preserves Totality Revision identity and evidence.
+- Squash/rebase after apply preserves gx Revision identity and evidence.
 
 ## Rebuild Sequence
 
@@ -640,7 +640,7 @@ Add missing scenarios before declaring a rebuild complete:
 5. Implement deterministic planning, review, and fixed-point repair.
 6. Add the optional model repair adapter with bounded untrusted input.
 7. Implement Git-worktree preflight.
-8. Implement transactional Git apply with Totality Revision trailers.
+8. Implement transactional Git apply with gx Revision trailers.
 9. Persist plan evidence and project it into review bundles.
 10. Add CLI/MCP adapters only after the module contract is stable.
 
@@ -651,7 +651,7 @@ A rebuild is ready only when:
 - every source hunk is applied exactly once or explicitly left in the remainder;
 - invalid or stale plans make no Git changes;
 - a successful apply produces the same patch as the accepted plan;
-- each resulting commit has a durable Totality Revision ID;
+- each resulting commit has a durable gx Revision ID;
 - provenance and plan evidence are attached to the correct Revision;
 - linked worktrees do not affect each other's HEAD, index, or files;
 - automatic apply requires a successful disposable preflight;

@@ -41,13 +41,29 @@ const (
 	// Small changes are cheap to repeat and give every repo shard the context
 	// of what just happened; large ones get their own shards instead.
 	maxChangeInFocusBytes = 40000
+	// fastShardDiffBytes is the per-call diff budget for a fast review.
+	//
+	// The ordinary budget optimizes for one model seeing as much of the change
+	// as it can hold, which is right when nobody is waiting. A fast review
+	// optimizes for wall clock, and wall clock is set by the slowest single
+	// call: a model generates at a roughly fixed rate, so one call writing
+	// findings for a 400-line diff takes about four times as long as four calls
+	// writing findings for 100 lines each — and those four run concurrently.
+	//
+	// 50 KB keeps ordinary single-file work in one call (no extra cost for the
+	// common case) while splitting the large multi-file changes that were the
+	// only ones exceeding the latency budget.
+	fastShardDiffBytes = 50000
 	// maxReviewShards bounds the fan-out. It is a guard against a repository
-	// far larger than anything tx reviews today, not a coverage decision: if it
+	// far larger than anything gx reviews today, not a coverage decision: if it
 	// ever binds, the shards it dropped are counted and reported.
 	maxReviewShards = 256
 	// defaultFanOutConcurrency is how many shards are in flight at once.
-	// Overridable with TOTALITY_REVIEW_FANOUT_CONCURRENCY.
-	defaultFanOutConcurrency = 6
+	// Overridable with GX_REVIEW_FANOUT_CONCURRENCY. Each shard is two
+	// concurrent model calls (one per reviewer leg), so 10 shards is up to 20
+	// in-flight Bedrock calls. Throttles this induces are absorbed by the
+	// transport's retry (see bedrockRetryBackoffs) rather than failing shards.
+	defaultFanOutConcurrency = 10
 )
 
 // shardKindDiff and shardKindRepo name what a shard is reading. A review can
@@ -89,7 +105,13 @@ func planReviewShards(brief ReviewBrief, opts Options) ([]ReviewShard, Coverage)
 	repoSnippets := partitionRepoSourceSnippets(brief.Context)
 
 	diffSnippets, diffTruncated := truncateDiffSnippets(brief.Static.DiffSnippets)
-	diffGroups := packDiffSnippets(diffSnippets)
+	// A fast review splits the diff into smaller calls so they run concurrently;
+	// see fastShardDiffBytes.
+	diffBudget := maxShardDiffBytes
+	if opts.Fast {
+		diffBudget = fastShardDiffBytes
+	}
+	diffGroups := packDiffSnippets(diffSnippets, diffBudget)
 	repoGroups := groupContextSnippets(repoSnippets, maxShardRepoSourceBytes)
 
 	coverage := Coverage{
@@ -132,7 +154,7 @@ func planReviewShards(brief ReviewBrief, opts Options) ([]ReviewShard, Coverage)
 	// stay exactly what they were: one model call, holding everything. Splitting
 	// a subject that fits would spend calls to make the review worse, since each
 	// shard would then be reasoning about a fragment for no reason.
-	if len(diffGroups) <= 1 && len(repoGroups) <= 1 && snippetBytes(diffSnippets)+contextBytes(repoSnippets) <= maxShardDiffBytes {
+	if len(diffGroups) <= 1 && len(repoGroups) <= 1 && snippetBytes(diffSnippets)+contextBytes(repoSnippets) <= diffBudget {
 		shard := brief
 		shard.Static.DiffSnippets = diffSnippets
 		shard.Context = append(append([]ContextSnippet(nil), shared...), repoSnippets...)
@@ -246,7 +268,7 @@ func truncateDiffSnippets(snippets []DiffSnippet) ([]DiffSnippet, int) {
 
 // packDiffSnippets packs diffs into per-call groups, preserving the impact
 // ranking so shard 1 carries the highest-impact changes.
-func packDiffSnippets(snippets []DiffSnippet) [][]DiffSnippet {
+func packDiffSnippets(snippets []DiffSnippet, budget int) [][]DiffSnippet {
 	if len(snippets) == 0 {
 		return nil
 	}
@@ -255,7 +277,7 @@ func packDiffSnippets(snippets []DiffSnippet) [][]DiffSnippet {
 	used := 0
 	for _, snippet := range snippets {
 		size := len(snippet.Diff)
-		if len(current) > 0 && used+size > maxShardDiffBytes {
+		if len(current) > 0 && used+size > budget {
 			groups = append(groups, current)
 			current = nil
 			used = 0
@@ -471,7 +493,7 @@ func namespaceShardFindings(findings []Finding, shard ReviewShard) []Finding {
 
 func fanOutConcurrency(shards int) int {
 	limit := defaultFanOutConcurrency
-	if raw := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("GX_REVIEW_FANOUT_CONCURRENCY")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			limit = parsed
 		}

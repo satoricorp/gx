@@ -287,7 +287,7 @@ func TestPatchFocusedReviewOnADirtyTreeIsUnchanged(t *testing.T) {
 
 // Two explicit instructions disagree about the subject. WholeRepo sets it, the
 // base still picks the diff, and the target says so rather than leaving the
-// caller to guess which one tx obeyed.
+// caller to guess which one gx obeyed.
 func TestWholeRepoOptionSetsTheSubjectOverAnExplicitBase(t *testing.T) {
 	root := initRepoOnMain(t)
 	commitOnFeatureBranch(t, root)
@@ -418,8 +418,8 @@ func TestDirectedReviewWithoutAnyDiffStillFallsBackToTheRepository(t *testing.T)
 }
 
 // That fallback path reaches repo mode without anyone passing --repo, and the
-// report it produces is published: `tx review` upserts it as the PR comment
-// and records it as the Totality Cloud history summary. So the wording is pinned
+// report it produces is published: `gx review` upserts it as the PR comment
+// and records it as the gx Cloud history summary. So the wording is pinned
 // here too, not only for the flag, and the two must agree.
 func TestRepoModeNamesItsSubjectWithoutTheFlagToo(t *testing.T) {
 	root := initRepoOnMain(t)
@@ -495,7 +495,7 @@ func TestWholeRepoReviewKeepsEveryLensThePatchReviewHas(t *testing.T) {
 // A whole-repo review with no diff still has to run the tools. Every runner
 // detects against the change set, and collectStaticToolResults returns before
 // detection when that set is empty — so without the repository standing in,
-// `tx review --repo --fail-on any` on a clean tree reports the repository
+// `gx review --repo --fail-on any` on a clean tree reports the repository
 // clean having compiled nothing.
 func TestStaticToolsRunOverTheRepositoryWhenAWholeRepoReviewHasNoDiff(t *testing.T) {
 	root := initRepoOnMain(t)
@@ -605,9 +605,9 @@ func TestTheRepositoryReachesTheModelAfterCompaction(t *testing.T) {
 
 // The prompt is shared with the PR summary pipeline, which runs on every push.
 // Profile-specific instructions are appended for the profile in hand precisely
-// so adding one cannot move what Totality writes on a PR.
+// so adding one cannot move what gx writes on a PR.
 func TestAddingTheWholeRepoProfileLeavesEveryOtherPromptUnchanged(t *testing.T) {
-	base := strings.Join(baseReviewDeveloperPromptLines(), "\n")
+	base := strings.Join(baseReviewDeveloperPromptLines(ReviewBrief{}), "\n")
 	for _, profile := range []string{"", "patch_focused", "pr_summary", "prompt_directed", "scope_focused", "deep_full_spectrum"} {
 		prompt := reviewDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
 		if prompt != base {

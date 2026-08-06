@@ -1,4 +1,4 @@
-module github.com/satoricorp/totality
+module github.com/satoricorp/gx
 
 go 1.25.8
 

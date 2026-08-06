@@ -3,8 +3,8 @@ package uploadauth
 import (
 	"strings"
 
-	"github.com/satoricorp/totality/internal/auth"
-	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
 // Load resolves capture upload credentials from current cloud auth first, then

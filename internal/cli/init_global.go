@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/satoricorp/totality/internal/hooks"
+	"github.com/satoricorp/gx/internal/hooks"
 )
 
-// runGlobalInit installs the machine-wide Totality lifecycle hooks. It does not need
+// runGlobalInit installs the machine-wide gx lifecycle hooks. It does not need
 // to run inside a git repository.
 func runGlobalInit(ctx context.Context, cmd *cobra.Command, quiet bool) error {
 	result, err := hooks.InstallGlobal(ctx, hooks.GlobalInstallOptions{})
@@ -24,12 +24,12 @@ func runGlobalInit(ctx context.Context, cmd *cobra.Command, quiet bool) error {
 	if result.ConfigUpdated {
 		fmt.Fprintln(out, labelValue("Git config", fmt.Sprintf("core.hooksPath = %s (global)", result.HooksDir)))
 	} else {
-		fmt.Fprintln(out, labelValue("Git config", muted("core.hooksPath already pointed at Totality")))
+		fmt.Fprintln(out, labelValue("Git config", muted("core.hooksPath already pointed at gx")))
 	}
 	fmt.Fprintln(out, labelValue("Scope", fmt.Sprintf("every git repo on this machine; %d hooks installed, repo hooks still run", len(result.Scripts))))
 	fmt.Fprintln(out)
 	// Labels stay short so they fit the shared label column without wrapping.
-	fmt.Fprintln(out, labelValue("Opt out", "git config tx.enabled false          (one repo)"))
+	fmt.Fprintln(out, labelValue("Opt out", "git config gx.enabled false          (one repo)"))
 	fmt.Fprintln(out, labelValue("Undo", "git config --global --unset core.hooksPath"))
 	return nil
 }

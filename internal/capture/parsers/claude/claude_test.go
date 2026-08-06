@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/capture"
-	"github.com/satoricorp/totality/internal/capture/parsers/claude"
+	"github.com/satoricorp/gx/internal/capture"
+	"github.com/satoricorp/gx/internal/capture/parsers/claude"
 )
 
 func TestParseClaude_Golden(t *testing.T) {

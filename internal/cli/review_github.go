@@ -7,12 +7,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/satoricorp/totality/internal/codereview"
-	"github.com/satoricorp/totality/internal/github"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/gx/internal/codereview"
+	"github.com/satoricorp/gx/internal/github"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
-const reviewCommentMarker = "<!-- tx review summary -->"
+const reviewCommentMarker = "<!-- gx review summary -->"
 
 func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)
@@ -45,7 +45,7 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 		return
 	}
 	if err := postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
-		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post Totality inline review comment: %v", err)))
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx inline review comment: %v", err)))
 	}
 	commentBody := reviewCommentMarker + "\n" + codereview.RenderMarkdown(report)
 	_, err = client.UpsertIssueComment(ctx, github.IssueCommentOptions{
@@ -56,7 +56,7 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 		Marker: reviewCommentMarker,
 	})
 	if err != nil {
-		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post Totality review comment: %v", err)))
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx review comment: %v", err)))
 	}
 }
 
@@ -105,7 +105,7 @@ func renderInlineReviewComment(finding codereview.Finding) string {
 	var b strings.Builder
 	title := strings.TrimSpace(finding.Title)
 	if title == "" {
-		title = "Totality review finding"
+		title = "gx review finding"
 	}
 	fmt.Fprintf(&b, "**%s**\n\n", title)
 	if summary := strings.TrimSpace(finding.Summary); summary != "" {

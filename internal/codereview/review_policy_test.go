@@ -141,10 +141,10 @@ func TestLoadReviewPolicyNeverFetchesURLsItFinds(t *testing.T) {
 // used to win over the operator's own environment variables, so a repository
 // could pick the reviewer that judged it — including a weaker one.
 func TestReviewMdCannotChooseTheReviewerOrJudgeModel(t *testing.T) {
-	t.Setenv("TOTALITY_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
-	t.Setenv("TOTALITY_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
-	t.Setenv("TOTALITY_REVIEW_ANTHROPIC_MODEL", "")
-	t.Setenv("TOTALITY_REVIEW_JUDGE_MODEL", "us.anthropic.claude-from-env-judge")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
+	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
+	t.Setenv("GX_REVIEW_JUDGE_MODEL", "us.anthropic.claude-from-env-judge")
 
 	root := t.TempDir()
 	writeFile(t, root, "REVIEW.md", strings.Join([]string{
@@ -225,7 +225,7 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 	retriever := ReviewResourceRetriever{
 		Embedder:  embedder,
 		Store:     store,
-		Namespace: "totality-review-knowledge",
+		Namespace: "gx-review-knowledge",
 		Limit:     2,
 	}
 
@@ -251,14 +251,18 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 // stay independent: pinning one must not collapse the panel into one model
 // reviewed twice.
 func TestReviewerFromEnvBuildsTwoIndependentBedrockLegs(t *testing.T) {
-	t.Setenv("TOTALITY_REVIEW_AI", "1")
-	t.Setenv("TOTALITY_OPENAI_PROXY_URL", "")
-	t.Setenv("TOTALITY_CLOUD_URL", "off")
+	t.Setenv("GX_REVIEW_AI", "1")
+	// This test is about panel construction, not wire selection. Cloud is the
+	// default wire now, so reaching the direct-to-AWS legs takes an explicit
+	// opt-in — ambient AWS_* variables no longer select it.
+	t.Setenv(bedrockDirectEnvVar, "1")
+	t.Setenv("GX_OPENAI_PROXY_URL", "")
+	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")
 	t.Setenv("OPENAI_BASE_URL", "http://127.0.0.1:43123")
-	t.Setenv("TOTALITY_REVIEW_BEDROCK_MODEL_A", "anthropic.claude-sonnet-4-5")
-	t.Setenv("TOTALITY_REVIEW_BEDROCK_MODEL_B", "")
-	t.Setenv("TOTALITY_REVIEW_ANTHROPIC_MODEL", "")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "anthropic.claude-sonnet-4-5")
+	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "")
+	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "aws-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
 	t.Setenv("AWS_REGION", "us-west-2")

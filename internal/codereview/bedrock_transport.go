@@ -11,10 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/satoricorp/totality/internal/cloud"
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
 // bedrockTransport is how a review leg's bytes reach bedrock-runtime.
@@ -22,7 +23,7 @@ import (
 // Both legs and the judge share one request shape and one response parser (see
 // bedrockAnthropicReviewer.completeJSON); only the wire differs. Keeping that
 // difference behind this interface is what lets the same reviewer run against a
-// developer's own AWS credentials and against Totality Cloud without a second
+// developer's own AWS credentials and against gx Cloud without a second
 // implementation of prompt construction, parsing, or failure reporting.
 type bedrockTransport interface {
 	// complete performs one model call and returns the model's reply.
@@ -55,7 +56,7 @@ const (
 	bedrockTransportKindCloud  = "cloud"
 
 	// bedrockAnthropicVersion is the Anthropic API version bedrock-runtime
-	// expects in an InvokeModel body. Totality Cloud accepts and ignores it.
+	// expects in an InvokeModel body. gx Cloud accepts and ignores it.
 	bedrockAnthropicVersion = "bedrock-2023-05-31"
 
 	// bedrockDirectTimeout bounds one direct model call. Flagship models
@@ -85,34 +86,55 @@ func (p bedrockTransportPlan) newTransport() bedrockTransport {
 	return newDirectBedrockTransport(p.creds)
 }
 
-// resolveBedrockTransportPlan picks the wire: local AWS credentials if they are
-// present, Totality Cloud otherwise.
+// bedrockDirectEnvVar opts a caller out of gx Cloud and onto their own AWS
+// account. It must be set deliberately; ambient AWS credentials never select it.
+const bedrockDirectEnvVar = "GX_REVIEW_BEDROCK_DIRECT"
+
+// resolveBedrockTransportPlan picks the wire: gx Cloud, unless the caller has
+// explicitly asked for their own AWS account.
 //
-// That order is deliberate. A developer who has exported AWS credentials is
-// asking for their own account and their own quota, and silently routing them
-// through Totality Cloud would spend Totality's budget and hide their misconfiguration.
-// Everyone else — the common case, a user with no AWS account at all — reaches
-// the same models through Totality Cloud.
+// Cloud is THE path, not a fallback. The previous order — local AWS credentials
+// win if present — meant the wire was chosen by whatever happened to be exported
+// in the caller's shell. Anyone with `AWS_ACCESS_KEY_ID` set for unrelated work
+// (most developers, most CI) silently reviewed on their own account and quota
+// while believing they were using the product, and the only way to reach Cloud
+// was to unset credentials they needed for something else. Worse, the two wires
+// fail differently, so "it works on my machine" tracked the developer's ambient
+// environment rather than anything about gx.
 //
-// When neither is available the error names the local fix, because that is the
-// one the caller can act on without an account. It is returned rather than
-// swallowed: a review with no reviewer must read as "nothing reviewed this",
-// never as a clean review.
+// Direct AWS is still reachable, but only by asking:
+// GX_REVIEW_BEDROCK_DIRECT=1 plus the usual AWS_* variables. That is for
+// working on the reviewer itself — benchmarking models, testing a region — not
+// for ordinary review.
+//
+// Errors here are returned, never swallowed: a review with no reviewer must
+// read as "nothing reviewed this", never as a clean review.
 func resolveBedrockTransportPlan() (bedrockTransportPlan, error) {
-	creds, credsErr := bedrockCredentialsFromEnv()
-	if credsErr == nil {
+	if bedrockDirectRequested() {
+		creds, credsErr := bedrockCredentialsFromEnv()
+		if credsErr != nil {
+			// They asked for direct explicitly, so do not quietly reroute to
+			// Cloud — that would hide the misconfiguration they need to see.
+			return bedrockTransportPlan{}, fmt.Errorf("%s is set, so gx is using your own AWS account, but %v", bedrockDirectEnvVar, credsErr)
+		}
 		return bedrockTransportPlan{Kind: bedrockTransportKindDirect, creds: creds}, nil
 	}
 	client := cloud.NewBedrockClient()
 	if client == nil {
-		return bedrockTransportPlan{}, credsErr
+		return bedrockTransportPlan{}, fmt.Errorf("gx Cloud is not configured for this build (no cloud URL), so there is no reviewer; set %s=1 with AWS_* credentials to review on your own AWS account instead", bedrockDirectEnvVar)
 	}
 	if _, err := cloud.CloudAPIToken(); err != nil {
-		// Cloud is reachable but this machine is not signed in. Say both, so
-		// the reader can pick whichever is cheaper for them to fix.
-		return bedrockTransportPlan{}, fmt.Errorf("%v; or sign in with `tx auth login` to review through Totality Cloud (%v)", credsErr, err)
+		return bedrockTransportPlan{}, fmt.Errorf("not signed in to gx Cloud: run `gx auth login` (%v)", err)
 	}
 	return bedrockTransportPlan{Kind: bedrockTransportKindCloud, client: client, cloudURL: cloud.CloudURL()}, nil
+}
+
+func bedrockDirectRequested() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(bedrockDirectEnvVar))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // bedrockTransportShortName is the label fragment for one wire, short enough to
@@ -122,14 +144,14 @@ func bedrockTransportShortName(kind string) string {
 	case bedrockTransportKindDirect:
 		return "AWS"
 	case bedrockTransportKindCloud:
-		return "Totality Cloud"
+		return "gx Cloud"
 	default:
 		return ""
 	}
 }
 
 // bedrockRequestBody is the Anthropic messages shape bedrock-runtime's
-// InvokeModel takes, and the shape Totality Cloud's /tx/bedrock/fight normalizes.
+// InvokeModel takes, and the shape gx Cloud's /gx/bedrock/fight normalizes.
 type bedrockRequestBody struct {
 	AnthropicVersion string           `json:"anthropic_version"`
 	MaxTokens        int              `json:"max_tokens"`
@@ -177,7 +199,7 @@ func bedrockRequestPayload(system, input string, maxOutputTokens int) bedrockReq
 
 // directBedrockTransport signs and posts InvokeModel itself.
 //
-// tx depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
+// gx depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
 // is a deliberate trade: the signing is thirty lines and fully covered by the
 // canned-response tests, against an SDK that would pull in dozens of modules
 // for one endpoint.
@@ -207,6 +229,11 @@ func (t *directBedrockTransport) detail() string {
 	return "direct AWS credentials (" + t.region + ")"
 }
 
+// bedrockRetryBackoffs paces retries of transient bedrock-runtime failures.
+// A model call is minutes of work; waiting seconds to save one is always the
+// right trade. A var rather than a const so tests can shrink the waits.
+var bedrockRetryBackoffs = []time.Duration{2 * time.Second, 8 * time.Second, 20 * time.Second}
+
 func (t *directBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if t == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
@@ -215,9 +242,35 @@ func (t *directBedrockTransport) complete(ctx context.Context, model, system, in
 	if err != nil {
 		return bedrockCompletion{}, fmt.Errorf("marshal Bedrock request: %w", err)
 	}
+	// Throttles (429) and server errors (5xx) are transient: without a retry,
+	// one blip permanently costs a shard's leg — every file in that shard goes
+	// unread by that model and the review degrades. Each attempt re-signs, so
+	// X-Amz-Date stays fresh.
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		completion, retryable, attemptErr := t.completeOnce(ctx, model, body)
+		if attemptErr == nil {
+			return completion, nil
+		}
+		lastErr = attemptErr
+		if !retryable || attempt >= len(bedrockRetryBackoffs) {
+			return bedrockCompletion{}, lastErr
+		}
+		select {
+		case <-ctx.Done():
+			return bedrockCompletion{}, lastErr
+		case <-time.After(bedrockRetryBackoffs[attempt]):
+		}
+	}
+}
+
+// completeOnce is a single signed InvokeModel attempt. retryable reports
+// whether the failure is worth another attempt: throttles and server-side
+// errors are; validation errors, access denials, and parse failures are not.
+func (t *directBedrockTransport) completeOnce(ctx context.Context, model string, body []byte) (bedrockCompletion, bool, error) {
 	req, err := t.newSignedRequest(ctx, model, body)
 	if err != nil {
-		return bedrockCompletion{}, err
+		return bedrockCompletion{}, false, err
 	}
 	client := t.client
 	if client == nil {
@@ -225,27 +278,32 @@ func (t *directBedrockTransport) complete(ctx context.Context, model, system, in
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return bedrockCompletion{}, fmt.Errorf("call Bedrock model %s in %s: %w", model, t.region, err)
+		// Transport-level failures (connection reset, timeout) are as
+		// transient as a 503, unless the context itself is done.
+		return bedrockCompletion{}, ctx.Err() == nil, fmt.Errorf("call Bedrock model %s in %s: %w", model, t.region, err)
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		retryable := resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode >= 500 ||
+			strings.Contains(strings.ToLower(string(raw)), "throttl")
 		// describeBedrockFailure turns the exception name and prose into the
 		// knob to turn; see its comment in ai.go.
-		return bedrockCompletion{}, describeBedrockFailure(resp.StatusCode, resp.Status, raw, model, t.region)
+		return bedrockCompletion{}, retryable, describeBedrockFailure(resp.StatusCode, resp.Status, raw, model, t.region)
 	}
 	if readErr != nil {
-		return bedrockCompletion{}, fmt.Errorf("read Bedrock response for %s: %w", model, readErr)
+		return bedrockCompletion{}, true, fmt.Errorf("read Bedrock response for %s: %w", model, readErr)
 	}
 	var decoded bedrockResponseBody
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return bedrockCompletion{}, fmt.Errorf("decode Bedrock response for %s: %w", model, err)
+		return bedrockCompletion{}, false, fmt.Errorf("decode Bedrock response for %s: %w", model, err)
 	}
 	text := decoded.text()
 	if text == "" {
-		return bedrockCompletion{}, fmt.Errorf("Bedrock model %s returned no content", model)
+		return bedrockCompletion{}, false, fmt.Errorf("Bedrock model %s returned no content", model)
 	}
-	return bedrockCompletion{Text: text, StopReason: decoded.StopReason}, nil
+	return bedrockCompletion{Text: text, StopReason: decoded.StopReason}, false, nil
 }
 
 func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model string, body []byte) (*http.Request, error) {
@@ -410,7 +468,7 @@ func hmacSHA256(key []byte, data string) []byte {
 	return mac.Sum(nil)
 }
 
-// cloudBedrockTransport posts the same request to Totality Cloud, which holds the AWS
+// cloudBedrockTransport posts the same request to gx Cloud, which holds the AWS
 // credentials. It is the path for everyone without an AWS account, which is
 // almost everyone.
 type cloudBedrockTransport struct {
@@ -420,9 +478,9 @@ type cloudBedrockTransport struct {
 
 func (t *cloudBedrockTransport) detail() string {
 	if strings.TrimSpace(t.url) == "" {
-		return "Totality Cloud"
+		return "gx Cloud"
 	}
-	return "Totality Cloud (" + t.url + ")"
+	return "gx Cloud (" + t.url + ")"
 }
 
 func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
@@ -438,11 +496,11 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 		Messages:         []cloud.BedrockMessage{{Role: "user", Content: input}},
 	})
 	if err != nil {
-		return bedrockCompletion{}, fmt.Errorf("Totality Cloud Bedrock call for %s failed: %w", model, err)
+		return bedrockCompletion{}, fmt.Errorf("gx Cloud Bedrock call for %s failed: %w", model, err)
 	}
 	text := strings.TrimSpace(resp.Text())
 	if text == "" {
-		return bedrockCompletion{}, fmt.Errorf("Totality Cloud returned no content for Bedrock model %s", model)
+		return bedrockCompletion{}, fmt.Errorf("gx Cloud returned no content for Bedrock model %s", model)
 	}
 	return bedrockCompletion{Text: text, StopReason: resp.StopReason}, nil
 }

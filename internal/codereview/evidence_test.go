@@ -65,7 +65,7 @@ func TestCompositeContextRetrieverKeepsRetrieverReportedStatuses(t *testing.T) {
 	log := &EvidenceLog{}
 	retriever := CodeIndexRetriever{
 		Store:       &fakeIndexStore{},
-		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "Totality Cloud code index"}},
+		Namespaces:  []codeIndexTarget{{Namespace: "repo-owner-repo", Origin: "gx Cloud code index"}},
 		EmbedderFor: func(int) (reviewResourceEmbedder, string, bool) { return nil, "", false },
 	}
 	if _, err := (CompositeContextRetriever{Retrievers: []ContextRetriever{retriever}}).Retrieve(
@@ -151,7 +151,7 @@ func TestRenderMarkdownStatesUnavailableEvidence(t *testing.T) {
 		ReviewMode: ReviewModeWorkingTree,
 		Findings:   nil,
 		Evidence: []EvidenceStatus{
-			{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing, Detail: "Totality Cloud has never indexed this repository"},
+			{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing, Detail: "gx Cloud has never indexed this repository"},
 			{Source: "review knowledge", State: EvidenceOK, Snippets: 8},
 		},
 	}
@@ -162,7 +162,7 @@ func TestRenderMarkdownStatesUnavailableEvidence(t *testing.T) {
 	// The banner says what was lost and how to fix it, not which internal
 	// namespace id was probed — that is in report.Evidence, which the JSON
 	// output carries in full.
-	if !strings.Contains(markdown, "Totality Cloud has never indexed this repository") {
+	if !strings.Contains(markdown, "gx Cloud has never indexed this repository") {
 		t.Fatalf("markdown does not say what was missing:\n%s", markdown)
 	}
 	if strings.Contains(markdown, "repo-satoricorp-yeet") {
@@ -178,7 +178,7 @@ func TestRenderMarkdownStatesUnavailableEvidence(t *testing.T) {
 	// A review with every source healthy reads clean, so the warning stays
 	// meaningful.
 	healthy := report
-	healthy.Evidence = []EvidenceStatus{{Source: "code index", Namespace: "repo-satoricorp-totality", State: EvidenceOK, Snippets: 12}}
+	healthy.Evidence = []EvidenceStatus{{Source: "code index", Namespace: "repo-satoricorp-gx", State: EvidenceOK, Snippets: 12}}
 	if strings.Contains(RenderMarkdown(healthy), "review evidence unavailable") {
 		t.Fatal("a fully informed review must not carry the degraded-evidence warning")
 	}
@@ -190,12 +190,12 @@ func TestRenderMarkdownListsEveryEvidenceSourceWhenVerbose(t *testing.T) {
 		ReviewMode: ReviewModeWorkingTree,
 		Verbose:    true,
 		Evidence: []EvidenceStatus{
-			{Source: "code index", Namespace: "repo-satoricorp-totality", State: EvidenceOK, Snippets: 12},
+			{Source: "code index", Namespace: "repo-satoricorp-gx", State: EvidenceOK, Snippets: 12},
 			{Source: "indexed sessions", State: EvidenceDisabled, Detail: "TURBOPUFFER_API_KEY is not set"},
 		},
 	}
 	markdown := RenderMarkdown(report)
-	for _, want := range []string{"Evidence: code index (repo-satoricorp-totality): ok, 12 snippet(s)", "Evidence: indexed sessions: disabled"} {
+	for _, want := range []string{"Evidence: code index (repo-satoricorp-gx): ok, 12 snippet(s)", "Evidence: indexed sessions: disabled"} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("markdown missing %q:\n%s", want, markdown)
 		}
@@ -242,13 +242,13 @@ func TestOneAnsweringNamespaceStillReportsAFailedSibling(t *testing.T) {
 // index answered.
 func TestMissingNamespacesAreExpectedWhenAnotherAnswered(t *testing.T) {
 	if warnings := EvidenceWarnings([]EvidenceStatus{
-		{Source: "code index", Namespace: "totality-local-yeet-8d86-v2", State: EvidenceOK, Snippets: 86},
-		{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing, Detail: "Totality Cloud has never indexed this repository"},
+		{Source: "code index", Namespace: "gx-local-yeet-8d86-v2", State: EvidenceOK, Snippets: 86},
+		{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing, Detail: "gx Cloud has never indexed this repository"},
 	}); len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none: the code index answered", warnings)
 	}
 	if warnings := EvidenceWarnings([]EvidenceStatus{
-		{Source: "code index", Namespace: "totality-local-yeet-8d86-v2", State: EvidenceEmpty},
+		{Source: "code index", Namespace: "gx-local-yeet-8d86-v2", State: EvidenceEmpty},
 		{Source: "code index", Namespace: "repo-satoricorp-yeet", State: EvidenceMissing},
 	}); len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none: the index was found and had nothing", warnings)

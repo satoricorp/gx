@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/satoricorp/totality/internal/semantic"
+	"github.com/satoricorp/gx/internal/semantic"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 	// namespaces were scoped per org and per repo. It is still queried because
 	// it still holds rows, and it is filtered by repo because it does not scope
 	// itself.
-	legacySessionNamespace = "totality-sessions-dev"
+	legacySessionNamespace = "gx-sessions-dev"
 )
 
 // sessionSourceKinds are the row kinds that carry agent-session evidence. Three
@@ -40,7 +40,7 @@ type SessionContextRetriever struct {
 	Namespaces  []codeIndexTarget
 	Limit       int
 	EmbedderFor embedderFactory
-	// CloudSearcher overrides the Totality Cloud retrieval client; injected in
+	// CloudSearcher overrides the gx Cloud retrieval client; injected in
 	// tests. When nil it is resolved from the signed-in credentials.
 	CloudSearcher reviewCloudSearcher
 }
@@ -49,11 +49,11 @@ type SessionContextRetriever struct {
 func (SessionContextRetriever) EvidenceSource() string { return sessionEvidenceSource }
 
 func sessionContextRetrieverFromEnv() ContextRetriever {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_SESSION_CONTEXT")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_SESSION_CONTEXT")), "0") {
 		return nil
 	}
 	return SessionContextRetriever{
-		Limit: reviewEnvInt("TOTALITY_REVIEW_SESSION_CONTEXT_TOP_K", defaultSessionContextTopK),
+		Limit: reviewEnvInt("GX_REVIEW_SESSION_CONTEXT_TOP_K", defaultSessionContextTopK),
 	}
 }
 
@@ -67,7 +67,7 @@ func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	}
 	store := r.Store
 	if store == nil {
-		// The signed-in path: retrieval through Totality Cloud, no provider keys on
+		// The signed-in path: retrieval through gx Cloud, no provider keys on
 		// this machine. Direct store access stays for development.
 		if !rawTurboPufferKeyPresent() {
 			searcher := r.CloudSearcher
@@ -80,12 +80,12 @@ func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 			in.Evidence.Record(EvidenceStatus{
 				Source: sessionEvidenceSource,
 				State:  EvidenceDisabled,
-				Detail: "not signed in to Totality Cloud, and no TURBOPUFFER_API_KEY for direct access",
+				Detail: "not signed in to gx Cloud, and no TURBOPUFFER_API_KEY for direct access",
 				Remedy: signInRemedy,
 			})
 			return nil, nil
 		}
-		store = newTurboPufferIndexStore(strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")), firstNonEmpty(os.Getenv("TOTALITY_TPUF_BASE_URL"), defaultReviewResourceBaseURL))
+		store = newTurboPufferIndexStore(strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")), firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL))
 	}
 	repoFullName := reviewHistoryRepoFullName(ctx, in.RepoRoot)
 	targets := r.Namespaces
@@ -199,16 +199,16 @@ func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 // — publish artifacts, session context and code chunks share it — and the
 // legacy global namespace is queried as well because it still holds rows.
 func sessionNamespaceTargets(repoRoot, repoFullName string) []codeIndexTarget {
-	if override := strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_SESSION_NAMESPACE")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("GX_REVIEW_SESSION_NAMESPACE")); override != "" {
 		var out []codeIndexTarget
 		for _, name := range strings.Split(override, ",") {
 			if name = strings.TrimSpace(name); name != "" {
-				out = append(out, codeIndexTarget{Namespace: name, Origin: "TOTALITY_REVIEW_SESSION_NAMESPACE"})
+				out = append(out, codeIndexTarget{Namespace: name, Origin: "GX_REVIEW_SESSION_NAMESPACE"})
 			}
 		}
 		return out
 	}
-	// Same resolver as the code index and as `tx index`: publish artifacts,
+	// Same resolver as the code index and as `gx index`: publish artifacts,
 	// session context and code chunks all live in the per-org-per-repo
 	// namespace, so they must all name it the same way.
 	identity := semantic.RepoIdentity{
@@ -363,7 +363,7 @@ func sessionQueryText(in RetrieveInput) string {
 	signals := reviewResourceSignals(in)
 	identifiers := changedIdentifiers(in.DiffSnippets, in.ChangedFiles, 24)
 	return strings.Join([]string{
-		"Totality code review: recall the agent sessions behind this code.",
+		"gx code review: recall the agent sessions behind this code.",
 		"Wanted: the instructions an agent was given, the decisions and trade-offs it recorded, constraints it was told to respect, and known-incomplete work in these files.",
 		"changed files: " + strings.Join(limitStrings(signals.Files, 30), " "),
 		"changed symbols: " + strings.Join(identifiers, " "),

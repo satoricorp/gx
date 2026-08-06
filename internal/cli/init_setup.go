@@ -18,16 +18,16 @@ const agentsMDSnippetMarker = "Version control: plain Git"
 
 const agentsMDSnippet = `# Agents
 
-Version control: plain Git. Once ` + "`tx init`" + ` installs the hooks, Totality records and publishes automatically — there is no Totality save verb.
+Version control: plain Git. Once ` + "`gx init`" + ` installs the hooks, gx records and publishes automatically — there is no gx save verb.
 
 Default flow:
 - Run ` + "`git add`" + ` to stage the files for this revision.
-- Run ` + "`git commit -m \"...\"`" + ` to save. A Totality hook records the commit as a reviewable revision.
-- Run plain ` + "`git push`" + ` to publish. The Totality pre-push hook captures the session and publishes code changes, sessions, and Totality metadata to Totality Cloud automatically — do not run ` + "`tx push`" + ` or ` + "`tx capture push`" + ` yourself; they bypass the hook.
-- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; Totality Cloud appends the rich summary below once the PR exists.
-- To amend, use ` + "`git commit --amend`" + ` and preserve the Totality revision trailer in the message.
+- Run ` + "`git commit -m \"...\"`" + ` to save. A gx hook records the commit as a reviewable revision.
+- Run plain ` + "`git push`" + ` to publish. The gx pre-push hook captures the session and publishes code changes, sessions, and gx metadata to gx Cloud automatically — do not run ` + "`gx push`" + ` or ` + "`gx capture push`" + ` yourself; they bypass the hook.
+- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
+- To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
-For AI review, run the ` + "`tx_review`" + ` MCP tool (or the ` + "`tx review`" + ` CLI) on the current change.
+For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.
 `
 
 type initSetupOptions struct {
@@ -39,23 +39,35 @@ type initSetupOptions struct {
 }
 
 func runInitRepoSetup(opts initSetupOptions) error {
-	txPath, err := os.Executable()
+	gxPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	mcpPath, err := resolveMCPBinary(txPath)
+	mcpPath, err := resolveMCPBinary(gxPath)
 	if err != nil {
 		if !opts.Quiet && opts.Err != nil {
 			fmt.Fprintln(opts.Err, labelWarningValue("MCP", err.Error()))
 		}
 	} else {
-		registered := registerMCPClients(context.Background(), txPath, mcpPath)
+		registered := registerMCPClients(context.Background(), gxPath, mcpPath)
 		if !opts.Quiet && opts.Out != nil {
 			if len(registered) == 0 {
 				fmt.Fprintln(opts.Out, labelValue("MCP", muted("skipped (no supported agent CLI found)")))
 			} else {
 				fmt.Fprintln(opts.Out, labelValue("MCP", success("ok")+": "+strings.Join(registered, ", ")))
 			}
+		}
+	}
+
+	if commands, err := installSlashCommands(); err != nil {
+		if !opts.Quiet && opts.Err != nil {
+			fmt.Fprintln(opts.Err, labelWarningValue("Command", err.Error()))
+		}
+	} else if !opts.Quiet && opts.Out != nil {
+		if len(commands) == 0 {
+			fmt.Fprintln(opts.Out, labelValue("Command", muted("skipped (no supported agent found)")))
+		} else {
+			fmt.Fprintln(opts.Out, labelValue("Command", success("ok")+": /"+slashCommandName+" in "+strings.Join(commands, ", ")))
 		}
 	}
 
@@ -69,31 +81,31 @@ func runInitRepoSetup(opts initSetupOptions) error {
 	return nil
 }
 
-func resolveMCPBinary(txPath string) (string, error) {
-	dir := filepath.Dir(txPath)
-	candidate := filepath.Join(dir, "tx-mcp")
+func resolveMCPBinary(gxPath string) (string, error) {
+	dir := filepath.Dir(gxPath)
+	candidate := filepath.Join(dir, "gx-mcp")
 	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 		return candidate, nil
 	}
-	if mcpPath, err := exec.LookPath("tx-mcp"); err == nil && mcpPath != "" {
+	if mcpPath, err := exec.LookPath("gx-mcp"); err == nil && mcpPath != "" {
 		return mcpPath, nil
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		candidate = filepath.Join(home, ".local", "bin", "tx-mcp")
+		candidate = filepath.Join(home, ".local", "bin", "gx-mcp")
 		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("tx-mcp not found; install Totality CLI package first")
+	return "", fmt.Errorf("gx-mcp not found; install gx CLI package first")
 }
 
-func mcpLaunchCommand(txPath, mcpPath string) []string {
-	return []string{"env", "TOTALITY_BINARY=" + txPath, mcpPath}
+func mcpLaunchCommand(gxPath, mcpPath string) []string {
+	return []string{"env", "GX_BINARY=" + gxPath, mcpPath}
 }
 
-func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
-	args := mcpLaunchCommand(txPath, mcpPath)
+func registerMCPClients(ctx context.Context, gxPath, mcpPath string) []string {
+	args := mcpLaunchCommand(gxPath, mcpPath)
 	var registered []string
 	for _, spec := range []struct {
 		name    string
@@ -103,12 +115,12 @@ func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
 		{
 			name:    "Cursor",
 			binary:  "cursor",
-			command: append([]string{"mcp", "add", "tx", "--"}, args...),
+			command: append([]string{"mcp", "add", "gx", "--"}, args...),
 		},
 		{
 			name:    "Claude Code",
 			binary:  "claude",
-			command: append([]string{"mcp", "add", "tx", "--"}, args...),
+			command: append([]string{"mcp", "add", "gx", "--"}, args...),
 		},
 	} {
 		if _, err := exec.LookPath(spec.binary); err != nil {
@@ -126,7 +138,7 @@ func registerMCPClients(ctx context.Context, txPath, mcpPath string) []string {
 		}
 		registered = append(registered, spec.name)
 	}
-	if updated, err := mergeCodexMCPServer(txPath, mcpPath); err == nil && updated {
+	if updated, err := mergeCodexMCPServer(gxPath, mcpPath); err == nil && updated {
 		registered = append(registered, "Codex")
 	}
 	return registered
@@ -138,7 +150,7 @@ func runCombined(ctx context.Context, name string, args ...string) (string, erro
 	return string(out), err
 }
 
-func mergeCodexMCPServer(txPath, mcpPath string) (bool, error) {
+func mergeCodexMCPServer(gxPath, mcpPath string) (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, err
@@ -152,14 +164,14 @@ func mergeCodexMCPServer(txPath, mcpPath string) (bool, error) {
 		return false, err
 	}
 	content := string(data)
-	if strings.Contains(content, "[mcp_servers.totality]") {
+	if strings.Contains(content, "[mcp_servers.gx]") {
 		return false, nil
 	}
 	block := strings.Join([]string{
 		"",
-		"[mcp_servers.totality]",
+		"[mcp_servers.gx]",
 		`command = "env"`,
-		fmt.Sprintf(`args = ["TOTALITY_BINARY=%s", %q]`, txPath, mcpPath),
+		fmt.Sprintf(`args = ["GX_BINARY=%s", %q]`, gxPath, mcpPath),
 		"",
 	}, "\n")
 	if err := os.WriteFile(configPath, append(data, []byte(block)...), 0o644); err != nil {
@@ -176,7 +188,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	}
 	if agentsMDContainsSnippet(string(existing)) {
 		if !opts.Quiet && opts.Out != nil {
-			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": Totality instructions already present"))
+			fmt.Fprintln(opts.Out, labelValue("AGENTS.md", success("ok")+": gx instructions already present"))
 		}
 		return nil
 	}
@@ -192,7 +204,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	fmt.Fprintf(out, "%s ", muted("Add Totality workflow instructions to AGENTS.md? [Y/n]"))
+	fmt.Fprintf(out, "%s ", muted("Add gx workflow instructions to AGENTS.md? [Y/n]"))
 	reader := bufio.NewReader(in)
 	raw, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -210,7 +222,7 @@ func offerInitAgentsMD(opts initSetupOptions) error {
 		return err
 	}
 	if appended && out != nil {
-		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added Totality workflow instructions"))
+		fmt.Fprintln(out, labelValue("AGENTS.md", success("ok")+": added gx workflow instructions"))
 	}
 	return nil
 }

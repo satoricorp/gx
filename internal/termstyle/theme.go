@@ -50,7 +50,7 @@ func initTheme() {
 	})
 }
 
-// Enabled reports whether tx should emit color and styled output.
+// Enabled reports whether gx should emit color and styled output.
 func Enabled() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false

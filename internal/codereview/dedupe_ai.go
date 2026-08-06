@@ -62,7 +62,7 @@ type bedrockDuplicateAdjudicator struct {
 // there is none to build. nil is a supported state, not an error: the caller
 // falls back to merging near-verbatim copies only and reports that it did.
 func duplicateAdjudicatorFromEnv() duplicateAdjudicator {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TOTALITY_REVIEW_DEDUPE")), "0") {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_DEDUPE")), "0") {
 		return nil
 	}
 	plan, err := resolveBedrockTransportPlan()
@@ -98,7 +98,7 @@ func (a bedrockDuplicateAdjudicator) AdjudicateDuplicates(ctx context.Context, p
 // vocabulary, different bug" — worked examples of pairs that must not merge.
 func duplicateAdjudicatorPrompt() string {
 	return strings.Join([]string{
-		"You are Totality Review De-duplicator. Two AI reviewers reviewed the same code independently and their findings are about to be shown to an engineer.",
+		"You are gx Review De-duplicator. Two AI reviewers reviewed the same code independently and their findings are about to be shown to an engineer.",
 		"For each pair, decide whether finding_a and finding_b report THE SAME DEFECT, so that one fix resolves both.",
 		"Return JSON only, with shape {\"results\":[{\"pair_id\":string,\"same_defect\":true|false,\"reason\":string}]}. Return one result per pair, using the pair_id given.",
 		"SAME DEFECT means the same root cause in the same code: fixing one fixes the other. Different wording, different emphasis, a different proposed remedy for the same underlying problem, or a different file cited as the place to fix it are all still the same defect.",

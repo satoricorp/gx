@@ -1,13 +1,13 @@
 package extract
 
-import "github.com/satoricorp/totality/internal/capture/matcher"
+import "github.com/satoricorp/gx/internal/capture/matcher"
 
 // ExtractRequest is the POST /v1/extracts body.
 type ExtractRequest struct {
 	RepoRoot         string             `json:"repoRoot"`
 	RefRange         string             `json:"refRange"`
 	HeadCommit       string             `json:"headCommit"`
-	TxVersion        string             `json:"txVersion,omitempty"`
+	GxVersion        string             `json:"gxVersion,omitempty"`
 	IntentCandidates []interface{}      `json:"intentCandidates,omitempty"`
 	HunkLinks        []matcher.HunkLink `json:"hunkLinks"`
 	StruggleSignals  []interface{}      `json:"struggleSignals,omitempty"`

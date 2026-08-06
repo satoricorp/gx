@@ -6,7 +6,7 @@ import (
 )
 
 func TestCloudURLUsesDefaultWhenUnset(t *testing.T) {
-	os.Unsetenv("TOTALITY_CLOUD_URL")
+	os.Unsetenv("GX_CLOUD_URL")
 	if got := CloudURL(); got != "" {
 		t.Fatalf("CloudURL() = %q, want empty (cloud disabled without env or baked endpoint)", got)
 	}
@@ -15,7 +15,7 @@ func TestCloudURLUsesDefaultWhenUnset(t *testing.T) {
 func TestCloudURLExplicitDisable(t *testing.T) {
 	for _, value := range []string{"", "0", "off", "OFF"} {
 		t.Run(value, func(t *testing.T) {
-			t.Setenv("TOTALITY_CLOUD_URL", value)
+			t.Setenv("GX_CLOUD_URL", value)
 			if got := CloudURL(); got != "" {
 				t.Fatalf("CloudURL(%q) = %q, want disabled", value, got)
 			}
@@ -24,7 +24,7 @@ func TestCloudURLExplicitDisable(t *testing.T) {
 }
 
 func TestCloudURLCustom(t *testing.T) {
-	t.Setenv("TOTALITY_CLOUD_URL", "https://api.example/tx/pr")
+	t.Setenv("GX_CLOUD_URL", "https://api.example/gx/pr")
 	if got := CloudURL(); got != "https://api.example" {
 		t.Fatalf("CloudURL() = %q", got)
 	}

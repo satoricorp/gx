@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// defaultBedrockTimeout matches the server's own ceiling on /tx/bedrock/fight.
+// defaultBedrockTimeout matches the server's own ceiling on /gx/bedrock/fight.
 // A review call is a model call, not an upload: the upload timeout is far too
 // short for a flagship model reading a large brief, and a client that gives up
 // first turns a completed review into a transport error.
@@ -21,7 +21,7 @@ type BedrockMessage struct {
 	Content string `json:"content"`
 }
 
-// BedrockFightRequest is the request /tx/bedrock/fight accepts.
+// BedrockFightRequest is the request /gx/bedrock/fight accepts.
 //
 // It is deliberately the Anthropic InvokeModel shape rather than Bedrock's
 // Converse shape: the CLI's direct-to-AWS leg has to speak InvokeModel, and the
@@ -72,7 +72,7 @@ func NewBedrockClient() *Client {
 }
 
 func bedrockTimeout() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("TOTALITY_CLOUD_BEDROCK_TIMEOUT"))
+	raw := strings.TrimSpace(os.Getenv("GX_CLOUD_BEDROCK_TIMEOUT"))
 	if raw == "" {
 		return defaultBedrockTimeout
 	}
@@ -83,17 +83,17 @@ func bedrockTimeout() time.Duration {
 	return timeout
 }
 
-// BedrockFight runs one model call on Totality's Bedrock account.
+// BedrockFight runs one model call on gx's Bedrock account.
 //
-// Totality holds the AWS credentials, so a user with no AWS account still gets the
+// gx holds the AWS credentials, so a user with no AWS account still gets the
 // same reviewers. The endpoint is a passthrough: retrieval, the brief, the
 // two-reviewer fan-out and the judge all stay in the CLI.
 func (c *Client) BedrockFight(ctx context.Context, reqBody BedrockFightRequest) (BedrockFightResponse, error) {
 	var result BedrockFightResponse
 	if c == nil || c.url == "" {
-		return result, fmt.Errorf("tx cloud base URL is not configured")
+		return result, fmt.Errorf("gx cloud base URL is not configured")
 	}
-	if err := c.postJSON(ctx, "/tx/bedrock/fight", reqBody, &result); err != nil {
+	if err := c.postJSON(ctx, "/gx/bedrock/fight", reqBody, &result); err != nil {
 		return BedrockFightResponse{}, err
 	}
 	return result, nil

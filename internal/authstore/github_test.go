@@ -16,7 +16,7 @@ import (
 func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GITHUB_CLIENT_ID", "client-id")
@@ -41,7 +41,7 @@ func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	t.Setenv("TOTALITY_GITHUB_ACCESS_TOKEN_URL", server.URL)
+	t.Setenv("GX_GITHUB_ACCESS_TOKEN_URL", server.URL)
 
 	account := GitHubKeychainAccount("user_1", "joe")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -81,7 +81,7 @@ func TestGitHubAccessTokenRefreshesExpiredKeychainToken(t *testing.T) {
 func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -94,7 +94,7 @@ func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testin
 		t.Fatal("expected expired token error")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "tx auth login") {
+	if !strings.Contains(message, "stored GitHub token expired") || !strings.Contains(message, "gx auth login") {
 		t.Fatalf("error = %q, want re-login instruction", message)
 	}
 }
@@ -102,7 +102,7 @@ func TestGitHubAccessTokenExpiredStoredTokenPromptsLoginWithoutRefresh(t *testin
 func TestGitHubAccessTokenEnvOverridesExpiredStoredToken(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "env-token")
 	t.Setenv("GITHUB_TOKEN", "")
 	writeTestCredentials(t, home, cloudCredentials{
@@ -122,7 +122,7 @@ func TestGitHubAccessTokenEnvOverridesExpiredStoredToken(t *testing.T) {
 func TestGitHubAccessTokenMigratesLegacyTokenToKeychain(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("TOTALITY_HOME", home)
+	t.Setenv("GX_HOME", home)
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -130,7 +130,7 @@ func TestGitHubAccessTokenMigratesLegacyTokenToKeychain(t *testing.T) {
 		GitHubAccessToken: "ghu_legacy",
 		UserID:            "user_1",
 		Login:             "joe",
-		CLISessionToken:   "tlcs_test",
+		CLISessionToken:   "gxcs_test",
 	})
 
 	token, source, err := GitHubAccessTokenWithSource()
@@ -145,7 +145,7 @@ func TestGitHubAccessTokenMigratesLegacyTokenToKeychain(t *testing.T) {
 	if creds.GitHubAccessToken != "" || creds.GitHubRefreshToken != "" {
 		t.Fatalf("legacy GitHub secrets were not scrubbed: %+v", creds)
 	}
-	if creds.GitHubKeychainAccount != GitHubKeychainAccount("user_1", "joe") || creds.CLISessionToken != "tlcs_test" {
+	if creds.GitHubKeychainAccount != GitHubKeychainAccount("user_1", "joe") || creds.CLISessionToken != "gxcs_test" {
 		t.Fatalf("credentials metadata = %+v", creds)
 	}
 	stored, err := loadKeychainToken(creds.GitHubKeychainAccount)

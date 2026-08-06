@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/satoricorp/totality/internal/hooks"
-	"github.com/satoricorp/totality/internal/storage"
-	"github.com/satoricorp/totality/internal/storage/storagetest"
-	"github.com/satoricorp/totality/internal/totalitytest"
-	"github.com/satoricorp/totality/internal/vcs"
+	"github.com/satoricorp/gx/internal/gxtest"
+	"github.com/satoricorp/gx/internal/hooks"
+	"github.com/satoricorp/gx/internal/storage"
+	"github.com/satoricorp/gx/internal/storage/storagetest"
+	"github.com/satoricorp/gx/internal/vcs"
 )
 
 const driftConversation = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -34,7 +34,7 @@ const driftContent = "package gamma\n\nfunc GammaThree() int {\n\treturn 3\n}\n"
 //   - `capture_sessions` is dominated by the retired
 //     "<revisionID>-<contentHash>" id scheme, none of it ever uploaded, most of
 //     it not even marked shareable.
-//   - A `totality-commit-self-report` fossil session written by an older binary is
+//   - A `gx-commit-self-report` fossil session written by an older binary is
 //     sitting in `sessions`, so storage.Open's repair passes actually have work
 //     to do for once.
 //
@@ -43,7 +43,7 @@ const driftContent = "package gamma\n\nfunc GammaThree() int {\n\treturn 3\n}\n"
 // write/read identity boundary rather than trivially agreeing with it.
 func TestRunPushPublishesSessionsOnAWeatheredDatabase(t *testing.T) {
 	ctx := context.Background()
-	world := totalitytest.NewWorld(t)
+	world := gxtest.NewWorld(t)
 	repo := world.NewRepo(t)
 	if _, err := vcs.NewService().InitAtPath(ctx, repo.Root, vcs.InitOptions{}); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestRunPushPublishesSessionsOnAWeatheredDatabase(t *testing.T) {
 
 	base := repo.Rev(t, "HEAD")
 	commit := repo.Commit(t, map[string]string{"gamma.go": driftContent}, "add gamma")
-	world.WriteClaudeTranscript(t, repo, totalitytest.Transcript{
+	world.WriteClaudeTranscript(t, repo, gxtest.Transcript{
 		ConversationID: driftConversation,
 		File:           "gamma.go",
 		Content:        driftContent,
@@ -148,7 +148,7 @@ func TestRunPushPublishesSessionsOnAWeatheredDatabase(t *testing.T) {
 // all, and the row that is has the wrong root_path.
 func TestRunPushFromLinkedWorktreeOnAWeatheredDatabase(t *testing.T) {
 	ctx := context.Background()
-	world := totalitytest.NewWorld(t)
+	world := gxtest.NewWorld(t)
 	main := world.NewRepo(t)
 	if _, err := vcs.NewService().InitAtPath(ctx, main.Root, vcs.InitOptions{}); err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestRunPushFromLinkedWorktreeOnAWeatheredDatabase(t *testing.T) {
 	worktree := main.AddWorktree(t, t.TempDir()+"-linked", "feature")
 	base := worktree.Rev(t, "HEAD")
 	commit := worktree.Commit(t, map[string]string{"gamma.go": driftContent}, "add gamma")
-	world.WriteClaudeTranscript(t, worktree, totalitytest.Transcript{
+	world.WriteClaudeTranscript(t, worktree, gxtest.Transcript{
 		ConversationID: driftConversation,
 		File:           "gamma.go",
 		Content:        driftContent,
@@ -202,42 +202,42 @@ func TestRunPushFromLinkedWorktreeOnAWeatheredDatabase(t *testing.T) {
 	}
 }
 
-// TestTotalityTestRevisionTrailerMatchesProduction pins internal/totalitytest's copy of the
-// Totality trailer against the real one.
+// TestGxTestRevisionTrailerMatchesProduction pins internal/gxtest's copy of the
+// gx trailer against the real one.
 //
-// totalitytest cannot import internal/vcs — internal/vcs imports internal/storage,
+// gxtest cannot import internal/vcs — internal/vcs imports internal/storage,
 // which internal/storage/storagetest builds on, and dragging vcs into the fast
 // storage/reviewbundle test binaries is the thing the layering exists to
 // prevent. So the trailer format is duplicated, and this assertion lives here,
 // in a package that already imports both. Without it a drift in the trailer
 // would silently stop the harness's commits from producing `changes` rows, and
 // every session assertion built on them would pass vacuously.
-func TestTotalityTestRevisionTrailerMatchesProduction(t *testing.T) {
+func TestGxTestRevisionTrailerMatchesProduction(t *testing.T) {
 	const revisionID = "AbCdEfGhIjKlMnOpQrS"
-	if got, want := totalitytest.RevisionTrailerLine(revisionID), vcs.RevisionTrailerLine(revisionID); got != want {
-		t.Fatalf("totalitytest.RevisionTrailerLine() = %q, want %q", got, want)
+	if got, want := gxtest.RevisionTrailerLine(revisionID), vcs.RevisionTrailerLine(revisionID); got != want {
+		t.Fatalf("gxtest.RevisionTrailerLine() = %q, want %q", got, want)
 	}
-	if got, want := totalitytest.StampRevisionTrailer("add gamma", revisionID), vcs.StampRevisionTrailer("add gamma", revisionID); got != want {
-		t.Fatalf("totalitytest.StampRevisionTrailer() = %q, want %q", got, want)
+	if got, want := gxtest.StampRevisionTrailer("add gamma", revisionID), vcs.StampRevisionTrailer("add gamma", revisionID); got != want {
+		t.Fatalf("gxtest.StampRevisionTrailer() = %q, want %q", got, want)
 	}
 	// The ids the harness mints must be ones production would accept, or
 	// RecoverMissingRevisions would drop the commits it stamps.
-	if id := totalitytest.NewRevisionID(t); !vcs.ValidRevisionID(id) {
-		t.Fatalf("totalitytest.NewRevisionID() = %q, which vcs.ValidRevisionID rejects", id)
+	if id := gxtest.NewRevisionID(t); !vcs.ValidRevisionID(id) {
+		t.Fatalf("gxtest.NewRevisionID() = %q, which vcs.ValidRevisionID rejects", id)
 	}
 }
 
-// TestTotalityTestWorldIsolatesTotalityHome pins the guard that the 32 stray rows in the
-// author's real ~/.totality/totality.db exist for: four tests that never set TOTALITY_HOME wrote
+// TestGxTestWorldIsolatesGxHome pins the guard that the 32 stray rows in the
+// author's real ~/.gx/gx.db exist for: four tests that never set GX_HOME wrote
 // straight into the production database, and storage.DefaultDir still falls
-// back to ~/.totality whenever the variable is unset.
-func TestTotalityTestWorldIsolatesTotalityHome(t *testing.T) {
-	world := totalitytest.NewWorld(t)
+// back to ~/.gx whenever the variable is unset.
+func TestGxTestWorldIsolatesGxHome(t *testing.T) {
+	world := gxtest.NewWorld(t)
 	dir, err := storage.DefaultDir()
 	if err != nil {
 		t.Fatalf("storage.DefaultDir() error = %v", err)
 	}
-	if dir != world.TotalityHome {
-		t.Fatalf("storage.DefaultDir() = %q, want the world's TOTALITY_HOME %q", dir, world.TotalityHome)
+	if dir != world.GxHome {
+		t.Fatalf("storage.DefaultDir() = %q, want the world's GX_HOME %q", dir, world.GxHome)
 	}
 }

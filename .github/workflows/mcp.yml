@@ -1,12 +1,12 @@
 name: mcp
 
-# Tests the MCP package on pushes and PRs, and publishes @satoricorp/totality
+# Tests the MCP package on pushes and PRs, and publishes @satoricorp/gx
 # to npm when a tag like mcp-v0.1.0 is pushed (the tag must match
 # mcp/package.json's version) or on manual dispatch. Publishing uses npm
 # Trusted Publishing (OIDC) — no token secret. One-time setup: publish 0.1.0
 # once locally (`just mcp-publish`), then on npmjs.com under the package's
 # Settings add a trusted publisher: GitHub Actions, owner satoricorp, repo
-# totality, workflow mcp.yml.
+# gx, workflow mcp.yml.
 
 on:
   push:
