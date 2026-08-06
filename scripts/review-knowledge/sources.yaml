@@ -37,29 +37,31 @@ sources:
     crawl_depth: 2
     notes: "SPINE of security rules per precedence table. Fetch 5.0 markdown from repo, not the project landing page."
   - id: owasp-top10
-    url: https://owasp.org/Top10/
+    url: https://github.com/OWASP/Top10/blob/master/2025/docs/en/0x00_2025-Introduction.md
     tier: security
     precedence_group: security-spine
-    crawl_depth: 1
-    notes: "Cross-reference metadata; ranked below ASVS."
+    fetch: github-md
+    notes: "Cross-reference metadata; ranked below ASVS. owasp.org robots.txt disallows fetching; the 2025 introduction markdown summarizes all ten categories. github-md fetches a single file, so no crawl."
   - id: cwe-top25
     url: https://cwe.mitre.org/top25/
     tier: security
     precedence_group: security-spine
     notes: "Cross-reference metadata (cwe_ids); ranked below ASVS."
   - id: owasp-cheatsheets
-    url: https://cheatsheetseries.owasp.org/index.html
+    url: https://github.com/OWASP/CheatSheetSeries/blob/master/Index.md
     tier: security
-    crawl_depth: 1
-    notes: "Crawl subsumes SQLi + Database Security cheatsheet entries below; dedup by URL."
+    fetch: github-md
+    notes: "cheatsheetseries.owasp.org robots.txt disallows fetching, so pull from the repo. github-md fetches a single file, so this is the cheatsheet index/map only — individual high-value sheets are their own entries below."
   - id: owasp-sqli-cheatsheet
-    url: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+    url: https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.md
     tier: security
     languages: [sql]
+    fetch: github-md
   - id: owasp-db-cheatsheet
-    url: https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html
+    url: https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Database_Security_Cheat_Sheet.md
     tier: security
     languages: [sql]
+    fetch: github-md
   - id: openssf-concise-guide
     url: https://best.openssf.org/Concise-Guide-for-Developing-More-Secure-Software
     tier: security
@@ -267,6 +269,74 @@ sources:
     tier: style
     languages: [shell]
     notes: "Homepage is thin - the value is the wiki: fetch github.com/koalaman/shellcheck/wiki check pages instead."
+  - id: csharp-coding-conventions
+    url: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+    tier: language
+    languages: [csharp]
+    precedence_group: csharp-style
+    notes: "Re-ingested from v1 urls.json (same id). C# style, readability, exceptions, async, LINQ."
+  - id: dotnet-framework-design-guidelines
+    url: https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/
+    tier: language
+    languages: [csharp]
+    authority: 1
+    crawl_depth: 1
+    notes: "Re-ingested from v1 urls.json (same id). Public API design, naming, exceptions, extensibility, versioning."
+  - id: dotnet-secure-coding
+    url: https://learn.microsoft.com/en-us/dotnet/standard/security/secure-coding-guidelines
+    tier: security
+    languages: [csharp]
+    notes: "Re-ingested from v1 urls.json (same id). Input handling, deserialization, secrets, cryptography."
+  - id: dotnet-code-analysis
+    url: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/overview
+    tier: style
+    languages: [csharp]
+    crawl_depth: 1
+    notes: "Re-ingested from v1 urls.json (same id, v1 category tooling). Roslyn analyzer-backed style, quality, and correctness review."
+  - id: dotnet-analyzer-categories
+    url: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/categories
+    tier: style
+    languages: [csharp]
+    authority: 3
+    crawl_depth: 1
+    notes: "Re-ingested from v1 urls.json (same id, v1 category tooling). Maps analyzer rules to quality/design/performance/security categories."
+  - id: owasp-deserialization-cheatsheet
+    url: https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Deserialization_Cheat_Sheet.md
+    tier: security
+    languages: [java, csharp, php, python]
+    fetch: github-md
+    notes: "Re-ingested from v1 urls.json (id owasp-deserialization). cheatsheetseries.owasp.org robots.txt disallows fetching, so pull the markdown from the repo like owasp-asvs does."
+  - id: aspnet-core-security
+    url: https://learn.microsoft.com/en-us/aspnet/core/security/
+    tier: security
+    languages: [csharp]
+    crawl_depth: 1
+    notes: "ASP.NET Core authn/authz, data protection, secrets, CORS, XSS/CSRF guidance."
+  - id: effective-dart
+    url: https://dart.dev/effective-dart
+    tier: language
+    languages: [dart]
+    authority: 1
+    precedence_group: dart-style
+    crawl_depth: 1
+    notes: "WINNER of dart-style group. Crawl covers the style/documentation/usage/design subpages."
+  - id: dart-linter-rules
+    url: https://dart.dev/tools/linter-rules
+    tier: style
+    languages: [dart]
+    precedence_group: dart-style
+    crawl_depth: 1
+    notes: "DECISION-B tier. Rule pages are atomic chunks; mechanical style defers to the enabled lint set."
+  - id: flutter-perf-best-practices
+    url: https://docs.flutter.dev/perf/best-practices
+    tier: language
+    languages: [dart]
+    notes: "Flutter widget build/rebuild, const constructors, list virtualization, jank avoidance."
+  - id: flutter-security
+    url: https://docs.flutter.dev/security
+    tier: security
+    languages: [dart]
+    notes: "Flutter security philosophy and app hardening best practices."
   - id: bacchelli-bird-2013
     url: https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
     tier: research

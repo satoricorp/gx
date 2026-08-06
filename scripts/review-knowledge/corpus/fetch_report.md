@@ -130,3 +130,26 @@ generated_at: 2026-07-08
 - SKIP gunawardena-2023-taxonomy: manual source pending. license=verify
 - SKIP yasa-2025-in-practice: manual source pending. license=verify
 - SKIP watanabe-2024-chatgpt-reviews: manual source pending. license=verify
+
+## 2026-08-06 incremental fetch (new C#/.NET and Dart/Flutter sources)
+
+- OK csharp-coding-conventions: status=200 final_url=https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+- OK dotnet-framework-design-guidelines: status=200 final_url=https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/common-design-patterns
+- OK dotnet-secure-coding: status=200 final_url=https://learn.microsoft.com/en-us/dotnet/standard/security/secure-coding-guidelines
+- OK dotnet-code-analysis: status=200 final_url=https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/overview
+- OK dotnet-analyzer-categories: status=200 final_url=https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/categories
+- OK owasp-deserialization-cheatsheet: status=200 final_url=https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/Deserialization_Cheat_Sheet.md
+- OK aspnet-core-security: status=200 final_url=https://learn.microsoft.com/en-us/aspnet/core/security/identity-management-solutions?view=aspnetcore-10.0
+- OK effective-dart: status=200 final_url=https://dart.dev/effective-dart/design
+- OK dart-linter-rules: status=200 final_url=https://dart.dev/tools/linter-rules/avoid_unnecessary_containers
+- OK flutter-perf-best-practices: status=200 final_url=https://docs.flutter.dev/perf/best-practices
+- OK flutter-security: status=200 final_url=https://docs.flutter.dev/security
+(license=verify on all of the above; verify before redistribution.)
+
+## 2026-08-06 incremental fetch (robots-blocked OWASP sources repointed to github-md)
+
+- OK owasp-top10: status=200 final_url=https://raw.githubusercontent.com/OWASP/Top10/master/2025/docs/en/0x00_2025-Introduction.md
+- OK owasp-cheatsheets: status=200 final_url=https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/Index.md
+- OK owasp-sqli-cheatsheet: status=200 final_url=https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.md
+- OK owasp-db-cheatsheet: status=200 final_url=https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/Database_Security_Cheat_Sheet.md
+(license=verify on all of the above; verify before redistribution.)

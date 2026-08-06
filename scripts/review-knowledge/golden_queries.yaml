@@ -149,3 +149,36 @@ queries:
   - query: "how large should a change be for review"
     expected_source_ids: [google-eng-practices, smartbear-best-practices]
     focus: process
+  - query: "c# async await exception handling conventions"
+    expected_source_ids: [csharp-coding-conventions]
+    focus: csharp
+  - query: "dotnet public api naming and design guidelines"
+    expected_source_ids: [dotnet-framework-design-guidelines, csharp-coding-conventions]
+    focus: csharp
+  - query: "dotnet secure coding untrusted input deserialization"
+    expected_source_ids: [dotnet-secure-coding, owasp-deserialization-cheatsheet]
+    focus: csharp
+  - query: "roslyn analyzer rule categories quality security"
+    expected_source_ids: [dotnet-analyzer-categories, dotnet-code-analysis]
+    focus: csharp
+  - query: "enable dotnet code analysis editorconfig severity"
+    expected_source_ids: [dotnet-code-analysis]
+    focus: csharp
+  - query: "asp.net core authentication authorization review"
+    expected_source_ids: [aspnet-core-security, owasp-asvs]
+    focus: csharp
+  - query: "effective dart naming and style guidance"
+    expected_source_ids: [effective-dart]
+    focus: dart
+  - query: "dart avoid dynamic prefer typed public apis"
+    expected_source_ids: [effective-dart, dart-linter-rules]
+    focus: dart
+  - query: "dart linter rule pages for mechanical style"
+    expected_source_ids: [dart-linter-rules, effective-dart]
+    focus: dart
+  - query: "flutter widget rebuild performance const constructors"
+    expected_source_ids: [flutter-perf-best-practices]
+    focus: dart
+  - query: "flutter app security hardening best practices"
+    expected_source_ids: [flutter-security, owasp-asvs]
+    focus: dart

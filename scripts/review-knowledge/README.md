@@ -11,7 +11,7 @@ model can cite or use as supporting context.
 ## Files
 
 - `sources.yaml`: approved v2 source manifest. This supersedes `urls.json`.
-- `golden_queries.yaml`: 50-query eval gate manifest.
+- `golden_queries.yaml`: 61-query eval gate manifest.
 - `index_review_resources.py`: validates, fetches, normalizes, chunks, embeds,
   indexes, refreshes, and scaffolds eval output.
 - `urls.json`: retained only as the v1 manifest/reference.
@@ -38,9 +38,19 @@ there is no primary source. If a seed note is opinionated, keep it in
 ## Current Coverage
 
 The v2 manifest covers review process, cross-cutting security, TypeScript,
-Python, Go, Rust, SQL, shell, style/linter sources, and empirical research.
-Research sources are routed to `research-corpus-v1` and are not used for
-review-time retrieval.
+Python, Go, Rust, C#/.NET, Dart/Flutter, SQL, shell, style/linter sources, and
+empirical research. Research sources are routed to `research-corpus-v1` and are
+not used for review-time retrieval.
+
+The six .NET documents from the v1 `urls.json` manifest are re-ingested here as
+v2 sources (same ids where possible) rather than served from their legacy
+production rows: runtime retrieval filters on `source_kind = "review_corpus"`,
+which the v1 rows (`source_kind = "review_knowledge"`) never match, and the
+legacy rows lack the v2 filter attributes. (As of 2026-08-06 the legacy rows
+turned out to be gone entirely — the earlier `totality-review-knowledge`
+production namespace was deleted in a namespace cleanup, so the v2 re-ingest is
+the only copy. The 2026-08-06 promote created `gx-review-knowledge` fresh, the
+namespace the shipped retriever queries.)
 
 Treat SQL and shell as cross-cutting review profiles as much as languages. A
 TypeScript, Python, Java, Go, Rust, or C# change can still need SQL review when

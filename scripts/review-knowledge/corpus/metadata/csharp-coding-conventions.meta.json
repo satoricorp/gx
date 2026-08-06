@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c3d43da682dcb222b61c36964cb57b8a4982f22bab8a970de5af412ac9372ad1",
+  "source_id": "csharp-coding-conventions"
+}

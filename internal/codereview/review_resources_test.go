@@ -3,6 +3,7 @@ package codereview
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,13 +59,19 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	for _, want := range []string{
 		`"tier","In"`,
 		`"language_tags","ContainsAny"`,
-		`"risk_tag_values","ContainsAny"`,
-		`"review_tag_values","ContainsAny"`,
 		`"security"`,
 		`"sql"`,
 	} {
 		if !strings.Contains(filtered, want) {
 			t.Fatalf("filtered query missing %s in %s", want, filtered)
+		}
+	}
+	// The v2 corpus schema declares neither framework_tags nor the two
+	// *_tag_values attributes; naming any of them makes TurboPuffer reject the
+	// whole query with HTTP 400.
+	for _, banned := range []string{"framework_tags", "risk_tag_values", "review_tag_values"} {
+		if strings.Contains(filtered, banned) {
+			t.Fatalf("filtered query names undeclared attribute %s in %s", banned, filtered)
 		}
 	}
 	if len(snippets) != 1 {
@@ -79,6 +86,80 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	}
 	if !strings.Contains(snippet.Text, "OWASP SQL Injection") || !strings.Contains(snippet.Text, "parameterized queries") {
 		t.Fatalf("snippet text = %q", snippet.Text)
+	}
+}
+
+func TestReviewResourceRetrieverRecordsNarrowedQueryFailure(t *testing.T) {
+	store := &failingSecondQueryReviewResourceStore{
+		rows: []reviewResourceRow{{
+			"source_id": "effective-dart",
+			"title":     "Effective Dart",
+			"body":      "Prefer making fields and top-level variables final.",
+		}},
+	}
+	retriever := ReviewResourceRetriever{
+		Embedder:  fakeReviewResourceEmbedder{vector: []float32{0.1, 0.2}},
+		Store:     store,
+		Namespace: "gx-review-knowledge",
+		Limit:     6,
+	}
+	evidence := &EvidenceLog{}
+	snippets, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		Options:      normalizeOptions(Options{}),
+		ChangedFiles: []string{"lib/widgets/session_card.dart"},
+		Evidence:     evidence,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if len(snippets) != 1 {
+		t.Fatalf("snippets = %#v, want the broad query's row to survive", snippets)
+	}
+	statuses := evidence.Statuses()
+	if len(statuses) != 2 {
+		t.Fatalf("statuses = %#v, want narrowed failure + final ok", statuses)
+	}
+	var sawFailure, sawOK bool
+	for _, status := range statuses {
+		if status.Source != reviewKnowledgeEvidenceSource {
+			t.Fatalf("status source = %q", status.Source)
+		}
+		switch status.State {
+		case EvidenceUnavailable:
+			sawFailure = true
+			if !strings.Contains(status.Detail, "language-narrowed query failed") {
+				t.Fatalf("failure detail = %q", status.Detail)
+			}
+		case EvidenceOK:
+			sawOK = true
+			if status.Snippets != 1 {
+				t.Fatalf("ok status snippets = %d", status.Snippets)
+			}
+		}
+	}
+	if !sawFailure || !sawOK {
+		t.Fatalf("statuses = %#v, want one unavailable and one ok", statuses)
+	}
+}
+
+func TestLanguageAndFrameworkTagsForDotnetAndFlutterFiles(t *testing.T) {
+	languages := languageTagsForFiles([]string{
+		"lib/widgets/session_card.dart",
+		"src/Api/Program.cs",
+	})
+	for _, want := range []string{"csharp", "dart"} {
+		if !containsString(languages, want) {
+			t.Fatalf("languages = %#v, want %s", languages, want)
+		}
+	}
+	frameworks := frameworkTagsForFiles(
+		[]string{"src/Api/Api.csproj", "gx.sln"},
+		[]string{"app/pubspec.yaml"},
+	)
+	for _, want := range []string{"dotnet", "flutter"} {
+		if !containsString(frameworks, want) {
+			t.Fatalf("frameworks = %#v, want %s", frameworks, want)
+		}
 	}
 }
 
@@ -255,6 +336,22 @@ type recordingReviewResourceStore struct {
 
 func (s *recordingReviewResourceStore) Query(_ context.Context, req reviewResourceQuery) ([]reviewResourceRow, error) {
 	s.requests = append(s.requests, req)
+	return s.rows, nil
+}
+
+// failingSecondQueryReviewResourceStore answers the broad query and fails the
+// narrowed one, the shape of the schema-mismatch outage the retriever must
+// report rather than swallow.
+type failingSecondQueryReviewResourceStore struct {
+	calls int
+	rows  []reviewResourceRow
+}
+
+func (s *failingSecondQueryReviewResourceStore) Query(_ context.Context, _ reviewResourceQuery) ([]reviewResourceRow, error) {
+	s.calls++
+	if s.calls > 1 {
+		return nil, fmt.Errorf("query review resources: status 400 Bad Request")
+	}
 	return s.rows, nil
 }
 

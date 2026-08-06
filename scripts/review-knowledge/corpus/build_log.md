@@ -1,11 +1,11 @@
 # Review Corpus Build Log
 
-generated_at: 2026-07-08
-chunks: 1848
+generated_at: 2026-08-06
+chunks: 2903
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=5 p50=86 max=818
+token_histogram: min=5 p50=92 max=818
 
 ## Chunks Per Source
 - google-eng-practices: 12
@@ -15,11 +15,11 @@ token_histogram: min=5 p50=86 max=818
 - smartbear-best-practices: 1 (investigate: <3 chunks)
 - conventional-comments: 2 (investigate: <3 chunks)
 - owasp-asvs: 7
-- owasp-top10: 1 (investigate: <3 chunks)
+- owasp-top10: 13
 - cwe-top25: 1 (investigate: <3 chunks)
-- owasp-cheatsheets: 1 (investigate: <3 chunks)
-- owasp-sqli-cheatsheet: 1 (investigate: <3 chunks)
-- owasp-db-cheatsheet: 1 (investigate: <3 chunks)
+- owasp-cheatsheets: 25
+- owasp-sqli-cheatsheet: 28
+- owasp-db-cheatsheet: 13
 - openssf-concise-guide: 2 (investigate: <3 chunks)
 - openssf-scorecard: 32
 - slsa: 58
@@ -57,6 +57,17 @@ token_histogram: min=5 p50=86 max=818
 - google-shellguide: 146
 - posix-shell-spec: 37
 - shellcheck: 6
+- csharp-coding-conventions: 18
+- dotnet-framework-design-guidelines: 9
+- dotnet-secure-coding: 6
+- dotnet-code-analysis: 11
+- dotnet-analyzer-categories: 12
+- owasp-deserialization-cheatsheet: 28
+- aspnet-core-security: 527
+- effective-dart: 185
+- dart-linter-rules: 155
+- flutter-perf-best-practices: 20
+- flutter-security: 9
 - bacchelli-bird-2013: 0
 - sadowski-2018-google: 0
 - rigby-bird-2013: 0

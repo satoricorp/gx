@@ -1,10 +1,10 @@
 {
-  "error": "robots.txt disallows fetch: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://raw.githubusercontent.com/OWASP/CheatSheetSeries/master/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.md",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "77924b56a036b072bbc7a2b3bfc4f9f59fa5da92790c6690681574cb9457ec14",
   "source_id": "owasp-sqli-cheatsheet"
 }

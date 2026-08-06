@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/common-design-patterns",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "40b6f38ae43f0aa9537771443f39e63f2fce1c3c4fa0b3c2a73bdab9bad82d9e",
+  "source_id": "dotnet-framework-design-guidelines"
+}

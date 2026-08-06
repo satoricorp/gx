@@ -227,9 +227,6 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 		"evidence_level",
 		"language_tags",
 		"languages",
-		"framework_tags",
-		"risk_tag_values",
-		"review_tag_values",
 		"precedence_group",
 		"superseded_by",
 		"historical",
@@ -251,19 +248,41 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	if err != nil {
 		return nil, err
 	}
+	namespace := strings.TrimSpace(r.Namespace)
+	if namespace == "" {
+		namespace = defaultReviewKnowledgeNamespace
+	}
 	rows := append([]reviewResourceRow{}, broadRows...)
 	if filter := reviewResourceSignalFilter(signals); filter != nil {
-		if filteredRows, err := r.Store.Query(ctx, reviewResourceQuery{
+		filteredRows, err := r.Store.Query(ctx, reviewResourceQuery{
 			Vector:            vectors[0],
 			Text:              queryText,
 			Limit:             limit,
 			Filters:           filter,
 			IncludeAttributes: include,
-		}); err == nil {
+		})
+		if err != nil {
+			// The broad query answered, so the review still gets snippets, but
+			// silently dropping this error is how the narrowed query's schema
+			// mismatch went unnoticed — record it as a partial read instead.
+			in.Evidence.Record(EvidenceStatus{
+				Source:    reviewKnowledgeEvidenceSource,
+				Namespace: namespace,
+				State:     EvidenceUnavailable,
+				Detail:    "language-narrowed query failed: " + err.Error(),
+			})
+		} else {
 			rows = append(rows, filteredRows...)
 		}
 	}
-	return reviewResourceSnippets(rows, limit, r.Namespace), nil
+	snippets := reviewResourceSnippets(rows, limit, namespace)
+	in.Evidence.Record(EvidenceStatus{
+		Source:    reviewKnowledgeEvidenceSource,
+		Namespace: namespace,
+		State:     evidenceStateForCount(len(snippets)),
+		Snippets:  len(snippets),
+	})
+	return snippets, nil
 }
 
 func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewResourceQuery) ([]reviewResourceRow, error) {
@@ -431,6 +450,15 @@ func reviewResourceBaseFilter() any {
 	}}
 }
 
+// reviewResourceSignalFilter narrows the second corpus query to the tiers and
+// languages of the changed code. It may only name attributes the v2 corpus
+// schema declares (review_corpus_schema in
+// scripts/review-knowledge/index_review_resources.py): TurboPuffer rejects the
+// whole query — HTTP 400, zero rows — when a filter names an undeclared
+// attribute. It used to filter on framework_tags, risk_tag_values, and
+// review_tag_values, which no corpus row has ever carried, so every narrowed
+// query failed. Framework and risk signals still steer retrieval through the
+// query text.
 func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 	var conditions []any
 	if len(signals.Categories) > 0 {
@@ -438,13 +466,6 @@ func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 	}
 	if len(signals.Languages) > 0 {
 		conditions = append(conditions, []any{"language_tags", "ContainsAny", signals.Languages})
-	}
-	if len(signals.Frameworks) > 0 {
-		conditions = append(conditions, []any{"framework_tags", "ContainsAny", signals.Frameworks})
-	}
-	if len(signals.RiskTags) > 0 {
-		conditions = append(conditions, []any{"risk_tag_values", "ContainsAny", signals.RiskTags})
-		conditions = append(conditions, []any{"review_tag_values", "ContainsAny", signals.RiskTags})
 	}
 	if len(conditions) == 0 {
 		return nil
@@ -610,6 +631,8 @@ func languageTagsForFiles(files []string) []string {
 			tags["cpp"] = struct{}{}
 		case ".cs":
 			tags["csharp"] = struct{}{}
+		case ".dart":
+			tags["dart"] = struct{}{}
 		case ".sql":
 			tags["sql"] = struct{}{}
 		case ".sh", ".bash", ".zsh", ".ksh":
@@ -634,6 +657,10 @@ func frameworkTagsForFiles(files []string, dependencyFiles []string) []string {
 	for _, file := range append(append([]string{}, files...), dependencyFiles...) {
 		lower := strings.ToLower(file)
 		switch {
+		case strings.HasSuffix(lower, ".csproj"), strings.HasSuffix(lower, ".sln"):
+			tags["dotnet"] = struct{}{}
+		case strings.HasSuffix(lower, "pubspec.yaml"), strings.HasSuffix(lower, "pubspec.lock"):
+			tags["flutter"] = struct{}{}
 		case strings.Contains(lower, "spring"):
 			tags["spring"] = struct{}{}
 		case strings.Contains(lower, "android"):
