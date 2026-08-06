@@ -72,3 +72,29 @@ func TestNamedFilesFromProseSurvivesEmptyFacts(t *testing.T) {
 		t.Fatal("prose path was not recognised")
 	}
 }
+
+// A judge that cannot verify a finding must not delete it. "I could not check
+// this" and "I checked this and it is wrong" are different answers, and only
+// one of them justifies discarding a reviewer's finding.
+func TestUnverifiableVerdictSurfacesInsteadOfDropping(t *testing.T) {
+	findings := []Finding{
+		{ID: "ai.review.1", Title: "Ownership check missing"},
+		{ID: "ai.review.2", Title: "Race in incrementTotal"},
+	}
+	results := []judgeResult{
+		{CandidateID: "ai.review.1", Verdict: "unverifiable", Impact: impactFunctional, Confidence: 0.9,
+			VerificationNote: "no file content was provided for src/orders.ts"},
+		{CandidateID: "ai.review.2", Verdict: "refuted", Impact: impactFunctional, Confidence: 0.9},
+	}
+
+	if answered := answeredCandidateIDs(results); len(answered) != 1 {
+		t.Fatalf("answeredCandidateIDs() covered %d candidates, want only the refuted one — "+
+			"an unverifiable verdict is not an answer and must fall through to unjudged", len(answered))
+	}
+	kept := applyJudgeResults(findings, results)
+	for _, f := range kept {
+		if f.ID == "ai.review.1" {
+			t.Error("an unverifiable finding must not be kept as judged; it belongs in the unjudged fallback")
+		}
+	}
+}
