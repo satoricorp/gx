@@ -12,10 +12,26 @@ import (
 // liveJudgeRequest is the fixed three-candidate probe the live tests share: one
 // finding the snippet supports, one it refutes, and one that is real but
 // cosmetic.
+// The two files the probe's candidates are about. Each appears ONCE in the
+// request no matter how many candidates name it — live.supported and
+// live.cosmetic are both about app.go, and the per-candidate layout this
+// replaced sent that file twice, with different content each time.
+const (
+	liveJudgeAppGo = "package app\n\nfunc Write(path string) error {\n\tf, err := os.Create(path)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer f.Close()\n\t_, err = f.WriteString(\"data\")\n\treturn err\n}\n"
+
+	liveJudgePollGo = "package app\n\nfunc poll(path string) map[string]any {\n\tfor {\n\t\tif _, err := os.Stat(path); err == nil {\n\t\t\tdata, err := os.ReadFile(path)\n\t\t\tif err == nil {\n\t\t\t\tvar out map[string]any\n\t\t\t\tif json.Unmarshal(data, &out) == nil {\n\t\t\t\t\treturn out\n\t\t\t\t}\n\t\t\t}\n\t\t\t// a torn read between Stat and rename settling — the next poll gets it whole\n\t\t}\n\t\ttime.Sleep(300 * time.Millisecond)\n\t}\n}\n"
+)
+
 func liveJudgeRequest() judgeRequest {
 	return judgeRequest{
-		RepoRoot:     "/repo",
 		ChangedFiles: []string{"internal/app/app.go", "internal/app/poll.go"},
+		// Rendered through the production excerpt builder rather than written
+		// out by hand, so the live probe exercises the line-numbered format the
+		// prompt describes instead of a shape only this test ever sends.
+		Files: []judgeContentSnippet{
+			{File: "internal/app/app.go", Text: judgeFileExcerpt(liveJudgeAppGo, nil, maxJudgeFileBytes)},
+			{File: "internal/app/poll.go", Text: judgeFileExcerpt(liveJudgePollGo, nil, maxJudgeFileBytes)},
+		},
 		Candidates: []judgeCandidate{
 			{
 				ID:             "live.supported",
@@ -23,13 +39,9 @@ func liveJudgeRequest() judgeRequest {
 				Summary:        "`internal/app/app.go` calls `defer f.Close()` on a file it wrote, so a failed flush is lost.",
 				Recommendation: "Check the error from Close and return it.",
 				NamedFiles:     []string{"internal/app/app.go"},
-				FileContentSnippets: []judgeContentSnippet{{
-					File: "internal/app/app.go",
-					Text: "package app\n\nfunc Write(path string) error {\n\tf, err := os.Create(path)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer f.Close()\n\t_, err = f.WriteString(\"data\")\n\treturn err\n}\n",
-				}},
 			},
 			{
-				// The mechanism this claims is contradicted by the snippet it is
+				// The mechanism this claims is contradicted by the excerpt it is
 				// handed: ReadFile's error is checked, so nothing escapes. See
 				// TestLiveJudgeRejectsAClaimTheFileContentRefutes.
 				ID:             "live.refuted",
@@ -38,10 +50,6 @@ func liveJudgeRequest() judgeRequest {
 				Recommendation: "Handle the read error explicitly instead of letting it escape.",
 				Evidence:       []string{"Reviewer: Bedrock A", "internal/app/poll.go:12"},
 				NamedFiles:     []string{"internal/app/poll.go"},
-				FileContentSnippets: []judgeContentSnippet{{
-					File: "internal/app/poll.go",
-					Text: "package app\n\nfunc poll(path string) map[string]any {\n\tfor {\n\t\tif _, err := os.Stat(path); err == nil {\n\t\t\tdata, err := os.ReadFile(path)\n\t\t\tif err == nil {\n\t\t\t\tvar out map[string]any\n\t\t\t\tif json.Unmarshal(data, &out) == nil {\n\t\t\t\t\treturn out\n\t\t\t\t}\n\t\t\t}\n\t\t\t// a torn read between Stat and rename settling — the next poll gets it whole\n\t\t}\n\t\ttime.Sleep(300 * time.Millisecond)\n\t}\n}\n",
-				}},
 			},
 			{
 				ID:             "live.cosmetic",
@@ -49,10 +57,6 @@ func liveJudgeRequest() judgeRequest {
 				Summary:        "The package in `internal/app/app.go` is named `app`, which is generic.",
 				Recommendation: "Rename the package.",
 				NamedFiles:     []string{"internal/app/app.go"},
-				FileContentSnippets: []judgeContentSnippet{{
-					File: "internal/app/app.go",
-					Text: "package app\n",
-				}},
 			},
 		},
 	}
