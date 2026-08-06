@@ -772,11 +772,37 @@ func findingEvidenceStrings(evidence []Evidence) []string {
 	return out
 }
 
+// namedFilesForFinding is what decides whether the judge gets any source to
+// verify against, so it reads the finding's STRUCTURED location first and only
+// then falls back to scraping paths out of its prose.
+//
+// Prose-only was the original implementation and it silently starved the judge.
+// A finding carries `file`/`line` and `anchors` precisely so the location does
+// not have to be restated in a sentence, and a model that fills those fields
+// and writes "the ownership check is missing" — correct, idiomatic output —
+// produced no named files, hence no file content, hence a judge asked to verify
+// a claim about source it was never shown. It then answers in prose instead of
+// its verdict block and the whole batch loses its verdicts. The symptom is a
+// review that reports nothing while reading as complete, which is the exact
+// failure --fail-on exists to prevent.
 func namedFilesForFinding(ctx ReviewContext, finding Finding) []string {
 	known := knownReviewFiles(ctx)
 	changed := normalizedChangedFiles(ctx.Brief.Static.ChangedFiles)
 	seen := map[string]struct{}{}
 	var parsed []string
+	// Structured fields first: they are unambiguous, and they are what the
+	// finding schema asks the model to fill in.
+	for _, candidate := range structuredFindingFiles(finding) {
+		file := normalizeReviewPath(candidate)
+		if file == "" {
+			continue
+		}
+		if _, ok := seen[file]; ok {
+			continue
+		}
+		seen[file] = struct{}{}
+		parsed = append(parsed, file)
+	}
 	for _, text := range []string{finding.Title, finding.Summary, finding.Recommendation, evidenceText(finding.Evidence)} {
 		for _, file := range parseReviewFilePaths(text, known, ctx.Brief.RepoRoot) {
 			if _, ok := seen[file]; ok {
@@ -910,6 +936,26 @@ func uniqueStrings(values []string) []string {
 		}
 		seen[value] = struct{}{}
 		out = append(out, value)
+	}
+	return out
+}
+
+// structuredFindingFiles lists the file paths a finding states outright, in the
+// order a reader would trust them: the finding's own File field, then every
+// anchor. These are deliberately NOT filtered against the known-file set the
+// way prose paths are — prose needs that filter because scraping sentences
+// yields false positives, whereas a path in a structured field is a claim the
+// reviewer made on purpose. Filtering it would reintroduce the starvation this
+// exists to fix whenever the repository scan is incomplete.
+func structuredFindingFiles(finding Finding) []string {
+	var out []string
+	if file := strings.TrimSpace(finding.File); file != "" {
+		out = append(out, file)
+	}
+	for _, anchor := range finding.Anchors {
+		if file := strings.TrimSpace(anchor.File); file != "" {
+			out = append(out, file)
+		}
 	}
 	return out
 }

@@ -64,7 +64,11 @@ func TestBedrockPathEncodingLayers(t *testing.T) {
 	if got, want := bedrockCanonicalPath(bedrockColonModel), "/model/us.anthropic.claude-opus-4-5-20251101-v1%253A0/invoke"; got != want {
 		t.Errorf("bedrockCanonicalPath() = %q, want %q", got, want)
 	}
-	plain := defaultBedrockReviewModelA
+	// A literal, not defaultBedrockReviewModelA: this case is about an ID with
+	// nothing to escape, and tying it to whichever model is currently the
+	// default made it fail the moment the default changed to one whose ID ends
+	// in ":0" — which is the escaping case the assertions above already cover.
+	plain := "us.anthropic.claude-opus-4-6-v1"
 	if bedrockRequestPath(plain) != bedrockCanonicalPath(plain) {
 		t.Errorf("model %q needs no escaping, so both paths must agree; got %q and %q",
 			plain, bedrockRequestPath(plain), bedrockCanonicalPath(plain))

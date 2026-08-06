@@ -108,8 +108,8 @@ const (
 // could never have run. normalizeBedrockModelID enforces this for overrides too,
 // and TestDefaultBedrockModelsAreInferenceProfiles is the regression test.
 const (
-	defaultBedrockReviewModelA = "us.anthropic.claude-opus-4-6-v1"
-	defaultBedrockReviewModelB = "us.anthropic.claude-sonnet-4-6"
+	defaultBedrockReviewModelA = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+	defaultBedrockReviewModelB = "us.anthropic.claude-sonnet-4-6" // 1M context: the repo-mode safety net
 	defaultBedrockJudgeModel   = "us.anthropic.claude-sonnet-4-6"
 	// defaultBedrockRegion was us-east-1, which is not where these inference
 	// profiles are enabled for this deployment; a model that exists in one
