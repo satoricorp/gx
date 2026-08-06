@@ -108,14 +108,15 @@ func (ReviewResourceRetriever) EvidenceSource() string { return reviewKnowledgeE
 
 // retrieveKnowledgeViaCloud searches the shared review-knowledge corpus
 // through gx Cloud. The server embeds the query at the corpus's own width and
-// applies the review_corpus filter; the tag-narrowed second query of the
-// direct path is not replicated — the broad hybrid search is what the server's
-// own summary broker uses for this corpus.
+// applies the review_corpus filter; the language/category signals let it run
+// the same signal-narrowed second query as the direct path. Only those two are
+// sent — framework and risk tags are not filterable in the corpus schema.
 func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	ctx context.Context,
 	in RetrieveInput,
 	searcher reviewCloudSearcher,
 	queryText string,
+	signals reviewResourceSignalSet,
 ) ([]ContextSnippet, error) {
 	limit := r.Limit
 	if in.Options.Deep && limit < defaultReviewResourceDeepTopK {
@@ -125,9 +126,11 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 		limit = defaultReviewResourceTopK
 	}
 	result, err := searcher.SearchReviewIndex(ctx, cloud.ReviewSearchRequest{
-		Target: "knowledge",
-		Query:  queryText,
-		Limit:  limit,
+		Target:     "knowledge",
+		Query:      queryText,
+		Limit:      limit,
+		Languages:  signals.Languages,
+		Categories: signals.Categories,
 	})
 	if err != nil {
 		in.Evidence.Record(EvidenceStatus{
@@ -194,7 +197,7 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 			})
 			return nil, nil
 		}
-		return r.retrieveKnowledgeViaCloud(ctx, in, searcher, queryText)
+		return r.retrieveKnowledgeViaCloud(ctx, in, searcher, queryText, signals)
 	}
 	vectors, err := r.Embedder.Embed(ctx, []string{queryText})
 	if err != nil {
@@ -431,6 +434,11 @@ func reviewResourceBaseFilter() any {
 	}}
 }
 
+// reviewResourceSignalFilter narrows on tier and language_tags only: they are
+// the only signal attributes the corpus schema declares filterable
+// (scripts/review-knowledge/index_review_resources.py, review_corpus_schema).
+// Filtering on an undeclared attribute makes TurboPuffer reject the whole
+// query with HTTP 400, which the caller swallows.
 func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 	var conditions []any
 	if len(signals.Categories) > 0 {
@@ -438,13 +446,6 @@ func reviewResourceSignalFilter(signals reviewResourceSignalSet) any {
 	}
 	if len(signals.Languages) > 0 {
 		conditions = append(conditions, []any{"language_tags", "ContainsAny", signals.Languages})
-	}
-	if len(signals.Frameworks) > 0 {
-		conditions = append(conditions, []any{"framework_tags", "ContainsAny", signals.Frameworks})
-	}
-	if len(signals.RiskTags) > 0 {
-		conditions = append(conditions, []any{"risk_tag_values", "ContainsAny", signals.RiskTags})
-		conditions = append(conditions, []any{"review_tag_values", "ContainsAny", signals.RiskTags})
 	}
 	if len(conditions) == 0 {
 		return nil

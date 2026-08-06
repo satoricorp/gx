@@ -58,13 +58,18 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	for _, want := range []string{
 		`"tier","In"`,
 		`"language_tags","ContainsAny"`,
-		`"risk_tag_values","ContainsAny"`,
-		`"review_tag_values","ContainsAny"`,
 		`"security"`,
 		`"sql"`,
 	} {
 		if !strings.Contains(filtered, want) {
 			t.Fatalf("filtered query missing %s in %s", want, filtered)
+		}
+	}
+	// The corpus schema declares only tier and language_tags filterable among
+	// the signal attributes; undeclared ones would 400 the whole query.
+	for _, reject := range []string{`"framework_tags"`, `"risk_tag_values"`, `"review_tag_values"`} {
+		if strings.Contains(filtered, reject) {
+			t.Fatalf("filtered query has undeclared filter attribute %s in %s", reject, filtered)
 		}
 	}
 	if len(snippets) != 1 {
