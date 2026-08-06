@@ -785,7 +785,13 @@ func skipFile(rel string) bool {
 
 func isDependencyFile(rel string) bool {
 	switch filepath.Base(rel) {
-	case "go.mod", "go.sum", "package.json", "package-lock.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml", "Cargo.lock", "requirements.txt", "pyproject.toml", "poetry.lock":
+	case "go.mod", "go.sum", "package.json", "package-lock.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml", "Cargo.lock", "requirements.txt", "pyproject.toml", "poetry.lock",
+		"packages.lock.json", "Directory.Packages.props", "pubspec.yaml", "pubspec.lock":
+		return true
+	}
+	// .NET manifests carry the project name, so only the extension is fixed.
+	switch strings.ToLower(filepath.Ext(rel)) {
+	case ".csproj", ".sln":
 		return true
 	default:
 		return false
@@ -875,6 +881,12 @@ var vendoredPathSegments = map[string]bool{
 	".output":          true,
 	"Pods":             true,
 	"DerivedData":      true,
+	// dotnet build writes bin/ and obj/ beside every project. Only obj is
+	// listed: a bare `bin` segment is also where repos keep hand-written
+	// entrypoint scripts (Rails binstubs, bin/setup), which are review
+	// subjects, and obj alone already catches the bulk of MSBuild output.
+	"obj":        true,
+	".dart_tool": true,
 }
 
 // isVendoredOrGeneratedPath reports whether a repo-relative path lives inside a

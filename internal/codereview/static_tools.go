@@ -91,6 +91,9 @@ var staticToolRunners = []staticToolRunner{
 	{name: "ruff", progress: "Running ruff", detect: detectRuff},
 	{name: "mypy", progress: "Running mypy", detect: detectMypy, wholeProject: true},
 	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck, wholeProject: true},
+	{name: "dart analyze", progress: "Running dart analyze", detect: detectDartAnalyze},
+	{name: "flutter analyze", progress: "Running flutter analyze", detect: detectFlutterAnalyze, wholeProject: true},
+	{name: "dotnet build", progress: "Running dotnet build", detect: detectDotnetBuild, wholeProject: true},
 }
 
 // staticToolScope is the file set every runner detects against. It is the
@@ -340,8 +343,90 @@ func detectCargoCheck(env staticToolEnv) (staticToolCommand, bool) {
 	return staticToolCommand{bin: bin, argv: []string{"cargo", "check"}}, true
 }
 
+// detectDartAnalyze lints the changed Dart files of a pure Dart package. A
+// pubspec that declares flutter is detectFlutterAnalyze's territory: `dart
+// analyze` cannot resolve Flutter SDK imports, so running it there reports
+// errors the repo's own tooling never would.
+func detectDartAnalyze(env staticToolEnv) (staticToolCommand, bool) {
+	if !repoFileExists(env.repoRoot, "pubspec.yaml") || pubspecDeclaresFlutter(env.repoRoot) {
+		return staticToolCommand{}, false
+	}
+	files := staticToolFileArgs(env.repoRoot, env.changedFiles, dartFileExtensions...)
+	if len(files) == 0 {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "dart")
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: append([]string{"dart", "analyze"}, files...)}, true
+}
+
+// detectFlutterAnalyze covers the pubspecs detectDartAnalyze declines. It has
+// no per-file scope — `flutter analyze` walks the whole project — which is why
+// the registry marks it wholeProject while plain dart analyze stays per-file.
+func detectFlutterAnalyze(env staticToolEnv) (staticToolCommand, bool) {
+	if !repoFileExists(env.repoRoot, "pubspec.yaml") || !pubspecDeclaresFlutter(env.repoRoot) {
+		return staticToolCommand{}, false
+	}
+	if !changedFilesInclude(env.changedFiles, dartFileExtensions...) &&
+		!changedFilesIncludeBase(env.changedFiles, "pubspec.yaml") {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "flutter")
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: []string{"flutter", "analyze"}}, true
+}
+
+// pubspecDeclaresFlutter matches the `flutter:` key anywhere in the manifest —
+// the dependency, the top-level assets section, or an environment constraint.
+// Any of them means the package expects the Flutter SDK's analyzer.
+func pubspecDeclaresFlutter(repoRoot string) bool {
+	return repoFileContains(repoRoot, "pubspec.yaml", "flutter:")
+}
+
+// detectDotnetBuild compiles the solution or project; like `cargo check` that
+// is not "runs nothing" — MSBuild executes the repo's own targets and analyzers
+// during a build, and the run writes bin/ and obj/ next to each project. There
+// is no per-file scope, so any C# or project-shape change triggers it.
+func detectDotnetBuild(env staticToolEnv) (staticToolCommand, bool) {
+	if !dotnetManifestPresent(env) {
+		return staticToolCommand{}, false
+	}
+	if !changedFilesInclude(env.changedFiles, ".cs", ".csproj", ".sln") &&
+		!changedFilesIncludeBase(env.changedFiles, "Directory.Build.props") {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "dotnet")
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: []string{"dotnet", "build", "--nologo"}}, true
+}
+
+// dotnetManifestPresent looks for a solution or project file. Unlike go.mod or
+// Cargo.toml the name is not fixed, so repoFileExists cannot answer this: the
+// repo scan's dependency files cover projects anywhere in the tree, and a root
+// glob still detects the conventional layout when the caller has no facts.
+func dotnetManifestPresent(env staticToolEnv) bool {
+	if changedFilesInclude(env.facts.DependencyFiles, dotnetManifestExtensions...) ||
+		changedFilesInclude(env.changedFiles, dotnetManifestExtensions...) {
+		return true
+	}
+	for _, pattern := range []string{"*.sln", "*.csproj"} {
+		if matches, err := filepath.Glob(filepath.Join(env.repoRoot, pattern)); err == nil && len(matches) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 var (
 	typeScriptFileExtensions = []string{".ts", ".tsx", ".mts", ".cts"}
+	dartFileExtensions       = []string{".dart"}
+	dotnetManifestExtensions = []string{".sln", ".csproj"}
 	javaScriptFileExtensions = []string{".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 	pythonFileExtensions     = []string{".py", ".pyi"}
 	nodeLocalBinDirs         = []string{"node_modules/.bin"}
