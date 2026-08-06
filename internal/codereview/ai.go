@@ -12,6 +12,12 @@ import (
 
 const (
 	defaultReviewMaxOutputTokens = 6000
+	// defaultMaxFindings is the reported-recommendation ceiling when a caller
+	// does not set one. Raised from the old hidden 5 (and the unjudged path's
+	// hidden 3): a ceiling below the number of real defects is indistinguishable
+	// in the output from a clean review, which is the failure --fail-on exists
+	// to prevent. Overridable per run with --max-findings.
+	defaultMaxFindings = 20
 	// maxAIContextSnippetBytes is THE per-snippet budget. It used to be 1200
 	// here while brief.go read 3200 and internal/publication read 1800, so two
 	// thirds of every locally read file was assembled and then thrown away one
@@ -797,8 +803,19 @@ func truncateAtHunkBoundary(text string, limit int) string {
 // profile. Profile-specific instructions are therefore appended for the profile
 // in hand, which also keeps the pr_summary prompt byte-identical as profiles
 // are added.
+// resolveMaxFindings turns a caller's ceiling into the one every stage uses:
+// the prompt that asks the model, and the fallback that truncates in code. They
+// were previously different constants, so raising one silently left the other
+// binding.
+func resolveMaxFindings(requested int) int {
+	if requested > 0 {
+		return requested
+	}
+	return defaultMaxFindings
+}
+
 func reviewDeveloperPrompt(brief ReviewBrief) string {
-	lines := baseReviewDeveloperPromptLines()
+	lines := baseReviewDeveloperPromptLines(brief)
 	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo {
 		lines = append(lines, wholeRepoPromptLines()...)
 	}
@@ -827,7 +844,7 @@ func concisePromptLines() []string {
 	}
 }
 
-func baseReviewDeveloperPromptLines() []string {
+func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 	return []string{
 		"You are gx Review. Review the provided patch and context for concrete recommendations, not generic audit facts.",
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
@@ -862,7 +879,7 @@ func baseReviewDeveloperPromptLines() []string {
 		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
 		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
-		"Return at most 5 recommendations. Prefer 2-3 high-signal recommendations.",
+		fmt.Sprintf("Return at most %d recommendations, ordered by significance. Report every real defect you find up to that ceiling — do not stop early to be brief, and do not pad to reach it.", resolveMaxFindings(brief.MaxFindings)),
 	}
 }
 

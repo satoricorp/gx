@@ -51,6 +51,17 @@ type Options struct {
 	Verbose      bool
 	PatchFocused bool
 	ReviewPolicy *ReviewPolicy
+	// MaxFindings caps how many recommendations a review reports. Zero means
+	// defaultMaxFindings.
+	//
+	// It exists because the cap was previously three separate hidden numbers
+	// that did not agree: the prompt told the model "at most 5, prefer 2-3",
+	// the unjudged fallback path truncated to 3 in code, and neither was
+	// reachable by a caller. A repository with six real defects could not
+	// report six no matter what, and the output looked like the reviewer's
+	// judgement rather than a ceiling nobody could see.
+	MaxFindings int
+
 	// Fast trades panel breadth for wall clock: one reviewer leg instead of
 	// two, no verification pass, and findings written tightly rather than with
 	// worked code examples.

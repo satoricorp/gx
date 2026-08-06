@@ -159,7 +159,7 @@ func TestCapKeepsTopThreeAdvisoryFindings(t *testing.T) {
 	}
 	engine := judgeTestEngine(root, findings)
 
-	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture"})
+	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture", MaxFindings: 3})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -184,7 +184,7 @@ func TestBlockingToolFindingsRenderInAdditionToCap(t *testing.T) {
 	}
 	engine := judgeTestEngine(root, findings)
 
-	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture"})
+	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture", MaxFindings: 3})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestJudgeDisabledStillCapsAdvisoryFindingsAtThree(t *testing.T) {
 	})
 	engine.judge = scriptedJudge{results: []judgeResult{{CandidateID: "advice.4", Verdict: "confirmed", Severity: 5, Confidence: 1}}}
 
-	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture"})
+	report, err := engine.Review(context.Background(), root, Options{Scope: "architecture", MaxFindings: 3})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -257,11 +257,11 @@ func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t 
 
 	judge := judgeFromEnv()
 	if judgeAvailable(judge) {
-		t.Fatalf("judgeAvailable(%T) = true, want false without AWS credentials", judge)
+		t.Fatalf("judgeAvailable(%T) = true, want false with no reviewer configured", judge)
 	}
 	reason, ok := judge.(unavailableReviewJudge)
-	if !ok || !strings.Contains(reason.reason, "AWS_ACCESS_KEY_ID") {
-		t.Fatalf("judge = %#v, want an unavailable judge naming the missing AWS credentials", judge)
+	if !ok || !strings.Contains(reason.reason, "Cloud") {
+		t.Fatalf("judge = %#v, want an unavailable judge naming the Cloud fix", judge)
 	}
 }
 

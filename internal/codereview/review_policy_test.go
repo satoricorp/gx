@@ -252,6 +252,10 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 // reviewed twice.
 func TestReviewerFromEnvBuildsTwoIndependentBedrockLegs(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
+	// This test is about panel construction, not wire selection. Cloud is the
+	// default wire now, so reaching the direct-to-AWS legs takes an explicit
+	// opt-in — ambient AWS_* variables no longer select it.
+	t.Setenv(bedrockDirectEnvVar, "1")
 	t.Setenv("GX_OPENAI_PROXY_URL", "")
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("OPENAI_API_KEY", "openai-key")

@@ -35,10 +35,6 @@ const (
 	// so the headroom is free and there is no reason to run close to the line.
 	defaultJudgeMaxOutputTokens = 32000
 	maxJudgeCandidateBytes      = 24 * 1024
-	// maxAdvisoryFindings caps the fallback path (no judge / judge error), where
-	// we have no impact signal and rely on heuristic strength. The judged path is
-	// gated by impact instead and is intentionally uncapped.
-	maxAdvisoryFindings = 3
 	// minSurfaceConfidence is the confidence floor for surfacing a confirmed
 	// finding whose impact is only functional (not breaking).
 	minSurfaceConfidence = 0.5
@@ -567,7 +563,7 @@ func strengthFromImpact(impact string) string {
 // A truncated response is not partial data, it is unparseable JSON, so Judge
 // returns an error and every candidate loses its verdict at once. Before
 // batching, a review that produced 48 candidate findings surfaced at most
-// maxAdvisoryFindings (3) of them and said nothing about why.
+// the findings cap (see resolveMaxFindings) and said nothing about why.
 //
 // Re-measured on Bedrock after the judge moved there, and again after the
 // analysis field landed: a real 21-candidate request now costs 7.0K to 8.3K
@@ -692,7 +688,7 @@ func answeredCandidateIDs(results []judgeResult) map[string]struct{} {
 	return out
 }
 
-func capAdvisoryFindings(findings []Finding) []Finding {
+func capAdvisoryFindings(findings []Finding, limit int) []Finding {
 	out := append([]Finding(nil), findings...)
 	sort.SliceStable(out, func(i, j int) bool {
 		left := strengthRank(out[i].Strength)
@@ -708,8 +704,9 @@ func capAdvisoryFindings(findings []Finding) []Finding {
 		}
 		return out[i].ID < out[j].ID
 	})
-	if len(out) > maxAdvisoryFindings {
-		out = out[:maxAdvisoryFindings]
+	limit = resolveMaxFindings(limit)
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out
 }

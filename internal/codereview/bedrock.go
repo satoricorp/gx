@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // bedrockAnthropicReviewer is one review leg: a model plus the wire it is
@@ -190,7 +193,42 @@ func (r *bedrockAnthropicReviewer) completeJSON(ctx context.Context, system stri
 	if r == nil || r.transport == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
-	return r.transport.complete(ctx, r.model, system, input, maxOutputTokens)
+	completion, err := r.transport.complete(ctx, r.model, system, input, maxOutputTokens)
+	dumpReviewExchange(r.model, system, input, completion, err)
+	return completion, err
+}
+
+// dumpReviewExchange writes what a leg actually sent and received to the
+// directory named by GX_REVIEW_DUMP_DIR.
+//
+// A review that returns no findings is indistinguishable, from the outside,
+// between "the model read the change and found nothing", "the prompt talked it
+// out of reporting", and "the reply did not parse". Those need completely
+// different fixes, and the only way to tell them apart is to read the exchange.
+// Off unless the variable is set; it writes prompts verbatim, so it is a
+// debugging tool and not something to leave on.
+func dumpReviewExchange(model, system, input string, completion bedrockCompletion, callErr error) {
+	dir := strings.TrimSpace(os.Getenv("GX_REVIEW_DUMP_DIR"))
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	safeModel := strings.NewReplacer("/", "_", ":", "_", ".", "-").Replace(model)
+	stamp := time.Now().UTC().Format("150405.000")
+	body := strings.Join([]string{
+		"=== MODEL: " + model,
+		"=== SYSTEM PROMPT (" + strconv.Itoa(len(system)) + " bytes):",
+		system,
+		"=== INPUT BRIEF (" + strconv.Itoa(len(input)) + " bytes):",
+		input,
+		"=== STOP REASON: " + completion.StopReason,
+		"=== ERROR: " + fmt.Sprint(callErr),
+		"=== REPLY (" + strconv.Itoa(len(completion.Text)) + " bytes):",
+		completion.Text,
+	}, "\n")
+	_ = os.WriteFile(filepath.Join(dir, safeModel+"-"+stamp+".txt"), []byte(body), 0o644)
 }
 
 // describeBedrockFailure turns a bedrock-runtime error into a message that says

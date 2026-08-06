@@ -195,7 +195,7 @@ func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
 
 // TestReviewReportsFailedVerificationAsDegraded pins that a failed verification
 // is visible in the report. It used to collapse the findings to at most
-// maxAdvisoryFindings while the report still read as a completed review.
+// the findings cap while the report still read as a completed review.
 func TestReviewReportsFailedVerificationAsDegraded(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()

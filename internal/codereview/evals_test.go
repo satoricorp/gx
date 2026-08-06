@@ -412,7 +412,7 @@ func TestEvalCapEnforcementWithBlockingToolFinding(t *testing.T) {
 	engine := evalEngineWithRules(t, []Rule{findingRule{findings: []Finding{blocking}}}, fakeReviewer{findings: advisories}, fakeRetriever{})
 	engine.judge = scriptedJudge{results: judgeResults}
 
-	report, err := engine.Review(context.Background(), root, Options{})
+	report, err := engine.Review(context.Background(), root, Options{MaxFindings: 3})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}

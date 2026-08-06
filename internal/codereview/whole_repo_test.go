@@ -607,7 +607,7 @@ func TestTheRepositoryReachesTheModelAfterCompaction(t *testing.T) {
 // Profile-specific instructions are appended for the profile in hand precisely
 // so adding one cannot move what gx writes on a PR.
 func TestAddingTheWholeRepoProfileLeavesEveryOtherPromptUnchanged(t *testing.T) {
-	base := strings.Join(baseReviewDeveloperPromptLines(), "\n")
+	base := strings.Join(baseReviewDeveloperPromptLines(ReviewBrief{}), "\n")
 	for _, profile := range []string{"", "patch_focused", "pr_summary", "prompt_directed", "scope_focused", "deep_full_spectrum"} {
 		prompt := reviewDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
 		if prompt != base {

@@ -54,6 +54,9 @@ type ReviewBrief struct {
 	// prompt, and repeating it as data invites the model to treat concision as
 	// a subject of the review.
 	Concise bool `json:"-"`
+	// MaxFindings is the ceiling the developer prompt states. Like Concise it
+	// shapes the prompt rather than the payload, so it stays out of the JSON.
+	MaxFindings int `json:"-"`
 }
 
 // DegradedEvidence lists the evidence sources that failed this review.
@@ -203,6 +206,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		Focus:         strings.TrimSpace(opts.Focus),
 		ReviewPrompt:  strings.TrimSpace(opts.Prompt),
 		Concise:       opts.Fast,
+		MaxFindings:   resolveMaxFindings(opts.MaxFindings),
 		Triage:        in.Plan.Triage,
 		Static: StaticSnapshot{
 			FileCount:       in.Facts.TrackedFileCount,

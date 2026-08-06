@@ -47,6 +47,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var failOn string
 	var noPublish bool
 	var fast bool
+	var maxFindings int
 	cmd := &cobra.Command{
 		Use:     "review [prompt]",
 		Aliases: []string{"gxr"},
@@ -88,6 +89,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 					Prompt:         prompt,
 					Verbose:        verbose,
 					Fast:           fast,
+					MaxFindings:    maxFindings,
 					ProgressWriter: progress,
 					Color:          !jsonOut,
 				})
@@ -136,6 +138,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
 	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
+	cmd.Flags().IntVar(&maxFindings, "max-findings", 0, "cap how many recommendations the review reports (0 uses the default); applies to both what the model is asked for and what is reported")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd
 }

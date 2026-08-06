@@ -519,8 +519,11 @@ func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
 		t.Fatalf("reviewerAvailable(%T) = true, want false with only an OpenAI key", reviewer)
 	}
 	reason := ReviewerUnavailableReason(reviewer)
-	if !strings.Contains(reason, "AWS credentials") {
-		t.Fatalf("ReviewerUnavailableReason() = %q, want the missing AWS credentials named", reason)
+	// An OpenAI key is not a reviewer, and the fix to offer is the Cloud one:
+	// telling an ordinary user to supply AWS credentials was the old
+	// precedence, where ambient AWS_* silently chose the wire.
+	if !strings.Contains(reason, "Cloud") {
+		t.Fatalf("ReviewerUnavailableReason() = %q, want the Cloud fix named", reason)
 	}
 }
 

@@ -81,7 +81,10 @@ func TestReviewRecordsMissingAIConfiguration(t *testing.T) {
 		t.Fatalf("DegradedReasons = %#v, want one warning", report.DegradedReasons)
 	}
 	reason := report.DegradedReasons[0]
-	for _, want := range []string{"AWS credentials", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"} {
+	// Cloud is the default wire, so an unconfigured reviewer must point at the
+	// Cloud fix. It must NOT tell an ordinary user to go find AWS credentials —
+	// that was the old precedence and is now an explicit opt-in.
+	for _, want := range []string{"Cloud", bedrockDirectEnvVar} {
 		if !strings.Contains(reason, want) {
 			t.Fatalf("DegradedReasons[0] = %q, want it to name %s", reason, want)
 		}

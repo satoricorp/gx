@@ -295,11 +295,11 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			// Unverified candidates fall back to the deduped, strength-capped
 			// set rather than being dropped, because an unreachable judge is
 			// not a verdict.
-			advisory = append(advisory, capAdvisoryFindings(outcome.Unjudged)...)
+			advisory = append(advisory, capAdvisoryFindings(outcome.Unjudged, opts.MaxFindings)...)
 		}
 		if outcome.BatchesFailed > 0 {
 			// A failed verification used to be invisible: findings silently
-			// collapsed to at most maxAdvisoryFindings and the report still
+			// collapsed to at most the findings cap and the report still
 			// read as a completed review. Say so instead.
 			degradedReasons = append(degradedReasons, fmt.Sprintf(
 				"%d of %d finding verification batches failed: %v",
@@ -316,7 +316,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				outcome.Unanswered))
 		}
 	} else {
-		advisory = capAdvisoryFindings(advisory)
+		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)
 	}
 	findings = append(blocking, advisory...)
 
