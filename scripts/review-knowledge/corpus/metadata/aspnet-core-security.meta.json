@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/aspnet/core/security/identity-management-solutions?view=aspnetcore-10.0",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8ec60f2345729fee6b5eee2613117770ab7a6007cae34d653f314379cfb1f97b",
+  "source_id": "aspnet-core-security"
+}

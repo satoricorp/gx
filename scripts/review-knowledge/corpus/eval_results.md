@@ -1,12 +1,12 @@
 # Review Corpus Eval Results
 
-generated_at: 2026-07-08
-baseline_namespace: totality-review-knowledge
-candidate_namespace: totality-review-knowledge
+generated_at: 2026-08-07
+baseline_namespace: gx-review-knowledge
+candidate_namespace: review-corpus-v2
 
-queries: 50
-v1_recall_at_10: 45/50
-v2_recall_at_10: 48/50
+queries: 61
+v1_recall_at_10: 60/61
+v2_recall_at_10: 61/61
 precedence_violations: 0
 status: pass
 
@@ -29,20 +29,20 @@ status: pass
 - typescript eslint rule pages for mechanical style: v1=hit v2=hit expected=eslint-rules,typescript-eslint-typed-linting
 - typescript typed linting performance tradeoff: v1=hit v2=hit expected=typescript-eslint-typed-linting
 - javascript security command injection node: v1=hit v2=hit expected=nodejs-security,owasp-cheatsheets
-- typescript tsconfig unsafe compiler option: v1=miss v2=hit expected=tsconfig-reference
-- typescript design-level style with no lint rule: v1=miss v2=hit expected=google-tsguide
+- typescript tsconfig unsafe compiler option: v1=hit v2=hit expected=tsconfig-reference
+- typescript design-level style with no lint rule: v1=hit v2=hit expected=google-tsguide
 - python line length should follow formatter: v1=hit v2=hit expected=ruff,pep8
 - python google docstring convention D211 D212: v1=hit v2=hit expected=ruff,google-pyguide
 - python type checking public api boundaries: v1=hit v2=hit expected=mypy,typing-python-spec
 - python typing semantics protocol optional: v1=hit v2=hit expected=typing-python-spec,mypy
-- python security subprocess shell true: v1=miss v2=miss expected=bandit,owasp-cheatsheets
+- python security subprocess shell true: v1=hit v2=hit expected=bandit,owasp-cheatsheets
 - python exceptions style google guide: v1=hit v2=hit expected=google-pyguide,pep8
 - python imports formatting lint: v1=hit v2=hit expected=ruff,google-pyguide,pep8
 - python docstring D203 D213 should not outrank google convention: v1=hit v2=hit expected=ruff,google-pyguide
 - python mypy strict optional review: v1=hit v2=hit expected=mypy,typing-python-spec
 - python bandit hardcoded password rule: v1=hit v2=hit expected=bandit
 - rust unsafe code invariants: v1=hit v2=hit expected=rust-nomicon,rust-unsafe-code-guidelines
-- rust public api naming traits errors: v1=hit v2=miss expected=rust-api-guidelines
+- rust public api naming traits errors: v1=miss v2=hit expected=rust-api-guidelines
 - rust clippy lint complexity: v1=hit v2=hit expected=clippy
 - rust miri undefined behavior tests: v1=hit v2=hit expected=miri,rust-nomicon
 - rust dependency advisory database: v1=hit v2=hit expected=rustsec
@@ -56,8 +56,19 @@ status: pass
 - postgres explain query plan performance: v1=hit v2=hit expected=postgres-explain
 - dbt sql style canonical source: v1=hit v2=hit expected=dbt-sql-style,sqlfluff
 - sqlfluff rule pages for sql lint: v1=hit v2=hit expected=sqlfluff
-- database security least privilege: v1=miss v2=hit expected=owasp-db-cheatsheet,owasp-asvs
+- database security least privilege: v1=hit v2=hit expected=owasp-db-cheatsheet,owasp-asvs
 - owasp authentication verification requirements: v1=hit v2=hit expected=owasp-asvs
 - cwe top 25 cross reference not spine: v1=hit v2=hit expected=cwe-top25,owasp-asvs
 - software supply chain scorecard branch protection: v1=hit v2=hit expected=openssf-scorecard,slsa
-- how large should a change be for review: v1=miss v2=hit expected=google-eng-practices,smartbear-best-practices
+- how large should a change be for review: v1=hit v2=hit expected=google-eng-practices,smartbear-best-practices
+- c# async await exception handling conventions: v1=hit v2=hit expected=csharp-coding-conventions
+- dotnet public api naming and design guidelines: v1=hit v2=hit expected=dotnet-framework-design-guidelines,csharp-coding-conventions
+- dotnet secure coding untrusted input deserialization: v1=hit v2=hit expected=dotnet-secure-coding,owasp-deserialization-cheatsheet
+- roslyn analyzer rule categories quality security: v1=hit v2=hit expected=dotnet-analyzer-categories,dotnet-code-analysis
+- enable dotnet code analysis editorconfig severity: v1=hit v2=hit expected=dotnet-code-analysis
+- asp.net core authentication authorization review: v1=hit v2=hit expected=aspnet-core-security,owasp-asvs
+- effective dart naming and style guidance: v1=hit v2=hit expected=effective-dart
+- dart avoid dynamic prefer typed public apis: v1=hit v2=hit expected=effective-dart,dart-linter-rules
+- dart linter rule pages for mechanical style: v1=hit v2=hit expected=dart-linter-rules,effective-dart
+- flutter widget rebuild performance const constructors: v1=hit v2=hit expected=flutter-perf-best-practices
+- flutter app security hardening best practices: v1=hit v2=hit expected=flutter-security,owasp-asvs

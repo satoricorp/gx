@@ -1,10 +1,10 @@
 {
   "error": null,
-  "fetched_at": "2026-07-08",
-  "final_url": "https://raw.githubusercontent.com/OWASP/ASVS/master/README.md",
+  "fetched_at": "2026-08-06",
+  "final_url": "https://raw.githubusercontent.com/OWASP/ASVS/master/5.0/en/0x94-Appendix-E_Contributors.md",
   "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": "f93d773f656dccbe4798077ac20561c42cd476ac22fb0c95a5caf7be23d9b803",
+  "sha256": "951cbad5b32a49e4260530d465138132200c3ed1d48c93707065ed03d252c8df",
   "source_id": "owasp-asvs"
 }

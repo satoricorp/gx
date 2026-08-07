@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/standard/security/secure-coding-guidelines",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "cc25707c711f39c0534e1f6ca7424b754615921595759fca0ed00b129d324694",
+  "source_id": "dotnet-secure-coding"
+}

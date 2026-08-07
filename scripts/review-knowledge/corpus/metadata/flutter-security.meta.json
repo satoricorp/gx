@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://docs.flutter.dev/security",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "122924c4d12228604551219311338b75e1ea9acb5caf619d5f69bd89ae47efc0",
+  "source_id": "flutter-security"
+}

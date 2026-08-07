@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://dart.dev/tools/linter-rules/avoid_unnecessary_containers",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "821528ccaceb880ea03b7efae0c408616b9966292d07952247c4b8147e7324c3",
+  "source_id": "dart-linter-rules"
+}

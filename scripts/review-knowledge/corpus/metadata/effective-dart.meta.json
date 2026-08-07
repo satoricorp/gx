@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://dart.dev/effective-dart/design",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "10b159dfa8c07485e3e56f53731c3108d8be261807317c6cd86011cdbc6acbf0",
+  "source_id": "effective-dart"
+}
