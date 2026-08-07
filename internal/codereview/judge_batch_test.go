@@ -129,6 +129,62 @@ func (j partialJudge) Judge(_ context.Context, req judgeRequest) ([]judgeResult,
 	return results, nil
 }
 
+// abstainingJudge answers for every candidate it is given, but declines to
+// decide the ones past `decides`. Both halves are answers; only the first half
+// is a verdict.
+type abstainingJudge struct{ decides int }
+
+func (abstainingJudge) Available() bool { return true }
+
+func (j abstainingJudge) Judge(_ context.Context, req judgeRequest) ([]judgeResult, error) {
+	var results []judgeResult
+	for i, candidate := range req.Candidates {
+		result := judgeResult{CandidateID: candidate.ID, Verdict: "confirmed",
+			Impact: impactBreaking, Severity: 4, Confidence: 0.9}
+		if i >= j.decides {
+			result = judgeResult{CandidateID: candidate.ID, Verdict: "insufficient_evidence"}
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// TestRunJudgeSeparatesAbstentionsFromOmissions is the distinction the split
+// exists for.
+//
+// Both outcomes leave a finding unverified and used to be counted as one
+// number, which made two opposite problems look identical in the degraded
+// reasons. An omission means the reply dropped the candidate and asking again
+// generally answers it; an abstention means the judge answered "I cannot check
+// this", which asking again does not change — that one needs evidence. A single
+// counter pointed every investigation at whichever cause was guessed first.
+func TestRunJudgeSeparatesAbstentionsFromOmissions(t *testing.T) {
+	t.Setenv("GX_REVIEW_JUDGE_BATCH_SIZE", "10")
+	candidates := judgeBatchCandidates(10)
+
+	outcome := runJudge(context.Background(), abstainingJudge{decides: 4}, ReviewContext{}, candidates)
+
+	if len(outcome.Judged) != 4 {
+		t.Fatalf("Judged = %d, want the 4 the judge actually decided", len(outcome.Judged))
+	}
+	if outcome.Abstained != 6 || outcome.Omitted != 0 {
+		t.Fatalf("Abstained/Omitted = %d/%d, want 6/0: every candidate was named, six were declined",
+			outcome.Abstained, outcome.Omitted)
+	}
+	if outcome.Unanswered() != 6 {
+		t.Fatalf("Unanswered = %d, want 6 regardless of which half it came from", outcome.Unanswered())
+	}
+	// An abstention is an answer, not a broken batch. Failing here would tell
+	// the reader to retry a call that already returned what it had.
+	if outcome.BatchesFailed != 0 || outcome.Err != nil {
+		t.Fatalf("BatchesFailed = %d, err = %v, want a successful batch", outcome.BatchesFailed, outcome.Err)
+	}
+	if len(outcome.Judged)+len(outcome.Unjudged) != len(candidates) {
+		t.Fatalf("Judged(%d) + Unjudged(%d) does not account for all %d candidates",
+			len(outcome.Judged), len(outcome.Unjudged), len(candidates))
+	}
+}
+
 // TestRunJudgeKeepsCandidatesTheJudgeNeverAnsweredFor is the delete-only
 // invariant applied to the case that used to escape it.
 //
@@ -153,8 +209,16 @@ func TestRunJudgeKeepsCandidatesTheJudgeNeverAnsweredFor(t *testing.T) {
 	if len(outcome.Unjudged) != 6 {
 		t.Fatalf("Unjudged = %d, want the 6 candidates it never mentioned kept rather than deleted", len(outcome.Unjudged))
 	}
-	if outcome.Unanswered != 6 {
-		t.Fatalf("Unanswered = %d, want 6 so the shortfall can be reported", outcome.Unanswered)
+	if outcome.Unanswered() != 6 {
+		t.Fatalf("Unanswered = %d, want 6 so the shortfall can be reported", outcome.Unanswered())
+	}
+	// partialJudge leaves the last six out of its reply entirely rather than
+	// declining to decide them, so the shortfall must read as omission. Counting
+	// these as abstentions would point the fix at evidence delivery when the
+	// actual problem is a reply that dropped entries.
+	if outcome.Omitted != 6 || outcome.Abstained != 0 {
+		t.Fatalf("Omitted/Abstained = %d/%d, want 6/0: these candidates were never mentioned",
+			outcome.Omitted, outcome.Abstained)
 	}
 	if len(outcome.Judged)+len(outcome.Unjudged) != len(candidates) {
 		t.Fatalf("Judged(%d) + Unjudged(%d) does not account for all %d candidates",
@@ -187,15 +251,19 @@ func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
 	if len(report.Findings) != 1 {
 		t.Fatalf("Findings = %#v, want the unanswered candidate kept rather than dropped as unconfirmed", report.Findings)
 	}
+	// partialJudge{answers: 0} returns an empty reply, so the candidate was
+	// never named — the omission half of the split, not an abstention. Matching
+	// on "omitted" rather than any unverified wording keeps the two apart: a
+	// reader who sees this line should reach for a retry, not for evidence.
 	var reason string
 	for _, candidate := range report.DegradedReasons {
-		if strings.Contains(candidate, "no verdict") {
+		if strings.Contains(candidate, "omitted") {
 			reason = candidate
 			break
 		}
 	}
 	if reason == "" {
-		t.Fatalf("DegradedReasons = %#v, want the missing verdict reported", report.DegradedReasons)
+		t.Fatalf("DegradedReasons = %#v, want the omitted verdict reported", report.DegradedReasons)
 	}
 }
 
