@@ -1,10 +1,10 @@
 {
-  "error": "http 403 for https://dl.acm.org/doi/10.1145/2597073.2597082",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://rebels.cs.uwaterloo.ca/papers/msr2014_mcintosh.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "7bbeb0f9a6fc72646b286be153bc95856153a2eb50f8056972f8a80a4e98fa17",
   "source_id": "mcintosh-2014"
 }

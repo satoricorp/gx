@@ -109,13 +109,13 @@ generated_at: 2026-08-07
 - LICENSE czerwonka-2015: license=verify; verify before redistribution.
 - OK czerwonka-2015: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2015/05/PID3556473.pdf
 - LICENSE mcintosh-2014: license=verify; verify before redistribution.
-- FAIL mcintosh-2014: http 403 for https://dl.acm.org/doi/10.1145/2597073.2597082
+- OK mcintosh-2014: status=200 final_url=https://rebels.cs.uwaterloo.ca/papers/msr2014_mcintosh.pdf
 - LICENSE bosu-2015-useful: license=verify; verify before redistribution.
 - OK bosu-2015-useful: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf
 - LICENSE bitsai-cr-2025: license=verify; verify before redistribution.
 - OK bitsai-cr-2025: status=200 final_url=https://arxiv.org/pdf/2501.15134
 - LICENSE codereviewer-2022: license=verify; verify before redistribution.
-- FAIL codereviewer-2022: http 403 for https://dl.acm.org/doi/10.1145/3540250.3549081
+- OK codereviewer-2022: status=200 final_url=https://arxiv.org/pdf/2203.09095
 - LICENSE cr-benchmark-survey-2026: license=verify; verify before redistribution.
 - OK cr-benchmark-survey-2026: status=200 final_url=https://arxiv.org/pdf/2602.13377
 - LICENSE swr-bench-2025: license=verify; verify before redistribution.

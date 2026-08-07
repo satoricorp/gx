@@ -1,11 +1,11 @@
 # Review Corpus Build Log
 
 generated_at: 2026-08-07
-chunks: 7336
+chunks: 7512
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=5 p50=100 max=916
+token_histogram: min=5 p50=102 max=916
 
 ## Chunks Per Source
 - google-eng-practices: 12
@@ -68,17 +68,17 @@ token_histogram: min=5 p50=100 max=916
 - dart-linter-rules: 155
 - flutter-perf-best-practices: 20
 - flutter-security: 9
-- bacchelli-bird-2013: 0
-- sadowski-2018-google: 0
-- rigby-bird-2013: 0
-- czerwonka-2015: 0
-- mcintosh-2014: 0
-- bosu-2015-useful: 0
-- bitsai-cr-2025: 0
-- codereviewer-2022: 0
-- cr-benchmark-survey-2026: 0
-- swr-bench-2025: 0
-- agentic-review-roadmap: 0
+- bacchelli-bird-2013: 12
+- sadowski-2018-google: 12
+- rigby-bird-2013: 12
+- czerwonka-2015: 2 (investigate: <3 chunks)
+- mcintosh-2014: 13
+- bosu-2015-useful: 16
+- bitsai-cr-2025: 12
+- codereviewer-2022: 14
+- cr-benchmark-survey-2026: 25
+- swr-bench-2025: 17
+- agentic-review-roadmap: 41
 - mantyla-lassenius-2009: 0
 - beller-2014: 0
 - bavota-russo-2015: 0
