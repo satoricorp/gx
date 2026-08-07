@@ -35,6 +35,14 @@ Do not add blog posts or generated summaries as high-authority sources unless
 there is no primary source. If a seed note is opinionated, keep it in
 `seed_notes` and keep the `authority`/`evidence_level` honest.
 
+`fetch: github-md` retrieves a single raw markdown file — link crawling only
+runs for `fetch: html`. To ingest a whole directory of markdown (the OWASP
+cheat sheets, the ASVS chapters), point the source at a `github.com/.../tree/`
+URL with `crawl_depth: 1`: the fetcher expands it via the GitHub contents API
+into every `.md` file in that directory. Files that another manifest entry
+ingests on its own are skipped during expansion so one document never enters
+the corpus under two source ids.
+
 ## Current Coverage
 
 The v2 manifest covers review process, cross-cutting security, TypeScript,

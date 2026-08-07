@@ -1,10 +1,10 @@
 {
   "error": null,
   "fetched_at": "2026-08-06",
-  "final_url": "https://raw.githubusercontent.com/OWASP/Top10/master/2025/docs/en/0x00_2025-Introduction.md",
+  "final_url": "https://raw.githubusercontent.com/OWASP/Top10/master/2025/docs/en/index.md",
   "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": "71e4b9124e768a954b4d5b9b6f952dd39fa6044688e8dd5ef7b5aa990a3c7c16",
+  "sha256": "58e990b3a027b6a09c5f57426395896b4d51ecdc57a3fa384b7e920d95ac4ad1",
   "source_id": "owasp-top10"
 }

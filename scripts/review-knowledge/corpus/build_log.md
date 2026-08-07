@@ -1,23 +1,23 @@
 # Review Corpus Build Log
 
-generated_at: 2026-08-06
-chunks: 2903
+generated_at: 2026-08-07
+chunks: 6341
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=5 p50=92 max=818
+token_histogram: min=5 p50=93 max=834
 
 ## Chunks Per Source
 - google-eng-practices: 12
-- ms-playbook-code-reviews: 208
+- ms-playbook-code-reviews: 198
 - gitlab-code-review: 27
 - firefox-reviewer-checklist: 16
 - smartbear-best-practices: 1 (investigate: <3 chunks)
 - conventional-comments: 2 (investigate: <3 chunks)
-- owasp-asvs: 7
-- owasp-top10: 13
+- owasp-asvs: 229
+- owasp-top10: 146
 - cwe-top25: 1 (investigate: <3 chunks)
-- owasp-cheatsheets: 25
+- owasp-cheatsheets: 3173
 - owasp-sqli-cheatsheet: 28
 - owasp-db-cheatsheet: 13
 - openssf-concise-guide: 2 (investigate: <3 chunks)
@@ -25,36 +25,36 @@ token_histogram: min=5 p50=92 max=818
 - slsa: 58
 - nist-ssdf-800-218: 1 (investigate: <3 chunks)
 - semgrep-registry: 1 (investigate: <3 chunks)
-- google-tsguide: 160
+- google-tsguide: 144
 - tsconfig-reference: 7
 - typescript-eslint-typed-linting: 4
 - eslint-rules: 288
 - nodejs-security: 4
-- pep8: 65
-- google-pyguide: 36
+- pep8: 45
+- google-pyguide: 18
 - ruff: 1 (investigate: <3 chunks)
 - mypy: 1 (investigate: <3 chunks)
 - typing-python-spec: 1 (investigate: <3 chunks)
 - bandit: 1 (investigate: <3 chunks)
-- google-go-style: 49
+- google-go-style: 48
 - go-code-review-comments: 32
 - uber-go-guide: 3
 - effective-go: 62
 - go-security: 7
 - govulncheck: 7
-- rust-api-guidelines: 1 (investigate: <3 chunks)
+- rust-api-guidelines: 100
 - rust-nomicon: 149
 - rust-unsafe-code-guidelines: 62
-- clippy: 286
-- miri: 27
-- rustsec: 1 (investigate: <3 chunks)
+- clippy: 256
+- miri: 25
+- rustsec: 4
 - postgres-explain: 9
 - postgres-txn-isolation: 6
 - mysql-prepared-statements: 1 (investigate: <3 chunks)
 - dbt-sql-style: 10
 - dbt-project-style: 6
 - sqlfluff: 1 (investigate: <3 chunks)
-- google-shellguide: 146
+- google-shellguide: 80
 - posix-shell-spec: 37
 - shellcheck: 6
 - csharp-coding-conventions: 18
@@ -64,7 +64,7 @@ token_histogram: min=5 p50=92 max=818
 - dotnet-analyzer-categories: 12
 - owasp-deserialization-cheatsheet: 28
 - aspnet-core-security: 527
-- effective-dart: 185
+- effective-dart: 181
 - dart-linter-rules: 155
 - flutter-perf-best-practices: 20
 - flutter-security: 9

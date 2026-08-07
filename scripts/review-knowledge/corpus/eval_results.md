@@ -1,12 +1,12 @@
 # Review Corpus Eval Results
 
-generated_at: 2026-08-06
-baseline_namespace: review-corpus-v2
+generated_at: 2026-08-07
+baseline_namespace: gx-review-knowledge
 candidate_namespace: review-corpus-v2
 
 queries: 61
 v1_recall_at_10: 60/61
-v2_recall_at_10: 60/61
+v2_recall_at_10: 61/61
 precedence_violations: 0
 status: pass
 
@@ -42,7 +42,7 @@ status: pass
 - python mypy strict optional review: v1=hit v2=hit expected=mypy,typing-python-spec
 - python bandit hardcoded password rule: v1=hit v2=hit expected=bandit
 - rust unsafe code invariants: v1=hit v2=hit expected=rust-nomicon,rust-unsafe-code-guidelines
-- rust public api naming traits errors: v1=miss v2=miss expected=rust-api-guidelines
+- rust public api naming traits errors: v1=miss v2=hit expected=rust-api-guidelines
 - rust clippy lint complexity: v1=hit v2=hit expected=clippy
 - rust miri undefined behavior tests: v1=hit v2=hit expected=miri,rust-nomicon
 - rust dependency advisory database: v1=hit v2=hit expected=rustsec

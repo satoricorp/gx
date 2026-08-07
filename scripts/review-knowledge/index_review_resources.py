@@ -333,6 +333,10 @@ def fetch_sources(sources: list[Source], artifact_dir: Path, *, timeout: float) 
     robots: dict[str, urllib.robotparser.RobotFileParser] = {}
     last_by_domain: dict[str, float] = {}
     report: list[str] = ["# Fetch Report", "", f"generated_at: {utc_today()}", ""]
+    # Files another manifest entry ingests on its own are skipped during a
+    # crawl so one document does not enter the corpus under two source ids
+    # (the dedicated entry usually carries better metadata, e.g. languages).
+    dedicated_urls = {resolve_fetch_url(s.url, s.fetch) for s in sources if s.url}
     for source in sources:
         if source.fetch == "manual":
             write_meta(artifact_dir, source, None, None, None, "manual source pending local drop")
@@ -341,7 +345,8 @@ def fetch_sources(sources: list[Source], artifact_dir: Path, *, timeout: float) 
         if source.license in {"verify", "unknown"}:
             report.append(f"- LICENSE {source.id}: license={source.license}; verify before redistribution.")
         try:
-            fetched = fetch_source(source, robots, last_by_domain, timeout)
+            skip_urls = dedicated_urls - {resolve_fetch_url(source.url, source.fetch)} if source.url else set()
+            fetched = fetch_source(source, robots, last_by_domain, timeout, skip_urls=skip_urls)
         except Exception as exc:  # noqa: BLE001 - report every source failure.
             write_meta(artifact_dir, source, None, None, None, str(exc))
             report.append(f"- FAIL {source.id}: {exc}")
@@ -360,6 +365,7 @@ def fetch_source(
     robots: dict[str, urllib.robotparser.RobotFileParser],
     last_by_domain: dict[str, float],
     timeout: float,
+    skip_urls: set[str] | None = None,
 ) -> FetchedDoc:
     assert source.url is not None
     queue: list[tuple[str, int]] = [(source.url, 0)]
@@ -370,6 +376,20 @@ def fetch_source(
     status: int | None = None
     while queue:
         url, depth = queue.pop(0)
+        if source.fetch == "github-md" and depth < source.crawl_depth:
+            # A github.com tree URL cannot be fetched as raw markdown; it
+            # stands for every markdown file in that directory. Expand it and
+            # fetch those instead of the tree page itself.
+            listed = github_tree_markdown_urls(url, timeout)
+            if listed:
+                for link in listed:
+                    if link in seen_urls or (skip_urls and link in skip_urls):
+                        continue
+                    seen_urls.add(link)
+                    queue.append((link, depth + 1))
+                    if len(seen_urls) >= 200:
+                        break
+                continue
         if not robots_allowed(url, robots):
             raise RuntimeError(f"robots.txt disallows fetch: {url}")
         throttle(url, last_by_domain)
@@ -397,6 +417,43 @@ def fetch_source(
         http_status=status,
         fetched_at=utc_today(),
     )
+
+
+def github_tree_markdown_urls(url: str, timeout: float) -> list[str]:
+    """Expand a github.com tree URL into raw URLs for the .md files it holds.
+
+    Returns [] for anything that is not a github.com tree URL, so callers can
+    probe cheaply; only tree-shaped URLs cost an API request. Non-list API
+    payloads (a file path, an error object) also return [], leaving the caller
+    to treat the URL as an ordinary single fetch.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.netloc != "github.com":
+        return []
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 5 or parts[2] != "tree":
+        return []
+    owner, repo, branch = parts[0], parts[1], parts[3]
+    path = "/".join(parts[4:])
+    api = (
+        f"https://api.github.com/repos/{owner}/{repo}/contents/{urllib.parse.quote(path)}"
+        f"?ref={urllib.parse.quote(branch)}"
+    )
+    request = urllib.request.Request(
+        api,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "gx-review-corpus-indexer/0.2"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        entries = json.loads(response.read().decode("utf-8"))
+    if not isinstance(entries, list):
+        return []
+    out = []
+    for entry in entries:
+        name = str(entry.get("name", ""))
+        if entry.get("type") == "file" and name.endswith(".md"):
+            download = entry.get("download_url") or f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{name}"
+            out.append(download)
+    return sorted(out)
 
 
 def robots_allowed(url: str, robots: dict[str, urllib.robotparser.RobotFileParser]) -> bool:
@@ -586,8 +643,23 @@ def split_markdown(text: str) -> list[tuple[str, str]]:
     blocks: list[tuple[list[str], list[str]]] = []
     current_path: list[str] = []
     current_lines: list[str] = []
+    fence: tuple[str, int] | None = None
     for line in text.splitlines():
-        heading = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        # A `#` at the start of a fenced code line is a shell comment or code,
+        # not a heading; treating it as one splits sections mid-snippet and
+        # pollutes section paths with code fragments. Fences nest (a ````
+        # block can show ``` examples), so a fence closes only on a bare
+        # marker of the same character at least as long as the opener.
+        marker = re.match(r"^\s*(`{3,}|~{3,})(.*)$", line)
+        if marker:
+            char, length = marker.group(1)[0], len(marker.group(1))
+            if fence is None:
+                fence = (char, length)
+            elif char == fence[0] and length >= fence[1] and not marker.group(2).strip():
+                fence = None
+            current_lines.append(line)
+            continue
+        heading = None if fence else re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
         if heading:
             if current_lines:
                 blocks.append((current_path[:], current_lines))

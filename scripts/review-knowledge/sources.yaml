@@ -29,29 +29,31 @@ sources:
     tier: process
     notes: "Comment labeling taxonomy; candidate output format for machine-generated comments."
   - id: owasp-asvs
-    url: https://github.com/OWASP/ASVS
+    url: https://github.com/OWASP/ASVS/tree/master/5.0/en
     tier: security
     authority: 1
     precedence_group: security-spine
     fetch: github-md
-    crawl_depth: 2
-    notes: "SPINE of security rules per precedence table. Fetch 5.0 markdown from repo, not the project landing page."
+    crawl_depth: 1
+    notes: "SPINE of security rules per precedence table. Tree URL expands to all 27 ASVS 5.0 chapter/appendix markdowns; the repo README alone carried none of the requirements."
   - id: owasp-top10
-    url: https://github.com/OWASP/Top10/blob/master/2025/docs/en/0x00_2025-Introduction.md
+    url: https://github.com/OWASP/Top10/tree/master/2025/docs/en
     tier: security
     precedence_group: security-spine
     fetch: github-md
-    notes: "Cross-reference metadata; ranked below ASVS. owasp.org robots.txt disallows fetching; the 2025 introduction markdown summarizes all ten categories. github-md fetches a single file, so no crawl."
+    crawl_depth: 1
+    notes: "Cross-reference metadata; ranked below ASVS. owasp.org robots.txt disallows fetching; the tree URL expands to the full 2025 edition (intro + A01-A10 + next steps)."
   - id: cwe-top25
     url: https://cwe.mitre.org/top25/
     tier: security
     precedence_group: security-spine
     notes: "Cross-reference metadata (cwe_ids); ranked below ASVS."
   - id: owasp-cheatsheets
-    url: https://github.com/OWASP/CheatSheetSeries/blob/master/Index.md
+    url: https://github.com/OWASP/CheatSheetSeries/tree/master/cheatsheets
     tier: security
     fetch: github-md
-    notes: "cheatsheetseries.owasp.org robots.txt disallows fetching, so pull from the repo. github-md fetches a single file, so this is the cheatsheet index/map only — individual high-value sheets are their own entries below."
+    crawl_depth: 1
+    notes: "cheatsheetseries.owasp.org robots.txt disallows fetching, so pull from the repo. Tree URL expands to every cheat sheet markdown; sheets with dedicated entries (sqli, db, deserialization) are skipped by URL and stay their own sources."
   - id: owasp-sqli-cheatsheet
     url: https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.md
     tier: security
@@ -187,11 +189,13 @@ sources:
     languages: [go]
     authority: 3
   - id: rust-api-guidelines
-    url: https://rust-lang.github.io/api-guidelines/about.html
+    url: https://github.com/rust-lang/api-guidelines/tree/master/src
     tier: language
     languages: [rust]
     authority: 1
+    fetch: github-md
     crawl_depth: 1
+    notes: "The rendered mdBook yields a single about-page chunk (trafilatura gets nothing from the JS shell); the tree URL expands to every chapter markdown."
   - id: rust-nomicon
     url: https://doc.rust-lang.org/nomicon/
     tier: language
@@ -218,10 +222,12 @@ sources:
     authority: 3
     fetch: github-md
   - id: rustsec
-    url: https://rustsec.org/
+    url: https://github.com/rustsec/advisory-db/blob/main/README.md
     tier: security
     languages: [rust]
     authority: 3
+    fetch: github-md
+    notes: "rustsec.org's homepage normalizes to a single thin chunk that retrieval never surfaces; the advisory-db README carries the database description, advisory format, and cargo-audit/cargo-deny usage."
   - id: postgres-explain
     url: https://www.postgresql.org/docs/current/using-explain.html
     tier: language
