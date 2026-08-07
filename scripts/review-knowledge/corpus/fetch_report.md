@@ -1,6 +1,6 @@
 # Fetch Report
 
-generated_at: 2026-07-08
+generated_at: 2026-08-07
 
 - LICENSE google-eng-practices: license=verify; verify before redistribution.
 - OK google-eng-practices: status=200 final_url=https://google.github.io/eng-practices/review/developer/handling-comments.html
@@ -11,7 +11,7 @@ generated_at: 2026-07-08
 - LICENSE firefox-reviewer-checklist: license=verify; verify before redistribution.
 - OK firefox-reviewer-checklist: status=200 final_url=https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html
 - LICENSE smartbear-best-practices: license=verify; verify before redistribution.
-- FAIL smartbear-best-practices: robots.txt disallows fetch: https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
+- OK smartbear-best-practices: status=200 final_url=https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
 - LICENSE conventional-comments: license=verify; verify before redistribution.
 - OK conventional-comments: status=200 final_url=https://conventionalcomments.org/
 - LICENSE owasp-asvs: license=verify; verify before redistribution.
@@ -19,7 +19,7 @@ generated_at: 2026-07-08
 - LICENSE owasp-top10: license=verify; verify before redistribution.
 - FAIL owasp-top10: robots.txt disallows fetch: https://owasp.org/Top10/
 - LICENSE cwe-top25: license=verify; verify before redistribution.
-- OK cwe-top25: status=200 final_url=https://cwe.mitre.org/top25/
+- OK cwe-top25: status=200 final_url=https://cwe.mitre.org/top25/archive/
 - LICENSE owasp-cheatsheets: license=verify; verify before redistribution.
 - FAIL owasp-cheatsheets: robots.txt disallows fetch: https://cheatsheetseries.owasp.org/index.html
 - LICENSE owasp-sqli-cheatsheet: license=verify; verify before redistribution.
@@ -33,9 +33,9 @@ generated_at: 2026-07-08
 - LICENSE slsa: license=verify; verify before redistribution.
 - OK slsa: status=200 final_url=https://slsa.dev/spec/v1.2/
 - LICENSE nist-ssdf-800-218: license=verify; verify before redistribution.
-- FAIL nist-ssdf-800-218: robots.txt disallows fetch: https://csrc.nist.gov/pubs/sp/800/218/final
+- OK nist-ssdf-800-218: status=200 final_url=https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-218.pdf
 - LICENSE semgrep-registry: license=verify; verify before redistribution.
-- OK semgrep-registry: status=200 final_url=https://semgrep.dev/r
+- OK semgrep-registry: status=200 final_url=https://raw.githubusercontent.com/semgrep/semgrep-docs/main/docs/contributing/contributing-to-semgrep-rules-repository.mdx
 - LICENSE google-tsguide: license=verify; verify before redistribution.
 - OK google-tsguide: status=200 final_url=https://google.github.io/styleguide/tsguide.html
 - LICENSE tsconfig-reference: license=verify; verify before redistribution.
@@ -51,13 +51,17 @@ generated_at: 2026-07-08
 - LICENSE google-pyguide: license=verify; verify before redistribution.
 - OK google-pyguide: status=200 final_url=https://google.github.io/styleguide/pyguide.html
 - LICENSE ruff: license=verify; verify before redistribution.
-- FAIL ruff: robots.txt disallows fetch: https://docs.astral.sh/ruff/
+- OK ruff: status=200 final_url=https://raw.githubusercontent.com/astral-sh/ruff/main/docs/versioning.md
+- LICENSE ruff-rules: license=verify; verify before redistribution.
+- OK ruff-rules: status=200 final_url=https://docs.astral.sh/ruff/rules/
 - LICENSE mypy: license=verify; verify before redistribution.
-- FAIL mypy: robots.txt disallows fetch: https://mypy.readthedocs.io/
+- OK mypy: status=200 final_url=https://raw.githubusercontent.com/python/mypy/master/docs/source/typed_dict.rst
 - LICENSE typing-python-spec: license=verify; verify before redistribution.
-- FAIL typing-python-spec: robots.txt disallows fetch: https://typing.python.org/
+- OK typing-python-spec: status=200 final_url=https://raw.githubusercontent.com/python/typing/main/docs/spec/typeddict.rst
 - LICENSE bandit: license=verify; verify before redistribution.
-- FAIL bandit: robots.txt disallows fetch: https://bandit.readthedocs.io/
+- OK bandit: status=200 final_url=https://raw.githubusercontent.com/PyCQA/bandit/main/doc/source/start.rst
+- LICENSE bandit-plugins: license=verify; verify before redistribution.
+- OK bandit-plugins: status=200 final_url=https://bandit.readthedocs.io/en/latest/plugins/b704_markupsafe_markup_xss.html
 - LICENSE google-go-style: license=verify; verify before redistribution.
 - OK google-go-style: status=200 final_url=https://google.github.io/styleguide/go/best-practices
 - LICENSE go-code-review-comments: license=verify; verify before redistribution.
@@ -93,13 +97,13 @@ generated_at: 2026-07-08
 - LICENSE dbt-project-style: license=verify; verify before redistribution.
 - OK dbt-project-style: status=200 final_url=https://docs.getdbt.com/best-practices/how-we-style/0-how-we-style-our-dbt-projects
 - LICENSE sqlfluff: license=verify; verify before redistribution.
-- FAIL sqlfluff: robots.txt disallows fetch: https://docs.sqlfluff.com/en/stable/
+- OK sqlfluff: status=200 final_url=https://raw.githubusercontent.com/sqlfluff/sqlfluff/main/docs/source/reference/rules.rst
 - LICENSE google-shellguide: license=verify; verify before redistribution.
 - OK google-shellguide: status=200 final_url=https://google.github.io/styleguide/shellguide.html
 - LICENSE posix-shell-spec: license=verify; verify before redistribution.
 - OK posix-shell-spec: status=200 final_url=https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html
 - LICENSE shellcheck: license=verify; verify before redistribution.
-- OK shellcheck: status=200 final_url=https://www.shellcheck.net/
+- OK shellcheck: status=200 final_url=https://www.shellcheck.net/wiki/SC2329
 - LICENSE bacchelli-bird-2013: license=verify; verify before redistribution.
 - OK bacchelli-bird-2013: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/ICSE202013-codereview.pdf
 - LICENSE sadowski-2018-google: license=verify; verify before redistribution.
@@ -109,27 +113,27 @@ generated_at: 2026-07-08
 - LICENSE czerwonka-2015: license=verify; verify before redistribution.
 - OK czerwonka-2015: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2015/05/PID3556473.pdf
 - LICENSE mcintosh-2014: license=verify; verify before redistribution.
-- FAIL mcintosh-2014: http 403 for https://dl.acm.org/doi/10.1145/2597073.2597082
+- OK mcintosh-2014: status=200 final_url=https://rebels.cs.uwaterloo.ca/papers/msr2014_mcintosh.pdf
 - LICENSE bosu-2015-useful: license=verify; verify before redistribution.
 - OK bosu-2015-useful: status=200 final_url=https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/bosu2015useful.pdf
 - LICENSE bitsai-cr-2025: license=verify; verify before redistribution.
 - OK bitsai-cr-2025: status=200 final_url=https://arxiv.org/pdf/2501.15134
 - LICENSE codereviewer-2022: license=verify; verify before redistribution.
-- FAIL codereviewer-2022: http 403 for https://dl.acm.org/doi/10.1145/3540250.3549081
+- OK codereviewer-2022: status=200 final_url=https://arxiv.org/pdf/2203.09095
 - LICENSE cr-benchmark-survey-2026: license=verify; verify before redistribution.
 - OK cr-benchmark-survey-2026: status=200 final_url=https://arxiv.org/pdf/2602.13377
 - LICENSE swr-bench-2025: license=verify; verify before redistribution.
 - OK swr-bench-2025: status=200 final_url=https://arxiv.org/pdf/2509.01494
 - LICENSE agentic-review-roadmap: license=verify; verify before redistribution.
 - OK agentic-review-roadmap: status=200 final_url=https://arxiv.org/pdf/2605.17548
-- SKIP mantyla-lassenius-2009: manual source pending. license=verify
-- SKIP beller-2014: manual source pending. license=verify
-- SKIP bavota-russo-2015: manual source pending. license=verify
-- SKIP kemerer-paulk-2009: manual source pending. license=verify
+- OK mantyla-lassenius-2009: status=200 final_url=https://aaltodoc.aalto.fi/server/api/core/bitstreams/cab054e8-0c06-47ab-8754-54bb09a0a6d3/content
+- OK beller-2014: status=200 final_url=http://sback.it/publications/msr2014.pdf
+- OK bavota-russo-2015: status=200 final_url=https://people.lu.usi.ch/bavotg/papers/icsme2015_code_review.pdf
+- OK kemerer-paulk-2009: status=200 final_url=https://sites.pitt.edu/~ckemerer/PSP_Data.pdf
 - SKIP kononenko-2015: manual source pending. license=verify
-- SKIP gunawardena-2023-taxonomy: manual source pending. license=verify
-- SKIP yasa-2025-in-practice: manual source pending. license=verify
-- SKIP watanabe-2024-chatgpt-reviews: manual source pending. license=verify
+- OK gunawardena-2023-taxonomy: status=200 final_url=https://kblincoe.github.io/publications/2022_IST_CodeReview.pdf
+- OK yasa-2025-in-practice: status=200 final_url=https://arxiv.org/pdf/2412.18531
+- OK watanabe-2024-chatgpt-reviews: status=200 final_url=https://binlin.info/downloads/Watanabe2024a.pdf
 
 ## 2026-08-06 incremental fetch (new C#/.NET and Dart/Flutter sources)
 

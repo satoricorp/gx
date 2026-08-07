@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://sites.pitt.edu/~ckemerer/PSP_Data.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "c56f47e856c2cbe0b1a12c8bf8fff606baf0e3367c684b2eb5a5a6a410f46f8f",
   "source_id": "kemerer-paulk-2009"
 }

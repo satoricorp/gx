@@ -1,10 +1,10 @@
 {
-  "error": "http 403 for https://dl.acm.org/doi/10.1145/3540250.3549081",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://arxiv.org/pdf/2203.09095",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "f858a316fc7699e6ba4c5c030c8183c11eb5e3364413ab1fe8e1e01c791273b1",
   "source_id": "codereviewer-2022"
 }

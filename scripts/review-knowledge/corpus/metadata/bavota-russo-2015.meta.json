@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://people.lu.usi.ch/bavotg/papers/icsme2015_code_review.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "40bf90344e5016672ede1765d70b83528297bfa6236b132501a698665d84814d",
   "source_id": "bavota-russo-2015"
 }
