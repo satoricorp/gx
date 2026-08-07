@@ -13,6 +13,12 @@ mcp/node_modules/
 mcp/xmcp-env.d.ts
 .gstack/
 
+# `gx review` writes its full JSON report here in whatever repository it runs
+# in. The command also adds this path to .git/info/exclude so it stays out of
+# the way in repositories it does not own — but that file is per-machine, so in
+# our own repositories it is listed here too, where everyone gets it.
+/review/
+
 # Personal Claude Code settings. The shared .claude/settings.json carries the
 # gx capture hooks; this one is per-developer and must never be committed.
 .claude/settings.local.json
