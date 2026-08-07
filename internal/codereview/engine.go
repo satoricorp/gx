@@ -323,6 +323,14 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			degradedReasons = append(degradedReasons, fmt.Sprintf(
 				"%d candidate finding(s) got an explicit \"cannot verify\" from the verification model, so they are reported unverified",
 				outcome.Abstained))
+			if judgeTraceEnabled() {
+				// Under trace, say what each one actually needed. An abstention
+				// count says a review was not fully verified; only the reason
+				// says whether that is fixable by sending more code.
+				for _, note := range outcome.AbstentionNotes {
+					degradedReasons = append(degradedReasons, "judge-trace: "+note)
+				}
+			}
 		}
 	} else {
 		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)
@@ -463,6 +471,20 @@ var (
 	reviewTimingStart time.Time
 	reviewTimingLast  time.Time
 )
+
+// judgeTraceEnabled adds the judge's own reason for each abstention to the
+// degraded reasons, enabled with GX_REVIEW_JUDGE_TRACE=1.
+//
+// Off by default because it is diagnostic output, not review output: a reader
+// wants to know a finding went unverified, not to read the paragraph the
+// verification model wrote about it.
+func judgeTraceEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE_TRACE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
 
 func reviewTimingEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GX_REVIEW_TIMING"))) {
