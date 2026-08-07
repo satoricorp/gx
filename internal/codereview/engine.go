@@ -305,15 +305,24 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				"%d of %d finding verification batches failed: %v",
 				outcome.BatchesFailed, outcome.Batches, outcome.Err))
 		}
-		if outcome.Unanswered > 0 {
-			// The quieter half of the same failure: the call succeeded, the JSON
-			// parsed, and the model simply returned no verdict for some of the
-			// candidates it was handed. Those findings ship unverified, which is
-			// the safe direction but not a free one, so it is reported for the
-			// same reason an unadjudicated duplicate pair is.
+		if outcome.Omitted > 0 {
+			// The call succeeded, the JSON parsed, and the model simply left
+			// candidates out of its reply. That is a reliability failure and is
+			// worth saying so plainly: re-asking generally answers them, so a
+			// review reporting this is one call short of being fully judged.
 			degradedReasons = append(degradedReasons, fmt.Sprintf(
-				"%d candidate finding(s) got no verdict from the verification model, so they are reported unverified",
-				outcome.Unanswered))
+				"%d candidate finding(s) were omitted from the verification model's reply, so they are reported unverified",
+				outcome.Omitted))
+		}
+		if outcome.Abstained > 0 {
+			// Reported separately because it is not the same problem. Here the
+			// judge did answer — it said it could not check the claim, which
+			// usually means it was not given the evidence to check it against.
+			// Re-asking buys the same answer; supplying the file content is what
+			// changes it.
+			degradedReasons = append(degradedReasons, fmt.Sprintf(
+				"%d candidate finding(s) got an explicit \"cannot verify\" from the verification model, so they are reported unverified",
+				outcome.Abstained))
 		}
 	} else {
 		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)

@@ -696,13 +696,27 @@ type judgeBatchOutcome struct {
 	// Batches / BatchesFailed describe the fan-out for the same line.
 	Batches       int
 	BatchesFailed int
-	// Unanswered counts candidates a *successful* batch returned no verdict
-	// for. It is separate from BatchesFailed because it is a separate fact with
-	// a separate cause: the call worked, the JSON parsed, and the model just
-	// left findings out. Without this count that shortfall is indistinguishable
-	// from a judge that considered every candidate and rejected most of them.
-	Unanswered int
+	// Omitted and Abstained split what used to be one "unanswered" count.
+	//
+	// Both end up unverified, but they are opposite problems and the fix for one
+	// is wasted effort on the other. Omitted means the reply never mentioned the
+	// candidate — a reliability failure, and asking again usually answers it.
+	// Abstained means the judge answered "I cannot check this" (see
+	// judgeCouldNotVerify) — an honest verdict, and asking again just buys the
+	// same answer at twice the price; what that case needs is better evidence,
+	// not another call.
+	//
+	// Counting them together made a review that could not reach its evidence
+	// look identical to a model dropping list entries, which is why this is
+	// reported as two numbers.
+	Omitted   int
+	Abstained int
 }
+
+// Unanswered is every candidate a successful batch left without a usable
+// verdict, by either route. Kept so callers that only care "was this review
+// fully judged" do not have to know the difference.
+func (o judgeBatchOutcome) Unanswered() int { return o.Omitted + o.Abstained }
 
 // runJudge verifies candidates in concurrent batches.
 //
@@ -770,19 +784,26 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		// the unanswered ones fall back to unjudged instead of being deleted by
 		// a verdict nobody gave.
 		verdicts := answeredCandidateIDs(out[i].results)
+		mentioned := mentionedCandidateIDs(out[i].results)
 		var judged, silent []Finding
 		for _, finding := range batch {
-			if _, ok := verdicts[strings.TrimSpace(finding.ID)]; ok {
+			id := strings.TrimSpace(finding.ID)
+			if _, ok := verdicts[id]; ok {
 				judged = append(judged, finding)
 				continue
+			}
+			// Both are unverified, but only one is a failure. A candidate the
+			// reply named and declined to decide was answered; one it never
+			// named was dropped.
+			if _, seen := mentioned[id]; seen {
+				outcome.Abstained++
+			} else {
+				outcome.Omitted++
 			}
 			silent = append(silent, finding)
 		}
 		outcome.Judged = append(outcome.Judged, applyJudgeResults(judged, out[i].results)...)
-		if len(silent) > 0 {
-			outcome.Unanswered += len(silent)
-			outcome.Unjudged = append(outcome.Unjudged, silent...)
-		}
+		outcome.Unjudged = append(outcome.Unjudged, silent...)
 	}
 	return outcome
 }
@@ -797,6 +818,20 @@ func answeredCandidateIDs(results []judgeResult) map[string]struct{} {
 		if judgeCouldNotVerify(result) {
 			continue
 		}
+		if id := strings.TrimSpace(result.CandidateID); id != "" {
+			out[id] = struct{}{}
+		}
+	}
+	return out
+}
+
+// mentionedCandidateIDs is every candidate the reply named at all, including the
+// ones it declined to decide. Set-differenced against answeredCandidateIDs it
+// separates "the judge abstained" from "the judge never mentioned it", which is
+// the difference between an evidence problem and a reliability one.
+func mentionedCandidateIDs(results []judgeResult) map[string]struct{} {
+	out := make(map[string]struct{}, len(results))
+	for _, result := range results {
 		if id := strings.TrimSpace(result.CandidateID); id != "" {
 			out[id] = struct{}{}
 		}
