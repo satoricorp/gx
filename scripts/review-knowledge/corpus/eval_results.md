@@ -4,9 +4,9 @@ generated_at: 2026-08-07
 baseline_namespace: gx-review-knowledge
 candidate_namespace: review-corpus-v2
 
-queries: 65
-v1_recall_at_10: 65/65
-v2_recall_at_10: 65/65
+queries: 68
+v1_recall_at_10: 68/68
+v2_recall_at_10: 68/68
 precedence_violations: 0
 status: pass
 
@@ -65,6 +65,9 @@ status: pass
 - semgrep rule metadata category severity confidence cwe references: v1=hit v2=hit expected=semgrep-registry
 - nist ssdf secure software development framework practices: v1=hit v2=hit expected=nist-ssdf-800-218
 - concise checklist for developing more secure software mfa dependencies: v1=hit v2=hit expected=openssf-concise-guide
+- shellcheck double quote variable word splitting globbing: v1=hit v2=hit expected=shellcheck,google-shellguide
+- ruff rule code reference flake8 pycodestyle pyflakes: v1=hit v2=hit expected=ruff-rules,ruff
+- bandit plugin severity confidence subprocess popen shell injection: v1=hit v2=hit expected=bandit-plugins,bandit
 - c# async await exception handling conventions: v1=hit v2=hit expected=csharp-coding-conventions
 - dotnet public api naming and design guidelines: v1=hit v2=hit expected=dotnet-framework-design-guidelines,csharp-coding-conventions
 - dotnet secure coding untrusted input deserialization: v1=hit v2=hit expected=dotnet-secure-coding,owasp-deserialization-cheatsheet

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://docs.astral.sh/ruff/rules/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "b5cac471210f240473e90648695c4c5502f99adbbf90af1c1e28a42dca2b4b1b",
+  "source_id": "ruff-rules"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://bandit.readthedocs.io/en/latest/plugins/b704_markupsafe_markup_xss.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ee1339ecf63dd43fc020940947147c7ee53eda01c848bee487ce3216e6ad514a",
+  "source_id": "bandit-plugins"
+}

@@ -11,7 +11,7 @@ model can cite or use as supporting context.
 ## Files
 
 - `sources.yaml`: approved v2 source manifest. This supersedes `urls.json`.
-- `golden_queries.yaml`: 65-query eval gate manifest.
+- `golden_queries.yaml`: 68-query eval gate manifest.
 - `index_review_resources.py`: validates, fetches, normalizes, chunks, embeds,
   indexes, refreshes, and scaffolds eval output.
 - `urls.json`: retained only as the v1 manifest/reference.
@@ -46,6 +46,12 @@ a best-effort reStructuredText-to-markdown conversion so Sphinx manuals chunk
 along their real section structure. Files that another manifest entry ingests
 on its own are skipped during expansion so one document never enters the
 corpus under two source ids.
+
+Crawls cap their URL count at 50 for `fetch: html` and 200 for
+`fetch: github-md`; set `max_urls` on a source to override (the shellcheck
+wiki uses 450 to cover every SC check page). A `fetch: manual` source is
+skipped at chunk time until its normalized markdown is dropped at
+`corpus/normalized/<id>.md`, at which point it chunks like any other source.
 
 robots.txt is fetched with the indexer's own User-Agent. Several sources
 (readthedocs sites, smartbear, nvlpubs) used to fail as "robots.txt

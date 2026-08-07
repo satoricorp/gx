@@ -161,6 +161,15 @@ queries:
   - query: "concise checklist for developing more secure software mfa dependencies"
     expected_source_ids: [openssf-concise-guide]
     focus: security
+  - query: "shellcheck double quote variable word splitting globbing"
+    expected_source_ids: [shellcheck, google-shellguide]
+    focus: shell
+  - query: "ruff rule code reference flake8 pycodestyle pyflakes"
+    expected_source_ids: [ruff-rules, ruff]
+    focus: python
+  - query: "bandit plugin severity confidence subprocess popen shell injection"
+    expected_source_ids: [bandit-plugins, bandit]
+    focus: python
   - query: "c# async await exception handling conventions"
     expected_source_ids: [csharp-coding-conventions]
     focus: csharp

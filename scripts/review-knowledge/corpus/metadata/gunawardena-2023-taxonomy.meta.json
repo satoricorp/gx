@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://kblincoe.github.io/publications/2022_IST_CodeReview.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "3fbf74919e8e5ea447bf34e25b3a2fe3eec1a7d41dcbe7f9dc0cf833e7b46d18",
   "source_id": "gunawardena-2023-taxonomy"
 }

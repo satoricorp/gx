@@ -1,11 +1,11 @@
 # Review Corpus Build Log
 
 generated_at: 2026-08-07
-chunks: 7512
+chunks: 7645
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=5 p50=102 max=916
+token_histogram: min=6 p50=101 max=916
 
 ## Chunks Per Source
 - google-eng-practices: 12
@@ -33,9 +33,11 @@ token_histogram: min=5 p50=102 max=916
 - pep8: 45
 - google-pyguide: 18
 - ruff: 94
+- ruff-rules: 77
 - mypy: 406
 - typing-python-spec: 322
 - bandit: 25
+- bandit-plugins: 75
 - google-go-style: 48
 - go-code-review-comments: 32
 - uber-go-guide: 3
@@ -56,7 +58,7 @@ token_histogram: min=5 p50=102 max=916
 - sqlfluff: 88
 - google-shellguide: 80
 - posix-shell-spec: 37
-- shellcheck: 6
+- shellcheck: 163
 - csharp-coding-conventions: 18
 - dotnet-framework-design-guidelines: 9
 - dotnet-secure-coding: 6
@@ -68,17 +70,17 @@ token_histogram: min=5 p50=102 max=916
 - dart-linter-rules: 155
 - flutter-perf-best-practices: 20
 - flutter-security: 9
-- bacchelli-bird-2013: 12
-- sadowski-2018-google: 12
-- rigby-bird-2013: 12
-- czerwonka-2015: 2 (investigate: <3 chunks)
-- mcintosh-2014: 13
-- bosu-2015-useful: 16
-- bitsai-cr-2025: 12
-- codereviewer-2022: 14
-- cr-benchmark-survey-2026: 25
-- swr-bench-2025: 17
-- agentic-review-roadmap: 41
+- bacchelli-bird-2013: 0
+- sadowski-2018-google: 0
+- rigby-bird-2013: 0
+- czerwonka-2015: 0
+- mcintosh-2014: 0
+- bosu-2015-useful: 0
+- bitsai-cr-2025: 0
+- codereviewer-2022: 0
+- cr-benchmark-survey-2026: 0
+- swr-bench-2025: 0
+- agentic-review-roadmap: 0
 - mantyla-lassenius-2009: 0
 - beller-2014: 0
 - bavota-russo-2015: 0

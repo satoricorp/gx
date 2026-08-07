@@ -137,7 +137,14 @@ sources:
     precedence_group: python-style
     fetch: github-md
     crawl_depth: 1
-    notes: "WINNER of python-style group. Pin google docstring convention (D211/D212); tag D203/D213 chunks superseded. docs.astral.sh robots.txt disallows fetching; the repo docs tree carries configuration/linter/formatter/faq guidance (per-rule pages are generated from source and stay unfetched)."
+    notes: "WINNER of python-style group. Pin google docstring convention (D211/D212); tag D203/D213 chunks superseded. The repo docs tree carries configuration/linter/formatter/faq guidance; the generated per-rule reference is ingested separately as ruff-rules."
+  - id: ruff-rules
+    url: https://docs.astral.sh/ruff/rules/
+    tier: style
+    languages: [python]
+    authority: 1
+    precedence_group: python-style
+    notes: "Generated rule reference: the index page tables every rule code, name, and message across all linters ruff implements. docs.astral.sh serves no robots.txt (the earlier 'robots disallows' failure was the Python-urllib UA artifact); depth 0 ingests the full table without crawling ~800 per-rule pages."
   - id: mypy
     url: https://github.com/python/mypy/tree/master/docs/source
     tier: language
@@ -159,7 +166,14 @@ sources:
     languages: [python]
     fetch: github-md
     crawl_depth: 1
-    notes: "bandit.readthedocs.io robots.txt disallows fetching; the repo doc tree carries config/start/faq as .rst (per-plugin pages are autodoc stubs and stay unfetched)."
+    notes: "The repo doc tree carries config/start/faq as .rst; the autodoc-rendered per-plugin pages are ingested separately as bandit-plugins."
+  - id: bandit-plugins
+    url: https://bandit.readthedocs.io/en/latest/plugins/
+    tier: security
+    languages: [python]
+    crawl_depth: 1
+    max_urls: 150
+    notes: "Rendered autodoc plugin pages: each Bxxx check's description, severity, confidence, and example. bandit.readthedocs.io robots.txt allows everything (the earlier failure was the Python-urllib UA artifact)."
   - id: google-go-style
     url: https://google.github.io/styleguide/go/
     tier: language
@@ -282,10 +296,12 @@ sources:
     authority: 4
     notes: "Spec reference; background only."
   - id: shellcheck
-    url: https://www.shellcheck.net/
+    url: https://www.shellcheck.net/wiki/
     tier: style
     languages: [shell]
-    notes: "Homepage is thin - the value is the wiki: fetch github.com/koalaman/shellcheck/wiki check pages instead."
+    crawl_depth: 1
+    max_urls: 450
+    notes: "The wiki sitemap enumerates every SC check with its message and links each check's page (problematic code, correct code, rationale, exceptions). The old homepage URL yielded 6 thin chunks."
   - id: csharp-coding-conventions
     url: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
     tier: language
@@ -410,42 +426,42 @@ sources:
     fetch: pdf
     notes: "Rethinking Code Review in the Age of AI - agentic review vision paper."
   - id: mantyla-lassenius-2009
-    url: null
+    url: https://aaltodoc.aalto.fi/bitstreams/cab054e8-0c06-47ab-8754-54bb09a0a6d3/download
     tier: research
-    fetch: manual
-    notes: "Mantyla & Lassenius, 'What Types of Defects Are Really Discovered in Code Reviews?', IEEE TSE 35(3), 2009. ~75% evolvability finding. Source via doi 10.1109/TSE.2008.71."
+    fetch: pdf
+    notes: "Mantyla & Lassenius, 'What Types of Defects Are Really Discovered in Code Reviews?', IEEE TSE 35(3), 2009. ~75% evolvability finding. Aalto University repository preprint; doi 10.1109/TSE.2008.71."
   - id: beller-2014
-    url: null
+    url: http://sback.it/publications/msr2014.pdf
     tier: research
-    fetch: manual
-    notes: "Beller et al., 'Modern code reviews in open-source projects: Which problems do they fix?', MSR 2014. 3:1 maintainability:functional ratio; 10-35% no-op comments."
+    fetch: pdf
+    notes: "Beller et al., 'Modern code reviews in open-source projects: Which problems do they fix?', MSR 2014. 3:1 maintainability:functional ratio; 10-35% no-op comments. Author preprint on sback.it."
   - id: bavota-russo-2015
-    url: null
+    url: https://people.lu.usi.ch/bavotg/papers/icsme2015_code_review.pdf
     tier: research
-    fetch: manual
-    notes: "Bavota & Russo, 'Four Eyes Are Better Than Two', ICSME 2015."
+    fetch: pdf
+    notes: "Bavota & Russo, 'Four Eyes Are Better Than Two', ICSME 2015. Author preprint on people.lu.usi.ch."
   - id: kemerer-paulk-2009
-    url: null
+    url: https://sites.pitt.edu/~ckemerer/PSP_Data.pdf
     tier: research
-    fetch: manual
-    notes: "Kemerer & Paulk, review rate (LOC/hr) vs defect removal effectiveness, IEEE TSE 2009. Empirical basis for speed limits."
+    fetch: pdf
+    notes: "Kemerer & Paulk, review rate (LOC/hr) vs defect removal effectiveness, IEEE TSE 2009. Empirical basis for speed limits. Author preprint on sites.pitt.edu."
   - id: kononenko-2015
     url: null
     tier: research
     fetch: manual
     notes: "Kononenko et al., developers' perception of code review quality (ICSME 2015)."
   - id: gunawardena-2023-taxonomy
-    url: null
+    url: https://kblincoe.github.io/publications/2022_IST_CodeReview.pdf
     tier: research
-    fetch: manual
-    notes: "Gunawardena, Tempero & Blincoe, 'Concerns identified in code review: A fine-grained, faceted classification', Information and Software Technology 153 (2023) 107054. CANDIDATE RULE CATEGORY SPINE - prioritize sourcing."
+    fetch: pdf
+    notes: "Gunawardena, Tempero & Blincoe, 'Concerns identified in code review: A fine-grained, faceted classification', Information and Software Technology 153 (2023) 107054. CANDIDATE RULE CATEGORY SPINE - prioritize sourcing. Author preprint on kblincoe.github.io."
   - id: yasa-2025-in-practice
-    url: null
+    url: https://arxiv.org/abs/2412.18531
     tier: research
-    fetch: manual
-    notes: "Yasa et al., 'Automated code review in practice', ICSE SEIP 2025."
+    fetch: pdf
+    notes: "Cihan, Haratian, ..., Yasa et al., 'Automated code review in practice', ICSE SEIP 2025. arXiv preprint."
   - id: watanabe-2024-chatgpt-reviews
-    url: null
+    url: https://binlin.info/downloads/Watanabe2024a.pdf
     tier: research
-    fetch: manual
-    notes: "Watanabe et al., 'Do developers like reviews by ChatGPT?', EASE 2024."
+    fetch: pdf
+    notes: "Watanabe et al., 'On the Use of ChatGPT for Code Review: Do Developers Like Reviews by ChatGPT?', EASE 2024. Co-author preprint on binlin.info."

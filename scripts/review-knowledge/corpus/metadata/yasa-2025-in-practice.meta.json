@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://arxiv.org/pdf/2412.18531",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "55a1da5fcc503ae41e2fb1aa93a192a85d15f1cd9b0310e14241c294111509a2",
   "source_id": "yasa-2025-in-practice"
 }

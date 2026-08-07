@@ -61,6 +61,7 @@ class Source:
     license: str
     fetch: str
     crawl_depth: int
+    max_urls: int
     notes: str
 
 
@@ -309,6 +310,7 @@ def parse_source(item: dict[str, Any]) -> Source:
         license=str(item.get("license", "verify") or "verify").strip(),
         fetch=fetch,
         crawl_depth=int(item.get("crawl_depth", 0) or 0),
+        max_urls=int(item.get("max_urls", 0) or 0),
         notes=str(item.get("notes", "") or "").strip(),
     )
 
@@ -390,7 +392,7 @@ def fetch_source(
                         continue
                     seen_urls.add(link)
                     queue.append((link, depth + 1))
-                    if len(seen_urls) >= 200:
+                    if len(seen_urls) >= (source.max_urls or 200):
                         break
             continue
         if not robots_allowed(url, robots):
@@ -410,7 +412,7 @@ def fetch_source(
                     continue
                 seen_urls.add(link)
                 queue.append((link, depth + 1))
-                if len(seen_urls) >= 50:
+                if len(seen_urls) >= (source.max_urls or 50):
                     break
     return FetchedDoc(
         source=source,
@@ -511,7 +513,9 @@ def fetch_url(url: str, timeout: float) -> tuple[bytes, str, int, str]:
         request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                return response.read(3_000_000), response.geturl(), response.status, response.headers.get("Content-Type", "")
+                # 20MB bound: enough for any real doc or paper (a truncated
+                # PDF parses as 0 pages and silently yields no chunks).
+                return response.read(20_000_000), response.geturl(), response.status, response.headers.get("Content-Type", "")
         except urllib.error.HTTPError as exc:
             if exc.code in {401, 402, 403, 404, 451}:
                 raise RuntimeError(f"http {exc.code} for {url}") from exc
@@ -754,9 +758,17 @@ def build_chunks(sources: list[Source], artifact_dir: Path, *, seed_only: bool) 
     chunks: list[Chunk] = []
     for source in sources:
         meta = load_meta(artifact_dir, source.id)
-        if source.fetch == "manual" and not seed_only:
-            continue
-        text = seed_text(source) if seed_only else read_normalized(artifact_dir, source) or seed_text(source)
+        if seed_only:
+            text = seed_text(source)
+        elif source.fetch == "manual":
+            # A manual source chunks only once its normalized file is dropped
+            # locally; until then it stays out of the corpus entirely rather
+            # than contributing a seed-note chunk.
+            text = read_normalized(artifact_dir, source)
+            if not text:
+                continue
+        else:
+            text = read_normalized(artifact_dir, source) or seed_text(source)
         for index, (section_path, body) in enumerate(split_markdown(text)):
             chunk = make_chunk(source, section_path, index, body, meta)
             chunks.append(chunk)
@@ -1321,8 +1333,26 @@ def env_int(name: str, fallback: int) -> int:
 
 
 def batches(values: list[Chunk], size: int) -> list[list[Chunk]]:
+    """Split into batches of at most `size` chunks AND ~150k whitespace
+    tokens. OpenAI rejects embedding requests over 300k BPE tokens; dense PDF
+    text runs well past one BPE token per whitespace token, so a plain
+    256-chunk batch of paper chunks can exceed the limit."""
     size = max(1, size)
-    return [values[index : index + size] for index in range(0, len(values), size)]
+    token_budget = 150_000
+    out: list[list[Chunk]] = []
+    current: list[Chunk] = []
+    current_tokens = 0
+    for chunk in values:
+        tokens = rough_token_count(chunk.body)
+        if current and (len(current) >= size or current_tokens + tokens > token_budget):
+            out.append(current)
+            current = []
+            current_tokens = 0
+        current.append(chunk)
+        current_tokens += tokens
+    if current:
+        out.append(current)
+    return out
 
 
 if __name__ == "__main__":
