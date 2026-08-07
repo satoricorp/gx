@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://docs.flutter.dev/perf/best-practices",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4725622a4f448dfcfcc34c19d108ae369cb53e3e090620b4e7bc12070dc72b3f",
+  "source_id": "flutter-perf-best-practices"
+}

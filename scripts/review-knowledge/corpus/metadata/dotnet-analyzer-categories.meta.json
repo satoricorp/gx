@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/categories",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "68be64c35f41709576806a61306ccada27e1b7fc49eaac6c5d1e815232750da1",
+  "source_id": "dotnet-analyzer-categories"
+}

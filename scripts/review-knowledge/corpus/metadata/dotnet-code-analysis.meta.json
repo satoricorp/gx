@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-06",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/overview",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "56e37c489309ec91fd98ce1893c3ec5fe1d9f30cd1560bcd34a6abece1b6b7f0",
+  "source_id": "dotnet-code-analysis"
+}

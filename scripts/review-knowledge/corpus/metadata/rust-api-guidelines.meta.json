@@ -1,10 +1,10 @@
 {
   "error": null,
-  "fetched_at": "2026-07-08",
-  "final_url": "https://rust-lang.github.io/api-guidelines/about.html",
+  "fetched_at": "2026-08-07",
+  "final_url": "https://raw.githubusercontent.com/rust-lang/api-guidelines/master/src/type-safety.md",
   "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": "5f505703d67edbc1e679077a5ee44b139025dc6bc417994905900f2bb0e5afc8",
+  "sha256": "c900c3b5a8b7c3ab8e853ac9ef03b986763be948d0eee8d47b9eb0897324ce53",
   "source_id": "rust-api-guidelines"
 }
