@@ -149,6 +149,27 @@ queries:
   - query: "how large should a change be for review"
     expected_source_ids: [google-eng-practices, smartbear-best-practices]
     focus: process
+  - query: "label review comments nitpick suggestion blocking non-blocking"
+    expected_source_ids: [conventional-comments]
+    focus: process
+  - query: "semgrep rule metadata category severity confidence cwe references"
+    expected_source_ids: [semgrep-registry]
+    focus: security
+  - query: "nist ssdf secure software development framework practices"
+    expected_source_ids: [nist-ssdf-800-218]
+    focus: security
+  - query: "concise checklist for developing more secure software mfa dependencies"
+    expected_source_ids: [openssf-concise-guide]
+    focus: security
+  - query: "shellcheck double quote variable word splitting globbing"
+    expected_source_ids: [shellcheck, google-shellguide]
+    focus: shell
+  - query: "ruff rule code reference flake8 pycodestyle pyflakes"
+    expected_source_ids: [ruff-rules, ruff]
+    focus: python
+  - query: "bandit plugin severity confidence subprocess popen shell injection"
+    expected_source_ids: [bandit-plugins, bandit]
+    focus: python
   - query: "c# async await exception handling conventions"
     expected_source_ids: [csharp-coding-conventions]
     focus: csharp

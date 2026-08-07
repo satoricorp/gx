@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://aaltodoc.aalto.fi/server/api/core/bitstreams/cab054e8-0c06-47ab-8754-54bb09a0a6d3/content",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "6c17b6bd015ddcad88e516d54de76bb4eb4f9d8207797d6d6c1f2e9746d2733d",
   "source_id": "mantyla-lassenius-2009"
 }

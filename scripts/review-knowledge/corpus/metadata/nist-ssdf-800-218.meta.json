@@ -1,10 +1,10 @@
 {
-  "error": "robots.txt disallows fetch: https://csrc.nist.gov/pubs/sp/800/218/final",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-218.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "617746e553a9e2da49bfbd4eef0dfc3094758a39b869314e4173ac36605cde22",
   "source_id": "nist-ssdf-800-218"
 }

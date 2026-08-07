@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://binlin.info/downloads/Watanabe2024a.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "0b0419bd0a366601052d2a3339e697d1683b0969cf764680f00cdf1ce4b4492a",
   "source_id": "watanabe-2024-chatgpt-reviews"
 }

@@ -1,10 +1,10 @@
 {
-  "error": "manual source pending local drop",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "http://sback.it/publications/msr2014.pdf",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "90a49004852869afa4f998e66414243ca577639ab6862b3b7e896b1e727fcbe3",
   "source_id": "beller-2014"
 }

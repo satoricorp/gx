@@ -1,10 +1,10 @@
 {
   "error": null,
-  "fetched_at": "2026-07-08",
-  "final_url": "https://www.shellcheck.net/",
+  "fetched_at": "2026-08-07",
+  "final_url": "https://www.shellcheck.net/wiki/SC2329",
   "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": "1a3b92797d24118eb18b6d4f794ddbc7580e76fb31a9fc118019d44596c404b9",
+  "sha256": "7dd87398cf2ab8e9a5281cbc00f47b52b23abaef1e6d0df3d1610bef0a18e56c",
   "source_id": "shellcheck"
 }

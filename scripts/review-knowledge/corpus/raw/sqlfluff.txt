@@ -1,0 +1,3229 @@
+.. _gettingstartedref:
+
+Getting Started
+===============
+
+To get started with *SQLFluff*, you'll need python and pip installed
+on your machine. If you're already set up, you can skip straight to
+`Installing SQLFluff`_.
+
+Installing Python
+-----------------
+
+Installing *python* and *pip* depends on what operating system
+you're using. In any case, the python wiki provides up to date
+`instructions for all platforms here`_.
+
+There's a chance that you'll be offered the choice between python
+versions. Support for python 2 was dropped in early 2020, so you
+should always opt for a version number starting with a 3. You can
+check the `pypi project page`_ to find the python versions that
+*SQLFluff* supports.
+
+You can confirm that python is working as expected by heading to
+your terminal or console of choice and typing :code:`python --version`
+which should give you a sensible read out and not an error.
+
+.. code-block:: text
+
+    $ python --version
+    Python 3.13.1
+
+For most people, their installation of python will come with
+:code:`pip` (the python package manager) preinstalled. To confirm
+this, you can type :code:`pip --version` similar to python above.
+
+.. code-block:: text
+
+    $ pip --version
+    pip 25.3 from ...
+
+If, however, you do have python installed but not :code:`pip`, then
+the best instructions for what to do next are `on the python website`_.
+
+.. _`instructions for all platforms here`: https://wiki.python.org/moin/BeginnersGuide/Download
+.. _`pypi project page`: https://pypi.org/project/sqlfluff/
+.. _`on the python website`: https://pip.pypa.io/en/stable/installation/
+
+.. _installingsqlfluff:
+
+Installing SQLFluff
+-------------------
+
+Assuming that python and pip are already installed, then installing
+*SQLFluff* is straightforward.
+
+.. code-block:: text
+
+    $ pip install sqlfluff
+
+If you want the optional Rust-backed parser and lexer, install the
+:code:`rs` extra:
+
+.. code-block:: text
+
+    $ pip install sqlfluff[rs]
+
+On supported CPython 3.10+ platforms this installs a prebuilt ABI3 wheel.
+If a wheel is not available for your platform, architecture, or Python
+implementation, :code:`pip` falls back to building :code:`sqlfluffrs` from
+source. In that case you will need a Rust toolchain and a working native build
+toolchain for your platform. The easiest way to install Rust is via
+`rustup <https://rustup.rs/>`_.
+
+You can confirm its installation by getting *SQLFluff* to show its
+version number.
+
+.. code-block:: text
+
+    $ sqlfluff version
+    4.2.2
+
+Basic Usage
+-----------
+
+To get a feel for how to use *SQLFluff*, it helps to have a small
+:code:`.sql` file which has a simple structure and some known
+issues for testing. Create a file called :code:`test.sql` in the
+same folder that you're currently in with the following content:
+
+.. code-block:: sql
+
+    SELECT a+b  AS foo,
+    c AS bar from my_table
+
+You can then run :code:`sqlfluff lint test.sql --dialect ansi` to lint this
+file.
+
+.. code-block:: text
+
+    $ sqlfluff lint test.sql --dialect ansi
+    == [test.sql] FAIL
+    L:   1 | P:   1 | LT09 | Select targets should be on a new line unless there is
+                           | only one select target.
+                           | [layout.select_targets]
+    L:   1 | P:   1 | ST06 | Select wildcards then simple targets before calculations
+                           | and aggregates. [structure.column_order]
+    L:   1 | P:   7 | LT02 | Expected line break and indent of 4 spaces before 'a'.
+                           | [layout.indent]
+    L:   1 | P:   9 | LT01 | Expected single whitespace between naked identifier and
+                           | binary operator '+'. [layout.spacing]
+    L:   1 | P:  10 | LT01 | Expected single whitespace between binary operator '+'
+                           | and naked identifier. [layout.spacing]
+    L:   1 | P:  11 | LT01 | Expected only single space before 'AS' keyword. Found '
+                           | '. [layout.spacing]
+    L:   2 | P:   1 | LT02 | Expected indent of 4 spaces.
+                           | [layout.indent]
+    L:   2 | P:   9 | LT02 | Expected line break and no indent before 'from'.
+                           | [layout.indent]
+    L:   2 | P:  10 | CP01 | Keywords must be consistently upper case.
+                           | [capitalisation.keywords]
+    All Finished 📜 🎉!
+
+You'll see that *SQLFluff* has failed the linting check for this file.
+On each of the following lines, you can see each of the problems it has
+found, with some information about the location and what kind of
+problem there is. One of the errors has been found on *line 1*, *position 9*
+(as shown by :code:`L:   1 | P:   9`) and it's a problem with rule
+*LT01* (for a full list of rules, see :ref:`ruleref`). From this
+(and the following error), we can see that the problem is that there
+is no space either side of the :code:`+` symbol in :code:`a+b`.
+Head into the file, and correct this issue so that the file now
+looks like this:
+
+.. code-block:: sql
+
+    SELECT a + b  AS foo,
+    c AS bar from my_table
+
+Rerun the same command as before, and you'll see that the original
+error (violation of *LT01*) no longer shows up.
+
+.. code-block:: text
+
+    $ sqlfluff lint test.sql --dialect ansi
+    == [test.sql] FAIL
+    L:   1 | P:   1 | LT09 | Select targets should be on a new line unless there is
+                           | only one select target.
+                           | [layout.select_targets]
+    L:   1 | P:   1 | ST06 | Select wildcards then simple targets before calculations
+                           | and aggregates. [structure.column_order]
+    L:   1 | P:   7 | LT02 | Expected line break and indent of 4 spaces before 'a'.
+                           | [layout.indent]
+    L:   1 | P:  13 | LT01 | Expected only single space before 'AS' keyword. Found '
+                           | '. [layout.spacing]
+    L:   2 | P:   1 | LT02 | Expected indent of 4 spaces.
+                           | [layout.indent]
+    L:   2 | P:   9 | LT02 | Expected line break and no indent before 'from'.
+                           | [layout.indent]
+    L:   2 | P:  10 | CP01 | Keywords must be consistently upper case.
+                           | [capitalisation.keywords]
+
+To fix the remaining issues, we're going to use the *fix* command. This
+allows more automated fixing of some errors, to save you time in
+sorting out your sql files. Not all rules can be fixed in this way
+and there may be some situations where a fix may not be able to be
+applied because of the context of the query, but in many simple cases
+it's a good place to start.
+
+For now, we only want to fix the following rules: *LT02*, *LT12*, *CP01*
+
+.. code-block:: text
+
+    $ sqlfluff fix test.sql --rules LT02,LT12,CP01 --dialect ansi
+    ==== finding fixable violations ====
+    == [test.sql] FAIL
+    L:   1 | P:   7 | LT02 | Expected line break and indent of 4 spaces before 'a'.
+                           | [layout.indent]
+    L:   2 | P:   1 | LT02 | Expected indent of 4 spaces.
+                           | [layout.indent]
+    L:   2 | P:   9 | LT02 | Expected line break and no indent before 'FROM'.
+                           | [layout.indent]
+    L:   2 | P:  10 | CP01 | Keywords must be consistently upper case.
+                           | [capitalisation.keywords]
+    == [test.sql] FIXED
+    4 fixable linting violations found
+
+If we now open up :code:`test.sql`, we'll see the content is
+now different.
+
+.. code-block:: sql
+
+    SELECT
+        a + b  AS foo,
+        c AS bar
+    FROM my_table
+
+In particular:
+
+* The two columns have been indented to reflect being inside the
+  :code:`SELECT` statement.
+* The :code:`FROM` keyword has been capitalised to match the
+  other keywords.
+
+We could also fix *all* of the fixable errors by not
+specifying :code:`--rules`.
+
+.. code-block:: text
+
+    $ sqlfluff fix test.sql --dialect ansi
+    ==== finding fixable violations ====
+    == [test.sql] FAIL
+    L:   1 | P:   1 | ST06 | Select wildcards then simple targets before calculations
+                           | and aggregates. [structure.column_order]
+    L:   2 | P:  10 | LT01 | Expected only single space before 'AS' keyword. Found '
+                           | '. [layout.spacing]
+    == [test.sql] FIXED
+    2 fixable linting violations found
+
+If we now open up :code:`test.sql`, we'll see the content has
+been updated again.
+
+.. code-block:: sql
+
+    SELECT
+        c AS bar,
+        a + b AS foo
+    FROM my_table
+
+The SQL statement is now well formatted according to all the
+rules defined in SQLFluff.
+
+Custom Usage
+------------
+
+So far, we've covered the stock settings of *SQLFluff*, but there
+are many different ways that people style their sql. If you
+or your organisation have different conventions, then many of
+these behaviours can be configured. For example, given the
+example above, what if we actually think that indents should only
+be two spaces, and rather than uppercase keywords, they should
+all be lowercase?
+
+To achieve this, we can create a configuration file named :code:`.sqlfluff`
+and place it in the same directory as the current file. In that file,
+paste the following content:
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    dialect = ansi
+
+    [sqlfluff:indentation]
+    tab_space_size = 2
+
+    [sqlfluff:rules:capitalisation.keywords]
+    capitalisation_policy = lower
+
+Then rerun the same command as before.
+
+.. code-block:: text
+
+    $ sqlfluff fix test.sql --rules LT02,LT12,CP01,ST06,LT09,LT01
+
+Then examine the file again, and you'll notice that the
+file has been fixed accordingly.
+
+.. code-block:: sql
+
+    select
+      c as bar,
+      a + b as foo
+    from my_table
+
+For a full list of configuration options check out :ref:`defaultconfig`.
+Note that in our example here, we've only set a few configuration values
+and any other configuration settings remain as per the default config.
+To see how these options apply to specific rules, check out the
+"Configuration" section within each rule's documentation in :ref:`ruleref`.
+
+Going further
+-------------
+
+From here, there are several more things to explore.
+
+* To understand how *SQLFluff* is interpreting your file,
+  explore the :code:`parse` command. You can learn more about
+  that command and more by running :code:`sqlfluff --help` or
+  :code:`sqlfluff parse --help`.
+* To start linting more than just one file at a time, experiment
+  with passing *SQLFluff* directories rather than just single files.
+  Try running :code:`sqlfluff lint .` (to lint every sql file in the
+  current folder) or :code:`sqlfluff lint path/to/my/sqlfiles`.
+* To find out more about which rules are available, see :ref:`ruleref`.
+* To find out more about configuring *SQLFluff* and what other options
+  are available, see :ref:`config`.
+* Once you're ready to start using *SQLFluff* on a project or with the
+  rest of your team, check out :ref:`production-use`.
+
+One last thing to note is that *SQLFluff* is a relatively new project
+and you may find bugs or strange things while using it. If you do find
+anything, the most useful thing you can do is to `post the issue on
+GitHub`_ where the maintainers of the project can work out what to do with
+it. The project is in active development and so updates and fixes may
+come out regularly.
+
+.. _`post the issue on GitHub`: https://github.com/sqlfluff/sqlfluff/issues
+
+
+📜 The SQL Linter for Humans
+============================
+
+Bored of not having a good SQL linter that works with whichever dialect
+you're working with? Fluff is an extensible and modular linter designed
+to help you write good SQL and catch errors and bad SQL before it hits
+your database.
+
+Notable releases:
+
+* **1.0.x**: First *stable* release, no major changes to take advantage of a
+  point of relative stability.
+* **2.0.x**: Recode of rules, whitespace fixing consolidation,
+  :code:`sqlfluff format` and removal of support for dbt versions pre `1.1`.
+  Note, that this release brings with it some breaking changes to rule coding
+  and configuration, see :ref:`upgrading_2_0`.
+* **3.0.x**: :code:`sqlfluff fix` now defaults to *not* asking for confirmation
+  and the `--force` option was removed. Richer information returned by the
+  :code:`sqlfluff lint` command (although in a different structure to previous
+  versions). See :ref:`upgrading_3_0`.
+* **4.0.x**: First release with optional rust routines. An install with
+  :code:`sqlfluff[rs]` will now include the rust routines. See :ref:`upgrading_4_0`.
+
+For more detail on other releases, see our :ref:`releasenotes`.
+
+Want to see where and how people are using SQLFluff in their projects?
+Head over to :ref:`inthewildref` for inspiration.
+
+Getting Started
+^^^^^^^^^^^^^^^
+
+To get started just install the package, make a sql file and then run
+SQLFluff and point it at the file. For more details or if you don't
+have python or pip already installed see :ref:`gettingstartedref`.
+
+.. code-block:: text
+
+    $ pip install sqlfluff
+    $ echo "  SELECT a  +  b FROM tbl;  " > test.sql
+    $ sqlfluff lint test.sql --dialect ansi
+    == [test.sql] FAIL
+    L:   1 | P:   1 | LT01 | Expected only single space before 'SELECT' keyword.
+                           | Found '  '. [layout.spacing]
+    L:   1 | P:   1 | LT02 | First line should not be indented.
+                           | [layout.indent]
+    L:   1 | P:   1 | LT13 | Files must not begin with newlines or whitespace.
+                           | [layout.start_of_file]
+    L:   1 | P:  11 | LT01 | Expected only single space before binary operator '+'.
+                           | Found '  '. [layout.spacing]
+    L:   1 | P:  14 | LT01 | Expected only single space before naked identifier.
+                           | Found '  '. [layout.spacing]
+    L:   1 | P:  27 | LT01 | Unnecessary trailing whitespace at end of file.
+                           | [layout.spacing]
+    L:   1 | P:  27 | LT12 | Files must end with a single trailing newline.
+                           | [layout.end_of_file]
+    All Finished 📜 🎉!
+
+Contents
+^^^^^^^^
+
+.. toctree::
+   :maxdepth: 3
+   :caption: Documentation for SQLFluff:
+
+   gettingstarted
+   why_sqlfluff
+   guides/index
+   configuration/index
+   production/index
+   reference/index
+   inthewild
+   jointhecommunity
+
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+
+
+.. _inthewildref:
+
+SQLFluff in the Wild
+====================
+
+Want to find other people who are using SQLFluff in production
+use cases? Want to brag about how you're using it? Just want to
+show solidarity with the project and provide a testimonial for it?
+
+Just add a section below by raising a PR on GitHub by
+`editing this file ✏️ <https://github.com/sqlfluff/sqlfluff/edit/main/docs/source/inthewild.rst>`_.
+
+- SQLFluff in production `dbt <http://www.getdbt.com/>`_ projects at
+  `tails.com <https://tails.com>`_. We use the SQLFluff cli as part
+  of our CI pipeline in `codeship <https://codeship.com>`_ to enforce
+  certain styles in our SQL codebase (with over 650 models) and keep
+  code quality high. Contact `@alanmcruickshank <https://github.com/alanmcruickshank>`_.
+- `Netlify <https://www.netlify.com>`_'s data team uses SQLFluff with
+  `dbt <http://www.getdbt.com/>`_ to keep code quality in more than 350
+  models (and growing). Previously, we had our SQL Guidelines defined in
+  a site hosted with Netlify, and now we're enforcing these rules in our
+  CI workflow thanks to SQLFluff.
+- `Drizly's <https://www.drizly.com>`_ analytics team uses SQLFluff with
+  `dbt <http://www.getdbt.com/>`_ for over 700 models as part of our CI
+  checks in GitHub. Before SQLFluff, we had SQL best practices outlined
+  in a google doc and had to manually enforce through PR comments. We're
+  now able to enforce much of our style guide automatically through SQLFluff.
+- `Petal's <https://www.petalcard.com>`_ data-eng team runs SQLFluff on our 100+ model
+  `dbt <http://www.getdbt.com/>`_ project. As a pre-commit hook and as a CI
+  check, SQLFluff helps keep our SQL readable and consistent.
+- `Surfline <https://www.surfline.com/>`_'s Analytics Engineering team
+  implemented SQLFluff as part of our continuous integration (CI) suite across
+  our entire `dbt <http://www.getdbt.com/>`_ project (700+ models). We implement
+  the CI suite using `GitHub Actions and Workflows <https://docs.github.com/en/actions>`_.
+  The benefits of using SQLFluff at Surfline are:
+
+  - The SQL in our dbt models is consistent and easily readable.
+  - Our style guide is maintained as :code:`code`, not a README that is rarely
+    updated.
+  - Reduced burden on Analytics Engineers to remember every single style rule.
+  - New Analytics Engineers can quickly see and learn what "good SQL" looks
+    like at Surfline and start writing it from day 1.
+- The `HTTP Archive <https://httparchive.org>`_ uses SQLFluff to automatically
+  check for quality and consistency of code submitted by the many contributors
+  to this project. In particular our annual `Web Almanac <https://almanac.httparchive.org>`_
+  attracts hundreds of volunteers to help analyse our BigQuery dataset and
+  being able automatically lint Pull Requests through GitHub Actions is a
+  fantastic way to help us maintain our growing repository of
+  `over a thousand queries <https://github.com/HTTPArchive/almanac.httparchive.org/tree/main/sql>`_.
+- `Brooklyn Data Co <https://www.brooklyndata.co>`_ has a `dbt_artifacts <https://github.com/brooklyn-data/dbt_artifacts>`_
+  dbt package from which runs SQLFluff in CI to lint pull requests
+  automatically. It uses the
+  `GitHub Actions workflow <https://github.com/sqlfluff/sqlfluff-github-actions/tree/main/menu_of_workflows/surfline>`_
+  contributed by Greg Clunies, with annotations on pull requests to make it
+  easy for contributors to see where their SQL has failed any rules. See an
+  `example pull request with SQLFluff annotations <https://github.com/brooklyn-data/dbt_artifacts/pull/74/files>`_.
+- `Markerr <https://www.markerr.com>`_ has tightly integrated SQLFluff into our
+  CI/CD process for data model changes and process improvements. Since adopting
+  SQLFluff across the organization, the clarity of our SQL code has risen
+  dramatically, freeing up review time to focus on deeper data and
+  process-specific questions.
+- `Symend <https://www.symend.com>`_ has a microservices platform supporting
+  our SaaS product. We use SQLFLuff in the CI/CD process of several of our
+  data-oriented microservices. Among other things, it validates our database
+  migration scripts, deployed using
+  `schemachange <https://github.com/Snowflake-Labs/schemachange>`_ and we have
+  near-term plans to implement it for our `dbt`_ projects.
+- At `CarePay <https://www.carepay.com>`_ we use SQLFLuff to lint and fix all
+  our dbt models as well as several other SQL heavy projects. Locally we use
+  SQLFluff with pre-commit and have also integrated it into our CI/CD
+  pipelines.
+- Core Analytics Team from `Typeform <https://www.typeform.com/>`_ and
+  `videoask <https://www.videoask.com/>`_ uses SQLFluff in the production
+  `dbt <http://www.getdbt.com/>`_ project for building our datawarehouse
+  layer for both products:
+
+  - We use it locally in our day to day work, helping us to write cleaner code.
+  - We added SQLFluff to our CI processes, so during a PR we can check that any
+    new or modified sql file has a consistent and easy-to-read format.
+
+
+.. _sqlfluff_slack:
+
+SQLFluff Slack
+==============
+
+We have a fast-growing `community on Slack <https://join.slack.com/t/sqlfluff/shared_invite/zt-3qprhrisj-ClUo_1tLmYBzrVu5ZoDwIw>`_, come and join us!
+
+
+SQLFluff on Twitter
+====================
+
+Follow us On Twitter `@SQLFluff <https://twitter.com/SQLFluff>`_ for announcements and other related posts.
+
+
+.. _why_sqlfluff:
+
+Why SQLFluff?
+=============
+
+SQL has been around for a long time, as a language for communicating
+with databases, like a communication protocol. More recently with the
+rise of *data* as a business function, or a domain in its own right
+SQL has also become an invaluable tool for defining the *structure* of
+data and analysis - not just as a one off but as a form of
+`infrastructure as code`_.
+
+As *analytics* transitions from a profession of people doing one-offs,
+and moves to building stable and reusable pieces of analytics, more and
+more principles from software engineering are moving in the analytics
+space. One of the best articulations of this is written in the
+`viewpoint section of the docs for the open-source tool dbt`_. Two of
+the principles mentioned in that article are `quality assurance`_ and
+`modularity`_.
+
+Quality assurance
+-----------------
+
+The primary aim of `SQLFluff` as a project is in service of that first
+aim of `quality assurance`_. With larger and larger teams maintaining
+large bodies of SQL code, it becomes more and more important that the
+code is not just *valid* but also easily *comprehensible* by other users
+of the same codebase. One way to ensure readability is to enforce a
+`consistent style`_, and the tools used to do this are called `linters`_.
+
+Some famous `linters`_ which are well known in the software community are
+`flake8`_ and `jslint`_ (the former is used to lint the `SQLFluff` project
+itself).
+
+**SQLFluff** aims to fill this space for SQL.
+
+Modularity
+----------
+
+SQL itself doesn't lend itself well to `modularity`_, so to introduce
+some flexibility and reusability it is often `templated`_. Typically
+this is done in the wild in one of the following ways:
+
+1. Using the limited inbuilt templating abilities of a programming
+   language directly. For example in python this would be using the
+   `format string syntax`_:
+
+   .. code-block:: python
+
+      "SELECT {foo} FROM {tbl}".format(foo="bar", tbl="mytable")
+
+   Which would evaluate to:
+
+   .. code-block:: sql
+
+      SELECT bar FROM mytable
+
+2. Using a dedicated templating library such as `jinja2`_. This allows
+   a lot more flexibility and more powerful expressions and macros. See
+   the :ref:`templateconfig` section for more detail on how this works.
+
+   - Often there are tools like `dbt`_ or `apache airflow`_ which allow
+     `templated`_ sql to be used directly, and they will implement a
+     library like `jinja2`_ under the hood themselves.
+
+
+All of these templating tools are great for `modularity`_ but they also
+mean that the SQL files themselves are no longer valid SQL code, because
+they now contain these configured *placeholder* values, intended to
+improve modularity.
+
+SQLFluff supports both of the templating methods outlined above,
+as well as `dbt`_ projects, to allow you to still lint these
+"dynamic" SQL files as part of your CI/CD pipeline (which is great 🙌),
+rather than waiting until you're in production (which is bad 🤦,
+and maybe too late).
+
+During the CI/CD pipeline (or any time that we need to handle `templated`_
+code), SQLFluff needs additional info in order to interpret your templates
+as valid SQL code. You do so by providing dummy parameters in SQLFluff
+configuration files. When substituted into the template, these values should
+evaluate to valid SQL (so SQLFluff can check its style, formatting, and
+correctness), but the values don't need to match actual values used in
+production. This means that you can use *much simpler* dummy values than
+what you would really use. The recommendation is to use *the simplest*
+possible dummy value that still allows your code to evaluate to valid SQL
+so that the configuration values can be as streamlined as possible.
+
+.. _`infrastructure as code`: https://en.wikipedia.org/wiki/Infrastructure_as_code
+.. _`viewpoint section of the docs for the open-source tool dbt`: https://docs.getdbt.com/docs/viewpoint
+.. _`quality assurance`: https://docs.getdbt.com/docs/viewpoint#quality-assurance
+.. _`modularity`: https://docs.getdbt.com/docs/viewpoint#modularity
+.. _`consistent style`: https://www.smashingmagazine.com/2012/10/why-coding-style-matters/
+.. _`linters`: https://en.wikipedia.org/wiki/Lint_(software)
+.. _`flake8`: http://flake8.pycqa.org/
+.. _`jslint`: https://www.jslint.com/
+.. _`templated`: https://en.wikipedia.org/wiki/Template_processor
+.. _`format string syntax`: https://docs.python.org/3/library/string.html#formatstrings
+.. _`jinja2`: https://jinja.palletsprojects.com/
+.. _`apache airflow`: https://airflow.apache.org
+.. _`dbt`: https://getdbt.com
+
+.. _vision:
+
+Vision for SQLFluff
+-------------------
+
+SQLFluff has a few components:
+
+1. A generic parser for SQL which aims to be able to unify SQL written
+   in different dialects into a comparable format. The *parser*.
+2. A mechanism for measuring written SQL against a set of rules, with
+   the added ability to fix any violations found. The *linter*.
+3. An opinionated set of guidelines for how SQL should be structured
+   and formatted. The *rules*.
+
+The core vision [#f1]_ for SQLFluff is to be really good at being the *linter*.
+The reasoning for this is outlined in :ref:`why_sqlfluff`.
+
+Most of the codebase for SQLFluff is the *parser*, mostly because at
+the point of developing SQLFluff, there didn't appear to be a good
+option for a whitespace-aware parser that could be used instead.
+
+With regards to the *rules*, SQLFluff aims to be opinionated but it
+also accepts that many organisations and groups have pre-existing
+strong conventions around how to write SQL and so ultimately SQLFluff
+should be flexible enough to support whichever rule set a user wishes
+to.
+
+.. rubric:: Notes
+
+.. [#f1] Credit to `this article`_ for highlighting the importance of a
+   good vision.
+
+.. _`this article`: https://opensource.com/business/16/6/bad-practice-foss-projects-management
+
+
+This folder is ignored from the main build and intended
+only for files included in others via the `.. include::`
+directive.
+
+Some of those files are also auto-generated by scripts,
+in which case they should be included in the `.gitignore`
+and not edited by hand.
+
+See [generate-auto-docs.py](https://github.com/sqlfluff/sqlfluff/blob/main/docs/generate-auto-docs.py) for more info.
+
+
+.. _defaultconfig:
+
+Default Configuration
+---------------------
+
+The default configuration is as follows, note the :ref:`builtin_jinja_blocks`
+in section :code:`[sqlfluff:templater:jinja:macros]` as referred to above.
+
+.. note::
+
+    This shows the *entire* default config. **We do not recommend that users**
+    **copy this whole config as the starter config file for their project**.
+
+    This is for two reasons:
+
+    #. The config file should act as a form of *documentation* for your team.
+       A record of what decisions you've made which govern how your format your
+       sql. By having a more concise config file, and only defining config settings
+       where they differ from the defaults - you are more clearly stating to your
+       team what choices you've made.
+
+    #. As the project evolves, the structure of the config file may change
+       and we will attempt to make changes as backward compatible as possible.
+       If you have not overridden a config setting in your project, we can
+       easily update the default config to match your expected behaviour over time.
+       We may also find issues with the default config which we can also fix
+       in the background. *However*, the longer your local config file, the
+       more work it will be to update and migrate your config file between
+       major versions.
+
+    If you are starting a fresh project and are looking for a good *starter config*,
+    check out the :ref:`starter_config` section above.
+
+
+.. literalinclude:: ../../../src/sqlfluff/core/default_config.cfg
+   :language: cfg
+
+
+.. _ignoreconfig:
+
+Ignoring Errors & Files
+-----------------------
+
+.. _inline_ignoring_errors:
+
+Ignoring individual lines
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Similar to `flake8's ignore`_, individual lines can be ignored by adding
+:code:`-- noqa` to the end of the line. Additionally, specific rules can
+be ignored by quoting their code or the category.
+
+.. code-block:: sql
+
+    -- Ignore all errors
+    SeLeCt  1 from tBl ;    -- noqa
+
+    -- Ignore rule CP02 & rule CP03
+    SeLeCt  1 from tBl ;    -- noqa: CP02,CP03
+
+    -- Ignore all parsing errors
+    SeLeCt from tBl ;       -- noqa: PRS
+
+.. note::
+   It should be noted that ignoring ``TMP`` and ``PRS`` errors can lead to
+   incorrect ``sqlfluff lint`` and ``sqfluff fix`` results as `SQLFluff` can
+   misinterpret the SQL being analysed.
+
+.. _`flake8's ignore`: https://flake8.pycqa.org/en/3.1.1/user/ignoring-errors.html#in-line-ignoring-errors
+
+.. _inline_ignoring_ranges:
+
+Ignoring line ranges
+^^^^^^^^^^^^^^^^^^^^
+
+Similar to `pylint's "pylint" directive"`_, ranges of lines can be ignored by
+adding :code:`-- noqa:disable=<rule>[,...] | all` to the line. Following this
+directive, specified rules (or all rules, if "all" was specified) will be
+ignored until a corresponding `-- noqa:enable=<rule>[,...] | all` directive.
+
+.. code-block:: sql
+
+    -- Ignore rule AL02 from this line forward
+    SELECT col_a a FROM foo -- noqa: disable=AL02
+
+    -- Ignore all rules from this line forward
+    SELECT col_a a FROM foo -- noqa: disable=all
+
+    -- Enforce all rules from this line forward
+    SELECT col_a a FROM foo -- noqa: enable=all
+
+
+.. _`pylint's "pylint" directive"`: http://pylint.pycqa.org/en/latest/user_guide/message-control.html
+
+.. _sqlfluffignore:
+
+:code:`.sqlfluffignore`
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Similar to `Git's`_ :code:`.gitignore` and `Docker's`_ :code:`.dockerignore`,
+SQLFluff supports a :ref:`sqlfluffignore` file to control which files are and
+aren't linted. Under the hood we use the python `pathspec library`_ which also
+has a brief tutorial in their documentation.
+
+An example of a potential :ref:`sqlfluffignore` placed in the root of your
+project would be:
+
+.. code-block:: cfg
+
+    # Comments start with a hash.
+
+    # Ignore anything in the "temp" path
+    /temp/
+
+    # Ignore anything called "testing.sql"
+    testing.sql
+
+    # Ignore any ".tsql" files
+    *.tsql
+
+Ignore files can also be placed in subdirectories of a path which is being
+linted and the sub files will also be applied within that subdirectory.
+
+
+:code:`pyproject.toml`
+^^^^^^^^^^^^^^^^^^^^^^
+
+If you use :code:`pyproject.toml` for SQLFluff configuration, you can also
+ignore files and directories using ``ignore_paths`` in
+``[tool.sqlfluff.core]``.
+
+.. code-block:: toml
+
+    [tool.sqlfluff.core]
+    ignore_paths = [
+        "target/",
+        "supabase/migrations/*",
+        "generated/*.sql",
+    ]
+
+The patterns in ``ignore_paths`` use the same matching rules as
+:ref:`sqlfluffignore`.
+
+
+.. _`Git's`: https://git-scm.com/docs/gitignore#_pattern_format
+.. _`Docker's`: https://docs.docker.com/engine/reference/builder/#dockerignore-file
+.. _`pathspec library`: https://python-path-specification.readthedocs.io/
+
+Ignoring types of errors
+^^^^^^^^^^^^^^^^^^^^^^^^
+General *categories* of errors can be ignored using the ``--ignore`` command
+line option or the ``ignore`` setting in :ref:`sqlfluffignore`. Types of errors
+that can be ignored include:
+
+* :code:`lexing`
+* :code:`linting`
+* :code:`parsing`
+* :code:`templating`
+
+
+.. _config:
+
+Configuration
+=============
+
+.. toctree::
+   :maxdepth: 2
+
+   setting_configuration
+   rule_configuration
+   layout
+   templating/index
+   ignoring_configuration
+   default_configuration
+
+
+.. _layoutref:
+
+Layout & Whitespace Configuration
+=================================
+
+If there is one part of building a linter that is going to be controversial
+it's going to be **whitespace** (closely followed by **cApiTaLiSaTiOn** 😁).
+
+More specifically, **whitespace** divides into three key themes:
+
+#. **Spacing**: The amount of whitespace between elements on the same line.
+
+#. **Line Breaks**: The choice of where within the code it is inappropriate,
+   appropriate or even compulsory to have a line break.
+
+#. **Indentation**: Given a line break, how much whitespace should precede
+   the first code element on that line.
+
+*SQLFluff* aims to be *opinionated* on this theme, but also *configurable*
+(see :ref:`layoutconfig`). The tool will have a default viewpoint and will aim
+to have views on all of the important aspects of SQL layout, but if you
+(or your organisation) don't like those views then we aim to allow enough
+configuration that you can lint in line with your views, and still use
+*SQLFluff*. For more information on how to configure rules to your own
+viewpoint see :ref:`config`.
+
+.. note::
+
+    This section of the docs handles the intent and reasoning behind how
+    layout is handled by SQLFluff. For a deeper look at how this is achieved
+    internally see :ref:`reflowinternals`.
+
+
+Spacing
+-------
+
+Of the different elements of whitespace, spacing is likely the least
+controversial. By default, all elements are separated by a single space
+character. Except for very specific circumstances (see section on
+:ref:`alignedelements`), any additional space between elements is
+usually unwanted and a distraction for the reader. There are however
+several common cases where *no whitespace* is more appropriate, which
+fall into two cases (for more details on where to configure these see
+:ref:`layoutspacingconfig`).
+
+#. *No whitespace but a newline is allowed.* This option is configured
+   using the :code:`touch` option in the :code:`spacing_*` configuration
+   settings. The most common example of this is the spacing around commas.
+   For example :code:`SELECT a , b` would be unusual and more normally be
+   written :code:`SELECT a, b`. Inserting a newline between the :code:`a`
+   and comma would not cause issues and may even be desired, for example:
+
+   .. code-block:: sql
+
+      SELECT
+         col_a
+         , col_b
+         -- Newline present before column
+         , col_c
+         -- When inline, comma should still touch element before.
+         , GREATEST(col_d, col_e) as col_f
+      FROM tbl_a
+
+#. *No whitespace and a newline is not allowed.* This option is
+   configured using the :code:`inline` option in the :code:`spacing_*`
+   configuration settings. The most common example of this is spacing
+   within the parts of qualified identifier e.g. :code:`my_schema.my_table`.
+   If a newline were present between the :code:`.` and either
+   :code:`my_schema` or :code:`my_table`, then the expression would not
+   parse and so no newlines should be allowed.
+
+
+.. _alignedelements:
+
+Aligned elements
+^^^^^^^^^^^^^^^^
+
+A special case of spacing is where elements are set to be aligned
+within some limits. This is not enabled by default, but can be
+be configured to achieve layouts like:
+
+.. code-block:: sql
+
+   SELECT
+      a           AS first_column,
+      b           AS second_column,
+      (a + b) / 2 AS third_column
+   FROM foo AS bar
+
+In this example, the alias expressions are all aligned with each other.
+To configure this, SQLFluff needs to know what elements to
+align and how far to search to find elements which should be aligned
+with each other. The configuration to achieve this layout is:
+
+.. code-block:: ini
+
+   [sqlfluff:layout:type:alias_expression]
+   # We want non-default spacing _before_ the alias expressions.
+   spacing_before = align
+   # We want to align them within the next outer select clause.
+   # This means for example that alias expressions within the FROM
+   # or JOIN clause would _not_ be aligned with them.
+   align_within = select_clause
+   # The point at which to stop searching outward for siblings, which
+   # in this example would likely be the boundary of a CTE. Stopping
+   # when we hit brackets is usually a good rule of thumb for this
+   # configuration.
+   align_scope = bracketed
+
+Of these configuration values, the :code:`align_scope` is potentially
+the least obvious. The following example illustrates the impact it has.
+
+.. code-block:: sql
+
+   -- With
+   --    align_scope = bracketed
+   --    align_within = select_clause
+
+   WITH foo as (
+      SELECT
+         a,
+         b,
+         c     AS first_column
+         d + e AS second_column
+   )
+
+   SELECT
+      a           AS first_column,
+      (a + b) / 2 AS third_column
+   FROM foo AS bar;
+
+   -- With
+   --    align_scope = bracketed
+   --    align_within = statement
+
+   WITH foo as (
+      SELECT
+         a,
+         b,
+         c     AS first_column
+         d + e AS second_column
+   )
+
+   SELECT
+      a           AS first_column,
+      (a + b) / 2 AS third_column
+   FROM foo       AS bar            -- Now the FROM alias is also aligned.
+
+   -- With
+   --    align_scope = file
+   --    align_within = select_clause
+
+   WITH foo as (
+      SELECT
+         a,
+         b,
+         c        AS first_column   -- Now the aliases here are aligned
+         d + e    AS second_column  -- with the outer query.
+   )
+
+   SELECT
+      a           AS first_column,
+      (a + b) / 2 AS third_column
+   FROM foo AS bar
+
+   -- With
+   --    align_scope = file
+   --    align_within = statement
+
+Templating and alignment coordinate space
+-----------------------------------------
+
+When using templating (e.g. Jinja), alignment is for human readability and
+stable diffs. SQLFluff aligns based on the source (visible) positions whenever
+templated (non-literal) segments are involved in the alignment scope. This
+prevents excessive padding caused by the rendered output being longer than the
+source template. If all segments are literal (non-templated), alignment uses
+the regular templated working positions.
+
+Example (Jinja templating, align alias expressions within a select clause):
+
+.. code-block:: jinja
+
+    select
+        {{ "longtemplated" }} as test_key,
+        b                     as b_col
+
+The alignment above is computed against the source text so that both lines line
+up visually in the editor, regardless of the rendered length of
+``{{ "longtemplated" }}``.
+
+Advanced: coordinate space override
+-----------------------------------
+
+You can optionally force the coordinate space either:
+
+1) via the alignment constraint suffix (available for `spacing_before` and
+   `spacing_after`), or
+2) via the `alignment_coordinate_space` key in layout config for the target type.
+
+.. code-block:: ini
+
+   [sqlfluff:layout:type:alias_expression]
+   spacing_before = align:alias_expression:select_clause:bracketed:source
+
+Alternatively, the equivalent can be configured more declaratively:
+
+.. code-block:: ini
+
+   [sqlfluff:layout:type:alias_expression]
+   spacing_before = align
+   align_within = select_clause
+   align_scope = bracketed
+   alignment_coordinate_space = source
+
+Supported values are ``source`` and ``templated``. In most cases, ``source`` is
+the recommended choice for readability.
+
+.. code-block:: sql
+
+   WITH foo as (
+      SELECT
+         a,
+         b,
+         c        AS first_column,
+         d + e    AS second_column
+   )
+
+   SELECT
+      a           AS first_column,
+      (a + b) / 2 AS third_column
+   FROM foo       AS bar
+
+
+Line Breaks
+-----------
+
+When controlling line breaks, we are trying to achieve a few different things:
+
+#. Do we have *enough* line breaks that *line length* doesn't become
+   excessive. Long lines are hard to read, especially given that readers
+   may be on varying screen sizes or have multiple windows open. This is
+   (of course) configurable, but the default is 80 characters (in line with
+   the `dbt Labs SQL style guide`_.)
+
+#. Is the positioning of *blank lines* (i.e. lines with nothing other
+   than whitespace on them) appropriate. There are some circumstances
+   where a blank line is *desired* (e.g. between CTEs). There are others
+   where they are not, in particular *multiple blank lines*, for example
+   at the beginning of a file.
+
+#. Where we do have line breaks, are they positioned appropriately and
+   consistently with regards to other elements around them. This is most
+   common when it comes to *commas*, and whether they should be *leading*
+   (e.g. :code:`, my_column`) or *trailing* (e.g. :code:`my_column,`). In
+   less common cases, it may also be desirable for some elements to have both
+   a line break *before and after* (e.g. a set operator such as `UNION`).
+
+
+Indentation
+-----------
+
+Lastly, given we have multiple lines of SQL, to what extent should we indent
+some lines to provide visual cues to the structure of that SQL. It's
+important to note that SQL is *not* whitespace sensitive in its
+interpretation and that means that any principles we apply here are entirely
+for the benefit of humans. *Your database doesn't care*.
+
+The indentation therefore should be treated as a *hint* to the reader of
+the structure of the code. This explains the common practice within most
+languages that nested elements (for example the contents of a set of brackets
+in a function call) should be indented one step from the outer elements. It's
+also convention that elements *with the same level* in a nested structure
+should have *the same indentation*, at least with regards to their local
+surroundings. As an example:
+
+.. code-block:: sql
+
+   SELECT
+      nested_within_select AS first_column,
+      some_function(
+         nested_within_function,
+         also_nested_within_function
+      ) AS indented_the_same_as_opening_bracket
+   FROM indented_the_same_as_select
+
+Comment Indents
+^^^^^^^^^^^^^^^
+
+.. note::
+
+      The notes here about block comments are not implemented prior
+      to 2.0.x. They should be coming in that release or soon after.
+
+
+**Comments** are dealt with differently, depending on whether they're
+*block* comments (:code:`/* like this */`), which might optionally
+include newlines, or *inline* comments (:code:`-- like this`) which
+are necessarily only on one line.
+
+*  *Block comments* cannot share a line with any code elements (so
+   in effect they must start on their own new line), they cannot be
+   followed by any code elements on the same line (and so in effect
+   must be followed by a newline, if we are to avoid trailing
+   whitespace). None of the lines within the block comment may have
+   an indent less than the first line of the block comment (although
+   additional indentation within a comment is allowed), and that first
+   line should be aligned with the first code element *following*
+   the block comment.
+
+   .. code-block:: sql
+
+      SELECT
+         /* This is a block comment starting on a new line
+         which contains a newline (continuing with at least
+         the same indent.
+            - potentially containing greater indents
+            - having no other code following it in the same line
+            - and aligned with the line of code following it */
+         this_column as what_we_align_the_column_to
+      FROM my_table
+
+*  *Inline comments* can be on the same line as other code, but are
+   subject to the same line-length restrictions. If they don't fit
+   on the same line (or if it just looks nicer) they can also be
+   the only element on a line. In this latter case, they should be
+   aligned with the first code element *following* the comment.
+
+   .. code-block:: sql
+
+      SELECT
+         -- This is fine
+         this_column as what_we_align_to,
+         another_column as something_short,  -- Is ok
+         case
+            -- This is aligned correctly with below
+            when indented then take_care
+            else try_harder
+         end as the_general_guidance
+      -- Even here we align with the line below
+      FROM my_table
+
+   .. note::
+
+      When fixing issues with comment indentation, SQLFluff
+      will attempt to keep comments in their original position
+      but if line length concerns make this difficult, it will
+      either abandon the fix, or move *same line* comments up and
+      *before* the line they are currently on. This is in line
+      with the assumption that comments on their own line refer
+      to the elements of code which they come *before*, not *after*.
+
+
+.. _hangingindents:
+
+Hanging Indents
+^^^^^^^^^^^^^^^
+
+One approach to indenting nested elements is a layout called a
+*hanging indent*. In this layout, there is no line break before the
+first nested element, but subsequent elements are indented to
+match the line position of that first element. Two examples might be:
+
+.. code-block:: sql
+
+   -- A select statement with two hanging indents:
+   SELECT no_line_break_before_me,
+          indented_to_match_the_first,
+          1 + (a
+               + b) AS another_more_complex_example
+   FROM my_table;
+
+   -- This TSQL example is also in essence a hanging indent:
+   DECLARE @prv_qtr_1st_dt DATETIME,
+           @last_qtr INT,
+           @last_qtr_first_mn INT,
+           @last_qtr_yr INT;
+
+In some circumstances this layout can be quite neat (the
+:code:`DECLARE` statement is a good example of this), however
+once indents are nested or indentation styles are mixed it
+can rapidly become confusing (as partially shown in the first
+example). Additionally, unless the leading element of the first
+line is very short, hanging indents use much *larger indents*
+than a traditional simple indent where a line break is used before
+the first element.
+
+Hanging indents have been supported in SQLFluff up to the 1.x
+versions, however **they will no longer by supported from 2.0.0**
+onwards. This is due to the ambiguity which they bring to
+fixing poorly formatted SQL. Take the following code:
+
+.. code-block:: sql
+
+   SELECT   this_is,
+   badly_formatted, code_and,
+      not_obvious,
+         what_was,
+   intended FROM my_table
+
+Given the lack of line break between :code:`SELECT` and
+:code:`this_is`, it would appear that the user is intending
+a hanging indent, however it is also plausible that they did
+not and they just forgot to add a line break between them.
+This ambiguity is unhelpful, both for SQLFluff as a tool,
+but also for people who write SQL that there two ways of
+indenting their SQL. Given SQLFluff aims to provide consistency
+in SQL layout and remove some of the burden of needing to make
+choices like this - and that it would be very unusual to keep
+*only hanging indents and disable traditional ones* - the only
+route left to consistency is to **not allow hanging indents**.
+Starting in 2.0.0, any hanging indents detected will be
+converted to traditional indents.
+
+.. _implicitindents:
+
+Implicit Indents
+^^^^^^^^^^^^^^^^
+
+A close cousin of the hanging indent is the *implicit indent*.
+While it does look a little like a hanging indent, it's much
+more consistent in its behaviour and is supported from SQLFluff
+2.0.0 onwards.
+
+An implicit indent is exactly like a normal indent, but doesn't
+have to be actually *taken* to influence the indentation of lines
+after it - it just needs to be left un-closed before the end of
+the line. These are normally available in clauses which take the
+form of :code:`KEYWORD <expression>`, like :code:`WHERE` clauses
+or :code:`CASE` expressions.
+
+.. code-block:: sql
+
+   -- This WHERE clause here takes advantage of an implicit indent.
+   SELECT *
+   FROM my_table
+   WHERE condition_a
+      AND condition_b;
+
+   -- With implicit indents disabled (which is currently the
+   -- default), the above formulation is not allowed, and instead
+   -- there should be a newline immediately after `WHERE` (which
+   -- is the location of the _implicit_ indent).
+   SELECT *
+   FROM my_table
+   WHERE
+      condition_a
+      AND condition_b;
+
+When addressing both indentation and line-length, implicit
+indents allow a slightly more compact layout, without significant
+drawbacks in legibility. They also enable a style much closer to
+some established style guides.
+
+They are however not recommended by many of the major style guides
+at time of writing (including the `dbt Labs SQL style guide`_
+and the `Mozilla SQL style guide`_), and so are disabled by default.
+To enable them, set the :code:`implicit_indents` flag in
+:code:`sqluff.indentation` to :code:`allow`, or the more strict
+:code:`require`. When using :code:`require`, the
+:code:`skip_implicit_indents_in` option (defaulting to
+:code:`case_expression`) excludes specific element types from
+collapsing.
+
+.. _templatedindents:
+
+Templated Indents
+^^^^^^^^^^^^^^^^^
+
+SQLFluff supports templated elements in code, such as those
+offered by jinja2 (or dbt which relies on it). For simple
+cases, templated elements are handled as you would expect
+by introducing additional indents into the layout.
+
+.. code-block:: SQL+Jinja
+
+   SELECT
+      a,
+      {% for n in ['b', 'c', 'd'] %}
+         -- This section is indented relative to 'a' because
+         -- it is inside a jinja for loop.
+         {{ n }},
+      {% endfor %}
+      e
+   FROM my_table
+
+This functionality can be turned off if you wish using the
+:code:`template_blocks_indent` option in your :ref:`config`.
+
+It's important to note here, that SQLFluff lints the code after
+it has been rendered, and so only has access to code which is
+still present after that process.
+
+.. code-block:: SQL+Jinja
+
+   SELECT
+      a,
+      {% if False %}
+      -- This section of the code cannot be linted because
+      -- it is never rendered due to the `if False` condition.
+      my    + poorly
+         +   spaced - and/indented AS    section_of_code
+      {% endif %}
+      e
+   FROM my_table
+
+More complex templated cases are usually characterised by templated
+tags *cutting across the parse tree*. This more formally is where the
+opening and closing tags of a templated section exist at different
+levels in the parsed structure. Starting in version 2.x, these will
+be treated differently (Prior to version 2.x, situations like this were sometimes
+handled inconsistently or incorrectly).
+
+Indentation should act as a visual cue to the structure of the
+written SQL, and as such, the most important thing is that template tags
+belonging to the same block structure use the same indentation.
+In the example below, this is the opening and closing elements of the
+second :code:`if` statement. If treated as a simple case, these tags
+would have different indents, because they are at different levels of
+the parse tree and so clearly there is a conflict to be resolved.
+
+The view SQLFluff takes on how to resolve this conflict is to pull
+all of the tags in this section down to the indent of the
+*least indented* (in the example below that would be the closing
+:code:`endif` tag). This is similar to the treatment of
+`C Preprocessor Directives`_, which are treated somewhat as being
+outside the structure of the rest of the file. In these cases,
+the content is also *not further indented* as in the simple case
+because it makes it harder to line up elements within the affected
+section and outside (in the example below the :code:`SELECT` and
+:code:`FROM` are a good illustration).
+
+.. code-block:: SQL+Jinja
+
+   SELECT
+      a,
+      {% if True %}
+         -- This is a simple case. The opening and closing tag are
+         -- both at the same level within the SELECT clause.
+         simple_case AS example,
+      {% endif %}
+      b,
+   {% if True %}
+      -- This is a complex case. The opening tag is within the SELECT
+      -- clause, but the closing tag is outside the statement
+      -- entirely.
+      complex_case AS example
+   FROM table_option_one
+   {% else %}
+      complex_case_two AS example
+   FROM table_option_two
+   {% endif %}
+
+
+.. _layoutconfig:
+
+Configuring Layout
+------------------
+
+Configuration for layout is spread across three places:
+
+#. Indent behavior for particular dialect elements is controlled by the parser.
+   This is because in the background SQLFluff inserts :code:`Indent`
+   and :code:`Dedent` tokens into the parse tree where those things
+   are expected. For more detail see :ref:`layoutindentconfig`.
+
+#. Configuration for the spacing and line position of particular
+   types of element (such as commas or operators) is set in the
+   :code:`layout` section of the config file. For more detail see
+   :ref:`layoutspacingconfig`.
+
+#. Some elements of layout are still controlled by rules directly.
+   These are usually very specific cases, see :ref:`ruleref` for
+   more details.
+
+
+.. _layoutindentconfig:
+
+Configuring indent locations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+One of the key areas for this is the indentation of the
+:code:`JOIN` expression, which we'll use as an example.
+
+Semantically, a :code:`JOIN` expression is part of the :code:`FROM` expression
+and therefore would be expected to be indented. However according to many
+of the most common SQL style guides (including the `dbt Labs SQL style guide`_
+and the `Mozilla SQL style guide`_) the :code:`JOIN` keyword is expected to at
+the same indent as the :code:`FROM` keyword. By default, *SQLFluff* sides with
+the current consensus, which is to *not* indent the :code:`JOIN` keyword,
+however this is one element which is configurable.
+
+By setting values in the :code:`sqlfluff:indentation` section of your config
+file you can control how this is parsed.
+
+For example, the default indentation would be as follows:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+   JOIN another_table
+      ON
+         condition1
+         AND condition2
+
+By setting your config file to:
+
+.. code-block:: cfg
+
+   [sqlfluff:indentation]
+   indented_joins = True
+
+Then the expected indentation will be:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+      JOIN another_table
+         ON
+            condition1
+            AND condition2
+
+There is a similar :code:`indented_using_on` config (defaulted to :code:`True`)
+which can be set to :code:`False` to prevent the :code:`USING` or :code:`ON`
+clause from being indented, in which case the original SQL would become:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+   JOIN another_table
+   ON
+      condition1
+      AND condition2
+
+It's worth noting at this point, that for some users, the additional line
+break after :code:`ON` is unexpected, and this is a good example of an
+:ref:`implicit indent <implicitindents>`. By setting your config to:
+
+.. code-block:: cfg
+
+   [sqlfluff:indentation]
+   indented_using_on = False
+   implicit_indents = allow
+
+Then the expected indentation will be:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+   JOIN another_table
+   ON condition1
+      AND condition2
+
+There is also a similar :code:`indented_on_contents` config (defaulted to
+:code:`True`) which can be set to :code:`False` to align any :code:`AND`
+subsections of an :code:`ON` block with each other. If set to :code:`False`
+(assuming implicit indents are still enabled) the original SQL would become:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+   JOIN another_table
+      ON condition1
+      AND condition2
+
+These can also be combined, so if :code:`indented_using_on` config is set to
+:code:`False`, :code:`indented_on_contents` is also set to :code:`False`, and
+:code:`implicit_indents` is set to :code:`allow` then the SQL would
+become:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      b
+   FROM my_table
+   JOIN another_table
+   ON condition1
+   AND condition2
+
+There is also a similar :code:`indented_ctes` config (defaulted to
+:code:`False`) which can be set to :code:`True` to enforce CTEs to be
+indented within the :code:`WITH` clause:
+
+.. code-block:: sql
+
+   WITH
+      some_cte AS (
+         SELECT 1 FROM table1
+      ),
+
+      some_other_cte AS (
+         SELECT 1 FROM table1
+      )
+
+   SELECT 1 FROM some_cte
+
+There is also a similar :code:`indented_then` config (defaulted to
+:code:`True`) which can be set to :code:`False` to allow :code:`THEN`
+without an indent after :code:`WHEN`:
+
+.. code-block:: sql
+
+   SELECT
+      a,
+      CASE
+         WHEN b >= 42 THEN
+            1
+         ELSE 0
+      END AS c
+   FROM some_table
+
+By default, *SQLFluff* aims to follow the most common approach
+to indentation. However, if you have other versions of indentation which are
+supported by published style guides, then please submit an issue on GitHub
+to have that variation supported by *SQLFluff*.
+
+.. _layoutspacingconfig:
+
+Configuring layout and spacing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :code:`[sqlfluff:layout]` section of the config controls the treatment of
+spacing and line breaks across all rules. The syntax of this section is very
+expressive; however in normal use, only very small alterations should be
+necessary from the :ref:`defaultconfig`.
+
+The syntax of the section headings here select by *type*, which corresponds
+to the :code:`type` defined in the dialect. For example the following section
+applies to elements of the *type* :code:`comma`, i.e. :code:`,`.
+
+.. code-block:: cfg
+
+   [sqlfluff:layout:type:comma]
+   spacing_before = touch
+   line_position = trailing
+
+Within these configurable sections there are a few key elements which are
+available:
+
+*  **Spacing Elements**: :code:`spacing_before`, :code:`spacing_after` and
+   :code:`spacing_within`. For each of these options, there are a few possible
+   settings:
+
+   *  The default spacing for all elements is :code:`single` unless otherwise
+      specified. In this state, elements will be spaced with a single space
+      character unless there is a line break between them.
+
+   *  The value of :code:`touch` allows line breaks, but if no line break is
+      present, then no space should be present. A great example of this is
+      the spacing before commas (as shown in the config above), where line
+      breaks may be allowed, but if not they should *touch* the element before.
+
+   *  Both of the above can be qualified with the :code:`:inline` modifier -
+      which prevents newlines within the segment. This is best illustrated
+      by the spacing found in a qualified identifier like
+      :code:`my_schema.my_table` which uses `touch:inline` or other clauses
+      where we want to force some elements to be on the same line.
+
+*  **Line Position**: set using the :code:`line_position` option. By default
+   this is unset, which implies no particular line position requirements. The
+   available options are:
+
+   *  :code:`trailing` and :code:`leading`, which are most common in the
+      placement of commas. Both of these settings *also* allow the option
+      of a comma on its own on a line, or in the middle of a line, *but*
+      if there is a line break on *either side* then they make sure it's
+      on the *correct side*. By default we assume *trailing* commas, but if
+      you (or your organisation) have settled on *leading* commas then
+      you should add the following section to your config:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:comma]
+         line_position = leading
+
+   *  :code:`leading` can be qualified with the :code:`:align-following` modifier
+      - which allows the line position to be aligned with the following element,
+      instead of the configured element itself. For example, when the modifier is
+      added to comma line position:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:comma]
+         line_position = leading:align-following
+
+      then the following query would be allowed:
+
+      .. code-block:: sql
+
+         SELECT
+            col_a AS a
+          , col_b AS b
+         FROM foo;
+
+   *  :code:`alone`, which means if there is a line break on either side,
+      then there must be a line break on *both sides* (i.e. that it should
+      be the only thing on that line.
+
+   *  :code:`trailing` and :code:`leading` can also be qualified with the
+      :code:`:attached` modifier - which *additionally* requires that the
+      operator must not appear on a line by itself. In other words, if there
+      is a line break on *both sides*, the operator is considered standalone
+      and must be moved to be directly attached to the adjacent token. This
+      is useful for operators like the Oracle PL/SQL assignment operator
+      :code:`:=`, where you want it either mid-line or strictly
+      trailing/leading (not floating alone). For example:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:assignment_operator]
+         line_position = trailing:attached
+
+      With :code:`trailing:attached`, the operator must end the previous
+      line when a line break is involved:
+
+      .. code-block:: sql
+
+         -- Allowed: mid-line
+         my_var := some_value;
+         -- Allowed: truly trailing
+         my_var :=
+             some_value;
+         -- NOT allowed: standalone (own line) or leading
+         my_var
+         :=
+         some_value;
+
+      With :code:`leading:attached`, the operator must start the next line
+      and be directly followed by the RHS token (no blank line between):
+
+      .. code-block:: sql
+
+         -- Allowed: mid-line
+         my_var := some_value;
+         -- Allowed: truly leading (attached to RHS)
+         my_var
+             := some_value;
+         -- NOT allowed: standalone (own line) or trailing
+         my_var :=
+             some_value;
+
+   *  All of the above options can be qualified with the :code:`:strict`
+      modifier - which prevents the *inline* case. For example:
+
+      .. code-block:: sql
+
+         -- Setting line_position to just `alone`
+         -- within [sqlfluff:layout:type:set_operator]
+         -- would not allow:
+         SELECT a
+         UNION SELECT b;
+         -- ...or...
+         SELECT a UNION
+         SELECT b;
+         -- but *would* allow both of the following:
+         SELECT a UNION SELECT b;
+         SELECT a
+         UNION
+         SELECT b;
+
+         -- However the default is set to `alone:strict`
+         -- then the *only* acceptable configuration is:
+         SELECT a
+         UNION
+         SELECT b;
+
+* **Keyword Line Position**: set using the :code:`keyword_line_position` option.
+   By default for most clauses this is unset, which implies no particular keyword
+   line position requirements. The available options are:
+
+   *  **How this differs from** :code:`line_position`: The
+      :code:`line_position` setting applies to the configured *segment type as a
+      whole* (for example, where a :code:`where_clause` should break relative to
+      surrounding SQL). The :code:`keyword_line_position` setting applies to the
+      clause's *leading keyword token(s)* (for example :code:`WHERE` or
+      :code:`ORDER BY`) inside that segment.
+
+      In practice, for clause-like types, these settings are often used together.
+      For example:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:where_clause]
+         line_position = alone
+         keyword_line_position = leading
+
+      This combination means:
+
+      * the :code:`WHERE` clause is treated as its own line-oriented block
+        (:code:`line_position = alone`), and
+      * the :code:`WHERE` keyword itself should start a line
+        (:code:`keyword_line_position = leading`).
+
+         A concrete :code:`where_clause` example:
+
+         .. code-block:: sql
+
+             SELECT
+                  a
+             FROM t
+             WHERE b = 1
+                  AND c = 2
+
+         In this shape:
+
+         * :code:`line_position` controls where the whole :code:`where_clause` sits
+            relative to surrounding clauses (e.g. forcing a break before/around the
+            clause).
+         * :code:`keyword_line_position` controls where the :code:`WHERE` keyword
+            sits relative to its expression (e.g. :code:`WHERE b = 1` vs
+            :code:`WHERE` on its own line).
+
+         For example, setting :code:`keyword_line_position = alone` would produce:
+
+         .. code-block:: sql
+
+             SELECT
+                  a
+             FROM t
+             WHERE
+                  b = 1
+                  AND c = 2
+
+      Another example:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:join_on_condition]
+         keyword_line_position = trailing
+
+      This places the :code:`ON` keyword at the end of the line, with the
+      condition expression on the following line.
+
+   *  :code:`leading` and :code:`alone`, which are most common in the
+      placement of keywords. Both of these settings *also* allow the option
+      of a keyword to end on a line. By default we assume *leading* :code:`WHERE`
+      keywords, but if you (or your organisation) have settled on *alone*
+      :code:`WHERE` keywords then you should add the following section to your config:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:where_clause]
+         keyword_line_position = alone
+
+   *  :code:`trailing`, which means there should be a line break after the
+      keyword. This is fairly uncommon but may apply to the :code:`ON` keyword after
+      a join. If you (or your organisation) have settled on *trailing* :code:`ON`
+      keywords then you should add the following section to your config:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:join_on_condition]
+         keyword_line_position = trailing
+
+   *  The keyword positioning is valid across a number of different clauses. For example,
+      to apply the :code:`leading` directive to the :code:`PARTITION BY` clause you
+      would add the following configuration:
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:partitionby_clause]
+         keyword_line_position = leading
+
+   *  If you (or your organisation) would prefer to unset the :ref:`defaultconfig`
+      of some options, you may clear it by setting the configuration to :code:`none`.
+
+      .. code-block:: cfg
+
+         [sqlfluff:layout:type:where_clause]
+         keyword_line_position = none
+
+         [sqlfluff:layout:type:orderby_clause]
+         keyword_line_position = none
+
+         [sqlfluff:layout:type:groupby_clause]
+         keyword_line_position = none
+
+         [sqlfluff:layout:type:having_clause]
+         keyword_line_position = none
+
+* **Exclusions**: The :code:`keyword_line_position_exclusions` option allows you to
+     exclude specific types of segments from the :code:`keyword_line_position` rule.
+     This is useful when certain segments, such as window specifications or aggregate
+     functions, should not follow the same keyword line position rules as other segments
+     in the same clause.
+
+     For example, to exclude window specifications from the :code:`ORDER BY` clause's
+     keyword line position rule, you can configure it as follows:
+
+     .. code-block:: cfg
+
+        [sqlfluff:layout:type:orderby_clause]
+        keyword_line_position = leading
+        keyword_line_position_exclusions = window_specification
+
+     This configuration ensures that the `ORDER BY` clause follows the `leading` rule,
+     except for window specifications, which are allowed to remain inline.
+
+     You can also specify multiple exclusions by separating them with commas:
+
+     .. code-block:: cfg
+
+        [sqlfluff:layout:type:orderby_clause]
+        keyword_line_position = leading
+        keyword_line_position_exclusions = window_specification, aggregate_order_by
+
+     In this case, both window specifications and aggregate functions with `ORDER BY`
+     clauses are excluded from the `leading` rule.
+
+     **Example Usage**:
+
+     With the above configuration, the following SQL would pass:
+
+     .. code-block:: sql
+
+        SELECT
+        a,
+        b,
+        ROW_NUMBER() OVER (PARTITION BY c ORDER BY d) AS e,
+        STRING_AGG(a ORDER BY b, c)
+        FROM f
+        JOIN g
+        ON g.h = f.h
+
+     However, the following SQL would fail because the outer `ORDER BY` clause does not
+     follow the `leading` rule:
+
+     .. code-block:: sql
+
+        SELECT
+        a,
+        b,
+        ROW_NUMBER() OVER (PARTITION BY c ORDER BY d) AS e,
+        STRING_AGG(a ORDER BY b, c)
+        FROM f
+        JOIN g
+        ON g.h = f.h ORDER BY a
+
+     The corrected version would be:
+
+     .. code-block:: sql
+
+        SELECT
+        a,
+        b,
+        ROW_NUMBER() OVER (PARTITION BY c ORDER BY d) AS e,
+        STRING_AGG(a ORDER BY b, c)
+        FROM f
+        JOIN g
+        ON g.h = f.h
+        ORDER BY a
+
+.. _`C Preprocessor Directives`: https://www.cprogramming.com/reference/preprocessor/
+.. _`dbt Labs SQL style guide`: https://github.com/dbt-labs/corp/blob/main/dbt_style_guide.md
+.. _`Mozilla SQL style guide`: https://docs.telemetry.mozilla.org/concepts/sql_style.html#joins
+
+
+.. _ruleconfig:
+
+Rule Configuration
+------------------
+
+Rules can be configured with the :code:`.sqlfluff` config files.
+
+Common rule configurations can be set in the :code:`[sqlfluff:rules]` section.
+
+For example:
+
+.. code-block:: cfg
+
+   [sqlfluff:rules]
+   allow_scalar = True
+   single_table_references = consistent
+   unquoted_identifiers_policy = all
+
+Rule specific configurations are set in rule specific subsections.
+
+For example, enforce that keywords are upper case by configuring the rule
+:sqlfluff:ref:`CP01`:
+
+.. code-block:: cfg
+
+    [sqlfluff:rules:capitalisation.keywords]
+    # Keywords
+    capitalisation_policy = upper
+
+All possible options for rule sections are documented in :ref:`ruleref`.
+
+For an overview of the most common rule configurations that you may want to
+tweak, see :ref:`defaultconfig` (and use :ref:`ruleref` to find the
+available alternatives).
+
+.. _ruleselection:
+
+Enabling and Disabling Rules
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The decision as to which rules are applied to a given file is applied on a file
+by file basis, by the effective configuration for that file. There are two
+configuration values which you can use to set this:
+
+* :code:`rules`, which explicitly *enables* the specified rules. If this
+  parameter is unset or empty for a file, this implies "no selection" and
+  so "all rules" is taken to be the meaning.
+* :code:`exclude_rules`, which explicitly *disables* the specified rules.
+  This parameter is applied *after* the :code:`rules` parameter so can be
+  used to *subtract* from the otherwise enabled set.
+
+Each of these two configuration values accept a comma separated list of
+*references*. Each of those references can be:
+
+* a rule *code* e.g. :code:`LN01`
+* a rule *name* e.g. :code:`layout.indent`
+* a rule *alias*, which is often a deprecated *code* e.g. :code:`L003`
+* a rule *group* e.g. :code:`layout` or :code:`capitalisation`
+
+These different references can be mixed within a given expression, which
+results in a very powerful syntax for selecting exactly which rules are
+active for a given file.
+
+.. note::
+
+    It's worth mentioning here that the application of :code:`rules` and
+    :code:`exclude_rules`, with *groups*, *aliases* and *names*, in projects
+    with potentially multiple nested configuration files defining different
+    rules for different areas of a project can get very confusing very fast.
+    While this flexibility is intended for users to take advantage of, we do
+    have some recommendations about how to do this is a way that remains
+    manageable.
+
+    When considering configuration inheritance, each of :code:`rules` and
+    :code:`exclude_rules` will totally overwrite any values in parent config
+    files if they are set in a child file. While the subtraction operation
+    between both of them is calculated *"per file"*, there is no combination
+    operation between two definitions of :code:`rules` (just one overwrites
+    the other).
+
+    The effect of this is that we recommend one of two approaches:
+
+    #. Simply only use :code:`rules`. This has the upshot of each area of
+       your project being very explicit in which rules are enabled. When
+       that changes for part of your project you just reset the whole list
+       of applicable rules for that part of the project.
+    #. Set a single :code:`rules` value in your master project config file
+       and then only use :code:`exclude_rules` in sub-configuration files
+       to *turn off* specific rules for parts of the project where those
+       rules are inappropriate. This keeps the simplicity of only having
+       one value which is inherited, but allows slightly easier and simpler
+       rollout of new rules because we manage by exception.
+
+
+For example, to disable the rules :sqlfluff:ref:`LT08`
+and :sqlfluff:ref:`RF02`:
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    exclude_rules = LT08, RF02
+
+To enable individual rules, configure :code:`rules`, respectively.
+
+For example, to enable :sqlfluff:ref:`RF02`:
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    rules = RF02
+
+Rules can also be enabled/disabled by their grouping. Right now, the only
+rule grouping is :code:`core`. This will enable (or disable) a select group
+of rules that have been deemed 'core rules'.
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    rules = core
+
+More information about 'core rules' can be found in the :ref:`ruleref`.
+
+Additionally, some rules have a special :code:`force_enable` configuration
+option, which allows to enable the given rule even for dialects where it is
+disabled by default. The rules that support this can be found in the
+:ref:`ruleref`.
+
+The default values can be seen in :ref:`defaultconfig`.
+
+See :ref:`ignoreconfig` for more information on how to turn ignore particular
+rules for specific lines, sections or files.
+
+Downgrading rules to warnings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To keep displaying violations for specific rules, but not have those
+issues lead to a failed run, rules can be downgraded to *warnings*.
+Rules set as *warnings* won't cause a file to fail, but will still
+be shown in the CLI to warn users of their presence.
+
+The configuration of this behaves very like :code:`exclude_rules`
+above:
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    warnings = LT01, LT04
+
+With this configuration, files with no other issues (other than
+those set to warn) will pass. If there are still other issues, then
+the file will still fail, but will show both warnings and failures.
+
+.. code-block::
+
+    == [test.sql] PASS
+    L:   2 | P:   9 | LT01 | WARNING: Missing whitespace before +
+    == [test2.sql] FAIL
+    L:   2 | P:   8 | CP02 | Unquoted identifiers must be consistently upper case.
+    L:   2 | P:  11 | LT01 | WARNING: Missing whitespace before +
+
+This is particularly useful as a transitional tool when considering
+the introduction on new rules on a project where you might want to
+make users aware of issues without blocking their workflow (yet).
+
+You can use either rule code or rule name for this setting.
+
+Layout & Spacing Configuration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :code:`[sqlfluff:layout]` section of the config controls the
+treatment of spacing and line breaks across all rules. To understand
+more about this section, see the section of the docs dedicated to
+layout: :ref:`layoutconfig`.
+
+
+.. _setting_config:
+
+Setting Configuration
+=====================
+
+SQLFluff accepts configuration either through the command line or
+through configuration files. There is *rough* parity between the
+two approaches with the exception that *templating* configuration
+must be done via a file, because it otherwise gets slightly complicated.
+
+For details of what's available on the command line check out
+the :ref:`cliref`.
+
+.. _`config-files`:
+
+Configuration Files
+-------------------
+
+For file based configuration *SQLFluff* will look for the following
+files in order. Later files will (if found) will be used to overwrite
+any values read from earlier files.
+
+- :code:`setup.cfg`
+- :code:`tox.ini`
+- :code:`pep8.ini`
+- :code:`.sqlfluff`
+- :code:`pyproject.toml`
+
+Within these files, the first four will be read like a `cfg file`_, and
+*SQLFluff* will look for sections which start with :code:`sqlfluff`, and where
+subsections are delimited by a colon. For example the *jinjacontext*
+section will be indicated in the section started with
+:code:`[sqlfluff:jinjacontext]`.
+
+For example, a snippet from a :code:`.sqlfluff` file (as well as any of the
+supported cfg file types):
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    templater = jinja
+    sql_file_exts = .sql,.sql.j2,.dml,.ddl,.pkb
+
+    [sqlfluff:indentation]
+    indented_joins = False
+    indented_using_on = True
+    template_blocks_indent = False
+
+    [sqlfluff:templater]
+    unwrap_wrapped_queries = True
+
+    [sqlfluff:templater:jinja]
+    apply_dbt_builtins = True
+
+For the `pyproject.toml file`_, all valid sections start with
+:code:`tool.sqlfluff` and subsections are delimited by a dot. For example the
+*jinjacontext* section will be indicated in the section started with
+:code:`[tool.sqlfluff.jinjacontext]`.
+
+For example, a snippet from a :code:`pyproject.toml` file:
+
+.. code-block:: toml
+
+    [tool.sqlfluff.core]
+    templater = "jinja"
+    sql_file_exts = ".sql,.sql.j2,.dml,.ddl,.pkb"
+
+    [tool.sqlfluff.indentation]
+    indented_joins = false
+    indented_using_on = true
+    template_blocks_indent = false
+
+    [tool.sqlfluff.templater]
+    unwrap_wrapped_queries = true
+
+    [tool.sqlfluff.templater.jinja]
+    apply_dbt_builtins = true
+
+    # For rule specific configuration, use dots between the names exactly
+    # as you would in .sqlfluff. In the background, SQLFluff will unpack the
+    # configuration paths accordingly.
+    [tool.sqlfluff.rules.capitalisation.keywords]
+    capitalisation_policy = "upper"
+
+.. _`cfg file`: https://docs.python.org/3/library/configparser.html
+.. _`pyproject.toml file`: https://www.python.org/dev/peps/pep-0518/
+
+
+.. _starter_config:
+
+New Project Configuration
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When setting up a new project with SQLFluff, we recommend keeping your
+configuration file fairly minimal. The config file should act as a form
+of *documentation* for your team i.e. a record of what decisions you've
+made which govern how your format your SQL. By having a more concise
+config file, and only defining config settings where they differ from the
+defaults - you are more clearly stating to your team what choices you've made.
+
+*However*, there are also a few places where the *default* configuration
+is designed more for *existing projects*, rather than *fresh projects*, and
+so there is an opportunity to be a little stricter than you might otherwise
+be with an existing codebase.
+
+Here is a simple configuration file which would be suitable for a starter
+project:
+
+.. literalinclude:: /_partials/starter_config.cfg
+   :language: cfg
+
+
+.. _nesting:
+
+Nesting
+^^^^^^^
+
+**SQLFluff** uses **nesting** in its configuration files, with files
+closer *overriding* (or *patching*, if you will) values from other files.
+That means you'll end up with a final config which will be a patchwork
+of all the values from the config files loaded up to that path. The exception
+to this is the value for `templater`, which cannot be set in config files in
+subdirectories of the working directory.
+You don't **need** any config files to be present to make *SQLFluff*
+work. If you do want to override any values though SQLFluff will use
+files in the following locations in order, with values from later
+steps overriding those from earlier:
+
+0. *[...and this one doesn't really count]* There's a default config as
+   part of the SQLFluff package. You can find this below, in the
+   :ref:`defaultconfig` section.
+1. It will look in the user's os-specific app config directory.
+   On macOS and Unix this is `~/.config/sqlfluff`, Windows is
+   `<home>\\AppData\\Local\\sqlfluff\\sqlfluff`, for any of the filenames
+   above in the main :ref:`setting_config` section. If multiple are present, they will
+   *patch*/*override* each other in the order above.
+2. It will look for the same files in the user's home directory (~).
+3. *[if the current working directory is a subdirectory of the user's home directory (~)]*
+   It will look for the same files in all directories between the
+   user's home directory (~), and the current working directory.
+4. It will look for the same files in the current working directory.
+5. *[if parsing a file in a subdirectory of the current working directory]*
+   It will look for the same files in every subdirectory between the
+   current working dir and the file directory.
+6. It will look for the same files in the directory containing the file
+   being linted.
+
+This whole structure leads to efficient configuration, in particular
+in projects which utilise a lot of complicated templating.
+
+.. _in_file_config:
+
+In-File Configuration Directives
+--------------------------------
+
+In addition to configuration files mentioned above, SQLFluff also supports
+comment based configuration switching in files. This allows specific SQL
+file to modify a default configuration if they have specific needs.
+
+When used, these apply to the whole file, and are parsed from the file in
+an initial step before the rest of the file is properly parsed. This means
+they can be used for both rule configuration and also for parsing
+configuration.
+
+To use these, the syntax must start as an *inline sql comment* beginning
+with :code:`sqlfluff` (i.e. :code:`-- sqlfluff`). The line is then interpreted
+as a colon-separated address of the configuration value you wish to set.
+A few common examples are shown below:
+
+.. code-block:: sql
+
+    -- Set Indented Joins
+    -- sqlfluff:indentation:indented_joins:True
+
+    -- Set a smaller indent for this file
+    -- sqlfluff:indentation:tab_space_size:2
+
+    -- Set keywords to be capitalised
+    -- sqlfluff:rules:capitalisation.keywords:capitalisation_policy:upper
+
+    SELECT *
+    FROM a
+      JOIN b USING(c)
+
+We recommend only using this configuration approach for configuration that
+applies to one file in isolation. For configuration changes for areas of
+a project or for whole projects we recommend :ref:`nesting` of configuration
+files.
+
+This syntax is very similar to the method for :ref:`inline_ignoring_errors`.
+
+
+.. _guides:
+
+Guides & How-tos
+================
+
+This section is of short guides and articles is meant to be read alongside
+the rest of the documentation which is more reference-oriented.
+
+Setting up SQLFluff
+-------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   setup/teamrollout
+   setup/developing_custom_rules
+
+Troubleshooting SQLFluff
+------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   troubleshooting/how_to
+
+.. _development:
+
+Contributing to SQLFluff
+------------------------
+
+It is recommended that the following is read in conjunction with exploring
+the codebase. `dialect_ansi.py`_ in particular is helpful to understand the
+recursive structure of segments and grammars.
+
+You may also need to reference the :ref:`internal_api_docs`.
+
+.. _`dialect_ansi.py`: https://github.com/sqlfluff/sqlfluff/blob/main/src/sqlfluff/dialects/dialect_ansi.py
+
+.. toctree::
+   :maxdepth: 1
+
+   contributing/architecture
+   contributing/git
+   contributing/dialect
+   contributing/rules
+   contributing/plugins
+   contributing/docs
+
+
+Using SQLFluff directly as a CLI application
+--------------------------------------------
+
+The :ref:`SQLFluff CLI application <cliref>` is a python application which
+means if depends on your host python environment
+(see :ref:`installingsqlfluff`).
+
+The `exit code`_ provided by SQLFluff when run as a command line utility is
+designed to assist usefulness in deployment pipelines. If no violations
+are found then the `exit code`_ will be 0. If violations are found then
+a non-zero code will be returned which can be interrogated to find out
+more.
+
+- An error code of ``0`` means *operation success*, *no issues found*.
+- An error code of ``1`` means *operation success*, *issues found*. For
+  example this might mean that a linting issue was found, or that one file
+  could not be parsed.
+- An error code of ``2`` means an error occurred and the operation could
+  not be completed. For example a configuration issue or an internal error
+  within SQLFluff.
+
+For details of what commands and options are available in the CLI see the
+:ref:`cliref`.
+
+.. _`exit code`: https://shapeshed.com/unix-exit-codes/
+
+
+.. _diff-quality:
+
+Using SQLFluff on changes using ``diff-quality``
+================================================
+
+For projects with large amounts of (potentially imperfect) SQL code, the full
+SQLFluff output could be very large, which can be distracting -- perhaps the CI
+build for a one-line SQL change shouldn't encourage the developer to fix lots
+of unrelated quality issues.
+
+To support this use case, SQLFluff integrates with a quality checking tool
+called ``diff-quality``. By running SQLFluff using ``diff-quality`` (rather
+than running it directly), you can limit the output to the new or modified
+SQL in the branch (aka pull request or PR) containing the proposed changes.
+
+Currently, ``diff-quality`` requires that you are using ``git`` for version
+control.
+
+NOTE: Installing SQLFluff automatically installs the ``diff_cover`` package
+that provides the ``diff-quality`` tool.
+
+Adding ``diff-quality`` to your builds
+--------------------------------------
+
+In your CI build script:
+
+1. Set the current working directory to the ``git`` repository containing the
+   SQL code to be checked.
+
+2. Run ``diff-quality``, specifying SQLFluff as the underlying tool:
+
+.. code-block:: text
+
+    $ diff-quality --violations sqlfluff
+
+The output will look something like:
+
+.. code-block:: text
+
+    -------------
+    Diff Quality
+    Quality Report: sqlfluff
+    Diff: origin/master...HEAD, staged and unstaged changes
+    -------------
+    sql/audience_size_queries/constraints/_postcondition_check_gdpr_compliance.sql (0.0%):
+    sql/audience_size_queries/constraints/_postcondition_check_gdpr_compliance.sql:5: Unquoted Identifiers must be consistently upper case.
+    -------------
+    Total:   1 line
+    Violations: 1 line
+    % Quality: 0%
+    -------------
+
+These messages are basically the same as those provided directly by SQLFluff,
+although the format is a little different. Note that ``diff-quality`` only lists
+the line _numbers_, not the character position. If you need the character
+position, you will need to run SQLFluff directly.
+
+.. note::
+   When using ``diff-quality`` with ``.sqlfluff`` :ref:`config-files`, and
+   especially together with the :ref:`dbt_templater`, it can be really easy
+   to run into issues with file discovery. There are a few steps you can
+   take to make it much less likely that this will happen:
+
+   1. ``diff-quality`` needs to be run from the root of your ``git``
+      repository (so that it can find the ``git`` metadata).
+
+   2. SQLFluff works best if the bulk of the configuration is done from a
+      single ``.sqlfluff`` file, which should be in the root of your
+      ``git`` repository.
+
+   3. If using :ref:`dbt_templater`, then either place your ``dbt_project.yml``
+      file in the same root folder, or if you put it in a subfolder, then
+      only invoke ``diff-quality`` and ``sqlfluff`` from the root and define
+      the subfolder that the ``dbt`` project lives in using the ``.sqlfluff``
+      config file.
+
+   By aligning the paths of all three, you should be able to achieve a
+   robust setup. If each is rooted in different paths if can be very
+   difficult to achieve the same result, and the resulting behaviour
+   can be difficult to debug.
+
+   To debug any issues relating to this setup, we recommend occasionally
+   running ``sqlfluff`` directly using the main cli (i.e. calling
+   :code:`sqlfluff lint my/project/path`) and check whether that route
+   gives you the results you expect. ``diff-quality`` should behave as
+   though it's calling the SQLFluff CLI *from the same path that you*
+   *invoke* ``diff-quality``.
+
+For more information on ``diff-quality`` and the ``diff_cover`` package, see the
+`documentation <https://github.com/Bachmann1234/diff_cover>`_ on their github
+repository. It covers topics such as:
+
+* Generating HTML reports
+* Controlling which branch to compare against (i.e. to determine new/changed
+  lines). The default is ``origin/main``.
+* Configuring ``diff-quality`` to return an error code if the quality is
+  too low.
+* Troubleshooting
+
+
+Using `GitHub Actions`_ to Annotate PRs
+=======================================
+
+There are two way to utilize SQLFluff to annotate Github PRs.
+
+1. When :code:`sqlfluff lint` is run with the :code:`--format github-annotation-native`
+   option, it produces output formatted as `Github workflow commands`_ which
+   are converted into pull request annotations by Github.
+
+2. When :code:`sqlfluff lint` is run with the :code:`--format github-annotation`
+   option, it produces output compatible with this `action from yuzutech`_.
+   Which uses Github API to annotate the SQL in `GitHub pull requests`.
+
+.. warning::
+   At present (December 2023), limitations put in place by Github mean that only the
+   first 10 annotations will be displayed if the first option (using
+   :code:`github-annotation-native`) is used. This is a not something that SQLFluff
+   can control itself and so we currently recommend using the second option
+   above and the `action from yuzutech`_.
+
+   There is an `open feature request <https://github.com/orgs/community/discussions/68471>`_
+   for GitHub Actions which you can track to follow this issue.
+
+For more information and examples on using SQLFluff in GitHub Actions, see the
+`sqlfluff-github-actions repository <https://github.com/sqlfluff/sqlfluff-github-actions>`_.
+
+.. _`GitHub Actions`: https://github.com/features/actions
+.. _`GitHub pull requests`: https://docs.github.com/en/github/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests
+.. _`Github workflow commands`: https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-a-notice-message
+.. _`action from yuzutech`: https://github.com/yuzutech/annotations-action
+
+
+.. _production-use:
+
+Production Usage & Security
+===========================
+
+SQLFluff is designed to be used both as a utility for developers but also to
+be part of `CI/CD`_ pipelines.
+
+.. _`CI/CD`: https://en.wikipedia.org/wiki/Continuous_integration
+
+.. toctree::
+   :maxdepth: 2
+
+   security
+   cli_use
+   diff_quality
+   pre_commit
+   github_actions
+
+
+.. _using-pre-commit:
+
+Using :code:`pre-commit`
+========================
+
+`pre-commit`_ is a framework to manage git "hooks"
+triggered right before a commit is made.
+
+A `git hook`_ is a git feature to "fire off custom scripts"
+when specific actions occur.
+
+Using `pre-commit`_ with SQLFluff is a good way
+to provide automated linting to SQL developers.
+
+With `pre-commit`_, you also get the benefit of
+only linting/fixing the files that changed.
+
+SQLFluff comes with two `pre-commit`_ hooks:
+
+* ``sqlfluff-lint``: returns linting errors.
+* ``sqlfluff-fix``: attempts to fix rule violations.
+
+.. warning::
+   For safety reasons, ``sqlfluff-fix`` by default will not make any fixes in
+   files that had templating or parse errors, even if those errors were ignored
+   using ``noqa`` or `--ignore``.
+
+   Although it is not advised, you *can* tell SQLFluff to try and fix
+   these files by overriding the ``fix_even_unparsable`` setting
+   in ``.sqlfluff`` config file or using the ``sqlfluff fix --FIX-EVEN-UNPARSABLE``
+   command line option.
+
+   *Overriding this behavior may break your SQL. If you use this override,
+   always be sure to review any fixes applied to files with templating or parse
+   errors to verify they are okay.*
+
+You should create a file named ``.pre-commit-config.yaml``
+at the root of your git project, which should look
+like this:
+
+.. code-block:: yaml
+
+  repos:
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: |release|
+    hooks:
+      - id: sqlfluff-lint
+        # For dbt projects, this installs the dbt "extras".
+        # You will need to select the relevant dbt adapter for your dialect
+        # (https://docs.getdbt.com/docs/available-adapters):
+        # additional_dependencies: ['<dbt-adapter>', 'sqlfluff-templater-dbt']
+      - id: sqlfluff-fix
+        # Arbitrary arguments to show an example
+        # args: [--rules, "LT02,CP02"]
+        # additional_dependencies: ['<dbt-adapter>', 'sqlfluff-templater-dbt']
+
+When trying to use the `dbt templater`_, uncomment the
+``additional_dependencies`` to install the extras.
+This is equivalent to running ``pip install <dbt-adapter> sqlfluff-templater-dbt``.
+
+You can specify the version of ``dbt-adapter`` used in `pre-commit`_,
+for example:
+
+.. code-block:: yaml
+
+   additional_dependencies : ['dbt-bigquery==1.0.0', 'sqlfluff-templater-dbt']
+
+See the list of available `dbt-adapters`_.
+
+Note that you can pass the same arguments available
+through the CLI using ``args:``.
+
+.. _`pre-commit`: https://pre-commit.com/
+.. _`git hook`: https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks
+.. _`dbt templater`: `dbt-project-configuration`
+.. _`dbt-adapters`: https://docs.getdbt.com/docs/available-adapters
+
+Ignoring files while using :code:`pre-commit`
+---------------------------------------------
+
+Under the hood, `pre-commit`_ works by passing specific files to *SQLFluff*.
+For example, if the only two files that are modified in your commit are
+:code:`file_a.sql` and :code:`file_b.sql`, then the command which is called
+in the background is :code:`sqlfluff lint file_a.sql file_b.sql`. While this
+is efficient, it does produce some unwanted noise when also
+using :ref:`sqlfluffignore`. This is because *SQLFluff* is designed to allow
+users to override an *ignore* configuration by passing the name of the file
+directly. This makes a lot of sense in a CLI context, but less so in the context
+of being invoked by `pre-commit`_.
+
+To avoid noisy logs when using both `pre-commit`_ and :ref:`sqlfluffignore`,
+we recommend also setting the :code:`exclude` argument in your
+:code:`.pre-commit-config.yaml` file (either the `top level config`_ or the
+`hook specific config`_). This will prevent files matching the given pattern
+being passed to *SQLFluff* and so silence any warnings about the
+:ref:`sqlfluffignore` being overridden.
+
+.. _`top level config`: https://pre-commit.com/#top_level-exclude
+.. _`hook specific config`: https://pre-commit.com/#config-exclude
+
+
+.. _security:
+
+Security Considerations
+=======================
+
+A full list of `Security Advisories is available on GitHub <https://github.com/sqlfluff/sqlfluff/security/advisories>`_.
+
+Given the context of how SQLFluff is designed to be used, there are three
+different tiers of access which users may have access to manipulate how the
+tool functions in a secure environment.
+
+#. *Users may have edit access to the SQL code which is being linted*. While
+   SQLFluff does not execute the SQL itself, in the process of the
+   :ref:`templating step <templater>` (in particular via jinja or dbt),
+   certain macros may have the ability to execute arbitrary SQL code (e.g.
+   the `dbt run_query macro`_). For the Jinja templater, SQLFluff uses the
+   `Jinja2 SandboxedEnvironment`_ to limit the execution on unsafe code. When
+   looking to further secure this situation, see below for ways to limit the
+   ability of users to import other libraries.
+
+   Even without macro execution, malicious SQL can still attempt to consume
+   excessive parser resources through extremely deep or unusually expansive
+   query structures. To reduce that risk, we recommend keeping the
+   ``max_parse_depth`` and ``max_parse_nodes`` limits enabled. These settings
+   bound parser recursion and total parse tree size respectively, and can be
+   adjusted upward for trusted projects with legitimately complex queries.
+   See :ref:`defaultconfig` for their default values.
+
+#. *Users may have edit access to the SQLFluff :ref:`config-files`*. In some
+   (perhaps, many) environments, the users who can edit SQL files may also
+   be able to access and edit the :ref:`config-files`. It's important to note
+   that because of :ref:`in_file_config`, that users who can edit SQL files
+   which are designed to be linted, will also have access to the vast majority
+   of any configuration options available in :ref:`config-files`. This means
+   that there is minimal additional protection from restricting access to
+   :ref:`config-files` for users who already have access to edit the linting
+   target files (as described above).
+
+#. *Users may have access to change how SQLFluff is invoked*. SQLFluff can
+   be invoked either as a command line too or via the python API. Typically
+   the method is fixed for a given application. When thinking about how to
+   restrict the ability of users to call insecure code, SQLFluff aims to
+   provide options at the point of invocation. In particular, as described
+   above, the primary risk vector for SQLFluff is the macro environment
+   as described in :ref:`templateconfig`. To restrict users being able to
+   bring arbitrary python methods into sqlfluff via the ``library_path``
+   configuration value (see :ref:`jinja_library_templating`), we recommend
+   that for secure environments you override this config value either by
+   providing an ``override`` option to the :class:`FluffConfig` object if
+   using the Python API or via the ``--library-path`` CLI option:
+
+   To disable this option entirely via the CLI:
+
+   .. code-block:: bash
+
+      $ sqlfluff lint my_path --library-path none
+
+   To disable this option entirely via the python API:
+
+   .. literalinclude:: ../../../examples/04_config_overrides.py
+      :language: python
+
+.. _`Jinja2 SandboxedEnvironment`: https://jinja.palletsprojects.com/en/3.0.x/sandbox/#jinja2.sandbox.SandboxedEnvironment
+.. _`dbt run_query macro`: https://docs.getdbt.com/reference/dbt-jinja-functions/run_query
+
+
+.. _apiref:
+
+Python API
+==========
+
+SQLFluff exposes a public api for other python applications to use.
+A basic example of this usage is given here, with the documentation
+for each of the methods below.
+
+
+.. literalinclude:: ../../../examples/01_basic_api_usage.py
+   :language: python
+
+
+Simple API commands
+-------------------
+
+
+.. automodule:: sqlfluff
+   :members: lint, fix, parse
+
+
+Advanced API usage
+------------------
+
+The simple API presents only a fraction of the functionality present
+within the core SQLFluff library. For more advanced use cases, users
+can import the :code:`Linter()` and :code:`FluffConfig()` classes from
+:code:`sqlfluff.core`. As of version 0.4.0 this is considered as
+*experimental only* as the internals may change without warning in any
+future release. If you come to rely on the internals of SQLFluff, please
+post an issue on GitHub to share what you're up to. This will help shape
+a more reliable, tidy and well documented public API for use.
+
+Configuring SQLFluff
+~~~~~~~~~~~~~~~~~~~~
+
+You can use :code:`FluffConfig()` class to configure SQLFluff behaviour.
+
+
+.. literalinclude:: ../../../examples/04_config_overrides.py
+   :language: python
+
+
+Instances of :code:`FluffConfig()` can be created manually, or parsed.
+
+
+.. literalinclude:: ../../../examples/05_simple_api_config.py
+   :language: python
+
+
+Supported dialects and rules are available through :code:`list_dialects()`
+and :code:`list_rules()`.
+
+
+.. literalinclude:: ../../../examples/03_getting_rules_and_dialects.py
+   :language: python
+
+
+Advanced API reference
+~~~~~~~~~~~~~~~~~~~~~~
+
+
+.. automodule:: sqlfluff.core
+   :members: Linter, Lexer, Parser
+
+
+.. _cliref:
+
+CLI Reference
+=============
+
+.. click:: sqlfluff.cli.commands:cli
+   :prog: sqlfluff
+   :show-nested:
+
+
+.. _dialectref:
+
+Dialects Reference
+==================
+
+SQLFluff is designed to be flexible in supporting a variety of dialects.
+Not all potential dialects are supported so far, but several have been
+implemented by the community. Below are a list of the currently available
+dialects. Each inherits from another, up to the root `ansi` dialect.
+
+For a canonical list of supported dialects, run the
+:program:`sqlfluff dialects` command, which will output a list of the
+current dialects available on your installation of SQLFluff.
+
+.. note::
+
+    For technical users looking to add new dialects or add new features
+    to existing ones, the dependent nature of how dialects have been
+    implemented is to try and reduce the amount of repetition in how
+    different elements are defined. As an example, when we say that
+    the :ref:`redshift_dialect_ref` dialect *inherits* from the
+    :ref:`postgres_dialect_ref` dialect this is not because there
+    is an agreement between those projects which means that features
+    in one must end up in the other, but that the design of the
+    :ref:`redshift_dialect_ref` dialect was heavily *inspired* by the
+    postgres dialect and therefore when defining the dialect within
+    sqlfuff it makes sense to use :ref:`postgres_dialect_ref` as a
+    starting point rather than starting from scratch.
+
+    Consider when adding new features to a dialect:
+
+    - Should I be adding it just to this dialect, or adding it to
+      a *parent* dialect?
+    - If I'm creating a new dialect, which dialect would be best to
+      inherit from?
+    - Will the feature I'm adding break any *downstream* dependencies
+      within dialects which inherit from this one?
+
+.. We define a shortcut to render double backticks here, which can
+   then be referenced by individual dialects when they want to say
+   how backtick quotes behave in that dialect. They would otherwise
+   be interpreted as markup and so not shown as back quotes.
+
+.. |back_quotes| raw:: html
+
+    <code class="code docutils literal notranslate">``</code>
+
+.. include:: ../_partials/dialect_summaries.rst
+
+
+.. _reference:
+
+Reference
+=========
+
+.. toctree::
+   :maxdepth: 2
+
+   dialects
+   rules
+   cli
+   api
+   internals/index
+   releasenotes
+
+
+.. _releasenotes:
+
+Release Notes
+=============
+
+This page aims to act as a guide for migrating between major SQLFluff
+releases. Necessarily this means that bugfix releases, or releases
+requiring no change for the user are not mentioned. For full details
+of each individual release, see the detailed changelog_.
+
+.. _changelog: https://github.com/sqlfluff/sqlfluff/blob/main/CHANGELOG.md
+
+.. _upgrading_4_2:
+
+Upgrading to 4.2
+----------------
+
+The default value of :code:`render_variant_limit` is now :code:`5` rather than
+:code:`1`. For Jinja and dbt projects with conditional branches, SQLFluff will
+therefore lint more rendered variants by default.
+
+In practice, this means SQLFluff may now surface linting violations in templated
+branches that were previously not inspected.
+
+For details on how template variant rendering works, along with guidance on
+performance and tuning, see :ref:`templater_variant_rendering`.
+
+.. _upgrading_4_0:
+
+Upgrading to 4.x
+----------------
+
+This release is the first where the optional Rust routines are available.
+For most users, no difference will be visible, as currently the rust libraries
+are *opt-in*, and must be explicitly installed with :code:`pip install sqlfluff[rs]`.
+
+Rust libraries are distributed as wheels for supported platforms, and installs
+without a matching wheel will fall back to a local source build. They should be
+considered experimental until the 5.x release. Performance gains on initial
+release are not expected to be significant, but we do expect they will be
+significant once the routines are mature.
+
+Additionally:
+
+* We drop support for dbt 1.4 and older, and include support for dbt 1.10.
+
+.. _upgrading_3_0:
+
+Upgrading to 3.x
+----------------
+
+This release makes a couple of potentially breaking changes:
+
+* It drops support for python 3.7, which reached end of life in June 2023.
+
+* It migrates to :code:`pyproject.toml` rather than :code:`setup.cfg` as
+  the python packaging configuration file (although keeping :code:`setuptools`
+  as the default backend).
+
+* The serialised output for :code:`sqlfluff lint` now contains more information
+  about the span of linting issues and initial proposed fixes. Beside the *new*
+  fields, the original fields of :code:`line_pos` and :code:`line_no` have been
+  renamed to :code:`start_line_pos` and :code:`start_line_no`, to distinguish
+  them from the new fields starting :code:`end_*`.
+
+* When linting from stdin, if there are no violations found - before this version,
+  the serialised response would be simply an empty list (:code:`[]`). From 3.0
+  onwards, there will now  be a record for the *file* with some statistics,
+  but the *violations* section of the response for that file will still be an
+  empty list.
+
+* The default :code:`annotation_level` set by the :code:`--annotation-level`
+  option on the :code:`sqlfluff lint` command has been changed from :code:`notice`
+  to :code:`warning`, to better distinguish linting errors from warnings, which
+  always now have the level of :code:`notice`. This is only relevant when using
+  the :code:`github-annotation` or :code:`github-annotation-native` formats.
+
+* The previously deprecated :code:`--disable_progress_bar` on `:code:lint`,
+  :code:`fix` and :code:`format` has now been removed entirely. Please migrate
+  to :code:`--disable-progress-bar` to continue using this option.
+
+* The :code:`--force` option on :code:`sqlfluff fix` is now the default behaviour
+  and so the option has been deprecated. A new :code:`--check` option has been
+  introduced which mimics the old default behaviour. This has been changed as it
+  enables significantly lower memory overheads when linting and fixing large
+  projects.
+
+Upgrading to 2.3
+----------------
+
+This release include two minor breaking changes which will only affect
+users engaged in performance optimisation of SQLFluff itself.
+
+* The :code:`--profiler` option on :code:`sqlfluff parse` has been removed.
+  It was only present on the `parse` command and not `lint` or `fix`, and
+  it is just as simple to invoke the python `cProfiler` directly.
+
+* The :code:`--recurse` cli option and :code:`sqlfluff.recurse` configuration
+  option have both been removed. They both existed purely for debugging the
+  parser, and were never used in a production setting. The improvement in
+  other debugging messages when unparsable sections are found means that
+  this option is no longer necessary.
+
+Upgrading to 2.2
+----------------
+
+This release changes some of the interfaces between SQLFluff core and
+our plugin ecosystem. The only *breaking* change is in the interface
+between SQLFluff and *templater* plugins (which are not common in the
+ecosystem, hence why this is only a minor and not a major release).
+
+For all plugins, we also recommend a different structure for their
+imports (especially for rule plugins which are more common in the
+ecosystem) - for performance and stability reasons. Some users had
+been experiencing very long import times with previous releases as
+a result of the layout of plugin imports. Users with affected plugins
+will begin to see a warning from this release onward, which can be
+resolved for their plugin by updating to a new version of that plugin
+which follows the guidelines.
+
+Templater plugins
+^^^^^^^^^^^^^^^^^
+
+Templaters before this version would pass a :code:`make_template()`
+callable to the slicing methods as part of being able to map the source
+file. This method would accept a :code:`str` and return a
+:code:`jinja2.environment.Template` object to allow the templater to
+render multiple variants of the template to do the slicing operation
+(which allows linting issues found in templated files to be mapped
+accurately back to their position in the unrendered source file).
+This approach is not very generalisable, and did not support templating
+operations with libraries other than :code:`jinja2`.
+
+As a result, we have amended the interface to instead pass a
+:code:`render_func()` callable, which accepts a :code:`str` and returns
+a :code:`str`. This works fine for the :code:`jinja` templater (and
+by extension the :code:`dbt` templater) as they can simply wrap the
+original callable with a method that calls :code:`render()` on the
+original :code:`Template` object. It also however opens up the door
+to other templating engines, and in particular to *remote* templaters
+which might pass unrendered code over a HTTP connection for rendering.
+
+Specifically:
+
+* The :code:`slice_file()` method of the base templater classes no longer
+  accepts an optional :code:`make_template` argument or a
+  :code:`templated_str` argument.
+
+* Instead a :code:`render_func` callable should be passed which can be
+  called to generate the :code:`templated_str` on demand.
+
+* Unlike the optional :code:`make_template` - :code:`render_func` is **not**
+  optional and should always be present.
+
+Rule plugins
+^^^^^^^^^^^^
+
+We recommend that the module in a plugin which defines all
+of the hook implementations (anything using the :code:`@hookimpl` decorator)
+must be able to fully import before any rule implementations are imported.
+More specifically, SQLFluff must be able to both *import* **and**
+*run* any implementations of :code:`get_configs_info()` before any plugin
+rules (i.e. any derivatives of
+:py:class:`BaseRule <sqlfluff.core.rules.base.BaseRule>`) are *imported*.
+Because of this, we recommend that rules are defined in a
+separate module to the root of the plugin and then only imported *within*
+the :code:`get_rules()` method.
+
+Importing in the main body of the module was previously our recommendation
+and so may be the case for versions of some plugins. If one of your plugins
+does use imports in this way, a warning will be presented from this version
+onward, recommending that you update your plugin.
+
+See the :ref:`developingpluginsref` section of the docs for an example.
+
+.. _upgrading_2_0:
+
+Upgrading from 1.x to 2.0
+-------------------------
+
+Upgrading to 2.0 brings several important breaking changes:
+
+* All bundled rules have been recoded, both from generic :code:`L00X` formats
+  into groups within similar codes (e.g. an *aliasing* group with codes
+  of the format :code:`AL0X`), but also given *names* to allow much clearer
+  referencing (e.g. :code:`aliasing.column`).
+* :ref:`ruleconfig` now uses the rule *name* rather than the rule *code* to
+  specify the section. Any unrecognised references in config files (whether
+  they are references which *do* match existing rules by code or alias, or
+  whether the match no rules at all) will raise warnings at runtime.
+* A complete re-write of layout and whitespace handling rules (see
+  :ref:`layoutref`), and with that a change in how layout is configured
+  (see :ref:`layoutconfig`) and the combination of some rules that were
+  previously separate. One example of this is that the legacy rules
+  :code:`L001`, :code:`L005`, :code:`L006`, :code:`L008`, :code:`L023`,
+  :code:`L024`, :code:`L039`, :code:`L048` & :code:`L071` have been combined
+  simply into :sqlfluff:ref:`LT01`.
+
+Recommended upgrade steps
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To upgrade smoothly between versions, we recommend the following sequence:
+
+#. The upgrade path will be simpler if you have a slimmer configuration file.
+   Before upgrading, consider removing any sections from your configuration
+   file (often :code:`.sqlfluff`, see :ref:`config`) which match the current
+   :ref:`defaultconfig`. There is no need to respecify defaults in your local
+   config if they are not different to the stock config.
+
+#. In a local (or other *non-production*) environment, upgrade to SQLFluff
+   2.0.x. We recommend using a `compatible release`_ specifier such
+   as :code:`~=2.0.0`, to ensure any minor bugfix releases are automatically
+   included.
+
+#. Examine your configuration file (as mentioned above), and evaluate how
+   rules are currently specified. We recommend primarily using *either*
+   :code:`rules` *or* :code:`exclude_rules` rather than both, as detailed
+   in :ref:`ruleselection`. Using either the :code:`sqlfluff rules` CLI
+   command or the online :ref:`ruleref`, replace *all references* to legacy
+   rule codes (i.e. codes of the form :code:`L0XX`). Specifically:
+
+   * In the :code:`rules` and :code:`exclude_rules` config values. Here,
+     consider using group specifiers or names to make your config simpler
+     to read and understand (e.g. :code:`capitalisation`, is much more
+     understandable than :code:`CP01,CP02,CP03,CP04,CP05`, but the two
+     specifiers will have the same effect). Note that while legacy codes
+     *will still be understood* here (because they remain valid as aliases
+     for those rules) - you may find that some rules no longer exist in
+     isolation and so these references may be misleading. e.g. :code:`L005`
+     is now an alias for :sqlfluff:ref:`layout.spacing` but
+     that rule is much more broad ranging than the original scope of
+     :code:`L005`, which was only spacing around commas.
+
+   * In :ref:`ruleconfig`. In particular here, legacy references to rule
+     codes are *no longer valid*, will raise warnings, and until resolved,
+     the configuration in those sections will be ignored. The new section
+     references should include the rule *name* (e.g.
+     :code:`[sqlfluff:rules:capitalisation.keywords]` rather than
+     :code:`[sqlfluff:rules:L010]`). This switch is designed to make
+     configuration files more readable, but we cannot support backward
+     compatibility here without also having to resolve the potential
+     ambiguity of the scenario where both *code-based* and *name-based*
+     are both used.
+
+   * Review the :ref:`layoutconfig` documentation, and check whether any
+     indentation or layout configuration should be revised.
+
+#. Check your project for :ref:`in_file_config` which refer to rule codes.
+   Alter these in the same manner as described above for configuration files.
+
+#. Test linting your project for unexpected linting issues. Where found,
+   consider whether to use :code:`sqlfluff fix` to repair them in bulk,
+   or (if you disagree with the changes) consider changing which rules
+   you enable or their configuration accordingly. In particular you may notice:
+
+   * The indentation rule (:code:`L003` as was, now :sqlfluff:ref:`LT02`) has
+     had a significant rewrite, and while much more flexible and accurate, it
+     is also more specific. Note that :ref:`hangingindents` are no longer
+     supported, and that while not enabled by default, many users may find
+     the enabling :ref:`implicitindents` fits their organisation's style
+     better.
+
+   * The spacing rule (:sqlfluff:ref:`LT01`: :sqlfluff:ref:`layout.spacing`)
+     has a much wider scope, and so may pick up spacing issues that were not
+     previously enforced. If you disagree with any of these, you can
+     override the :code:`sqlfluff:layout` sections of the config with
+     different (or just more liberal settings, like :code:`any`).
+
+.. _`compatible release`: https://peps.python.org/pep-0440/#compatible-release
+
+
+Example 2.0 config
+^^^^^^^^^^^^^^^^^^
+
+To illustrate the points above, this is an illustrative example config
+for a 2.0 compatible project. Note that the config is fairly brief and
+sets only the values which differ from the default config.
+
+.. code-block:: cfg
+
+    [sqlfluff]
+    dialect = snowflake
+    templater = dbt
+    max_line_length = 120
+
+    # Exclude some specific rules based on a mixture of codes and names
+    exclude_rules = RF02, RF03, RF04, ST06, ST07, AM05, AM06, convention.left_join, layout.select_targets
+
+    [sqlfluff:indentation]
+    # Enabling implicit indents for this project.
+    # See https://docs.sqlfluff.com/en/stable/perma/indent_locations.html
+    allow_implicit_indents = True
+
+    # Add a few specific rule configurations, referenced by the rule names
+    # and not by the rule codes.
+    [sqlfluff:rules:capitalisation.keywords]
+    capitalisation_policy = lower
+
+    [sqlfluff:rules:capitalisation.identifiers]
+    capitalisation_policy = lower
+
+    [sqlfluff:rules:capitalisation.functions]
+    extended_capitalisation_policy = lower
+
+    # An example of setting a custom layout specification which
+    # is more lenient than default config.
+    [sqlfluff:layout:type:set_operator]
+    line_position = alone
+
+
+Upgrading to 1.4
+----------------
+
+This release brings several internal changes, and acts as a prelude
+to 2.0.0. In particular, the following config values have changed:
+
+* :code:`sqlfluff:rules:L007:operator_new_lines` has been changed to
+  :code:`sqlfluff:layout:type:binary_operator:line_position`.
+* :code:`sqlfluff:rules:comma_style` and
+  :code:`sqlfluff:rules:L019:comma_style` have both been consolidated
+  into :code:`sqlfluff:layout:type:comma:line_position`.
+
+If any of these values have been set in your config, they will be
+automatically translated to the new values at runtime, and a warning
+will be shown. To silence the warning, update your config file to the
+new values. For more details on configuring layout see :ref:`layoutconfig`.
+
+
+Upgrading to 1.3
+----------------
+
+This release brings several potentially breaking changes to the underlying
+parse tree. For users of the cli tool in a linting context you should notice
+no change. If however your application relies on the structure of the SQLFluff
+parse tree or the naming of certain elements within the yaml format, then
+this may not be a drop-in replacement. Specifically:
+
+* The addition of a new :code:`end_of_file`` meta segment at the end of
+  the parse structure.
+* The addition of a :code:`template_loop`` meta segment to signify a jump
+  backward in the source file within a loop structure (e.g. a jinja
+  :code:`for`` loop).
+* Much more specific types on some raw segments, in particular
+  :code:`identifier` and :code:`literal` type segments will now appear
+  in the parse tree with their more specific type (which used to be called
+  :code:`name`) e.g. :code:`naked_identifier`, :code:`quoted_identifier`,
+  :code:`numeric_literal` etc...
+
+If using the python api, the *parent* type (such as :code:`identifier`)
+will still register if you call :code:`.is_type("identifier")`, as this
+function checks all inherited types. However the eventual type returned
+by :code:`.get_type()`` will now be (in most cases) what used to be
+accessible at :code:`.name`. The :code:`name` attribute will be deprecated
+in a future release.
+
+
+Upgrading to 1.2
+----------------
+
+This release introduces the capability to automatically skip large files, and
+sets default limits on the maximum file size before a file is skipped. Users
+should see a performance gain, but may experience warnings associated with
+these skipped files.
+
+
+Upgrades pre 1.0
+----------------
+
+* **0.13.x** new rule for quoted literals, option to remove hanging indents in
+  rule L003, and introduction of ``ignore_words_regex``.
+* **0.12.x** dialect is now mandatory, the ``spark3`` dialect was renamed to
+  ``sparksql`` and  datatype capitalisation was extracted from L010 to it's own
+  rule L063.
+* **0.11.x** rule L030 changed to use ``extended_capitalisation_policy``.
+* **0.10.x** removed support for older dbt versions < 0.20 and stopped ``fix``
+  attempting to fix unparsable SQL.
+* **0.9.x** refinement of the Simple API, dbt 1.0.0 compatibility,
+  and the official SQLFluff Docker image.
+* **0.8.x** an improvement to the performance of the parser, a rebuild of the
+  Jinja Templater, and a progress bar for the CLI.
+* **0.7.x** extracted the dbt templater to a separate plugin and removed the
+  ``exasol_fs`` dialect (now merged in with the main ``exasol``).
+* **0.6.x** introduced parallel processing, which necessitated a big re-write
+  of several innards.
+* **0.5.x** introduced some breaking changes to the API.
+* **0.4.x** dropped python 3.5, added the dbt templater, source mapping and
+  also introduced the python API.
+* **0.3.x** drops support for python 2.7 and 3.4, and also reworks the
+  handling of indentation linting in a potentially not backward
+  compatible way.
+* **0.2.x** added templating support and a big restructure of rules
+  and changed how users might interact with SQLFluff on templated code.
+* **0.1.x** involved a major re-write of the parser, completely changing
+  the behaviour of the tool with respect to complex parsing.
+
+
+.. _ruleref:
+
+Rules Reference
+===============
+
+This page is an index of available rules which are bundled with SQLFluff.
+
+* For information on how to configure which rules are enabled for your
+  project see :ref:`ruleselection`.
+
+* If you just want to turn rules on or off for specific files, or specific
+  sections of files, see :ref:`ignoreconfig`.
+
+* For more information on how to configure the rules which you do enable
+  see :ref:`ruleconfig`.
+
+Core Rules
+----------
+
+Certain rules belong to the :code:`core` rule group. In order for
+a rule to be designated as :code:`core`, it must meet the following
+criteria:
+
+* Stable
+* Applies to most dialects
+* Could detect a syntax issue
+* Isn’t too opinionated toward one style (e.g. the :code:`dbt` style guide)
+
+Core rules can also make it easier to roll out SQLFluff to a team by
+only needing to follow a 'common sense' subset of rules initially,
+rather than spending time understanding and configuring all the
+rules, some of which your team may not necessarily agree with.
+
+We believe teams will eventually want to enforce more than just
+the core rules, and we encourage everyone to explore all the rules
+and customize a rule set that best suites their organization.
+
+See the :ref:`config` section for more information on how to enable
+only :code:`core` rules by default.
+
+Rule Index
+----------
+
+.. include:: ../_partials/rule_table.rst
+
+.. include:: ../_partials/rule_summaries.rst

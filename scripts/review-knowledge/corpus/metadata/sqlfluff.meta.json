@@ -1,10 +1,10 @@
 {
-  "error": "robots.txt disallows fetch: https://docs.sqlfluff.com/en/stable/",
-  "fetched_at": "2026-07-08",
-  "final_url": null,
-  "http_status": null,
+  "error": null,
+  "fetched_at": "2026-08-07",
+  "final_url": "https://raw.githubusercontent.com/sqlfluff/sqlfluff/main/docs/source/reference/rules.rst",
+  "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": null,
+  "sha256": "599313f0101f96f9be142329bc9dab227d375324a80064b8e1b5344b416471c0",
   "source_id": "sqlfluff"
 }
