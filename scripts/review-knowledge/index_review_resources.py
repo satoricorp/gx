@@ -376,20 +376,23 @@ def fetch_source(
     status: int | None = None
     while queue:
         url, depth = queue.pop(0)
-        if source.fetch == "github-md" and depth < source.crawl_depth:
+        if source.fetch == "github-md" and is_github_tree_url(url):
             # A github.com tree URL cannot be fetched as raw markdown; it
-            # stands for every markdown file in that directory. Expand it and
-            # fetch those instead of the tree page itself.
-            listed = github_tree_markdown_urls(url, timeout)
-            if listed:
-                for link in listed:
+            # stands for every markdown/rst file in that directory. Expand it
+            # and fetch those instead of the tree page itself — never fall
+            # through to the raw fetch, which would 404. Subdirectories come
+            # back as tree URLs and recurse while crawl_depth allows.
+            if depth < source.crawl_depth:
+                for link in github_tree_markdown_urls(url, timeout):
                     if link in seen_urls or (skip_urls and link in skip_urls):
+                        continue
+                    if is_github_tree_url(link) and depth + 1 >= source.crawl_depth:
                         continue
                     seen_urls.add(link)
                     queue.append((link, depth + 1))
                     if len(seen_urls) >= 200:
                         break
-                continue
+            continue
         if not robots_allowed(url, robots):
             raise RuntimeError(f"robots.txt disallows fetch: {url}")
         throttle(url, last_by_domain)
@@ -419,20 +422,31 @@ def fetch_source(
     )
 
 
-def github_tree_markdown_urls(url: str, timeout: float) -> list[str]:
-    """Expand a github.com tree URL into raw URLs for the .md files it holds.
+GITHUB_DOC_SUFFIXES = (".md", ".mdx", ".rst")
 
-    Returns [] for anything that is not a github.com tree URL, so callers can
-    probe cheaply; only tree-shaped URLs cost an API request. Non-list API
-    payloads (a file path, an error object) also return [], leaving the caller
-    to treat the URL as an ordinary single fetch.
-    """
+
+def is_github_tree_url(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     if parsed.netloc != "github.com":
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    return len(parts) >= 5 and parts[2] == "tree"
+
+
+def github_tree_markdown_urls(url: str, timeout: float) -> list[str]:
+    """Expand a github.com tree URL into the doc files and subdirs it holds.
+
+    Files (.md, .mdx, .rst) come back as raw.githubusercontent.com URLs;
+    subdirectories come back as github.com tree URLs so the caller can recurse
+    while crawl_depth allows. Returns [] for anything that is not a github.com
+    tree URL, so callers can probe cheaply; only tree-shaped URLs cost an API
+    request. Non-list API payloads (a file path, an error object) also return
+    [], leaving the caller to treat the URL as an ordinary single fetch.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if not is_github_tree_url(url):
         return []
     parts = [part for part in parsed.path.split("/") if part]
-    if len(parts) < 5 or parts[2] != "tree":
-        return []
     owner, repo, branch = parts[0], parts[1], parts[3]
     path = "/".join(parts[4:])
     api = (
@@ -450,9 +464,11 @@ def github_tree_markdown_urls(url: str, timeout: float) -> list[str]:
     out = []
     for entry in entries:
         name = str(entry.get("name", ""))
-        if entry.get("type") == "file" and name.endswith(".md"):
+        if entry.get("type") == "file" and name.endswith(GITHUB_DOC_SUFFIXES):
             download = entry.get("download_url") or f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{name}"
             out.append(download)
+        elif entry.get("type") == "dir":
+            out.append(f"https://github.com/{owner}/{repo}/tree/{branch}/{path}/{name}")
     return sorted(out)
 
 
@@ -461,12 +477,17 @@ def robots_allowed(url: str, robots: dict[str, urllib.robotparser.RobotFileParse
     root = f"{parsed.scheme}://{parsed.netloc}"
     parser = robots.get(root)
     if parser is None:
+        # Fetch robots.txt with the indexer's own User-Agent rather than
+        # parser.read(): some hosts (e.g. nvlpubs.nist.gov) reject the default
+        # Python-urllib agent outright, and robotparser turns that rejection
+        # into disallow-everything even when no robots.txt exists. A missing
+        # or unreadable robots.txt means no policy, i.e. allowed.
         parser = urllib.robotparser.RobotFileParser()
-        parser.set_url(root + "/robots.txt")
         try:
-            parser.read()
+            raw, _, _, _ = fetch_url(root + "/robots.txt", timeout=10)
+            parser.parse(raw.decode("utf-8", errors="replace").splitlines())
         except Exception:
-            return True
+            parser.allow_all = True
         robots[root] = parser
     return parser.can_fetch("gx-review-corpus-indexer/0.2", url)
 
@@ -523,6 +544,8 @@ def normalize_payload(raw: bytes, content_type: str, fetch: str, url: str) -> st
         return pdf_to_text(raw)
     text = raw.decode("utf-8", errors="replace")
     if fetch == "github-md" or "markdown" in content_type.lower():
+        if url.lower().endswith(".rst"):
+            return normalize_text(rst_to_markdown(text))
         return normalize_text(text)
     try:
         import trafilatura  # type: ignore[import-not-found]
@@ -535,6 +558,137 @@ def normalize_payload(raw: bytes, content_type: str, fetch: str, url: str) -> st
     extractor = MarkdownExtractor()
     extractor.feed(text)
     return extractor.markdown()
+
+
+RST_ADORNMENT_CHARS = set("=-~^\"'`#*+.:_")
+RST_CODE_DIRECTIVES = {"code", "code-block", "sourcecode", "doctest"}
+RST_DROP_DIRECTIVES = {"toctree", "index", "contents", "meta", "highlight", "module", "currentmodule", "only"}
+
+
+def rst_to_markdown(text: str) -> str:
+    """Best-effort reStructuredText -> markdown, good enough for chunking.
+
+    Sphinx sources only need to look enough like markdown for split_markdown:
+    adorned titles become #-headings (level = first-appearance order of the
+    adornment character, reset per file), code-block directives become fences,
+    and inline roles collapse to their text. Everything else passes through as
+    plain text.
+    """
+    lines = text.splitlines()
+    out: list[str] = []
+    adornment_levels: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        # Overline style: adornment / title / matching adornment.
+        if (
+            rst_adornment_char(line)
+            and index + 2 < len(lines)
+            and lines[index + 1].strip()
+            and not rst_adornment_char(lines[index + 1])
+            and rst_adornment_char(lines[index + 2]) == rst_adornment_char(line)
+        ):
+            out.append(rst_heading(lines[index + 1].strip(), rst_adornment_char(line), adornment_levels))
+            index += 3
+            continue
+        # Underline style: non-blank unindented title over an adornment line
+        # at least as long as the title (excludes table borders, which mix
+        # characters or sit under indented/blank lines).
+        if (
+            stripped
+            and not line[:1].isspace()
+            and not rst_adornment_char(line)
+            and index + 1 < len(lines)
+            and rst_adornment_char(lines[index + 1])
+            and len(lines[index + 1].strip()) >= len(stripped)
+        ):
+            out.append(rst_heading(stripped, rst_adornment_char(lines[index + 1]), adornment_levels))
+            index += 2
+            continue
+        directive = re.match(r"^(\s*)\.\.\s+([A-Za-z][\w.+-]*)::\s*(.*)$", line)
+        if directive:
+            indent, name, argument = directive.group(1), directive.group(2).lower(), directive.group(3)
+            body, index = rst_directive_body(lines, index + 1, len(indent))
+            if name in RST_CODE_DIRECTIVES:
+                out.extend(["", f"```{argument.strip()}", *body, "```", ""])
+            elif name in RST_DROP_DIRECTIVES:
+                pass
+            else:
+                label = name.replace("-", " ").capitalize()
+                out.append(f"**{label}:** {argument}".rstrip())
+                out.extend(body)
+            continue
+        # Anchors (.. _name:) and comments (.. text) are invisible in Sphinx
+        # output; a directive would have matched above.
+        if stripped == ".." or stripped.startswith(".. "):
+            index += 1
+            continue
+        # Literal block introduced by a paragraph ending in `::`.
+        if stripped.endswith("::") and not stripped.startswith(".."):
+            prefix = line.rstrip()[:-2].rstrip()
+            if prefix:
+                out.append(prefix + ":")
+            body, index = rst_directive_body(lines, index + 1, len(line) - len(line.lstrip()))
+            if body:
+                out.extend(["", "```", *body, "```", ""])
+            continue
+        out.append(rst_inline(line))
+        index += 1
+    return "\n".join(out)
+
+
+def rst_adornment_char(line: str) -> str:
+    stripped = line.strip()
+    if len(stripped) >= 2 and stripped[0] in RST_ADORNMENT_CHARS and stripped == stripped[0] * len(stripped):
+        return stripped[0]
+    return ""
+
+
+def rst_heading(title: str, char: str, adornment_levels: list[str]) -> str:
+    if char not in adornment_levels:
+        adornment_levels.append(char)
+    level = min(6, adornment_levels.index(char) + 1)
+    return "\n" + "#" * level + " " + rst_inline(title) + "\n"
+
+
+def rst_directive_body(lines: list[str], start: int, parent_indent: int) -> tuple[list[str], int]:
+    """Collect the indented block following a directive, dedented, skipping
+    leading :option: fields and blank separators. Returns (body, next_index)."""
+    index = start
+    body: list[str] = []
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            if body:
+                body.append("")
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent <= parent_indent:
+            break
+        body.append(line)
+        index += 1
+    while body and not body[-1].strip():
+        body.pop()
+    if not any(line.strip() and not re.match(r"^\s*:[\w-]+:", line) for line in body):
+        return [], index
+    margin = min(len(line) - len(line.lstrip()) for line in body if line.strip())
+    content = [line[margin:] if line.strip() else "" for line in body]
+    while content and re.match(r"^:[\w-]+:", content[0].strip()):
+        content.pop(0)
+    while content and not content[0].strip():
+        content.pop(0)
+    return content, index
+
+
+def rst_inline(line: str) -> str:
+    line = re.sub(r"``([^`]+)``", r"`\1`", line)
+    line = re.sub(r":[\w.:+-]+:`([^`<]+?)\s*<[^`>]*>`", r"\1", line)
+    line = re.sub(r":[\w.:+-]+:`([^`]+)`", r"`\1`", line)
+    line = re.sub(r"`([^`<]+?)\s*<([^`>\s]+)>`__?", r"[\1](\2)", line)
+    line = re.sub(r"`([^`]+)`__?(?=[\s,.;:)]|$)", r"\1", line)
+    return line
 
 
 def pdf_to_text(raw: bytes) -> str:

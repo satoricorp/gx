@@ -1,6 +1,6 @@
 # Fetch Report
 
-generated_at: 2026-07-08
+generated_at: 2026-08-07
 
 - LICENSE google-eng-practices: license=verify; verify before redistribution.
 - OK google-eng-practices: status=200 final_url=https://google.github.io/eng-practices/review/developer/handling-comments.html
@@ -11,7 +11,7 @@ generated_at: 2026-07-08
 - LICENSE firefox-reviewer-checklist: license=verify; verify before redistribution.
 - OK firefox-reviewer-checklist: status=200 final_url=https://firefox-source-docs.mozilla.org/contributing/reviewer_checklist.html
 - LICENSE smartbear-best-practices: license=verify; verify before redistribution.
-- FAIL smartbear-best-practices: robots.txt disallows fetch: https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
+- OK smartbear-best-practices: status=200 final_url=https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
 - LICENSE conventional-comments: license=verify; verify before redistribution.
 - OK conventional-comments: status=200 final_url=https://conventionalcomments.org/
 - LICENSE owasp-asvs: license=verify; verify before redistribution.
@@ -19,7 +19,7 @@ generated_at: 2026-07-08
 - LICENSE owasp-top10: license=verify; verify before redistribution.
 - FAIL owasp-top10: robots.txt disallows fetch: https://owasp.org/Top10/
 - LICENSE cwe-top25: license=verify; verify before redistribution.
-- OK cwe-top25: status=200 final_url=https://cwe.mitre.org/top25/
+- OK cwe-top25: status=200 final_url=https://cwe.mitre.org/top25/archive/
 - LICENSE owasp-cheatsheets: license=verify; verify before redistribution.
 - FAIL owasp-cheatsheets: robots.txt disallows fetch: https://cheatsheetseries.owasp.org/index.html
 - LICENSE owasp-sqli-cheatsheet: license=verify; verify before redistribution.
@@ -33,9 +33,9 @@ generated_at: 2026-07-08
 - LICENSE slsa: license=verify; verify before redistribution.
 - OK slsa: status=200 final_url=https://slsa.dev/spec/v1.2/
 - LICENSE nist-ssdf-800-218: license=verify; verify before redistribution.
-- FAIL nist-ssdf-800-218: robots.txt disallows fetch: https://csrc.nist.gov/pubs/sp/800/218/final
+- OK nist-ssdf-800-218: status=200 final_url=https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-218.pdf
 - LICENSE semgrep-registry: license=verify; verify before redistribution.
-- OK semgrep-registry: status=200 final_url=https://semgrep.dev/r
+- OK semgrep-registry: status=200 final_url=https://raw.githubusercontent.com/semgrep/semgrep-docs/main/docs/contributing/contributing-to-semgrep-rules-repository.mdx
 - LICENSE google-tsguide: license=verify; verify before redistribution.
 - OK google-tsguide: status=200 final_url=https://google.github.io/styleguide/tsguide.html
 - LICENSE tsconfig-reference: license=verify; verify before redistribution.
@@ -51,13 +51,13 @@ generated_at: 2026-07-08
 - LICENSE google-pyguide: license=verify; verify before redistribution.
 - OK google-pyguide: status=200 final_url=https://google.github.io/styleguide/pyguide.html
 - LICENSE ruff: license=verify; verify before redistribution.
-- FAIL ruff: robots.txt disallows fetch: https://docs.astral.sh/ruff/
+- OK ruff: status=200 final_url=https://raw.githubusercontent.com/astral-sh/ruff/main/docs/versioning.md
 - LICENSE mypy: license=verify; verify before redistribution.
-- FAIL mypy: robots.txt disallows fetch: https://mypy.readthedocs.io/
+- OK mypy: status=200 final_url=https://raw.githubusercontent.com/python/mypy/master/docs/source/typed_dict.rst
 - LICENSE typing-python-spec: license=verify; verify before redistribution.
-- FAIL typing-python-spec: robots.txt disallows fetch: https://typing.python.org/
+- OK typing-python-spec: status=200 final_url=https://raw.githubusercontent.com/python/typing/main/docs/spec/typeddict.rst
 - LICENSE bandit: license=verify; verify before redistribution.
-- FAIL bandit: robots.txt disallows fetch: https://bandit.readthedocs.io/
+- OK bandit: status=200 final_url=https://raw.githubusercontent.com/PyCQA/bandit/main/doc/source/start.rst
 - LICENSE google-go-style: license=verify; verify before redistribution.
 - OK google-go-style: status=200 final_url=https://google.github.io/styleguide/go/best-practices
 - LICENSE go-code-review-comments: license=verify; verify before redistribution.
@@ -93,7 +93,7 @@ generated_at: 2026-07-08
 - LICENSE dbt-project-style: license=verify; verify before redistribution.
 - OK dbt-project-style: status=200 final_url=https://docs.getdbt.com/best-practices/how-we-style/0-how-we-style-our-dbt-projects
 - LICENSE sqlfluff: license=verify; verify before redistribution.
-- FAIL sqlfluff: robots.txt disallows fetch: https://docs.sqlfluff.com/en/stable/
+- OK sqlfluff: status=200 final_url=https://raw.githubusercontent.com/sqlfluff/sqlfluff/main/docs/source/reference/rules.rst
 - LICENSE google-shellguide: license=verify; verify before redistribution.
 - OK google-shellguide: status=200 final_url=https://google.github.io/styleguide/shellguide.html
 - LICENSE posix-shell-spec: license=verify; verify before redistribution.

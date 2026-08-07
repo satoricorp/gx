@@ -1,30 +1,30 @@
 # Review Corpus Build Log
 
 generated_at: 2026-08-07
-chunks: 6341
+chunks: 7336
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=5 p50=93 max=834
+token_histogram: min=5 p50=100 max=916
 
 ## Chunks Per Source
 - google-eng-practices: 12
 - ms-playbook-code-reviews: 198
 - gitlab-code-review: 27
 - firefox-reviewer-checklist: 16
-- smartbear-best-practices: 1 (investigate: <3 chunks)
+- smartbear-best-practices: 14
 - conventional-comments: 2 (investigate: <3 chunks)
 - owasp-asvs: 229
 - owasp-top10: 146
-- cwe-top25: 1 (investigate: <3 chunks)
+- cwe-top25: 5
 - owasp-cheatsheets: 3173
 - owasp-sqli-cheatsheet: 28
 - owasp-db-cheatsheet: 13
 - openssf-concise-guide: 2 (investigate: <3 chunks)
 - openssf-scorecard: 32
 - slsa: 58
-- nist-ssdf-800-218: 1 (investigate: <3 chunks)
-- semgrep-registry: 1 (investigate: <3 chunks)
+- nist-ssdf-800-218: 18
+- semgrep-registry: 32
 - google-tsguide: 144
 - tsconfig-reference: 7
 - typescript-eslint-typed-linting: 4
@@ -32,10 +32,10 @@ token_histogram: min=5 p50=93 max=834
 - nodejs-security: 4
 - pep8: 45
 - google-pyguide: 18
-- ruff: 1 (investigate: <3 chunks)
-- mypy: 1 (investigate: <3 chunks)
-- typing-python-spec: 1 (investigate: <3 chunks)
-- bandit: 1 (investigate: <3 chunks)
+- ruff: 94
+- mypy: 406
+- typing-python-spec: 322
+- bandit: 25
 - google-go-style: 48
 - go-code-review-comments: 32
 - uber-go-guide: 3
@@ -53,7 +53,7 @@ token_histogram: min=5 p50=93 max=834
 - mysql-prepared-statements: 1 (investigate: <3 chunks)
 - dbt-sql-style: 10
 - dbt-project-style: 6
-- sqlfluff: 1 (investigate: <3 chunks)
+- sqlfluff: 88
 - google-shellguide: 80
 - posix-shell-spec: 37
 - shellcheck: 6

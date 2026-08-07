@@ -1,0 +1,3746 @@
+# Configuring Ruff
+
+Ruff can be configured through a `pyproject.toml`, `ruff.toml`, or `.ruff.toml` file.
+
+Whether you're using Ruff as a linter, formatter, or both, the underlying configuration strategy and
+semantics are the same.
+
+For a complete enumeration of the available configuration options, see [_Settings_](settings.md).
+
+For the complete list of enabled rules, see [_Default Rules_](default-rules.md).
+
+If left unspecified, Ruff's default configuration is equivalent to:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Exclude a variety of commonly ignored directories.
+ exclude = [
+ ".bzr",
+ ".direnv",
+ ".eggs",
+ ".git",
+ ".git-rewrite",
+ ".hg",
+ ".ipynb_checkpoints",
+ ".mypy_cache",
+ ".nox",
+ ".pants.d",
+ ".pyenv",
+ ".pytest_cache",
+ ".pytype",
+ ".ruff_cache",
+ ".svn",
+ ".tox",
+ ".venv",
+ ".vscode",
+ "__pypackages__",
+ "_build",
+ "buck-out",
+ "build",
+ "dist",
+ "node_modules",
+ "site-packages",
+ "venv",
+ ]
+
+ # Same as Black.
+ line-length = 88
+ indent-width = 4
+
+ # Assume Python 3.10
+ target-version = "py310"
+
+ [tool.ruff.lint]
+ # select = [...] # See the Default Rules page for the full listing.
+ ignore = []
+
+ # Allow fix for all enabled rules (when `--fix`) is provided.
+ fixable = ["ALL"]
+ unfixable = []
+
+ # Allow unused variables when underscore-prefixed.
+ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+ [tool.ruff.format]
+ # Like Black, use double quotes for strings.
+ quote-style = "double"
+
+ # Like Black, indent with spaces, rather than tabs.
+ indent-style = "space"
+
+ # Like Black, respect magic trailing commas.
+ skip-magic-trailing-comma = false
+
+ # Like Black, automatically detect the appropriate line ending.
+ line-ending = "auto"
+
+ # Enable auto-formatting of code examples in docstrings. Markdown,
+ # reStructuredText code/literal blocks and doctests are all supported.
+ #
+ # This is currently disabled by default, but it is planned for this
+ # to be opt-out in the future.
+ docstring-code-format = false
+
+ # Set the line length limit used when formatting code snippets in
+ # docstrings.
+ #
+ # This only has an effect when the `docstring-code-format` setting is
+ # enabled.
+ docstring-code-line-length = "dynamic"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Exclude a variety of commonly ignored directories.
+ exclude = [
+ ".bzr",
+ ".direnv",
+ ".eggs",
+ ".git",
+ ".git-rewrite",
+ ".hg",
+ ".ipynb_checkpoints",
+ ".mypy_cache",
+ ".nox",
+ ".pants.d",
+ ".pyenv",
+ ".pytest_cache",
+ ".pytype",
+ ".ruff_cache",
+ ".svn",
+ ".tox",
+ ".venv",
+ ".vscode",
+ "__pypackages__",
+ "_build",
+ "buck-out",
+ "build",
+ "dist",
+ "node_modules",
+ "site-packages",
+ "venv",
+ ]
+
+ # Same as Black.
+ line-length = 88
+ indent-width = 4
+
+ # Assume Python 3.10
+ target-version = "py310"
+
+ [lint]
+ # select = [...] # See the Default Rules page for the full listing.
+ ignore = []
+
+ # Allow fix for all enabled rules (when `--fix`) is provided.
+ fixable = ["ALL"]
+ unfixable = []
+
+ # Allow unused variables when underscore-prefixed.
+ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+ [format]
+ # Like Black, use double quotes for strings.
+ quote-style = "double"
+
+ # Like Black, indent with spaces, rather than tabs.
+ indent-style = "space"
+
+ # Like Black, respect magic trailing commas.
+ skip-magic-trailing-comma = false
+
+ # Like Black, automatically detect the appropriate line ending.
+ line-ending = "auto"
+
+ # Enable auto-formatting of code examples in docstrings. Markdown,
+ # reStructuredText code/literal blocks and doctests are all supported.
+ #
+ # This is currently disabled by default, but it is planned for this
+ # to be opt-out in the future.
+ docstring-code-format = false
+
+ # Set the line length limit used when formatting code snippets in
+ # docstrings.
+ #
+ # This only has an effect when the `docstring-code-format` setting is
+ # enabled.
+ docstring-code-line-length = "dynamic"
+ ```
+
+As an example, the following would configure Ruff to:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ # 1. Enable all flake8-bugbear (`B`) rules, in addition to the defaults.
+ extend-select = ["B"]
+
+ # 2. Avoid enforcing line-length violations (`E501`)
+ ignore = ["E501"]
+
+ # 3. Avoid trying to fix flake8-bugbear (`B`) violations.
+ unfixable = ["B"]
+
+ # 4. Ignore `E402` (import violations) in all `__init__.py` files, and in selected subdirectories.
+ [tool.ruff.lint.per-file-ignores]
+ "__init__.py" = ["E402"]
+ "**/{tests,docs,tools}/*" = ["E402"]
+
+ [tool.ruff.format]
+ # 5. Use single quotes in `ruff format`.
+ quote-style = "single"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ # 1. Enable all flake8-bugbear (`B`) rules, in addition to the defaults.
+ extend-select = ["B"]
+
+ # 2. Avoid enforcing line-length violations (`E501`)
+ ignore = ["E501"]
+
+ # 3. Avoid trying to fix flake8-bugbear (`B`) violations.
+ unfixable = ["B"]
+
+ # 4. Ignore `E402` (import violations) in all `__init__.py` files, and in selected subdirectories.
+ [lint.per-file-ignores]
+ "__init__.py" = ["E402"]
+ "**/{tests,docs,tools}/*" = ["E402"]
+
+ [format]
+ # 5. Use single quotes in `ruff format`.
+ quote-style = "single"
+ ```
+
+Linter plugin configurations are expressed as subsections, e.g.:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ # Add "Q" to the list of enabled codes.
+ extend-select = ["Q"]
+
+ [tool.ruff.lint.flake8-quotes]
+ docstring-quotes = "double"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ # Add "Q" to the list of enabled codes.
+ extend-select = ["Q"]
+
+ [lint.flake8-quotes]
+ docstring-quotes = "double"
+ ```
+
+Ruff respects `pyproject.toml`, `ruff.toml`, and `.ruff.toml` files. All three implement an
+equivalent schema (though in the `ruff.toml` and `.ruff.toml` versions, the `[tool.ruff]` header and
+`tool.ruff` section prefix is omitted).
+
+For a complete enumeration of the available configuration options, see [_Settings_](settings.md).
+
+## Config file discovery
+
+Similar to [ESLint](https://eslint.org/docs/latest/use/configure/configuration-files#cascading-configuration-objects),
+Ruff supports hierarchical configuration, such that the "closest" config file in the
+directory hierarchy is used for every individual file, with all paths in the config file
+(e.g., `exclude` globs, `src` paths) being resolved relative to the directory containing that
+config file.
+
+There are a few exceptions to these rules:
+
+1. In locating the "closest" `pyproject.toml` file for a given path, Ruff ignores any
+ `pyproject.toml` files that lack a `[tool.ruff]` section.
+1. If a configuration file is passed directly via `--config`, those settings are used for _all_
+ analyzed files, and any relative paths in that configuration file (like `exclude` globs or
+ `src` paths) are resolved relative to the _current_ working directory.
+1. If no config file is found in the filesystem hierarchy, Ruff will fall back to using
+ a default configuration. If a user-specific configuration file exists
+ at `${config_dir}/ruff/pyproject.toml`, that file will be used instead of the default
+ configuration, with `${config_dir}` being determined via [`etcetera`'s base strategy](https://docs.rs/etcetera/latest/etcetera/#native-strategy),
+ and all relative paths being again resolved relative to the _current working directory_.
+1. Any config-file-supported settings that are provided on the command-line (e.g., via
+ `--select`) will override the settings in _every_ resolved configuration file.
+
+Unlike [ESLint](https://eslint.org/docs/latest/use/configure/configuration-files#cascading-configuration-objects),
+Ruff does not merge settings across configuration files; instead, the "closest" configuration file
+is used, and any parent configuration files are ignored. In lieu of this implicit cascade, Ruff
+supports an [`extend`](settings.md#extend) field, which allows you to inherit the settings from another
+config file, like so:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Extend the `pyproject.toml` file in the parent directory...
+ extend = "../pyproject.toml"
+
+ # ...but use a different line length.
+ line-length = 100
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Extend the `ruff.toml` file in the parent directory...
+ extend = "../ruff.toml"
+
+ # ...but use a different line length.
+ line-length = 100
+ ```
+
+All of the above rules apply equivalently to `pyproject.toml`, `ruff.toml`, and `.ruff.toml` files.
+If Ruff detects multiple configuration files in the same directory, the `.ruff.toml` file will take
+precedence over the `ruff.toml` file, and the `ruff.toml` file will take precedence over
+the `pyproject.toml` file.
+
+### Inferring the Python version
+When no discovered configuration specifies a [`target-version`](settings.md#target-version), Ruff will attempt to fall back to the minimum version compatible with the `requires-python` field in a nearby `pyproject.toml`.
+The rules for this behavior are as follows:
+
+1. If a configuration file is passed directly, Ruff does not attempt to infer a missing `target-version`.
+1. If a configuration file is found in the filesystem hierarchy, Ruff will infer a missing `target-version` from the `requires-python` field in a `pyproject.toml` file in the same directory as the found configuration.
+1. If we are using a user-level configuration from `${config_dir}/ruff/pyproject.toml`, the `requires-python` field in the first `pyproject.toml` file found in an ancestor of the current working directory takes precedence over the `target-version` in the user-level configuration.
+1. If no configuration files are found, Ruff will infer the `target-version` from the `requires-python` field in the first `pyproject.toml` file found in an ancestor of the current working directory.
+
+Note that in these last two cases, the behavior of Ruff may differ depending on the working directory from which it is invoked.
+
+## Python file discovery
+
+When passed a path on the command-line, Ruff will automatically discover all Python files in that
+path, taking into account the [`exclude`](settings.md#exclude) and [`extend-exclude`](settings.md#extend-exclude)
+settings in each directory's configuration file.
+
+Files can also be selectively excluded from linting or formatting by scoping the `exclude` setting
+to the tool-specific configuration tables. For example, the following would prevent `ruff` from
+formatting `.pyi` files, but would continue to include them in linting:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.format]
+ exclude = ["*.pyi"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [format]
+ exclude = ["*.pyi"]
+ ```
+
+By default, Ruff will also skip any files that are omitted via `.ignore`, `.gitignore`,
+`.git/info/exclude`, and global `gitignore` files (see: [`respect-gitignore`](settings.md#respect-gitignore)).
+
+Files that are passed to `ruff` directly are always analyzed, regardless of the above criteria,
+unless [`force-exclude`](settings.md#force-exclude) is also enabled (via CLI or settings file).
+For example, without `force-exclude` enabled, `ruff check /path/to/excluded/file.py` will always lint `file.py`.
+
+### Default inclusions
+
+By default, Ruff will discover files matching `*.py`, `*.pyi`, `*.ipynb`, or `pyproject.toml`.
+In [preview](preview.md) mode, Ruff will also discover `*.pyw` by default.
+
+To lint or format files with additional file extensions, use the [`extend-include`](settings.md#extend-include) setting.
+You can also change the default selection using the [`include`](settings.md#include) setting.
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ include = ["pyproject.toml", "src/**/*.py", "scripts/**/*.py"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ include = ["pyproject.toml", "src/**/*.py", "scripts/**/*.py"]
+ ```
+
+!!! warning
+ Paths provided to `include` _must_ match files. For example, `include = ["src"]` will fail since it
+ matches a directory.
+
+## Jupyter Notebook discovery
+
+Ruff has built-in support for linting and formatting [Jupyter Notebooks](https://jupyter.org/),
+which are linted and formatted by default on version `0.6.0` and higher.
+
+If you'd prefer to either only lint or only format Jupyter Notebook files, you can use the
+section-specific `exclude` option to do so. For example, the following would only lint Jupyter
+Notebook files and not format them:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.format]
+ exclude = ["*.ipynb"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [format]
+ exclude = ["*.ipynb"]
+ ```
+
+And, conversely, the following would only format Jupyter Notebook files and not lint them:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ exclude = ["*.ipynb"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ exclude = ["*.ipynb"]
+ ```
+
+You can completely disable Jupyter Notebook support by updating the
+[`extend-exclude`](settings.md#extend-exclude) setting:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ extend-exclude = ["*.ipynb"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ extend-exclude = ["*.ipynb"]
+ ```
+
+If you'd like to ignore certain rules specifically for Jupyter Notebook files, you can do so by
+using the [`per-file-ignores`](settings.md#per-file-ignores) setting:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint.per-file-ignores]
+ "*.ipynb" = ["T20"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint.per-file-ignores]
+ "*.ipynb" = ["T20"]
+ ```
+
+Some rules have different behavior when applied to Jupyter Notebook files. For
+example, when applied to `.py` files the
+[`module-import-not-at-top-of-file` (`E402`)](rules/module-import-not-at-top-of-file.md)
+rule detect imports at the top of a file, but for notebooks it detects imports at the top of a
+**cell**. For a given rule, the rule's documentation will always specify if it has different
+behavior when applied to Jupyter Notebook files.
+
+## Command-line interface
+
+Some configuration options can be provided or overridden via dedicated flags on the command line.
+This includes those related to rule enablement and disablement,
+file discovery, logging level, and more:
+
+```console
+$ ruff check path/to/code/ --select F401 --select F403 --quiet
+```
+
+All other configuration options can be set via the command line
+using the `--config` flag, detailed below.
+
+### The `--config` CLI flag
+
+The `--config` flag has two uses. It is most often used to point to the
+configuration file that you would like Ruff to use, for example:
+
+```console
+$ ruff check path/to/directory --config path/to/ruff.toml
+```
+
+However, the `--config` flag can also be used to provide arbitrary
+overrides of configuration settings using TOML `<KEY> = <VALUE>` pairs.
+This is mostly useful in situations where you wish to override a configuration setting
+that does not have a dedicated command-line flag.
+
+In the below example, the `--config` flag is the only way of overriding the
+`dummy-variable-rgx` configuration setting from the command line,
+since this setting has no dedicated CLI flag. The `per-file-ignores` setting
+could also have been overridden via the `--per-file-ignores` dedicated flag,
+but using `--config` to override the setting is also fine:
+
+```console
+$ ruff check path/to/file --config path/to/ruff.toml --config "lint.dummy-variable-rgx = '__.*'" --config "lint.per-file-ignores = {'some_file.py' = ['F841']}"
+```
+
+Configuration options passed to `--config` are parsed in the same way
+as configuration options in a `ruff.toml` file.
+As such, options specific to the Ruff linter need to be prefixed with `lint.`
+(`--config "lint.dummy-variable-rgx = '__.*'"` rather than simply
+`--config "dummy-variable-rgx = '__.*'"`), and options specific to the Ruff formatter
+need to be prefixed with `format.`.
+
+If a specific configuration option is simultaneously overridden by
+a dedicated flag and by the `--config` flag, the dedicated flag
+takes priority. In this example, the maximum permitted line length
+will be set to 90, not 100:
+
+```console
+$ ruff format path/to/file --line-length=90 --config "line-length=100"
+```
+
+Specifying `--config "line-length=90"` will override the `line-length`
+setting from *all* configuration files detected by Ruff,
+including configuration files discovered in subdirectories.
+In this respect, specifying `--config "line-length=90"` has
+the same effect as specifying `--line-length=90`,
+which will similarly override the `line-length` setting from
+all configuration files detected by Ruff, regardless of where
+a specific configuration file is located.
+
+### Argfile support
+
+Ruff supports reading command-line arguments from a file, which is especially useful when passing a large number of file paths that might exceed your shell's command-line length limit. To use an argfile, prefix the file path with an `@` symbol:
+
+```console
+$ ruff check @path/to/args.txt
+```
+
+The arguments in the file must all be written on their own line. For example, `args.txt` might contain:
+
+```text
+--select
+F401
+--quiet
+path/to/code1/
+path/to/code2/
+```
+
+### Full command-line interface
+
+See `ruff help` for the full list of Ruff's top-level commands:
+
+<!-- Begin auto-generated command help. -->
+
+```text
+Ruff: An extremely fast Python linter and code formatter.
+
+Usage: ruff [OPTIONS] <COMMAND>
+
+Commands:
+ check Run Ruff on the given files or directories
+ rule Explain a rule (or all rules)
+ config List or describe the available configuration options
+ linter List all supported upstream linters
+ clean Clear any caches in the current directory and any subdirectories
+ format Run the Ruff formatter on the given files or directories
+ server Run the language server
+ analyze Run analysis over Python source code
+ version Display Ruff's version
+ help Print this message or the help of the given subcommand(s)
+
+Options:
+ -h, --help Print help (see more with '--help')
+ -V, --version Print version
+
+Log levels:
+ -v, --verbose Enable verbose logging
+ -q, --quiet Print diagnostics, but nothing else
+ -s, --silent Disable all logging (but still exit with status code "1" upon
+ detecting diagnostics)
+
+Global options:
+ --config <CONFIG_OPTION>
+ Either a path to a TOML configuration file (`pyproject.toml` or
+ `ruff.toml`), or a TOML `<KEY> = <VALUE>` pair (such as you might
+ find in a `ruff.toml` configuration file) overriding a specific
+ configuration option (e.g., `--config "lint.line-length = 100"` or
+ `--config "format.quote-style = 'single'"`). Overrides of individual
+ settings using this option always take precedence over all
+ configuration files, including configuration files that were also
+ specified using `--config`
+ --isolated
+ Ignore all configuration files
+ --color <WHEN>
+ Control when colored output is used [possible values: auto, always,
+ never]
+
+For help with a specific command, see: `ruff help <command>`.
+```
+
+<!-- End auto-generated command help. -->
+
+Or `ruff help check` for more on the linting command:
+
+<!-- Begin auto-generated check help. -->
+
+```text
+Run Ruff on the given files or directories
+
+Usage: ruff check [OPTIONS] [FILES]...
+
+Arguments:
+ [FILES]... List of files or directories to check, or `-` to read from stdin
+ [default: .]
+
+Options:
+ --fix
+ Apply fixes to resolve lint violations. Use `--no-fix` to disable or
+ `--unsafe-fixes` to include unsafe fixes
+ --unsafe-fixes
+ Include fixes that may not retain the original intent of the code.
+ Use `--no-unsafe-fixes` to disable
+ --show-fixes
+ Show an enumeration of all fixed lint violations. Use
+ `--no-show-fixes` to disable
+ --diff
+ Avoid writing any fixed files back; instead, output a diff for each
+ changed file to stdout, and exit 0 if there are no diffs. Implies
+ `--fix-only`
+ -w, --watch
+ Run in watch mode by re-running whenever files change
+ --fix-only
+ Apply fixes to resolve lint violations, but don't report on, or exit
+ non-zero for, leftover violations. Implies `--fix`. Use
+ `--no-fix-only` to disable or `--unsafe-fixes` to include unsafe
+ fixes
+ --ignore-noqa
+ Ignore any `# noqa` comments
+ --output-format <OUTPUT_FORMAT>
+ Output serialization format for violations. The default serialization
+ format is "full" [env: RUFF_OUTPUT_FORMAT=] [possible values:
+ concise, full, json, json-lines, junit, grouped, github, gitlab,
+ pylint, rdjson, azure, sarif]
+ -o, --output-file <OUTPUT_FILE>
+ Specify file to write the linter output to (default: stdout) [env:
+ RUFF_OUTPUT_FILE=]
+ --target-version <TARGET_VERSION>
+ The minimum Python version that should be supported [possible values:
+ py37, py38, py39, py310, py311, py312, py313, py314, py315]
+ --preview
+ Enable preview mode; checks will include unstable rules and fixes.
+ Use `--no-preview` to disable
+ --extension <EXTENSION>
+ List of mappings from file extension to language (one of `python`,
+ `ipynb`, `pyi`). For example, to treat `.ipy` files as IPython
+ notebooks, use `--extension ipy:ipynb`
+ --statistics
+ Show counts for every rule with at least one violation
+ --add-noqa[=<REASON>]
+ Enable automatic additions of `noqa` directives to failing lines.
+ Optionally provide a reason to append after the codes
+ --add-ignore[=<REASON>]
+ Enable automatic additions of `ruff: ignore` comments to failing
+ lines. Optionally provide a reason to append after the codes. In
+ preview, add suppression comments with rule names instead
+ --show-files
+ See the files Ruff will be run against with the current settings
+ --show-settings
+ See the settings Ruff will use to lint a given Python file
+ -h, --help
+ Print help (see more with '--help')
+
+Rule selection:
+ --select <RULE_CODE>
+ Comma-separated list of rule codes to enable (or ALL, to enable all
+ rules)
+ --ignore <RULE_CODE>
+ Comma-separated list of rule codes to disable
+ --extend-select <RULE_CODE>
+ Like --select, but adds additional rule codes on top of those already
+ specified
+ --per-file-ignores <PER_FILE_IGNORES>
+ List of mappings from file pattern to code to exclude
+ --extend-per-file-ignores <EXTEND_PER_FILE_IGNORES>
+ Like `--per-file-ignores`, but adds additional ignores on top of
+ those already specified
+ --fixable <RULE_CODE>
+ List of rule codes to treat as eligible for fix. Only applicable when
+ fix itself is enabled (e.g., via `--fix`)
+ --unfixable <RULE_CODE>
+ List of rule codes to treat as ineligible for fix. Only applicable
+ when fix itself is enabled (e.g., via `--fix`)
+ --extend-fixable <RULE_CODE>
+ Like --fixable, but adds additional rule codes on top of those
+ already specified
+
+File selection:
+ --exclude <FILE_PATTERN>
+ List of paths, used to omit files and/or directories from analysis
+ --extend-exclude <FILE_PATTERN>
+ Like --exclude, but adds additional files and directories on top of
+ those already excluded
+ --respect-gitignore
+ Respect file exclusions via `.gitignore` and other standard ignore
+ files. Use `--no-respect-gitignore` to disable
+ --force-exclude
+ Enforce exclusions, even for paths passed to Ruff directly on the
+ command-line. Use `--no-force-exclude` to disable
+
+Miscellaneous:
+ -n, --no-cache
+ Disable cache reads [env: RUFF_NO_CACHE=]
+ --cache-dir <CACHE_DIR>
+ Path to the cache directory [env: RUFF_CACHE_DIR=]
+ --stdin-filename <STDIN_FILENAME>
+ The name of the file when passing it through stdin
+ -e, --exit-zero
+ Exit with status code "0", even upon detecting lint violations
+ --exit-non-zero-on-fix
+ Exit with a non-zero status code if any files were modified via fix,
+ even if no lint violations remain
+
+Log levels:
+ -v, --verbose Enable verbose logging
+ -q, --quiet Print diagnostics, but nothing else
+ -s, --silent Disable all logging (but still exit with status code "1" upon
+ detecting diagnostics)
+
+Global options:
+ --config <CONFIG_OPTION>
+ Either a path to a TOML configuration file (`pyproject.toml` or
+ `ruff.toml`), or a TOML `<KEY> = <VALUE>` pair (such as you might
+ find in a `ruff.toml` configuration file) overriding a specific
+ configuration option (e.g., `--config "lint.line-length = 100"` or
+ `--config "format.quote-style = 'single'"`). Overrides of individual
+ settings using this option always take precedence over all
+ configuration files, including configuration files that were also
+ specified using `--config`
+ --isolated
+ Ignore all configuration files
+ --color <WHEN>
+ Control when colored output is used [possible values: auto, always,
+ never]
+```
+
+<!-- End auto-generated check help. -->
+
+Or `ruff help format` for more on the formatting command:
+
+<!-- Begin auto-generated format help. -->
+
+```text
+Run the Ruff formatter on the given files or directories
+
+Usage: ruff format [OPTIONS] [FILES]...
+
+Arguments:
+ [FILES]... List of files or directories to format, or `-` to read from stdin
+ [default: .]
+
+Options:
+ --check
+ Avoid writing any formatted files back; instead, exit with a non-zero
+ status code if any files would have been modified, and zero otherwise
+ --diff
+ Avoid writing any formatted files back; instead, exit with a non-zero
+ status code and the difference between the current file and how the
+ formatted file would look like
+ --extension <EXTENSION>
+ List of mappings from file extension to language (one of `python`,
+ `ipynb`, `pyi`). For example, to treat `.ipy` files as IPython
+ notebooks, use `--extension ipy:ipynb`
+ --target-version <TARGET_VERSION>
+ The minimum Python version that should be supported [possible values:
+ py37, py38, py39, py310, py311, py312, py313, py314, py315]
+ --preview
+ Enable preview mode; enables unstable formatting. Use `--no-preview`
+ to disable
+ --output-format <OUTPUT_FORMAT>
+ Output serialization format for violations, when used with `--check`.
+ The default serialization format is "full" [env: RUFF_OUTPUT_FORMAT=]
+ [possible values: concise, full, json, json-lines, junit, grouped,
+ github, gitlab, pylint, rdjson, azure, sarif]
+ -h, --help
+ Print help (see more with '--help')
+
+Miscellaneous:
+ -n, --no-cache
+ Disable cache reads [env: RUFF_NO_CACHE=]
+ --cache-dir <CACHE_DIR>
+ Path to the cache directory [env: RUFF_CACHE_DIR=]
+ --stdin-filename <STDIN_FILENAME>
+ The name of the file when passing it through stdin
+ --exit-non-zero-on-format
+ Exit with a non-zero status code if any files were modified via
+ format, even if all files were formatted successfully
+
+File selection:
+ --respect-gitignore
+ Respect file exclusions via `.gitignore` and other standard ignore
+ files. Use `--no-respect-gitignore` to disable
+ --exclude <FILE_PATTERN>
+ List of paths, used to omit files and/or directories from analysis
+ --extend-exclude <FILE_PATTERN>
+ Like --exclude, but adds additional files and directories on top of
+ those already excluded
+ --force-exclude
+ Enforce exclusions, even for paths passed to Ruff directly on the
+ command-line. Use `--no-force-exclude` to disable
+
+Format configuration:
+ --line-length <LINE_LENGTH> Set the line-length
+
+Editor options:
+ --range <RANGE> When specified, Ruff will try to only format the code in
+ the given range.
+ It might be necessary to extend the start backwards or
+ the end forwards, to fully enclose a logical line.
+ The `<RANGE>` uses the format
+ `<start_line>:<start_column>-<end_line>:<end_column>`.
+
+Log levels:
+ -v, --verbose Enable verbose logging
+ -q, --quiet Print diagnostics, but nothing else
+ -s, --silent Disable all logging (but still exit with status code "1" upon
+ detecting diagnostics)
+
+Global options:
+ --config <CONFIG_OPTION>
+ Either a path to a TOML configuration file (`pyproject.toml` or
+ `ruff.toml`), or a TOML `<KEY> = <VALUE>` pair (such as you might
+ find in a `ruff.toml` configuration file) overriding a specific
+ configuration option (e.g., `--config "lint.line-length = 100"` or
+ `--config "format.quote-style = 'single'"`). Overrides of individual
+ settings using this option always take precedence over all
+ configuration files, including configuration files that were also
+ specified using `--config`
+ --isolated
+ Ignore all configuration files
+ --color <WHEN>
+ Control when colored output is used [possible values: auto, always,
+ never]
+```
+
+<!-- End auto-generated format help. -->
+
+## Shell autocompletion
+
+Ruff supports autocompletion for most shells. A shell-specific completion script can be generated
+by `ruff generate-shell-completion <SHELL>`, where `<SHELL>` is one of `bash`, `elvish`, `fig`, `fish`,
+`powershell`, or `zsh`.
+
+!!! tip
+
+ You can run `echo $SHELL` to help you determine your shell.
+
+To enable shell autocompletion for Ruff, run one of the following:
+
+=== "Bash"
+
+ ```bash
+ echo 'eval "$(ruff generate-shell-completion bash)"' >> ~/.bashrc
+ ```
+
+=== "Zsh"
+
+ ```bash
+ echo 'eval "$(ruff generate-shell-completion zsh)"' >> ~/.zshrc
+ ```
+
+=== "fish"
+
+ ```bash
+ echo 'ruff generate-shell-completion fish | source' > ~/.config/fish/completions/ruff.fish
+ ```
+
+=== "Elvish"
+
+ ```bash
+ echo 'eval (ruff generate-shell-completion elvish | slurp)' >> ~/.elvish/rc.elv
+ ```
+
+=== "PowerShell / pwsh"
+
+ ```powershell
+ if (!(Test-Path -Path $PROFILE)) {
+ New-Item -ItemType File -Path $PROFILE -Force
+ }
+ Add-Content -Path $PROFILE -Value '(& ruff generate-shell-completion powershell) | Out-String | Invoke-Expression'
+ ```
+
+Then restart the shell or source the shell config file.
+
+# FAQ
+
+## Is the Ruff linter compatible with Black?
+
+Yes. The Ruff linter is compatible with [Black](https://github.com/psf/black) out-of-the-box, as
+long as the [`line-length`](settings.md#line-length) setting is consistent between the two.
+
+Ruff is designed to be used alongside a formatter (like Ruff's own formatter, or Black) and, as
+such, will defer implementing stylistic rules that are obviated by automated formatting.
+
+Note that Ruff's linter and Black treat line-length enforcement a little differently. Black, like
+Ruff's formatter, makes a best-effort attempt to adhere to the
+[`line-length`](settings.md#line-length), but avoids automatic line-wrapping in some cases (e.g.,
+within comments). Ruff, on the other hand, will flag [`line-too-long`](rules/line-too-long.md)
+(`E501`) for any line that exceeds the [`line-length`](settings.md#line-length) setting. As such, if
+[`line-too-long`](rules/line-too-long.md) (`E501`) is enabled, Ruff can still trigger line-length
+violations even when Black or `ruff format` is enabled.
+
+## How does Ruff's formatter compare to Black?
+
+The Ruff formatter is designed to be a drop-in replacement for [Black](https://github.com/psf/black).
+
+Specifically, the formatter is intended to emit near-identical output when run over Black-formatted
+code. When run over extensive Black-formatted projects like Django and Zulip, > 99.9% of lines
+are formatted identically. When migrating an existing project from Black to Ruff, you should expect
+to see a few differences on the margins, but the vast majority of your code should be unchanged.
+
+When run over _non_-Black-formatted code, the formatter makes some different decisions than Black,
+and so more deviations should be expected, especially around the treatment of end-of-line comments.
+
+See [_Style Guide_](formatter.md#style-guide) for more.
+
+## How does Ruff's linter compare to Flake8?
+
+Ruff can be used as a drop-in replacement for Flake8 when used (1) without or with a small number of
+plugins, (2) alongside Black, and (3) on Python 3 code.
+
+Under those conditions, Ruff implements every rule in Flake8. In practice, that means Ruff
+implements all of the `F` rules (which originate from Pyflakes), along with a subset of the `E` and
+`W` rules (which originate from pycodestyle).
+
+Ruff also re-implements some of the most popular Flake8 plugins and related code quality tools
+natively, including:
+
+- [autoflake](https://pypi.org/project/autoflake/)
+- [eradicate](https://pypi.org/project/eradicate/)
+- [flake8-2020](https://pypi.org/project/flake8-2020/)
+- [flake8-annotations](https://pypi.org/project/flake8-annotations/)
+- [flake8-async](https://pypi.org/project/flake8-async)
+- [flake8-bandit](https://pypi.org/project/flake8-bandit/) ([#1646](https://github.com/astral-sh/ruff/issues/1646))
+- [flake8-blind-except](https://pypi.org/project/flake8-blind-except/)
+- [flake8-boolean-trap](https://pypi.org/project/flake8-boolean-trap/)
+- [flake8-bugbear](https://pypi.org/project/flake8-bugbear/)
+- [flake8-builtins](https://pypi.org/project/flake8-builtins/)
+- [flake8-commas](https://pypi.org/project/flake8-commas/)
+- [flake8-comprehensions](https://pypi.org/project/flake8-comprehensions/)
+- [flake8-copyright](https://pypi.org/project/flake8-copyright/)
+- [flake8-datetimez](https://pypi.org/project/flake8-datetimez/)
+- [flake8-debugger](https://pypi.org/project/flake8-debugger/)
+- [flake8-django](https://pypi.org/project/flake8-django/)
+- [flake8-docstrings](https://pypi.org/project/flake8-docstrings/)
+- [flake8-eradicate](https://pypi.org/project/flake8-eradicate/)
+- [flake8-errmsg](https://pypi.org/project/flake8-errmsg/)
+- [flake8-executable](https://pypi.org/project/flake8-executable/)
+- [flake8-gettext](https://pypi.org/project/flake8-gettext/)
+- [flake8-implicit-str-concat](https://pypi.org/project/flake8-implicit-str-concat/)
+- [flake8-import-conventions](https://pypi.org/project/flake8-import-conventions/)
+- [flake8-logging](https://pypi.org/project/flake8-logging-format/)
+- [flake8-logging-format](https://pypi.org/project/flake8-logging-format/)
+- [flake8-no-pep420](https://pypi.org/project/flake8-no-pep420)
+- [flake8-pie](https://pypi.org/project/flake8-pie/)
+- [flake8-print](https://pypi.org/project/flake8-print/)
+- [flake8-pyi](https://pypi.org/project/flake8-pyi/)
+- [flake8-pytest-style](https://pypi.org/project/flake8-pytest-style/)
+- [flake8-quotes](https://pypi.org/project/flake8-quotes/)
+- [flake8-raise](https://pypi.org/project/flake8-raise/)
+- [flake8-return](https://pypi.org/project/flake8-return/)
+- [flake8-self](https://pypi.org/project/flake8-self/)
+- [flake8-simplify](https://pypi.org/project/flake8-simplify/)
+- [flake8-slots](https://pypi.org/project/flake8-slots/)
+- [flake8-super](https://pypi.org/project/flake8-super/)
+- [flake8-tidy-imports](https://pypi.org/project/flake8-tidy-imports/)
+- [flake8-todos](https://pypi.org/project/flake8-todos/)
+- [flake8-type-checking](https://pypi.org/project/flake8-type-checking/)
+- [flake8-use-pathlib](https://pypi.org/project/flake8-use-pathlib/)
+- [flynt](https://pypi.org/project/flynt/) ([#2102](https://github.com/astral-sh/ruff/issues/2102))
+- [isort](https://pypi.org/project/isort/)
+- [mccabe](https://pypi.org/project/mccabe/)
+- [pandas-vet](https://pypi.org/project/pandas-vet/)
+- [pep8-naming](https://pypi.org/project/pep8-naming/)
+- [perflint](https://pypi.org/project/perflint/) ([#4789](https://github.com/astral-sh/ruff/issues/4789))
+- [pydocstyle](https://pypi.org/project/pydocstyle/)
+- [pygrep-hooks](https://github.com/pre-commit/pygrep-hooks)
+- [pyupgrade](https://pypi.org/project/pyupgrade/)
+- [tryceratops](https://pypi.org/project/tryceratops/)
+- [yesqa](https://pypi.org/project/yesqa/)
+
+Note that, in some cases, Ruff uses different rule codes and prefixes than would be found in the
+originating Flake8 plugins. For example, Ruff uses `TID252` to represent the `I252` rule from
+flake8-tidy-imports. This helps minimize conflicts across plugins and allows any individual plugin
+to be toggled on or off with a single (e.g.) `--select TID`, as opposed to `--select I2` (to avoid
+conflicts with the isort rules, like `I001`).
+
+Beyond the rule set, Ruff's primary limitation vis-à-vis Flake8 is that it does not support custom
+lint rules. (Instead, popular Flake8 plugins are re-implemented in Rust as part of Ruff itself.)
+One minor difference is that Ruff doesn't include all the 'opinionated' rules from flake8-bugbear.
+
+## How does Ruff's linter compare to Pylint?
+
+At time of writing, Pylint implements ~409 total rules, while Ruff implements over 900, of which at
+least 209 overlap with the Pylint rule set (see: [#970](https://github.com/astral-sh/ruff/issues/970)).
+
+Pylint implements many rules that Ruff does not, and vice versa. For example, Pylint does more type
+inference than Ruff (e.g., Pylint can validate the number of arguments in a function call). As such,
+Ruff is not a "pure" drop-in replacement for Pylint (and vice versa), as they enforce different sets
+of rules.
+
+Despite these differences, many users have successfully switched from Pylint to Ruff, especially
+those using Ruff alongside a [type checker](faq.md#how-does-ruff-compare-to-mypy-or-pyright-or-pyre),
+which can cover some of the functionality that Pylint provides.
+
+Like Flake8, Pylint supports plugins (called "checkers"), while Ruff implements all rules natively
+and does not support custom or third-party rules. Unlike Pylint, Ruff is capable of automatically
+fixing its own lint violations.
+
+In some cases, Ruff's rules may yield slightly different results than their Pylint counterparts. For
+example, Ruff's [`too-many-branches`](rules/too-many-branches.md) does not count `try` blocks as
+their own branches, unlike Pylint's `R0912`. Ruff's `PL` rule group also includes a small number of
+rules from Pylint _extensions_ (like [`magic-value-comparison`](rules/magic-value-comparison.md)),
+which need to be explicitly activated when using Pylint. By enabling Ruff's `PL` group, you may
+see violations for rules that weren't previously enabled through your Pylint configuration.
+
+Pylint parity is being tracked in [#970](https://github.com/astral-sh/ruff/issues/970).
+
+## How does Ruff compare to Mypy, or Pyright, or Pyre?
+
+Ruff is a linter, not a type checker. It can detect some of the same problems that a type checker
+can, but a type checker will catch certain errors that Ruff would miss. The opposite is also true:
+Ruff will catch certain errors that a type checker would typically ignore.
+
+For example, unlike a type checker, Ruff will notify you if an import is unused, by looking for
+references to that import in the source code; on the other hand, a type checker could flag that you
+passed an integer argument to a function that expects a string, which Ruff would miss. The
+tools are complementary.
+
+It's recommended that you use Ruff in conjunction with a type checker, like Mypy, Pyright, or Pyre,
+with Ruff providing faster feedback on lint violations and the type checker providing more detailed
+feedback on type errors.
+
+## Which tools does Ruff replace?
+
+Today, Ruff can be used to replace Flake8 when used with any of the following plugins:
+
+- [flake8-2020](https://pypi.org/project/flake8-2020/)
+- [flake8-annotations](https://pypi.org/project/flake8-annotations/)
+- [flake8-async](https://pypi.org/project/flake8-async)
+- [flake8-bandit](https://pypi.org/project/flake8-bandit/) ([#1646](https://github.com/astral-sh/ruff/issues/1646))
+- [flake8-blind-except](https://pypi.org/project/flake8-blind-except/)
+- [flake8-boolean-trap](https://pypi.org/project/flake8-boolean-trap/)
+- [flake8-bugbear](https://pypi.org/project/flake8-bugbear/)
+- [flake8-builtins](https://pypi.org/project/flake8-builtins/)
+- [flake8-commas](https://pypi.org/project/flake8-commas/)
+- [flake8-comprehensions](https://pypi.org/project/flake8-comprehensions/)
+- [flake8-copyright](https://pypi.org/project/flake8-copyright/)
+- [flake8-datetimez](https://pypi.org/project/flake8-datetimez/)
+- [flake8-debugger](https://pypi.org/project/flake8-debugger/)
+- [flake8-django](https://pypi.org/project/flake8-django/)
+- [flake8-docstrings](https://pypi.org/project/flake8-docstrings/)
+- [flake8-eradicate](https://pypi.org/project/flake8-eradicate/)
+- [flake8-errmsg](https://pypi.org/project/flake8-errmsg/)
+- [flake8-executable](https://pypi.org/project/flake8-executable/)
+- [flake8-gettext](https://pypi.org/project/flake8-gettext/)
+- [flake8-implicit-str-concat](https://pypi.org/project/flake8-implicit-str-concat/)
+- [flake8-import-conventions](https://pypi.org/project/flake8-import-conventions/)
+- [flake8-logging](https://pypi.org/project/flake8-logging/)
+- [flake8-logging-format](https://pypi.org/project/flake8-logging-format/)
+- [flake8-no-pep420](https://pypi.org/project/flake8-no-pep420)
+- [flake8-pie](https://pypi.org/project/flake8-pie/)
+- [flake8-print](https://pypi.org/project/flake8-print/)
+- [flake8-pytest-style](https://pypi.org/project/flake8-pytest-style/)
+- [flake8-quotes](https://pypi.org/project/flake8-quotes/)
+- [flake8-raise](https://pypi.org/project/flake8-raise/)
+- [flake8-return](https://pypi.org/project/flake8-return/)
+- [flake8-self](https://pypi.org/project/flake8-self/)
+- [flake8-simplify](https://pypi.org/project/flake8-simplify/)
+- [flake8-slots](https://pypi.org/project/flake8-slots/)
+- [flake8-super](https://pypi.org/project/flake8-super/)
+- [flake8-tidy-imports](https://pypi.org/project/flake8-tidy-imports/)
+- [flake8-todos](https://pypi.org/project/flake8-todos/)
+- [flake8-type-checking](https://pypi.org/project/flake8-type-checking/)
+- [flake8-use-pathlib](https://pypi.org/project/flake8-use-pathlib/)
+- [flynt](https://pypi.org/project/flynt/) ([#2102](https://github.com/astral-sh/ruff/issues/2102))
+- [mccabe](https://pypi.org/project/mccabe/)
+- [pandas-vet](https://pypi.org/project/pandas-vet/)
+- [pep8-naming](https://pypi.org/project/pep8-naming/)
+- [perflint](https://pypi.org/project/perflint/) ([#4789](https://github.com/astral-sh/ruff/issues/4789))
+- [pydocstyle](https://pypi.org/project/pydocstyle/)
+- [tryceratops](https://pypi.org/project/tryceratops/)
+
+Ruff can also replace [Black](https://pypi.org/project/black/), [isort](https://pypi.org/project/isort/),
+[yesqa](https://pypi.org/project/yesqa/), [eradicate](https://pypi.org/project/eradicate/), and
+most of the rules implemented in [pyupgrade](https://pypi.org/project/pyupgrade/).
+
+If you're looking to use Ruff, but rely on an unsupported Flake8 plugin, feel free to file an
+[issue](https://github.com/astral-sh/ruff/issues/new).
+
+## Do I have to use Ruff's linter and formatter together?
+
+Nope! Ruff's linter and formatter can be used independently of one another -- you can use
+Ruff as a formatter, but not a linter, or vice versa.
+
+## What versions of Python does Ruff support?
+
+Ruff can lint code for any Python version from 3.7 onwards, including Python 3.13.
+
+Ruff does not support Python 2. Ruff _may_ run on pre-Python 3.7 code, although such versions
+are not officially supported (e.g., Ruff does _not_ respect type comments).
+
+Ruff is installable under any Python version from 3.7 onwards.
+
+## Do I need to install Rust to use Ruff?
+
+Nope! Ruff is available as [`ruff`](https://pypi.org/project/ruff/) on PyPI. We recommend installing Ruff with [uv](https://docs.astral.sh/uv/),
+though it's also installable with `pip`, `pipx`, and a [variety of other package managers](installation.md):
+
+```console
+$ # Install Ruff globally.
+$ uv tool install ruff@latest
+
+$ # Or add Ruff to your project.
+$ uv add --dev ruff
+
+$ # With pip.
+$ pip install ruff
+
+$ # With pipx.
+$ pipx install ruff
+```
+
+Starting with version `0.5.0`, Ruff can also be installed with our standalone installers:
+
+```console
+$ # On macOS and Linux.
+$ curl -LsSf https://astral.sh/ruff/install.sh | sh
+
+$ # On Windows.
+$ powershell -c "irm https://astral.sh/ruff/install.ps1 | iex"
+
+$ # For a specific version.
+$ curl -LsSf https://astral.sh/ruff/0.5.0/install.sh | sh
+$ powershell -c "irm https://astral.sh/ruff/0.5.0/install.ps1 | iex"
+```
+
+Ruff ships with wheels for all major platforms, which enables `uv`, `pip`, and other tools to install Ruff without
+relying on a Rust toolchain at all.
+
+## Can I write my own linter plugins for Ruff?
+
+Ruff does not yet support third-party plugins, though a plugin system is within-scope for the
+project. See [#283](https://github.com/astral-sh/ruff/issues/283) for more.
+
+## How does Ruff's import sorting compare to [isort](https://pypi.org/project/isort/)?
+
+Ruff's import sorting is intended to be near-equivalent to isort's when using isort's
+`profile = "black"`.
+
+There are a few known differences in how Ruff and isort treat aliased imports, and in how Ruff and
+isort treat inline comments in some cases (see: [#1381](https://github.com/astral-sh/ruff/issues/1381),
+[#2104](https://github.com/astral-sh/ruff/issues/2104)).
+
+For example, Ruff tends to group non-aliased imports from the same module:
+
+```python
+from numpy import cos, int8, int16, int32, int64, tan, uint8, uint16, uint32, uint64
+from numpy import sin as np_sin
+```
+
+Whereas isort splits them into separate import statements at each aliased boundary:
+
+```python
+from numpy import cos, int8, int16, int32, int64
+from numpy import sin as np_sin
+from numpy import tan, uint8, uint16, uint32, uint64
+```
+
+Ruff also correctly classifies some modules as standard-library that aren't recognized
+by isort, like `_string` and `idlelib`.
+
+Like isort, Ruff's import sorting is compatible with Black.
+
+## How does Ruff determine which of my imports are first-party, third-party, etc.?
+
+Ruff accepts a `src` option that in your `pyproject.toml`, `ruff.toml`, or `.ruff.toml` file,
+specifies the directories that Ruff should consider when determining whether an import is
+first-party.
+
+For example, if you have a project with the following structure:
+
+```tree
+my_project
+├── pyproject.toml
+└── src
+ └── foo
+ ├── __init__.py
+ └── bar
+ ├── __init__.py
+ └── baz.py
+```
+
+When Ruff sees an import like `import foo`, it will then iterate over the `src` directories,
+looking for a corresponding Python module (in reality, a directory named `foo` or a file named
+`foo.py`). For module paths with multiple components like `import foo.bar`,
+Ruff will require that the full relative path `foo/bar` exists as a directory, or that `foo/bar.py` or `foo/bar.pyi` exist as files. Finally, for imports of the form `from foo import bar`, Ruff will only use `foo` when determining whether a module is first-party or third-party.
+
+If there is a directory
+whose name matches a third-party package, but does not contain Python code,
+it could happen that the above algorithm incorrectly infers an import to be first-party.
+To prevent this, you can modify the [`known-third-party`](settings.md#lint_isort_known-third-party) setting. For example, if you import
+the package `wandb` but also have a subdirectory of your `src` with
+the same name, you can add the following:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint.isort]
+ known-third-party = ["wandb"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint.isort]
+ known-third-party = ["wandb"]
+ ```
+
+If the `src` field is omitted, Ruff will default to using the "project root", along with a `"src"`
+subdirectory, as the first-party sources, to support both flat and nested project layouts.
+The "project root" is typically the directory containing your `pyproject.toml`, `ruff.toml`, or
+`.ruff.toml` file, unless a configuration file is provided on the command-line via the `--config`
+option, in which case, the current working directory is used as the project root.
+
+In this case, Ruff would check the `"src"` directory by default, but we can configure it as an
+explicit, exclusive first-party source like so:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Ruff supports a top-level `src` option in lieu of isort's `src_paths` setting.
+ # All paths are relative to the project root, which is the directory containing the pyproject.toml.
+ src = ["src"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Ruff supports a top-level `src` option in lieu of isort's `src_paths` setting.
+ # All paths are relative to the project root, which is the directory containing the pyproject.toml.
+ src = ["src"]
+ ```
+
+If your `pyproject.toml`, `ruff.toml`, or `.ruff.toml` extends another configuration file, Ruff
+will still use the directory containing your `pyproject.toml`, `ruff.toml`, or `.ruff.toml` file as
+the project root (as opposed to the directory of the file pointed to via the `extends` option).
+
+For example, if you add a configuration file to the `tests` directory in the above example, you'll
+want to explicitly set the `src` option in the extended configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ extend = "../pyproject.toml"
+ src = ["../src"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ extend = "../pyproject.toml"
+ src = ["../src"]
+ ```
+
+Beyond this `src`-based detection, Ruff will also attempt to determine the current Python package
+for a given Python file (determined via the existence of a `__init__.py` file in a directory),
+and mark imports from within the same package as first-party. For example,
+above, `baz.py` would be identified as part of the Python package beginning at
+`./my_project/src/foo`, and so any imports in `baz.py` that begin with `foo` (like `import foo.bar`)
+would be considered first-party based on this same-package heuristic.
+
+For a detailed explanation of `src` resolution, see the [contributing guide](contributing.md).
+
+Ruff can also be configured to treat certain modules as (e.g.) always first-party, regardless of
+their location on the filesystem. For example, you can set [`known-first-party`](settings.md#lint_isort_known-first-party)
+like so:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ src = ["src", "tests"]
+
+ [tool.ruff.lint]
+ select = [
+ # Pyflakes
+ "F",
+ # Pycodestyle
+ "E",
+ "W",
+ # isort
+ "I001"
+ ]
+
+ [tool.ruff.lint.isort]
+ known-first-party = ["my_module1", "my_module2"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ src = ["src", "tests"]
+
+ [lint]
+ select = [
+ # Pyflakes
+ "F",
+ # Pycodestyle
+ "E",
+ "W",
+ # isort
+ "I001"
+ ]
+
+ [lint.isort]
+ known-first-party = ["my_module1", "my_module2"]
+ ```
+
+Ruff does not yet support all of isort's configuration options, though it does support many of
+them. You can find the supported settings in the [API reference](settings.md#lintisort).
+
+## Does Ruff support Jupyter Notebooks?
+
+Ruff has built-in support for linting and formatting [Jupyter Notebooks](https://jupyter.org/). Refer to the
+[Jupyter Notebook section](configuration.md#jupyter-notebook-discovery) for more details.
+
+Ruff also integrates with [nbQA](https://github.com/nbQA-dev/nbQA), a tool for running linters and
+code formatters over Jupyter Notebooks.
+
+After installing `ruff` and `nbqa`, you can run Ruff over a notebook like so:
+
+```console
+$ nbqa ruff Untitled.ipynb
+Untitled.ipynb:cell_1:2:5: F841 Local variable `x` is assigned to but never used
+Untitled.ipynb:cell_2:1:1: E402 Module level import not at top of file
+Untitled.ipynb:cell_2:1:8: F401 `os` imported but unused
+Found 3 errors.
+1 potentially fixable with the `--fix` option.
+```
+
+## Does Ruff support NumPy- or Google-style docstrings?
+
+Yes! To enforce a docstring convention, add a [`convention`](settings.md#lint_pydocstyle_convention)
+setting following to your configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint.pydocstyle]
+ convention = "google" # Accepts: "google", "numpy", or "pep257".
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint.pydocstyle]
+ convention = "google" # Accepts: "google", "numpy", or "pep257".
+ ```
+
+For example, if you're coming from flake8-docstrings, and your originating configuration uses
+`--docstring-convention=numpy`, you'd instead set `convention = "numpy"` in your `pyproject.toml`,
+as above.
+
+Alongside [`convention`](settings.md#lint_pydocstyle_convention), you'll want to
+explicitly enable the `D` rule code prefix, since the `D` rules are not enabled by default:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = ["D"]
+
+ [tool.ruff.lint.pydocstyle]
+ convention = "google"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = ["D"]
+
+ [lint.pydocstyle]
+ convention = "google"
+ ```
+
+Enabling a [`convention`](settings.md#lint_pydocstyle_convention) will disable any rules that are not
+included in the specified convention. As such, the intended workflow is to enable a convention and
+then selectively enable or disable any additional rules on top of it:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = [
+ "D",
+ # Augment the convention by requiring an imperative mood for all docstrings.
+ "D401",
+ ]
+
+ ignore = [
+ # Relax the convention by _not_ requiring documentation for every function parameter.
+ "D417",
+ ]
+
+ [tool.ruff.lint.pydocstyle]
+ convention = "google"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = [
+ "D",
+ # Augment the convention by requiring an imperative mood for all docstrings.
+ "D401",
+ ]
+
+ ignore = [
+ # Relax the convention by _not_ requiring documentation for every function parameter.
+ "D417",
+ ]
+
+ [lint.pydocstyle]
+ convention = "google"
+ ```
+
+By default, no [`convention`](settings.md#lint_pydocstyle_convention) is set, and so the enabled rules
+are determined by the [`select`](settings.md#lint_select) setting alone.
+
+## What is "preview"?
+
+Preview enables a collection of newer rules and fixes that are considered experimental or unstable.
+See the [preview documentation](preview.md) for more details; or, to see which rules are currently
+in preview, visit the [rules reference](rules.md).
+
+## How can I tell what settings Ruff is using to check my code?
+
+Run `ruff check /path/to/code.py --show-settings` to view the resolved settings for a given file.
+
+## I want to use Ruff, but I don't want to use `pyproject.toml`. What are my options?
+
+In lieu of a `pyproject.toml` file, you can use a `ruff.toml` file for configuration. The two
+files are functionally equivalent and have an identical schema, with the exception that a `ruff.toml`
+file can omit the `[tool.ruff]` section header. For example:
+
+=== "pyproject.toml"
+
+```toml
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+```
+
+=== "ruff.toml"
+
+```toml
+line-length = 88
+
+[lint.pydocstyle]
+convention = "google"
+```
+
+Ruff doesn't currently support INI files, like `setup.cfg` or `tox.ini`.
+
+## How can I change Ruff's default configuration?
+
+When no configuration file is found, Ruff will look for a user-specific `ruff.toml` file as a
+last resort. This behavior is similar to Flake8's `~/.config/flake8`.
+
+On macOS and Linux, Ruff expects that file to be located at `~/.config/ruff/ruff.toml`,
+and respects the `XDG_CONFIG_HOME` specification.
+
+On Windows, Ruff expects that file to be located at `~\AppData\Roaming\ruff\ruff.toml`.
+
+!!! note
+ Prior to `v0.5.0`, Ruff would read user-specific configuration from
+ `~/Library/Application Support/ruff/ruff.toml` on macOS. While Ruff will still respect
+ such configuration files, the use of `~/Library/Application Support` is considered deprecated.
+
+For more, see the [`etcetera`](https://crates.io/crates/etcetera) crate.
+
+## Ruff tried to fix something — but it broke my code. What's going on?
+
+Ruff labels fixes as "safe" and "unsafe". By default, Ruff will fix all violations for which safe
+fixes are available, while unsafe fixes can be enabled via the [`unsafe-fixes`](settings.md#unsafe-fixes)
+setting, or passing the [`--unsafe-fixes`](settings.md#unsafe-fixes) flag to `ruff check`. For
+more, see [the fix documentation](linter.md#fixes).
+
+Even still, given the dynamic nature of Python, it's difficult to have _complete_ certainty when
+making changes to code, even for seemingly trivial fixes. If a "safe" fix breaks your code, please
+[file an Issue](https://github.com/astral-sh/ruff/issues/new).
+
+## How can I disable/force Ruff's color output?
+
+Ruff's color output is powered by the [`colored`](https://crates.io/crates/colored) crate, which
+attempts to automatically detect whether the output stream supports color. However, you can force
+colors off by setting the `NO_COLOR` environment variable to any value (e.g., `NO_COLOR=1`), or
+force colors on by setting `FORCE_COLOR` to any non-empty value (e.g., `FORCE_COLOR=1`).
+
+[`colored`](https://crates.io/crates/colored) also supports the `CLICOLOR` and `CLICOLOR_FORCE`
+environment variables (see the [spec](https://bixense.com/clicolors/)).
+
+## Ruff behaves unexpectedly when using `source.*` code actions in Notebooks. What's going on? {: #source-code-actions-in-notebooks }
+
+Ruff does not support `source.organizeImports` and `source.fixAll` code actions in Jupyter Notebooks
+(`notebook.codeActionsOnSave` in VS Code). It's recommended to use the `notebook` prefixed code
+actions for the same such as `notebook.source.organizeImports` and `notebook.source.fixAll`
+respectively.
+
+Ruff requires to have a full view of the notebook to provide accurate diagnostics and fixes. For
+example, if you have a cell that imports a module and another cell that uses that module, Ruff
+needs to see both cells to mark the import as used. If Ruff were to only see one cell at a time,
+it would incorrectly mark the import as unused.
+
+When using the `source.*` code actions for a Notebook, Ruff will be asked to fix any issues for each
+cell in parallel, which can lead to unexpected behavior. For example, if a user has configured to
+run `source.organizeImports` code action on save for a Notebook, Ruff will attempt to fix the
+imports for the entire notebook corresponding to each cell. This leads to the client making the same
+changes to the notebook multiple times, which can lead to unexpected behavior
+([astral-sh/ruff-vscode#680](https://github.com/astral-sh/ruff-vscode/issues/680),
+[astral-sh/ruff-vscode#640](https://github.com/astral-sh/ruff-vscode/issues/640),
+[astral-sh/ruff-vscode#391](https://github.com/astral-sh/ruff-vscode/issues/391)).
+
+# The Ruff Formatter
+
+The Ruff formatter is an extremely fast Python code formatter designed as a drop-in replacement for
+[Black](https://pypi.org/project/black/), available as part of the `ruff` CLI via `ruff format`.
+
+## `ruff format`
+
+`ruff format` is the primary entrypoint to the formatter. It accepts a list of files or
+directories, and formats all discovered Python files:
+
+```shell
+ruff format # Format all files in the current directory.
+ruff format path/to/code/ # Format all files in `path/to/code` (and any subdirectories).
+ruff format path/to/file.py # Format a single file.
+```
+
+Similar to Black, running `ruff format /path/to/file.py` will format the given file or directory
+in-place, while `ruff format --check /path/to/file.py` will avoid writing any formatted files back,
+and instead exit with a non-zero status code upon detecting any unformatted files.
+
+For the full list of supported options, run `ruff format --help`.
+
+## Philosophy
+
+The initial goal of the Ruff formatter is _not_ to innovate on code style, but rather, to innovate
+on performance, and provide a unified toolchain across Ruff's linter, formatter, and any and all
+future tools.
+
+As such, the formatter is designed as a drop-in replacement for [Black](https://github.com/psf/black),
+but with an excessive focus on performance and direct integration with Ruff. Given Black's
+popularity within the Python ecosystem, targeting Black compatibility ensures that formatter
+adoption is minimally disruptive for the vast majority of projects.
+
+Specifically, the formatter is intended to emit near-identical output when run over existing
+Black-formatted code. When run over extensive Black-formatted projects like Django and Zulip, > 99.9%
+of lines are formatted identically. (See: [_Style Guide_](#style-guide).)
+
+Given this focus on Black compatibility, the formatter thus adheres to [Black's (stable) code style](https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html),
+which aims for "consistency, generality, readability and reducing git diffs". To give you a sense
+for the enforced code style, here's an example:
+
+```python
+# Input
+def _make_ssl_transport(
+ rawsock, protocol, sslcontext, waiter=None,
+ *, server_side=False, server_hostname=None,
+ extra=None, server=None,
+ ssl_handshake_timeout=None,
+ call_connection_made=True):
+ '''Make an SSL transport.'''
+ if waiter is None:
+ waiter = Future(loop=loop)
+
+ if extra is None:
+ extra = {}
+
+ ...
+
+# Ruff
+def _make_ssl_transport(
+ rawsock,
+ protocol,
+ sslcontext,
+ waiter=None,
+ *,
+ server_side=False,
+ server_hostname=None,
+ extra=None,
+ server=None,
+ ssl_handshake_timeout=None,
+ call_connection_made=True,
+):
+ """Make an SSL transport."""
+ if waiter is None:
+ waiter = Future(loop=loop)
+
+ if extra is None:
+ extra = {}
+
+ ...
+```
+
+Like Black, the Ruff formatter does _not_ support extensive code style configuration; however,
+unlike Black, it _does_ support configuring the desired quote style, indent style, line endings,
+and more. (See: [_Configuration_](#configuration).)
+
+While the formatter is designed to be a drop-in replacement for Black, it is not intended to be
+used interchangeably with Black on an ongoing basis, as the formatter _does_ differ from
+Black in a few conscious ways (see: [_Known deviations_](formatter/black.md)). In general,
+deviations are limited to cases in which Ruff's behavior was deemed more consistent, or
+significantly simpler to support (with negligible end-user impact) given the differences in the
+underlying implementations between Black and Ruff.
+
+Going forward, the Ruff Formatter will support Black's preview style under Ruff's own
+[preview](preview.md) mode.
+
+## Configuration
+
+The Ruff Formatter exposes a small set of configuration options, some of which are also supported
+by Black (like line width), some of which are unique to Ruff (like quote, indentation style and
+formatting code examples in docstrings).
+
+For example, to configure the formatter to use single quotes, format code
+examples in docstrings, a line width of 100, and tab indentation, add the
+following to your configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ line-length = 100
+
+ [tool.ruff.format]
+ quote-style = "single"
+ indent-style = "tab"
+ docstring-code-format = true
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ line-length = 100
+
+ [format]
+ quote-style = "single"
+ indent-style = "tab"
+ docstring-code-format = true
+ ```
+
+For the full list of supported settings, see [_Settings_](settings.md#format). For more on
+configuring Ruff via `pyproject.toml`, see [_Configuring Ruff_](configuration.md).
+
+Given the focus on Black compatibility (and unlike formatters like [YAPF](https://github.com/google/yapf)),
+Ruff does not currently expose any other configuration options.
+
+## Docstring formatting
+
+The Ruff formatter provides an opt-in feature for automatically formatting
+Python code examples in docstrings. The Ruff formatter currently recognizes
+code examples in the following formats:
+
+* The Python [doctest] format.
+* CommonMark [fenced code blocks] with the following info strings: `python`,
+`py`, `python3`, or `py3`. Fenced code blocks without an info string are
+assumed to be Python code examples and also formatted.
+* reStructuredText [literal blocks]. While literal blocks may contain things
+other than Python, this is meant to reflect a long-standing convention in the
+Python ecosystem where literal blocks often contain Python code.
+* reStructuredText [`code-block` and `sourcecode` directives][directives]. As with
+Markdown, the language names recognized for Python are `python`, `py`,
+`python3`, or `py3`.
+
+If a code example is recognized and treated as Python, the Ruff formatter will
+automatically skip it if the code does not parse as valid Python or if the
+reformatted code would produce an invalid Python program.
+
+Users may also configure the line length limit used for reformatting Python
+code examples in docstrings. The default is a special value, `dynamic`, which
+instructs the formatter to respect the line length limit setting for the
+surrounding Python code. The `dynamic` setting ensures that even when code
+examples are found inside indented docstrings, the line length limit configured
+for the surrounding Python code will not be exceeded. Users may also configure
+a fixed line length limit for code examples in docstrings.
+
+For example, this configuration shows how to enable docstring code formatting
+with a fixed line length limit:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.format]
+ docstring-code-format = true
+ docstring-code-line-length = 20
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [format]
+ docstring-code-format = true
+ docstring-code-line-length = 20
+ ```
+
+With the above configuration, this code:
+
+```python
+def f(x):
+ '''
+ Something about `f`. And an example:
+
+ .. code-block:: python
+
+ foo, bar, quux = this_is_a_long_line(lion, hippo, lemur, bear)
+ '''
+ pass
+```
+
+... will be reformatted (assuming the rest of the options are set
+to their defaults) as:
+
+```python
+def f(x):
+ """
+ Something about `f`. And an example:
+
+ .. code-block:: python
+
+ (
+ foo,
+ bar,
+ quux,
+ ) = this_is_a_long_line(
+ lion,
+ hippo,
+ lemur,
+ bear,
+ )
+ """
+ pass
+```
+
+[doctest]: https://docs.python.org/3/library/doctest.html
+[fenced code blocks]: https://spec.commonmark.org/0.30/#fenced-code-blocks
+[literal blocks]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#literal-blocks
+[directives]: https://www.sphinx-doc.org/en/master/usage/restructuredtext/directives.html#directive-code-block
+
+## Markdown code formatting
+
+The Ruff formatter can also format Python code blocks in Markdown files.
+In these files, Ruff will format any CommonMark [fenced code blocks][] with
+the following info strings: `python`, `py`, `python3`, `py3`, `pyi`, or `pycon`.
+The formatter will automatically skip a code block if the code does not parse as
+valid Python or if the reformatted code would produce an invalid Python program.
+
+Code blocks marked as `pyi` are formatted like stub files, `pycon` blocks as
+REPL sessions, and the others use normal Python file formatting. For example:
+
+````markdown
+```py
+print("hello")
+```
+
+```pyi
+def foo(): ...
+def bar(): ...
+```
+````
+
+Ruff also supports [Quarto](https://quarto.org/) style executable code blocks
+with curly braces surrounding the language name:
+
+````markdown
+```{python}
+print("hello")
+```
+````
+
+While [formatting suppression](#format-suppression) comments will be handled as
+usual within code blocks, the formatter will also skip formatting any code block
+surrounded by appropriate HTML comments, such as:
+
+````markdown
+<!-- fmt:off -->
+```py
+print( 'hello' )
+```
+<!-- fmt:on -->
+````
+
+Any number of code blocks may be contained within a matching pair of `off` and
+`on` HTML comments, and any `off` comment *without* a matching `on` comment
+will implicitly cover the remaining portion of the document.
+
+The Ruff formatter will also recognize HTML comments from [blacken-docs][],
+`<!-- blacken-docs:off -->` and `<!-- blacken-docs:on -->`, which are equivalent
+to `<!-- fmt:off -->` and `<!-- fmt:on -->` respectively.
+
+[blacken-docs]: https://github.com/adamchainz/blacken-docs/
+
+To format Markdown files with extensions other than `.md`, configure custom
+[`extension`](settings.md#extension) mappings. Ruff will automatically include
+these mapped extensions in file discovery:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Treat `.mdx` and `.qmd` files as Markdown
+ extension = { mdx = "markdown", qmd = "markdown" }
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Treat `.mdx` and `.qmd` files as Markdown
+ extension = {mdx="markdown", qmd="markdown"}
+ ```
+
+If you run Ruff via [`ruff-pre-commit`](https://github.com/astral-sh/ruff-pre-commit), Markdown
+support needs to be explicitly included by adding it to `types_or`:
+
+```yaml title=".pre-commit-config.yaml"
+repos:
+ - repo: https://github.com/astral-sh/ruff-pre-commit
+ rev: v0.16.1
+ hooks:
+ - id: ruff-format
+ types_or: [python, pyi, jupyter, markdown]
+```
+
+To *disable* formatting of Markdown files, add them to
+[`extend-exclude`](settings.md#extend-exclude) in your project settings:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Disable formatting in Markdown files
+ extend-exclude = ["*.md"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Disable formatting in Markdown files
+ extend-exclude = ["*.md"]
+ ```
+
+## Format suppression
+
+Like Black, Ruff supports `# fmt: on`, `# fmt: off`, and `# fmt: skip` pragma comments, which can
+be used to temporarily disable formatting for a given code block.
+
+`# fmt: on` and `# fmt: off` comments are enforced at the statement level:
+
+```python
+# fmt: off
+not_formatted=3
+also_not_formatted=4
+# fmt: on
+```
+
+As such, adding `# fmt: on` and `# fmt: off` comments within expressions will have no effect. In
+the following example, both list entries will be formatted, despite the `# fmt: off`:
+
+```python
+[
+ # fmt: off
+ '1',
+ # fmt: on
+ '2',
+]
+```
+
+Instead, apply the `# fmt: off` comment to the entire statement:
+
+```python
+# fmt: off
+[
+ '1',
+ '2',
+]
+# fmt: on
+```
+
+Like Black, Ruff will _also_ recognize [YAPF](https://github.com/google/yapf)'s `# yapf: disable` and `# yapf: enable` pragma
+comments, which are treated equivalently to `# fmt: off` and `# fmt: on`, respectively.
+
+`# fmt: skip` comments suppress formatting for a case header, decorator,
+function definition, class definition, or the preceding statements
+on the same logical line. The formatter leaves the following unchanged:
+
+```python
+if True:
+ pass
+elif False: # fmt: skip
+ pass
+
+@Test
+@Test2(a,b) # fmt: skip
+def test(): ...
+
+a = [1,2,3,4,5] # fmt: skip
+
+def test(a,b,c,d,e,f) -> int: # fmt: skip
+ pass
+
+x=1;x=2;x=3 # fmt: skip
+```
+
+Adding a `# fmt: skip` comment at the end of an expression will have no effect. In
+the following example, the list entry `'1'` will be formatted, despite the `# fmt: skip`:
+
+```python
+a = call(
+ [
+ '1', # fmt: skip
+ '2',
+ ],
+ b
+)
+```
+
+Instead, apply the `# fmt: skip` comment to the entire statement:
+
+```python
+a = call(
+ [
+ '1',
+ '2',
+ ],
+ b
+) # fmt: skip
+```
+
+## Conflicting lint rules
+
+Ruff's formatter is designed to be used alongside the linter. However, the linter includes
+some rules that, when enabled, can cause conflicts with the formatter, leading to unexpected
+behavior. When configured appropriately, the goal of Ruff's formatter-linter compatibility is
+such that running the formatter should never introduce new lint errors.
+
+When using Ruff as a formatter, we recommend avoiding the following lint rules:
+
+- [`tab-indentation`](rules/tab-indentation.md) (`W191`)
+- [`indentation-with-invalid-multiple`](rules/indentation-with-invalid-multiple.md) (`E111`)
+- [`indentation-with-invalid-multiple-comment`](rules/indentation-with-invalid-multiple-comment.md) (`E114`)
+- [`over-indented`](rules/over-indented.md) (`E117`)
+- [`incorrect-blank-line-before-class`](rules/incorrect-blank-line-before-class.md) (`D203`)
+- [`docstring-tab-indentation`](rules/docstring-tab-indentation.md) (`D206`)
+- [`triple-single-quotes`](rules/triple-single-quotes.md) (`D300`)
+- [`bad-quotes-inline-string`](rules/bad-quotes-inline-string.md) (`Q000`)
+- [`bad-quotes-multiline-string`](rules/bad-quotes-multiline-string.md) (`Q001`)
+- [`bad-quotes-docstring`](rules/bad-quotes-docstring.md) (`Q002`)
+- [`avoidable-escaped-quote`](rules/avoidable-escaped-quote.md) (`Q003`)
+- [`unnecessary-escaped-quote`](rules/unnecessary-escaped-quote.md) (`Q004`)
+- [`missing-trailing-comma`](rules/missing-trailing-comma.md) (`COM812`)
+- [`prohibited-trailing-comma`](rules/prohibited-trailing-comma.md) (`COM819`)
+- [`multi-line-implicit-string-concatenation`](rules/multi-line-implicit-string-concatenation.md) (`ISC002`) if used without `ISC001` and `flake8-implicit-str-concat.allow-multiline = false`
+
+While the [`line-too-long`](rules/line-too-long.md) (`E501`) rule _can_ be used alongside the
+formatter, the formatter only makes a best-effort attempt to wrap lines at the configured
+[`line-length`](settings.md#line-length). As such, formatted code _may_ exceed the line length,
+leading to [`line-too-long`](rules/line-too-long.md) (`E501`) errors.
+
+None of the above are included in Ruff's default configuration. However, if you've enabled
+any of these rules or their parent categories (like `Q`), we recommend disabling them via the
+linter's [`lint.ignore`](settings.md#lint_ignore) setting.
+
+Similarly, we recommend avoiding the following isort settings, which are incompatible with the
+formatter's treatment of import statements when set to non-default values:
+
+- [`force-single-line`](settings.md#lint_isort_force-single-line)
+- [`force-wrap-aliases`](settings.md#lint_isort_force-wrap-aliases)
+- [`lines-after-imports`](settings.md#lint_isort_lines-after-imports)
+- [`lines-between-types`](settings.md#lint_isort_lines-between-types)
+- [`split-on-trailing-comma`](settings.md#lint_isort_split-on-trailing-comma)
+
+If you've configured any of these settings to take on non-default values, we recommend removing
+them from your Ruff configuration.
+
+When an incompatible lint rule or setting is enabled, `ruff format` will emit a warning. If your
+`ruff format` is free of warnings, you're good to go!
+
+## Exit codes
+
+`ruff format` exits with the following status codes:
+
+- `0` if Ruff terminates successfully, regardless of whether any files were formatted.
+- `1` if Ruff terminates successfully, one or more files were formatted, and `--exit-non-zero-on-format` was specified.
+- `2` if Ruff terminates abnormally due to invalid configuration, invalid CLI options, or an
+ internal error.
+
+Meanwhile, `ruff format --check` exits with the following status codes:
+
+- `0` if Ruff terminates successfully, and no files would be formatted if `--check` were not
+ specified.
+- `1` if Ruff terminates successfully, and one or more files would be formatted if `--check` were
+ not specified.
+- `2` if Ruff terminates abnormally due to invalid configuration, invalid CLI options, or an
+ internal error.
+
+## Style Guide <span id="black-compatibility"></span>
+
+The formatter is designed to be a drop-in replacement for [Black](https://github.com/psf/black).
+This section documents the areas where the Ruff formatter goes beyond Black in terms of code style.
+
+### Intentional deviations
+
+While the Ruff formatter aims to be a drop-in replacement for Black, it does differ from Black
+in a few known ways. Some of these differences emerge from conscious attempts to improve upon
+Black's code style, while others fall out of differences in the underlying implementations.
+
+For a complete enumeration of these intentional deviations, see [_Known deviations_](formatter/black.md).
+
+Unintentional deviations from Black are tracked in the [issue tracker](https://github.com/astral-sh/ruff/issues?q=is%3Aopen+is%3Aissue+label%3Aformatter).
+If you've identified a new deviation, please [file an issue](https://github.com/astral-sh/ruff/issues/new).
+
+### Preview style
+
+Similar to [Black](https://black.readthedocs.io/en/stable/the_black_code_style/future_style.html#preview-style), Ruff implements formatting changes
+under the [`preview`](https://docs.astral.sh/ruff/settings/#format_preview) flag, promoting them to stable through minor releases, in accordance with our [versioning policy](https://github.com/astral-sh/ruff/discussions/6998#discussioncomment-7016766).
+
+### F-string formatting
+
+_Stabilized in Ruff 0.9.0_
+
+Unlike Black, Ruff formats the expression parts of f-strings which are the parts inside the curly
+braces `{...}`. This is a [known deviation](formatter/black.md#f-strings) from Black.
+
+Ruff employs several heuristics to determine how an f-string should be formatted which are detailed
+below.
+
+#### Quotes
+
+Ruff will use the [configured quote style] for the f-string expression unless doing so would result in
+invalid syntax for the target Python version or requires more backslash escapes than the original
+expression. Specifically, Ruff will preserve the original quote style for the following cases:
+
+When the target Python version is < 3.12 and a [self-documenting f-string] contains a string
+literal with the [configured quote style]:
+
+```python
+# format.quote-style = "double"
+
+f'{10 + len("hello")=}'
+# This f-string cannot be formatted as follows when targeting Python < 3.12
+f"{10 + len("hello")=}"
+```
+
+When the target Python version is < 3.12 and an f-string contains any triple-quoted string, byte
+or f-string literal that contains the [configured quote style]:
+
+```python
+# format.quote-style = "double"
+
+f'{"""nested " """}'
+# This f-string cannot be formatted as follows when targeting Python < 3.12
+f"{'''nested " '''}"
+```
+
+For all target Python versions, when a [self-documenting f-string] contains an expression between
+the curly braces (`{...}`) with a format specifier containing the [configured quote style]:
+
+```python
+# format.quote-style = "double"
+
+f'{1=:"foo}'
+# This f-string cannot be formatted as follows for all target Python versions
+f"{1=:"foo}"
+```
+
+By default, or when targeting Python versions below 3.12, Ruff alternates quote styles for nested
+f-strings, starting with the [configured quote style] for the outermost f-string.
+For example, consider the following f-string:
+
+```python
+# format.quote-style = "double"
+
+f"outer f-string {f"nested f-string {f"another nested f-string"} end"} end"
+```
+
+With default settings, Ruff formats it as:
+
+```python
+f"outer f-string {f'nested f-string {f"another nested f-string"} end'} end"
+```
+
+When targeting Python 3.12+ and with `nested-string-quote-style = "preferred"`,
+Ruff will use the configured quote style for nested strings:
+
+```python
+f"outer f-string {f"nested f-string {f"another nested f-string"} end"} end"
+```
+
+#### Line breaks
+
+Starting with Python 3.12 ([PEP 701](https://peps.python.org/pep-0701/)), the expression parts of an f-string can
+span multiple lines. Ruff needs to decide when to introduce a line break in an f-string expression.
+This depends on the semantic content of the expression parts of an f-string - for example,
+introducing a line break in the middle of a natural-language sentence is undesirable. Since Ruff
+doesn't have enough information to make that decision, it adopts a heuristic similar to [Prettier](https://prettier.io/docs/en/next/rationale.html#template-literals):
+it will only split the expression parts of an f-string across multiple lines if there was already a line break
+within any of the expression parts.
+
+For example, the following code:
+
+```python
+f"this f-string has a multiline expression {
+ ['red', 'green', 'blue', 'yellow',]} and does not fit within the line length"
+```
+
+... is formatted as:
+
+```python
+# The list expression is split across multiple lines because of the trailing comma
+f"this f-string has a multiline expression {
+ [
+ 'red',
+ 'green',
+ 'blue',
+ 'yellow',
+ ]
+} and does not fit within the line length"
+```
+
+But, the following will not be split across multiple lines even though it exceeds the line length:
+
+```python
+f"this f-string has a multiline expression {['red', 'green', 'blue', 'yellow']} and does not fit within the line length"
+```
+
+If you want Ruff to split an f-string across multiple lines, ensure there's a linebreak somewhere within the
+`{...}` parts of an f-string.
+
+[self-documenting f-string]: https://realpython.com/python-f-strings/#self-documenting-expressions-for-debugging
+[configured quote style]: settings.md/#format_quote-style
+
+### Fluent layout for method chains
+
+At times, when developers write long chains of methods on an object, such as
+
+```python
+x = df.filter(cond).agg(func).merge(other)
+```
+
+the intent is to perform a sequence of transformations or operations
+on a fixed object of interest - in this example, the object `df`.
+Assuming the assigned expression exceeds the `line-length`, this preview
+style will format the above as:
+
+```python
+x = (
+ df
+ .filter(cond)
+ .agg(func)
+ .merge(other)
+)
+```
+
+This deviates from the stable formatting, and also from Black, both
+of which would produce:
+
+```python
+x = (
+ df.filter(cond)
+ .agg(func)
+ .merge(other)
+)
+```
+
+Both the stable and preview formatting are variants of something
+called a **fluent layout**.
+
+In general, this preview style differs from the stable style
+only at the first attribute that precedes
+a call or subscript. The preview formatting breaks _before_ this attribute,
+while the stable formatting breaks _after_ the call or subscript.
+
+## Sorting imports
+
+Currently, the Ruff formatter does not sort imports. In order to both sort imports and format,
+call the Ruff linter and then the formatter:
+
+```shell
+ruff check --select I --fix
+ruff format
+```
+
+A unified command for both linting and formatting is [planned](https://github.com/astral-sh/ruff/issues/8232).
+
+# Installing Ruff
+
+Ruff is available as [`ruff`](https://pypi.org/project/ruff/) on PyPI.
+
+Ruff can be invoked directly with [`uvx`](https://docs.astral.sh/uv/):
+
+```shell
+uvx ruff check # Lint all files in the current directory.
+uvx ruff format # Format all files in the current directory.
+```
+
+Or installed with `uv` (recommended), `pip`, or `pipx`:
+
+```console
+$ # Install Ruff globally.
+$ uv tool install ruff@latest
+
+$ # Or add Ruff to your project.
+$ uv add --dev ruff
+
+$ # With pip.
+$ pip install ruff
+
+$ # With pipx.
+$ pipx install ruff
+```
+
+Once installed, you can run Ruff from the command line:
+
+```console
+$ ruff check # Lint all files in the current directory.
+$ ruff format # Format all files in the current directory.
+```
+
+Starting with version `0.5.0`, Ruff can also be installed with our standalone installers:
+
+```console
+$ # On macOS and Linux.
+$ curl -LsSf https://astral.sh/ruff/install.sh | sh
+
+$ # On Windows.
+$ powershell -c "irm https://astral.sh/ruff/install.ps1 | iex"
+
+$ # For a specific version.
+$ curl -LsSf https://astral.sh/ruff/0.5.0/install.sh | sh
+$ powershell -c "irm https://astral.sh/ruff/0.5.0/install.ps1 | iex"
+```
+
+For **macOS Homebrew** and **Linuxbrew** users, Ruff is also available
+as [`ruff`](https://formulae.brew.sh/formula/ruff) on Homebrew:
+
+```console
+$ brew install ruff
+```
+
+For **Conda** users, Ruff is also available as [`ruff`](https://anaconda.org/conda-forge/ruff) on
+`conda-forge`:
+
+```console
+$ conda install -c conda-forge ruff
+```
+
+For **pkgx** users, Ruff is also available as [`ruff`](https://pkgx.dev/pkgs/github.com/charliermarsh/ruff/)
+on the `pkgx` registry:
+
+```console
+$ pkgx install ruff
+```
+
+For **Arch Linux** users, Ruff is also available as [`ruff`](https://archlinux.org/packages/extra/x86_64/ruff/)
+on the official repositories:
+
+```console
+$ pacman -S ruff
+```
+
+For **Alpine** users, Ruff is also available as [`ruff`](https://pkgs.alpinelinux.org/package/edge/community/x86_64/ruff)
+on the community repositories:
+
+```console
+$ apk add ruff
+```
+
+For **openSUSE Tumbleweed** users, Ruff is also available in the distribution repository:
+
+```console
+$ sudo zypper install python3-ruff
+```
+
+On **Docker**, it is published as `ghcr.io/astral-sh/ruff`, tagged for each release and `latest` for
+the latest release.
+
+```console
+$ docker run -v .:/io --rm ghcr.io/astral-sh/ruff check
+$ docker run -v .:/io --rm ghcr.io/astral-sh/ruff:0.3.0 check
+
+$ # Or, for Podman on SELinux.
+$ docker run -v .:/io:Z --rm ghcr.io/astral-sh/ruff check
+```
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/ruff-python-linter.svg?exclude_unsupported=1)](https://repology.org/project/ruff-python-linter/versions)
+
+# Integrations
+
+## GitHub Actions
+
+GitHub Actions has everything you need to run Ruff out-of-the-box:
+
+```yaml
+name: CI
+on: push
+jobs:
+ build:
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v4
+ - name: Install Python
+ uses: actions/setup-python@v5
+ with:
+ python-version: "3.11"
+ - name: Install dependencies
+ run: |
+ python -m pip install --upgrade pip
+ pip install ruff
+ # Update output format to enable automatic inline annotations.
+ - name: Run Ruff
+ run: ruff check --output-format=github .
+```
+
+Ruff can also be used as a GitHub Action via [`ruff-action`](https://github.com/astral-sh/ruff-action).
+
+By default, `ruff-action` runs as a pass-fail test to ensure that a given repository doesn't contain
+any lint rule violations as per its [configuration](configuration.md).
+However, under-the-hood, `ruff-action` installs and runs `ruff` directly, so it can be used to
+execute any supported `ruff` command (e.g., `ruff check --fix`).
+
+`ruff-action` supports all GitHub-hosted runners, and can be used with any published Ruff version
+(i.e., any version available on [PyPI](https://pypi.org/project/ruff/)).
+
+To use `ruff-action`, create a file (e.g., `.github/workflows/ruff.yml`) inside your repository
+with:
+
+```yaml
+name: Ruff
+on: [ push, pull_request ]
+jobs:
+ ruff:
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v4
+ - uses: astral-sh/ruff-action@v3
+```
+
+Alternatively, you can include `ruff-action` as a step in any other workflow file:
+
+```yaml
+ - uses: astral-sh/ruff-action@v3
+```
+
+`ruff-action` accepts optional configuration parameters via `with:`, including:
+
+- `version`: The Ruff version to install (default: latest).
+- `args`: The command-line arguments to pass to Ruff (default: `"check"`).
+- `src`: The source paths to pass to Ruff (default: `[".", "src"]`).
+
+For example, to run `ruff check --select B ./src` using Ruff version `0.8.0`:
+
+```yaml
+- uses: astral-sh/ruff-action@v3
+ with:
+ version: 0.8.0
+ args: check --select B
+ src: "./src"
+```
+
+## GitLab CI/CD
+
+You can add the following configuration to `.gitlab-ci.yml` to run a `ruff format` in parallel with a `ruff check` compatible with GitLab's codequality report.
+
+```yaml
+.base_ruff:
+ stage: build
+ interruptible: true
+ image:
+ name: ghcr.io/astral-sh/ruff:0.16.1-alpine
+ before_script:
+ - cd $CI_PROJECT_DIR
+ - ruff --version
+
+Ruff Check:
+ extends: .base_ruff
+ script:
+ - ruff check --output-format=gitlab --output-file=code-quality-report.json
+ artifacts:
+ reports:
+ codequality: $CI_PROJECT_DIR/code-quality-report.json
+
+Ruff Format:
+ extends: .base_ruff
+ script:
+ - ruff format --diff
+```
+
+## pre-commit
+
+Ruff can be used as a [pre-commit](https://pre-commit.com) hook via [`ruff-pre-commit`](https://github.com/astral-sh/ruff-pre-commit):
+
+```yaml
+- repo: https://github.com/astral-sh/ruff-pre-commit
+ # Ruff version.
+ rev: v0.16.1
+ hooks:
+ # Run the linter.
+ - id: ruff-check
+ # Run the formatter.
+ - id: ruff-format
+```
+
+To enable lint fixes, add the `--fix` argument to the lint hook:
+
+```yaml
+- repo: https://github.com/astral-sh/ruff-pre-commit
+ # Ruff version.
+ rev: v0.16.1
+ hooks:
+ # Run the linter.
+ - id: ruff-check
+ args: [ --fix ]
+ # Run the formatter.
+ - id: ruff-format
+```
+
+To avoid running on Jupyter Notebooks, remove `jupyter` from the list of allowed filetypes:
+
+```yaml
+- repo: https://github.com/astral-sh/ruff-pre-commit
+ # Ruff version.
+ rev: v0.16.1
+ hooks:
+ # Run the linter.
+ - id: ruff-check
+ types_or: [ python, pyi ]
+ args: [ --fix ]
+ # Run the formatter.
+ - id: ruff-format
+ types_or: [ python, pyi ]
+```
+
+When running with `--fix`, Ruff's lint hook should be placed _before_ Ruff's formatter hook, and
+_before_ Black, isort, and other formatting tools, as Ruff's fix behavior can output code changes
+that require reformatting.
+
+When running without `--fix`, Ruff's formatter hook can be placed before or after Ruff's lint hook.
+
+(As long as your Ruff configuration avoids any [linter-formatter incompatibilities](formatter.md#conflicting-lint-rules),
+`ruff format` should never introduce new lint errors, so it's safe to run Ruff's format hook _after_
+`ruff check --fix`.)
+
+## `mdformat`
+
+[mdformat](https://mdformat.readthedocs.io/en/stable/users/plugins.html#code-formatter-plugins) is
+capable of formatting code blocks within Markdown. The [`mdformat-ruff`](https://github.com/Freed-Wu/mdformat-ruff)
+plugin enables mdformat to format Python code blocks with Ruff.
+
+## Docker
+
+Ruff provides a distroless Docker image including the `ruff` binary. The following tags are published:
+
+- `ruff:latest`
+- `ruff:{major}.{minor}.{patch}`, e.g., `ruff:0.6.6`
+- `ruff:{major}.{minor}`, e.g., `ruff:0.6` (the latest patch version)
+
+In addition, ruff publishes the following images:
+
+<!-- prettier-ignore -->
+- Based on `alpine:3.20`:
+ - `ruff:alpine`
+ - `ruff:alpine3.20`
+- Based on `debian:bookworm-slim`:
+ - `ruff:debian-slim`
+ - `ruff:bookworm-slim`
+- Based on `buildpack-deps:bookworm`:
+ - `ruff:debian`
+ - `ruff:bookworm`
+
+As with the distroless image, each image is published with ruff version tags as
+`ruff:{major}.{minor}.{patch}-{base}` and `ruff:{major}.{minor}-{base}`, e.g., `ruff:0.6.6-alpine`.
+
+# The Ruff Linter
+
+The Ruff Linter is an extremely fast Python linter designed as a drop-in replacement for [Flake8](https://pypi.org/project/flake8/)
+(plus dozens of plugins), [isort](https://pypi.org/project/isort/), [pydocstyle](https://pypi.org/project/pydocstyle/),
+[pyupgrade](https://pypi.org/project/pyupgrade/), [autoflake](https://pypi.org/project/autoflake/),
+and more.
+
+## `ruff check`
+
+`ruff check` is the primary entrypoint to the Ruff linter. It accepts a list of files or
+directories, and lints all discovered Python files, optionally fixing any fixable errors.
+When linting a directory, Ruff searches for Python files recursively in that directory
+and all its subdirectories:
+
+```console
+$ ruff check # Lint files in the current directory.
+$ ruff check --fix # Lint files in the current directory and fix any fixable errors.
+$ ruff check --watch # Lint files in the current directory and re-lint on change.
+$ ruff check path/to/code/ # Lint files in `path/to/code`.
+```
+
+For the full list of supported options, run `ruff check --help`.
+
+## Rule selection
+
+The set of enabled rules is controlled via the [`lint.select`](settings.md#lint_select),
+[`lint.extend-select`](settings.md#lint_extend-select), and [`lint.ignore`](settings.md#lint_ignore) settings.
+
+Ruff's linter mirrors Flake8's rule code system, in which each rule code consists of a one-to-three
+letter prefix, followed by three digits (e.g., `F401`). The prefix indicates that "source" of the rule
+(e.g., `F` for Pyflakes, `E` for pycodestyle, `ANN` for flake8-annotations).
+
+Rule selectors like [`lint.select`](settings.md#lint_select) and [`lint.ignore`](settings.md#lint_ignore) accept either
+a full rule code (e.g., `F401`) or any valid prefix (e.g., `F`). For example, given the following
+configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = ["E", "F"]
+ ignore = ["F401"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = ["E", "F"]
+ ignore = ["F401"]
+ ```
+
+Ruff would enable all rules with the `E` (pycodestyle) or `F` (Pyflakes) prefix, with the exception
+of `F401`. For more on configuring Ruff via `pyproject.toml`, see [_Configuring Ruff_](configuration.md).
+
+As a special-case, Ruff also supports the `ALL` code, which enables all rules. Note that some
+pydocstyle rules conflict (e.g., `D203` and `D211`) as they represent alternative docstring
+formats. Ruff will automatically disable any conflicting rules when `ALL` is enabled.
+
+If you're wondering how to configure Ruff, here are some **recommended guidelines**:
+
+- Prefer [`lint.select`](settings.md#lint_select) over [`lint.extend-select`](settings.md#lint_extend-select) to make your rule set explicit.
+- Use `ALL` with discretion. Enabling `ALL` will implicitly enable new rules whenever you upgrade.
+- Start with a small set of rules (`select = ["E", "F"]`) and add a category at-a-time. For example,
+ you might consider expanding to `select = ["E", "F", "B"]` to enable the popular flake8-bugbear
+ extension.
+
+For example, a configuration that enables some of the most popular rules (without being too
+pedantic) might look like the following:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = [
+ # pycodestyle
+ "E",
+ # Pyflakes
+ "F",
+ # pyupgrade
+ "UP",
+ # flake8-bugbear
+ "B",
+ # flake8-simplify
+ "SIM",
+ # isort
+ "I",
+ ]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = [
+ # pycodestyle
+ "E",
+ # Pyflakes
+ "F",
+ # pyupgrade
+ "UP",
+ # flake8-bugbear
+ "B",
+ # flake8-simplify
+ "SIM",
+ # isort
+ "I",
+ ]
+ ```
+
+To resolve the enabled rule set, Ruff may need to reconcile [`lint.select`](settings.md#lint_select) and
+[`lint.ignore`](settings.md#lint_ignore) from a variety of sources, including the current `pyproject.toml`,
+any inherited `pyproject.toml` files, and the CLI (e.g., [`--select`](settings.md#lint_select)).
+
+In those scenarios, Ruff uses the "highest-priority" [`select`](settings.md#lint_select) as the basis for
+the rule set, and then applies [`extend-select`](settings.md#lint_extend-select) and
+[`ignore`](settings.md#lint_ignore) adjustments. CLI options are given higher priority than
+`pyproject.toml` options, and the current `pyproject.toml` file is given higher priority than any
+inherited `pyproject.toml` files.
+
+For example, given the following configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = ["E", "F"]
+ ignore = ["F401"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = ["E", "F"]
+ ignore = ["F401"]
+ ```
+
+Running `ruff check --select F401` would result in Ruff enforcing `F401`, and no other rules.
+
+Running `ruff check --extend-select B` would result in Ruff enforcing the `E`, `F`, and `B` rules,
+with the exception of `F401`.
+
+When [preview mode](preview.md) is enabled, rule selectors also accept the human-readable name of a
+rule (e.g., `unused-import`).
+
+## Fixes
+
+Ruff supports automatic fixes for a variety of lint errors. For example, Ruff can remove unused
+imports, reformat docstrings, rewrite type annotations to use newer Python syntax, and more.
+
+To enable fixes, pass the `--fix` flag to `ruff check`:
+
+```console
+$ ruff check --fix
+```
+
+By default, Ruff will fix all violations for which safe fixes are available; to determine
+whether a rule supports fixing, see [_Rules_](rules.md).
+
+### Fix safety
+
+Ruff labels fixes as "safe" and "unsafe". The meaning and intent of your code will be retained when
+applying safe fixes, but the meaning could change when applying unsafe fixes.
+
+Specifically, an unsafe fix could lead to a change in runtime behavior, the removal of comments, or both,
+while safe fixes are intended to preserve runtime behavior and will only remove comments when deleting
+entire statements or expressions (e.g., removing unused imports).
+
+For example, [`unnecessary-iterable-allocation-for-first-element`](rules/unnecessary-iterable-allocation-for-first-element.md)
+(`RUF015`) is a rule which checks for potentially unperformant use of `list(...)[0]`. The fix
+replaces this pattern with `next(iter(...))` which can result in a drastic speedup:
+
+```console
+$ python -m timeit "head = list(range(99999999))[0]"
+1 loop, best of 5: 1.69 sec per loop
+```
+
+```console
+$ python -m timeit "head = next(iter(range(99999999)))"
+5000000 loops, best of 5: 70.8 nsec per loop
+```
+
+However, when the collection is empty, this raised exception changes from an `IndexError` to `StopIteration`:
+
+```console
+$ python -c 'list(range(0))[0]'
+Traceback (most recent call last):
+ File "<string>", line 1, in <module>
+IndexError: list index out of range
+```
+
+```console
+$ python -c 'next(iter(range(0)))'
+Traceback (most recent call last):
+ File "<string>", line 1, in <module>
+StopIteration
+```
+
+Since the change in exception type could break error handling upstream, this fix is categorized as unsafe.
+
+Ruff only enables safe fixes by default. Unsafe fixes can be enabled by settings [`unsafe-fixes`](settings.md#unsafe-fixes) in your configuration file or passing the `--unsafe-fixes` flag to `ruff check`:
+
+```console
+# Show unsafe fixes
+ruff check --unsafe-fixes
+
+# Apply unsafe fixes
+ruff check --fix --unsafe-fixes
+```
+
+By default, Ruff will display a hint when unsafe fixes are available but not enabled. The suggestion can be silenced
+by setting the [`unsafe-fixes`](settings.md#unsafe-fixes) setting to `false` or using the `--no-unsafe-fixes` flag.
+
+The safety of fixes can be adjusted per rule using the [`lint.extend-safe-fixes`](settings.md#lint_extend-safe-fixes) and [`lint.extend-unsafe-fixes`](settings.md#lint_extend-unsafe-fixes) settings.
+
+For example, the following configuration would promote unsafe fixes for `F601` to safe fixes and demote safe fixes for `UP034` to unsafe fixes:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ extend-safe-fixes = ["F601"]
+ extend-unsafe-fixes = ["UP034"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ extend-safe-fixes = ["F601"]
+ extend-unsafe-fixes = ["UP034"]
+ ```
+
+You may use prefixes to select rules as well, e.g., `F` can be used to promote fixes for all rules in Pyflakes to safe.
+
+!!! note
+ All fixes will always be displayed by Ruff when using the `json` output format. The safety of each fix is available under the `applicability` field.
+
+### Disabling fixes
+
+To limit the set of rules that Ruff should fix, use the [`lint.fixable`](settings.md#lint_fixable)
+or [`lint.extend-fixable`](settings.md#lint_extend-fixable), and [`lint.unfixable`](settings.md#lint_unfixable) settings.
+
+For example, the following configuration would enable fixes for all rules except
+[`unused-imports`](rules/unused-import.md) (`F401`):
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ fixable = ["ALL"]
+ unfixable = ["F401"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ fixable = ["ALL"]
+ unfixable = ["F401"]
+ ```
+
+Conversely, the following configuration would only enable fixes for `F401`:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ fixable = ["F401"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ fixable = ["F401"]
+ ```
+
+## Error suppression
+
+Ruff supports several mechanisms for suppressing lint errors, be they false positives or
+permissible violations.
+
+### Configuration
+
+To omit a lint rule everywhere, add it to the "ignore" list via the [`lint.ignore`](settings.md#lint_ignore)
+setting, either on the command-line or in your `pyproject.toml` or `ruff.toml` file.
+
+To omit a lint rule within specific files based on file path prefixes or patterns,
+see the [`lint.per-file-ignores`](settings.md#lint_per-file-ignores) setting.
+
+### Comments
+
+Ruff supports multiple forms of suppression comments, including inline and file-level `noqa` and
+`ruff: ignore` comments, and range suppressions.
+
+In [`preview`](preview.md) mode, rule names (e.g. `unused-import`) can be used in `ruff: ignore`,
+`ruff: file-ignore`, `ruff: disable`, and `ruff: enable` comments instead of rule codes (e.g.
+`F401`).
+
+#### Line-level
+
+Ruff supports a `noqa` system similar to [Flake8](https://flake8.pycqa.org/en/3.1.1/user/ignoring-errors.html).
+To ignore an individual violation, add `# noqa: {code}` to the end of the line, like so:
+
+```python
+# Ignore F841.
+x = 1 # noqa: F841
+
+# Ignore E741 and F841.
+i = 1 # noqa: E741, F841
+
+# Ignore _all_ violations.
+x = 1 # noqa
+```
+
+For multi-line strings (like docstrings), the `noqa` directive should come at the end of the string
+(after the closing triple quote), and will apply to the entire string, like so:
+
+```python
+"""Lorem ipsum dolor sit amet.
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.
+""" # noqa: E501
+```
+
+For import sorting, the `noqa` should come at the end of the first line in the import block, and
+will apply to all imports in the block, like so:
+
+```python
+import os # noqa: I001
+import abc
+```
+
+The full inline comment specification is as follows:
+
+- An inline blanket `noqa` comment is given by a case-insensitive match for
+ `#noqa` with optional whitespace after the `#` symbol, followed by either: the
+ end of the comment, the beginning of a new comment (`#`), or whitespace
+ followed by any character other than `:`.
+- An inline `noqa` suppression is given by first finding a case-insensitive match
+ for `#noqa` with optional whitespace after the `#` symbol, optional whitespace
+ after `noqa`, and followed by the symbol `:`. After this we are expected to
+ have a list of rule codes which is given by sequences of uppercase ASCII
+ characters followed by ASCII digits, separated by whitespace or commas. The
+ list ends at the last valid code. We will attempt to interpret rules with a
+ missing delimiter (e.g. `F401F841`), though a warning will be emitted in this
+ case.
+
+To cover an entire "logical" line (a multi-line statement or suite header),
+an "ignore" comment may be placed above the first line:
+
+```python
+# ruff: ignore[ARG001] # Covers the entire function signature
+def foo(
+ arg1,
+ arg2,
+):
+ pass
+
+# ruff: ignore[E501] # Covers the entire list literal
+things = [
+ "really long string literal ...",
+ "really long string literal ...",
+]
+```
+
+Alternately, placing the "ignore" comment inside of a multi-line statement, or
+at the end of a line, will cover only a single "physical" line, leaving the rest
+of the multi-line statement or header uncovered:
+
+```python
+def foo(
+ arg1,
+ # ruff: ignore[ARG001] # Only covers `arg2`
+ arg2,
+):
+ pass
+
+things = [
+ "really long string literal ...", # ruff: ignore[E501] # Only covers this line
+ "really long string literal ...",
+]
+```
+
+Ignore comments can also be "stacked" with other comments or pragmas, and will
+still cover the next logical line:
+
+```python
+# ruff: ignore[E741]
+# ruff: ignore[F841]
+# I definitely know what I'm doing.
+i = 1
+```
+
+The full line-level suppression comment specification is as follows:
+
+- An own-line or trailing comment starting with case sensitive `#ruff:`, with
+ optional whitespace after the `#` symbol and `:` symbol, followed by `ignore[`,
+ any rules to be suppressed, and ending with `]`.
+- Rules to be suppressed must be separated by commas, with optional whitespace
+ before or after each rule name, and may be followed by an optional trailing comma
+ after the last rule name.
+
+#### Block-level
+
+To ignore one or more violations within a range or block of code, a "disable" comment
+followed by a matching "enable" comment can be used, like so:
+
+```python
+# ruff: disable[E501]
+VALUE_1 = "Lorem ipsum dolor sit amet ..."
+VALUE_2 = "Lorem ipsum dolor sit amet ..."
+VALUE_3 = "Lorem ipsum dolor sit amet ..."
+# ruff: enable[E501]
+```
+
+To define a range, both the "disable" and "enable" comments must have matching codes,
+in the same order, as well as matching indentation levels within a logical block of code:
+
+```python
+def foo():
+ # ruff: disable[E741, F841]
+ i = 1
+ # ruff: enable[E741, F841]
+```
+
+If no matching "enable" comment is found, Ruff will also treat this as an "implicit" range.
+The implicit range is defined from the starting "disable" comment, until reaching
+a logical scope indented less than the starting comment:
+
+```python
+def foo():
+ # ruff: disable[E741, F841]
+ i = 1
+ if True:
+ O = 1
+ l = 1
+
+# implicit end of range
+foo()
+```
+
+It is strongly suggested to use explicit range suppressions, in order to prevent
+accidental suppressions of violations, especially at global module scope.
+For this reason, a `RUF104` diagnostic will also be produced for any implicit range.
+If implicit range suppressions are desired, the `RUF104` rule can be disabled,
+or an inline `noqa` suppression can be added to the end of the "disable" comment.
+
+Range suppressions cannot be used to enable or select rules that aren't already
+selected by the project configuration or runtime flags. An "enable" comment can only
+be used to terminate a preceding "disable" comment with identical codes.
+
+Unlike `noqa` suppressions, range suppressions do not support "blanket" suppression
+of all violations. At least one violation code must be listed.
+
+The full range suppression comment specification is as follows:
+
+- An own-line comment starting with case sensitive `#ruff:`, with optional whitespace
+ after the `#` symbol and `:` symbol, followed by either `disable` or `enable`
+ to start or end a range respectively, immediately followed by `[`, any codes to
+ be suppressed, and ending with `]`.
+- Codes to be suppressed must be separated by commas, with optional whitespace
+ before or after each code, and may be followed by an optional trailing comma
+ after the last code.
+
+#### File-level
+
+To ignore all violations across an entire file, add the line `# ruff: noqa` anywhere in the file,
+preferably towards the top, like so:
+
+```python
+# ruff: noqa
+```
+
+To ignore a specific rule across an entire file, add the line `# ruff: noqa: {code}` anywhere in the
+file, preferably towards the top, like so:
+
+```python
+# ruff: noqa: F841
+```
+
+Global `noqa` comments must be on their own line to disambiguate from comments which ignore
+violations on a single line.
+
+Note that Ruff will also respect Flake8's `# flake8: noqa` directive, and will treat it as
+equivalent to `# ruff: noqa`.
+
+The file-level suppression comment specification is as follows:
+
+- A file-level exemption comment is given by a case-sensitive match for `#ruff:`
+ or `#flake8:`, with optional whitespace after `#` and before `:`, followed by
+ optional whitespace and a case-insensitive match for `noqa`. After this, the
+ specification is as in the inline `noqa` suppressions above.
+
+One or more rules can also be ignored across an entire file with a `file-ignore` comment on its own
+line, at global module scope, and preferably near the top of the file:
+
+```python
+# ruff: file-ignore[F401, ARG001]
+```
+
+The full-level suppression comment specification is as follows:
+
+- An own-line comment starting with case sensitive `#ruff:`, with optional whitespace
+ after the `#` symbol and `:` symbol, followed by `file-ignore[`, any rules to
+ be suppressed, and ending with `]`.
+- Rules to be suppressed must be separated by commas, with optional whitespace
+ before or after each rule name, and may be followed by an optional trailing comma
+ after the last rule name.
+
+### Detecting unused suppressions
+
+Ruff implements a special rule, [`unused-noqa`](https://docs.astral.sh/ruff/rules/unused-noqa/),
+under the `RUF100` code, to enforce that your suppressions are "valid", in that the violations
+they _say_ they ignore are actually being triggered and suppressed. To flag
+unused suppression comments, run Ruff with `--extend-select RUF100`, like so:
+
+```shell-session
+$ ruff check /path/to/file.py --extend-select RUF100
+```
+
+Ruff can also _remove_ any unused suppression comments via its fix functionality.
+To remove any unused suppressions, run Ruff with `--fix`, like so:
+
+```shell-session
+$ ruff check /path/to/file.py --extend-select RUF100 --fix
+```
+
+### Inserting necessary suppression comments
+
+Ruff can _automatically add_ suppression comments to all lines that contain violations, which is
+useful when migrating a new codebase to Ruff. To add the appropriate comments to all relevant lines,
+run Ruff with `--add-noqa` to add `noqa` comments or with `--add-ignore` to add `ruff: ignore`
+comments:
+
+```shell-session
+$ ruff check /path/to/file.py --add-noqa
+$ ruff check /path/to/file.py --add-ignore
+```
+
+Both of these flags use rule codes on stable. To add `ruff: ignore` comments with human-readable
+rule names instead, use `--add-ignore` with preview mode enabled.
+
+### isort action comments
+
+Ruff respects isort's [action comments](https://pycqa.github.io/isort/docs/configuration/action_comments.html)
+(`# isort: skip_file`, `# isort: on`, `# isort: off`, `# isort: skip`, and `# isort: split`), which
+enable selectively enabling and disabling import sorting for blocks of code and other inline
+configuration.
+
+Ruff will also respect variants of these action comments with a `# ruff:` prefix
+(e.g., `# ruff: isort: skip_file`, `# ruff: isort: on`, and so on). These variants more clearly
+convey that the action comment is intended for Ruff, but are functionally equivalent to the
+isort variants.
+
+Unlike isort, Ruff does not respect action comments within docstrings.
+
+See the [isort documentation](https://pycqa.github.io/isort/docs/configuration/action_comments.html)
+for more.
+
+## Exit codes
+
+By default, `ruff check` exits with the following status codes:
+
+- `0` if no violations were found, or if all present violations were fixed automatically.
+- `1` if violations were found.
+- `2` if Ruff terminates abnormally due to invalid configuration, invalid CLI options, or an
+ internal error.
+
+This convention mirrors that of tools like ESLint, Prettier, and RuboCop.
+
+`ruff check` supports two command-line flags that alter its exit code behavior:
+
+- `--exit-zero` will cause Ruff to exit with a status code of `0` even if violations were found.
+ Note that Ruff will still exit with a status code of `2` if it terminates abnormally.
+- `--exit-non-zero-on-fix` will cause Ruff to exit with a status code of `1` if violations were
+ found, _even if_ all such violations were fixed automatically. Note that the use of
+ `--exit-non-zero-on-fix` can result in a non-zero exit code even if no violations remain after
+ fixing.
+
+# Preview
+
+Ruff includes an opt-in preview mode to provide an opportunity for community feedback and increase confidence that
+changes are a net-benefit before enabling them for everyone.
+
+Preview mode enables a collection of unstable features such as new lint rules and fixes, formatter style changes, interface updates, and more. Warnings about deprecated features may turn into errors when using preview mode.
+
+Enabling preview mode does not on its own enable all preview rules. See the [rules section](#using-rules-that-are-in-preview) for details on selecting preview rules.
+
+## Enabling preview mode
+
+Preview mode can be enabled with the `--preview` flag on the CLI or by setting `preview = true` in your Ruff
+configuration file.
+
+Preview mode can be configured separately for linting and formatting. To enable preview lint rules without preview style formatting:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ preview = true
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ preview = true
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff check --preview
+ ```
+
+To enable preview style formatting without enabling any preview lint rules:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.format]
+ preview = true
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [format]
+ preview = true
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff format --preview
+ ```
+
+## Using rules that are in preview
+
+If a rule is marked as preview, it can only be selected if preview mode is enabled. For example, consider a
+hypothetical rule, `HYP001`. If `HYP001` were in preview, it would _not_ be enabled by adding it to the selected rule set.
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ extend-select = ["HYP001"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ extend-select = ["HYP001"]
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff check --extend-select HYP001
+ ```
+
+It also would _not_ be enabled by selecting the `HYP` category, like so:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ extend-select = ["HYP"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ extend-select = ["HYP"]
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff check --extend-select HYP
+ ```
+
+Similarly, it would _not_ be enabled via the `ALL` selector:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ select = ["ALL"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ select = ["ALL"]
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff check --select ALL
+ ```
+
+However, it _would_ be enabled in any of the above cases if you enabled preview mode:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ extend-select = ["HYP"]
+ preview = true
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ extend-select = ["HYP"]
+ preview = true
+ ```
+
+=== "CLI"
+
+ ```console
+ ruff check --extend-select HYP --preview
+ ```
+
+To see which rules are currently in preview, visit the [rules reference](rules.md).
+
+## Selecting single preview rules
+
+When preview mode is enabled, selecting rule categories or prefixes will include all preview rules that match.
+If you'd prefer to opt in to each preview rule individually, you can toggle the `explicit-preview-rules`
+setting in your configuration file:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff.lint]
+ preview = true
+ explicit-preview-rules = true
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ [lint]
+ preview = true
+ explicit-preview-rules = true
+ ```
+
+In our previous example, `--select` with `ALL` `HYP`, `HYP0`, or `HYP00` would not enable `HYP001`. Each preview
+rule will need to be selected with its exact code: for example, `--select ALL,HYP001`.
+
+If preview mode is not enabled, this setting has no effect.
+
+## Deprecated rules
+
+When preview mode is enabled, deprecated rules will be disabled. If a deprecated rule is selected explicitly, an
+error will be raised. Deprecated rules will not be included if selected via a rule category or prefix.
+
+# Tutorial
+
+This tutorial will walk you through the process of integrating Ruff's linter and formatter into
+your project. For a more detailed overview, see [_Configuring Ruff_](configuration.md).
+
+## Getting Started
+
+To start, we'll initialize a project using [uv](https://docs.astral.sh/uv/):
+
+```console
+$ uv init --lib numbers
+```
+
+This command creates a Python project with the following structure:
+
+```text
+numbers
+ ├── README.md
+ ├── pyproject.toml
+ └── src
+ └── numbers
+ ├── __init__.py
+ └── py.typed
+```
+
+We'll then clear out the auto-generated content in `src/numbers/__init__.py`
+and create `src/numbers/calculate.py` with the following code:
+
+```python
+from typing import Iterable
+
+import os
+
+def sum_even_numbers(numbers: Iterable[int]) -> int:
+ """Given an iterable of integers, return the sum of all even numbers in the iterable."""
+ return sum(
+ num for num in numbers
+ if num % 2 == 0
+ )
+```
+
+Next, we'll add Ruff to our project:
+
+```console
+$ uv add --dev ruff
+```
+
+We can then run the Ruff linter over our project via `uv run ruff check`:
+
+```console
+$ uv run ruff check
+src/numbers/calculate.py:3:8: F401 [*] `os` imported but unused
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+```
+
+!!! note
+
+ As an alternative to `uv run`, you can also run Ruff by activating the project's virtual
+ environment (`source .venv/bin/activate` on Linux and macOS, or `.venv\Scripts\activate` on
+ Windows) and running `ruff check` directly.
+
+Ruff identified an unused import, which is a common error in Python code. Ruff considers this a
+"fixable" error, so we can resolve the issue automatically by running `ruff check --fix`:
+
+```console
+$ uv run ruff check --fix
+Found 1 error (1 fixed, 0 remaining).
+```
+
+Running `git diff` shows the following:
+
+```diff
+--- a/src/numbers/calculate.py
++++ b/src/numbers/calculate.py
+@@ -1,7 +1,5 @@
+ from typing import Iterable
+
+-import os
+-
+
+def sum_even_numbers(numbers: Iterable[int]) -> int:
+ """Given an iterable of integers, return the sum of all even numbers in the iterable."""
+ return sum(
+ num for num in numbers
+ if num % 2 == 0
+ )
+```
+
+Note Ruff runs in the current directory by default, but you can pass specific paths to check:
+
+```console
+$ uv run ruff check src/numbers/calculate.py
+```
+
+Now that our project is passing `ruff check`, we can run the Ruff formatter via `ruff format`:
+
+```console
+$ uv run ruff format
+1 file reformatted
+```
+
+Running `git diff` shows that the `sum` call was reformatted to fit within the default 88-character
+line length limit:
+
+```diff
+--- a/src/numbers/calculate.py
++++ b/src/numbers/calculate.py
+@@ -3,7 +3,4 @@ from typing import Iterable
+
+ def sum_even_numbers(numbers: Iterable[int]) -> int:
+ """Given an iterable of integers, return the sum of all even numbers in the iterable."""
+- return sum(
+- num for num in numbers
+- if num % 2 == 0
+- )
++ return sum(num for num in numbers if num % 2 == 0)
+```
+
+Thus far, we've been using Ruff's default configuration. Let's take a look at how we can customize
+Ruff's behavior.
+
+## Configuration
+
+To determine the appropriate settings for each Python file, Ruff looks for the first
+`pyproject.toml`, `ruff.toml`, or `.ruff.toml` file in the file's directory or any parent directory.
+
+To configure Ruff, we'll add the following to the configuration file in our project's root directory:
+
+=== "pyproject.toml"
+
+ ```toml
+ [tool.ruff]
+ # Set the maximum line length to 79.
+ line-length = 79
+
+ [tool.ruff.lint]
+ # Add the `line-too-long` rule to the enforced rule set. By default, Ruff omits rules that
+ # overlap with the use of a formatter, like Black, but we can override this behavior by
+ # explicitly adding the rule.
+ extend-select = ["E501"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Set the maximum line length to 79.
+ line-length = 79
+
+ [lint]
+ # Add the `line-too-long` rule to the enforced rule set. By default, Ruff omits rules that
+ # overlap with the use of a formatter, like Black, but we can override this behavior by
+ # explicitly adding the rule.
+ extend-select = ["E501"]
+ ```
+
+Running Ruff again, we see that it now enforces a maximum line width, with a limit of 79:
+
+```console
+$ uv run ruff check
+src/numbers/calculate.py:5:80: E501 Line too long (90 > 79)
+Found 1 error.
+```
+
+For a full enumeration of the supported settings, see [_Settings_](settings.md). For our project
+specifically, we'll want to make note of the minimum supported Python version:
+
+=== "pyproject.toml"
+
+ ```toml
+ [project]
+ # Support Python 3.10+.
+ requires-python = ">=3.10"
+
+ [tool.ruff]
+ # Set the maximum line length to 79.
+ line-length = 79
+
+ [tool.ruff.lint]
+ # Add the `line-too-long` rule to the enforced rule set.
+ extend-select = ["E501"]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ # Support Python 3.10+.
+ target-version = "py310"
+ # Set the maximum line length to 79.
+ line-length = 79
+
+ [lint]
+ # Add the `line-too-long` rule to the enforced rule set.
+ extend-select = ["E501"]
+ ```
+
+### Rule Selection
+
+Ruff supports [over 900 lint rules](rules.md) split across over 50 built-in plugins, but
+determining the right set of rules will depend on your project's needs: some rules may be too
+strict, some are framework-specific, and so on.
+
+By default, Ruff enables rules from the `F`, `E`, `B`, `UP`, and `RUF` categories, as well as many
+more, omitting any stylistic rules that overlap with the use of a formatter, like `ruff format` or
+[Black](https://github.com/psf/black).
+
+If you're introducing a linter for the first time, **the default rule set is a great place to
+start**: it catches a wide variety of common errors (like unused imports) with zero configuration.
+See [_Default Rules_](default-rules.md) for the complete list.
+
+If you're migrating to Ruff from another linter, you can enable rules that are equivalent to
+those enforced in your previous configuration. For example, if we want to enforce the pyupgrade
+rules, we can set our configuration file to the following:
+
+=== "pyproject.toml"
+
+ ```toml
+ [project]
+ requires-python = ">=3.10"
+
+ [tool.ruff.lint]
+ extend-select = [
+ "UP", # pyupgrade
+ ]
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ target-version = "py310"
+
+ [lint]
+ extend-select = [
+ "UP", # pyupgrade
+ ]
+ ```
+
+If we run Ruff again, we'll see that it now enforces the pyupgrade rules. In particular, Ruff flags
+the use of the deprecated `typing.Iterable` instead of `collections.abc.Iterable`:
+
+```console
+$ uv run ruff check
+src/numbers/calculate.py:1:1: UP035 [*] Import from `collections.abc` instead: `Iterable`
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+```
+
+Over time, we may choose to enforce additional rules. For example, we may want to enforce that
+all functions have docstrings:
+
+=== "pyproject.toml"
+
+ ```toml
+ [project]
+ requires-python = ">=3.10"
+
+ [tool.ruff.lint]
+ extend-select = [
+ "UP", # pyupgrade
+ "D", # pydocstyle
+ ]
+
+ [tool.ruff.lint.pydocstyle]
+ convention = "google"
+ ```
+
+=== "ruff.toml"
+
+ ```toml
+ target-version = "py310"
+
+ [lint]
+ extend-select = [
+ "UP", # pyupgrade
+ "D", # pydocstyle
+ ]
+
+ [lint.pydocstyle]
+ convention = "google"
+ ```
+
+If we run Ruff again, we'll see that it now enforces the pydocstyle rules:
+
+```console
+$ uv run ruff check
+src/numbers/__init__.py:1:1: D104 Missing docstring in public package
+src/numbers/calculate.py:1:1: UP035 [*] Import from `collections.abc` instead: `Iterable`
+ |
+1 | from typing import Iterable
+ | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+ |
+ = help: Import from `collections.abc`
+
+src/numbers/calculate.py:1:1: D100 Missing docstring in public module
+Found 3 errors.
+[*] 1 fixable with the `--fix` option.
+```
+
+### Ignoring Errors
+
+Any lint rule can be ignored by adding a `# noqa` comment to the line in question. For example,
+let's ignore the `UP035` rule for the `Iterable` import:
+
+```python
+from typing import Iterable # noqa: UP035
+
+def sum_even_numbers(numbers: Iterable[int]) -> int:
+ """Given an iterable of integers, return the sum of all even numbers in the iterable."""
+ return sum(num for num in numbers if num % 2 == 0)
+```
+
+Running `ruff check` again, we'll see that it no longer flags the `Iterable` import:
+
+```console
+$ uv run ruff check
+src/numbers/__init__.py:1:1: D104 Missing docstring in public package
+src/numbers/calculate.py:1:1: D100 Missing docstring in public module
+Found 2 errors.
+```
+
+If we want to ignore a rule for an entire file, we can add the line `# ruff: noqa: {code}` anywhere
+in the file, preferably towards the top, like so:
+
+```python
+# ruff: noqa: UP035
+from typing import Iterable
+
+def sum_even_numbers(numbers: Iterable[int]) -> int:
+ """Given an iterable of integers, return the sum of all even numbers in the iterable."""
+ return sum(num for num in numbers if num % 2 == 0)
+```
+
+For more in-depth instructions on ignoring errors, please see [_Error suppression_](linter.md#error-suppression).
+
+### Adding Rules
+
+When enabling a new rule on an existing codebase, you may want to ignore all _existing_
+violations of that rule and instead focus on enforcing it going forward.
+
+Ruff enables this workflow via the `--add-noqa` flag, which will add a `# noqa` directive to each
+line based on its existing violations. We can combine `--add-noqa` with the `--select` command-line
+flag to add `# noqa` directives to all existing `UP035` violations:
+
+```console
+$ uv run ruff check --select UP035 --add-noqa .
+Added 1 noqa directive.
+```
+
+Running `git diff` shows the following:
+
+```diff
+diff --git a/numbers/src/numbers/calculate.py b/numbers/src/numbers/calculate.py
+index 71fca60c8d..e92d839f1b 100644
+--- a/numbers/src/numbers/calculate.py
++++ b/numbers/src/numbers/calculate.py
+@@ -1,4 +1,4 @@
+-from typing import Iterable
++from typing import Iterable # noqa: UP035
+```
+
+To add `# ruff: ignore[...]` comments instead, use the `--add-ignore` flag. In preview mode,
+`--add-ignore` uses human-readable rule names in place of rule codes.
+
+## Integrations
+
+This tutorial has focused on Ruff's command-line interface, but Ruff can also be used as a
+[pre-commit](https://pre-commit.com) hook via [`ruff-pre-commit`](https://github.com/astral-sh/ruff-pre-commit):
+
+```yaml
+- repo: https://github.com/astral-sh/ruff-pre-commit
+ # Ruff version.
+ rev: v0.16.1
+ hooks:
+ # Run the linter.
+ - id: ruff-check
+ # Run the formatter.
+ - id: ruff-format
+```
+
+Ruff can also be integrated into your editor of choice. Refer to the [Editors](editors/index.md)
+section for more information.
+
+For other integrations, see the [Integrations](integrations.md) section.
+
+# Versioning
+
+Ruff uses a custom versioning scheme that uses the **minor** version number for breaking changes and the **patch** version number for bug fixes. Ruff does not yet have a stable API; once Ruff's API is stable, the **major** version number and semantic versioning will be used.
+
+## Crate versioning
+
+Ruff's crates are published to [crates.io](https://crates.io). The following crates follow Ruff's
+normal versioning policy:
+
+- `ruff`
+- `ruff_linter`
+- `ruff_wasm`
+
+The Rust interfaces of these crates do not follow semantic versioning.
+
+The remaining crates published as part of Ruff releases provide **no stability guarantees**. Their
+Rust interfaces are considered internal and unstable. Consequently, they are versioned as `0.0.x`.
+The patch version is incremented on every Ruff release, regardless of changes to the crate.
+
+## Version changes
+
+**Minor** version increases will occur when:
+
+- A deprecated option or feature is removed
+- Configuration changes in a backwards incompatible way
+ - This _may_ occur in minor version changes until `1.0.0`, however, it should generally be avoided.
+- Support for a new file type is promoted to stable
+- Support for an end-of-life Python version is dropped
+- Linter:
+ - A rule is promoted to stable
+ - The behavior of a stable rule is changed
+ - The scope of a stable rule is significantly increased
+ - The intent of the rule changes
+ - Does not include bug fixes that follow the original intent of the rule
+ - Stable rules are added to the default set
+ - Stable rules are removed from the default set
+ - A safe fix for a rule is promoted to stable
+ - A rule is deprecated
+- Formatter:
+ - The stable style changed
+- Language server:
+ - An existing capability is removed
+ - A deprecated server setting is removed
+
+**Patch** version increases will occur when:
+
+- Bugs are fixed, _including behavior changes that fix bugs_
+- A new configuration option is added in a backwards compatible way (no formatting changes or new lint errors)
+- Support for a new Python version is added
+- Support for a new file type is added in preview
+- An option or feature is deprecated
+- Linter:
+ - An unsafe fix for a rule is added
+ - A safe fix for a rule is added in preview
+ - The scope of a rule is increased in preview
+ - A fix’s applicability is demoted
+ - A rule is added in preview
+ - The behavior of a preview rule is changed
+- Formatter:
+ - The stable style changed to prevent invalid syntax, changes to the program's semantics, or removal of comments
+ - The preview style changed
+- Language server:
+ - Support for a new capability is added
+ - A new server setting is added
+ - A server setting is deprecated
+
+## Minimum supported Rust version
+
+The minimum supported Rust version required to compile Ruff is listed in the `rust-version` key of
+the `[workspace.package]` section in `Cargo.toml`. It may change in any release (minor or patch). It
+will never be newer than N-2 Rust versions, where N is the latest stable version. For example, if
+the latest stable Rust version is 1.85, Ruff's minimum supported Rust version will be at most 1.83.
+
+This is only relevant to users who build Ruff from source. Installing Ruff from the Python package
+index usually installs a pre-built binary and does not require Rust compilation.
+
+## Preview mode
+
+A preview mode is available to enable new, unstable rules and features, e.g., support for a new file type.
+
+The preview mode is intended to help us collect community feedback and gain confidence that changes are a net-benefit.
+
+The preview mode is _not_ intended to gate access to work that is incomplete or features that we are _likely to remove._ However, **we reserve the right to make changes to _any_ behavior gated by the mode** including the removal of preview features or rules.
+
+## Rule stabilization
+
+When modifying or adding rules, we use the following guidelines:
+
+- New rules should always be added in preview mode
+- New rules will remain in preview mode for at least one minor release before being promoted to stable
+ - If added in a patch release i.e. `0.6.1` then a rule will not be eligible for stability until `0.8.0`
+- Stable rule behaviors are not changed significantly in patch versions
+- Promotion of rules to stable may be delayed in order to “batch” them into a single minor release
+- Not all rules in preview need to be promoted in a given minor release
+
+## Fix stabilization
+
+Fixes have three applicability levels:
+
+- **Display**: Never applied, just displayed.
+- **Unsafe**: Can be applied with explicit opt-in.
+- **Safe**: Can be applied automatically.
+
+Fixes for rules may be introduced at a lower applicability, then promoted to a higher applicability. Reducing the applicability of a fix is not a breaking change. The applicability of a given fix may change when the preview mode is enabled.
+
+## Visual Studio Code Extension
+
+Visual Studio Code [doesn't support pre-release
+tags](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#prerelease-extensions)
+for extensions. Consequently, Ruff uses the following scheme to distinguish between stable and
+preview releases:
+
+Stable releases use even numbers in minor version component: `2024.30.0`, `2024.32.0`, `2024.34.0`, …
+Preview releases use odd numbers in minor version component: `2024.31.0`, `2024.33.0`, `2024.35.0`, …

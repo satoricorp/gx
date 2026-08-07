@@ -20,3 +20,6 @@ mcp/xmcp-env.d.ts
 docs-site/node_modules/
 docs-site/.next/
 docs-site/.source/
+
+# Python bytecode from running scripts/ directly
+__pycache__/

@@ -1,10 +1,10 @@
 {
   "error": null,
-  "fetched_at": "2026-07-08",
-  "final_url": "https://semgrep.dev/r",
+  "fetched_at": "2026-08-07",
+  "final_url": "https://raw.githubusercontent.com/semgrep/semgrep-docs/main/docs/contributing/contributing-to-semgrep-rules-repository.mdx",
   "http_status": 200,
   "license": "verify",
   "license_status": "needs-verification",
-  "sha256": "4cebe0982bd2551535c875dad9eaf73cdff7523a908fc6064c6c5a4ad2c742a3",
+  "sha256": "2b959953781556f50a098becc142dd7227f6589ec49dbe28ef549b5959cf1711",
   "source_id": "semgrep-registry"
 }

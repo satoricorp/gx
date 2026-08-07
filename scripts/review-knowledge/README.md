@@ -11,7 +11,7 @@ model can cite or use as supporting context.
 ## Files
 
 - `sources.yaml`: approved v2 source manifest. This supersedes `urls.json`.
-- `golden_queries.yaml`: 61-query eval gate manifest.
+- `golden_queries.yaml`: 65-query eval gate manifest.
 - `index_review_resources.py`: validates, fetches, normalizes, chunks, embeds,
   indexes, refreshes, and scaffolds eval output.
 - `urls.json`: retained only as the v1 manifest/reference.
@@ -36,12 +36,22 @@ there is no primary source. If a seed note is opinionated, keep it in
 `seed_notes` and keep the `authority`/`evidence_level` honest.
 
 `fetch: github-md` retrieves a single raw markdown file — link crawling only
-runs for `fetch: html`. To ingest a whole directory of markdown (the OWASP
-cheat sheets, the ASVS chapters), point the source at a `github.com/.../tree/`
-URL with `crawl_depth: 1`: the fetcher expands it via the GitHub contents API
-into every `.md` file in that directory. Files that another manifest entry
-ingests on its own are skipped during expansion so one document never enters
-the corpus under two source ids.
+runs for `fetch: html`. To ingest a whole directory of docs (the OWASP cheat
+sheets, the ASVS chapters, a Sphinx `docs/source`), point the source at a
+`github.com/.../tree/` URL with `crawl_depth: 1`: the fetcher expands it via
+the GitHub contents API into every `.md`, `.mdx`, and `.rst` file in that
+directory. Subdirectories recurse while `crawl_depth` allows (e.g. sqlfluff
+uses `crawl_depth: 2` to reach `docs/source/*/`). `.rst` payloads pass through
+a best-effort reStructuredText-to-markdown conversion so Sphinx manuals chunk
+along their real section structure. Files that another manifest entry ingests
+on its own are skipped during expansion so one document never enters the
+corpus under two source ids.
+
+robots.txt is fetched with the indexer's own User-Agent. Several sources
+(readthedocs sites, smartbear, nvlpubs) used to fail as "robots.txt
+disallows" only because the host rejected the default Python-urllib agent on
+the robots.txt request itself and robotparser treats that rejection as
+disallow-everything; their actual policies permit the fetch.
 
 ## Current Coverage
 

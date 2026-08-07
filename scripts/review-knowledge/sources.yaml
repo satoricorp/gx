@@ -23,11 +23,11 @@ sources:
   - id: smartbear-best-practices
     url: https://smartbear.com/learn/code-review/best-practices-for-peer-code-review/
     tier: process
-    notes: "Cisco study summary; source of 200-400 LOC and <500 LOC/hr findings."
+    notes: "Cisco study summary; source of 200-400 LOC and <500 LOC/hr findings. Earlier 'robots disallows' failures were an artifact of fetching robots.txt with the default Python-urllib agent; smartbear's actual policy allows /learn/."
   - id: conventional-comments
     url: https://conventionalcomments.org/
     tier: process
-    notes: "Comment labeling taxonomy; candidate output format for machine-generated comments."
+    notes: "Comment labeling taxonomy; candidate output format for machine-generated comments. Single-page source: 2 chunks IS the complete site, including the full label table."
   - id: owasp-asvs
     url: https://github.com/OWASP/ASVS/tree/master/5.0/en
     tier: security
@@ -47,7 +47,8 @@ sources:
     url: https://cwe.mitre.org/top25/
     tier: security
     precedence_group: security-spine
-    notes: "Cross-reference metadata (cwe_ids); ranked below ASVS."
+    crawl_depth: 1
+    notes: "Cross-reference metadata (cwe_ids); ranked below ASVS. The landing page alone is one thin chunk; depth 1 pulls the current-edition list, insights, and methodology pages linked from it."
   - id: owasp-cheatsheets
     url: https://github.com/OWASP/CheatSheetSeries/tree/master/cheatsheets
     tier: security
@@ -67,6 +68,7 @@ sources:
   - id: openssf-concise-guide
     url: https://best.openssf.org/Concise-Guide-for-Developing-More-Secure-Software
     tier: security
+    notes: "Single-page source: 2 chunks IS the complete guide (one bullet list)."
   - id: openssf-scorecard
     url: https://scorecard.dev/
     tier: security
@@ -77,15 +79,16 @@ sources:
     crawl_depth: 1
     notes: "Supply chain levels."
   - id: nist-ssdf-800-218
-    url: https://csrc.nist.gov/pubs/sp/800/218/final
+    url: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-218.pdf
     tier: security
     authority: 3
     fetch: pdf
-    notes: "Process compliance, not code review. Retained for completeness; candidate for retrieval exclusion - low authority keeps it deprioritized."
+    notes: "Process compliance, not code review. Retained for completeness; candidate for retrieval exclusion - low authority keeps it deprioritized. csrc.nist.gov robots.txt disallows the pub landing page; nvlpubs serves the PDF directly."
   - id: semgrep-registry
-    url: https://semgrep.dev/r
+    url: https://github.com/semgrep/semgrep-docs/blob/main/docs/contributing/contributing-to-semgrep-rules-repository.mdx
     tier: security
-    notes: "JS app, not crawlable HTML - use registry API or github.com/semgrep/semgrep-rules for rule text. Prior art for rule taxonomy."
+    fetch: github-md
+    notes: "Prior art for rule taxonomy. semgrep.dev/r is a JS app that yields nothing; this doc specifies the registry's rule metadata taxonomy (category, subcategory, likelihood, impact, confidence, CWE/OWASP references)."
   - id: google-tsguide
     url: https://google.github.io/styleguide/tsguide.html
     tier: language
@@ -127,30 +130,36 @@ sources:
     authority: 3
     precedence_group: python-style
   - id: ruff
-    url: https://docs.astral.sh/ruff/
+    url: https://github.com/astral-sh/ruff/tree/main/docs
     tier: style
     languages: [python]
     authority: 1
     precedence_group: python-style
+    fetch: github-md
     crawl_depth: 1
-    notes: "WINNER of python-style group. Pin google docstring convention (D211/D212); tag D203/D213 chunks superseded."
+    notes: "WINNER of python-style group. Pin google docstring convention (D211/D212); tag D203/D213 chunks superseded. docs.astral.sh robots.txt disallows fetching; the repo docs tree carries configuration/linter/formatter/faq guidance (per-rule pages are generated from source and stay unfetched)."
   - id: mypy
-    url: https://mypy.readthedocs.io/
+    url: https://github.com/python/mypy/tree/master/docs/source
     tier: language
     languages: [python]
+    fetch: github-md
     crawl_depth: 1
-    notes: "Tag tool-specific behavior chunks; typing spec (typing-python) is authoritative on semantics."
+    notes: "Tag tool-specific behavior chunks; typing spec (typing-python) is authoritative on semantics. mypy.readthedocs.io robots.txt disallows fetching; the repo docs tree carries the full manual as .rst."
   - id: typing-python-spec
-    url: https://typing.python.org/
+    url: https://github.com/python/typing/tree/main/docs/spec
     tier: language
     languages: [python]
     authority: 1
+    fetch: github-md
     crawl_depth: 1
+    notes: "typing.python.org robots.txt disallows fetching; the repo spec tree carries every chapter as .rst."
   - id: bandit
-    url: https://bandit.readthedocs.io/
+    url: https://github.com/PyCQA/bandit/tree/main/doc/source
     tier: security
     languages: [python]
+    fetch: github-md
     crawl_depth: 1
+    notes: "bandit.readthedocs.io robots.txt disallows fetching; the repo doc tree carries config/start/faq as .rst (per-plugin pages are autodoc stubs and stay unfetched)."
   - id: google-go-style
     url: https://google.github.io/styleguide/go/
     tier: language
@@ -240,6 +249,7 @@ sources:
     url: https://dev.mysql.com/doc/refman/8.4/en/sql-prepared-statements.html
     tier: language
     languages: [sql]
+    notes: "KNOWN THIN: dev.mysql.com returns 403 to this crawler and the refman has no markdown mirror; parameterized-query guidance is covered by owasp-sqli-cheatsheet."
   - id: dbt-sql-style
     url: https://docs.getdbt.com/best-practices/how-we-style/2-how-we-style-our-sql
     tier: style
@@ -253,12 +263,13 @@ sources:
     languages: [sql]
     authority: 3
   - id: sqlfluff
-    url: https://docs.sqlfluff.com/en/stable/
+    url: https://github.com/sqlfluff/sqlfluff/tree/main/docs/source
     tier: style
     languages: [sql]
     precedence_group: sql-style
-    crawl_depth: 1
-    notes: "Crawl covers the former separate /reference/rules.html entry; dedup by URL."
+    fetch: github-md
+    crawl_depth: 2
+    notes: "docs.sqlfluff.com robots.txt disallows fetching; the repo docs tree carries the manual as .rst. Depth 2 recurses into configuration/guides/production/reference subdirectories."
   - id: google-shellguide
     url: https://google.github.io/styleguide/shellguide.html
     tier: language

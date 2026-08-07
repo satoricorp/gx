@@ -330,3 +330,3260 @@ January 29, 2026
 </body>
 </html>
 
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+2025 CWE Top 10 KEV Weaknesses</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+2025 CWE Top 10 KEV Weaknesses&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+
+<div class="top25page">
+<div class="top10kevlistpage">
+<h2 class="header">2025 CWE Top 10 KEV Weaknesses</h2>
+
+<div class="tablebutton"><a href="/top25/index.html">Top 25 Home</a></div><span class="shareBar">Share via: <a class="twitter-share-button" href="https://twitter.com/intent/tweet?text=http://cwe.mitre.org/top25/archive/2025/2025_kev_list.html"><img src="/images/x-logo-black.png" width="20" height="20" style="position: relative; top:3px;" alt="Share via X" title="X"></a></span>
+<div class="tablebutton"><a href="#tableView">View in table format</a></div>
+<div class="tablebutton"><a href="/top25/archive/2025/2025_kev_insights.html">KEV Key Insights</a></div>
+<div class="tablebutton"><a href="/top25/archive/2025/2025_kev_methodology.html">KEV Methodology</a></div>
+
+<div id="kevlist"></div>
+<div id="tableView" class="overlay">
+<div class="popup">
+<div class="tablepopup">2025 CWE Top 10 KEV Weaknesses</div>
+<a class="popupclose" href="#kevlist">&times;</a>
+<div class="popupcontent">
+
+<table id="Detail" style="margin-left:auto; margin-right:auto;" border="2" cellpadding="2" cellspacing="2">
+<thead><tr>
+    <th width="60px">Rank</th>
+    <th width="90px">ID</th>
+    <th class="top25name">Name</th><th width="80px">Score</th>
+    <th width="60px">CVEs in KEV</th>
+    <th width="60px">Rank Change vs. 2024</th>
+</tr></thead>
+
+<tr>
+    <td style="text-align:center;"><b>1</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/78.html" title="Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)">CWE-78</a></td>
+    <td>Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)</td>
+    <td style="text-align:center;">80.43</td>
+    <td style="text-align:center;">20</td>
+    <td style="text-align:center;">+2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>2</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/416.html" title="Use After Free">CWE-416</a></td>
+    <td>Use After Free</td>
+    <td style="text-align:center;">51.89</td>
+    <td style="text-align:center;">14</td>
+    <td style="text-align:center;">+7</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>3</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/787.html" title="Out-of-bounds Write">CWE-787</a></td>
+    <td>Out-of-bounds Write</td>
+    <td style="text-align:center;">50.39</td>
+    <td style="text-align:center;">12</td>
+    <td style="text-align:center;">-2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>4</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/306.html" title="Missing Authentication for Critical Function">CWE-306</a></td>
+    <td>Missing Authentication for Critical Function</td>
+    <td style="text-align:center;">50.27</td>
+    <td style="text-align:center;">11</td>
+    <td style="text-align:center;">+3</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>5</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/502.html" title="Deserialization of Untrusted Data">CWE-502</a></td>
+    <td>Deserialization of Untrusted Data</td>
+    <td style="text-align:center;">46.31</td>
+    <td style="text-align:center;">11</td>
+    <td style="text-align:center;">0</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>6</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/22.html" title="Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)">CWE-22</a></td>
+    <td>Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)</td>
+    <td style="text-align:center;">36.96</td>
+    <td style="text-align:center;">10</td>
+    <td style="text-align:center;">0</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>7</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/94.html" title="Improper Control of Generation of Code (&#x27;Code Injection&#x27;)">CWE-94</a></td>
+    <td>Improper Control of Generation of Code (&#x27;Code Injection&#x27;)</td>
+    <td style="text-align:center;">26.62</td>
+    <td style="text-align:center;">7</td>
+    <td style="text-align:center;">-3</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>8</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/288.html" title="Authentication Bypass Using an Alternate Path or Channel">CWE-288</a></td>
+    <td>Authentication Bypass Using an Alternate Path or Channel</td>
+    <td style="text-align:center;">22.31</td>
+    <td style="text-align:center;">6</td>
+    <td style="text-align:center;">+6</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>9</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/122.html" title="Heap-based Buffer Overflow">CWE-122</a></td>
+    <td>Heap-based Buffer Overflow</td>
+    <td style="text-align:center;">20.25</td>
+    <td style="text-align:center;">6</td>
+    <td style="text-align:center;">+2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>10</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/79.html" title="Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)">CWE-79</a></td>
+    <td>Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)</td>
+    <td style="text-align:center;">17.99</td>
+    <td style="text-align:center;">7</td>
+    <td style="text-align:center;">+11</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+
+<ol class="boxlist">
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/78.html" title="Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-78</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 20</span>
+        <span class="list_prev_rank">Rank Last Year: 3 (up 2)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Use After Free</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/416.html" title="Use After Free" target="_blank" rel="noopener noreferrer">CWE-416</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 14</span>
+        <span class="list_prev_rank">Rank Last Year: 9 (up 7)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Out-of-bounds Write</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/787.html" title="Out-of-bounds Write" target="_blank" rel="noopener noreferrer">CWE-787</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 12</span>
+        <span class="list_prev_rank">Rank Last Year: 1 (down 2)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Missing Authentication for Critical Function</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/306.html" title="Missing Authentication for Critical Function" target="_blank" rel="noopener noreferrer">CWE-306</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 11</span>
+        <span class="list_prev_rank">Rank Last Year: 7 (up 3)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Deserialization of Untrusted Data</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/502.html" title="Deserialization of Untrusted Data" target="_blank" rel="noopener noreferrer">CWE-502</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 11</span>
+        <span class="list_prev_rank">Rank Last Year: 5 </span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/22.html" title="Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)" target="_blank" rel="noopener noreferrer">CWE-22</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 10</span>
+        <span class="list_prev_rank">Rank Last Year: 6 </span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Control of Generation of Code (&#x27;Code Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/94.html" title="Improper Control of Generation of Code (&#x27;Code Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-94</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 7</span>
+        <span class="list_prev_rank">Rank Last Year: 4 (down 3)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Authentication Bypass Using an Alternate Path or Channel</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/288.html" title="Authentication Bypass Using an Alternate Path or Channel" target="_blank" rel="noopener noreferrer">CWE-288</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 6</span>
+        <span class="list_prev_rank">Rank Last Year: 14 (up 6)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Heap-based Buffer Overflow</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/122.html" title="Heap-based Buffer Overflow" target="_blank" rel="noopener noreferrer">CWE-122</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 6</span>
+        <span class="list_prev_rank">Rank Last Year: 11 (up 2)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/79.html" title="Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)" target="_blank" rel="noopener noreferrer">CWE-79</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 7</span>
+        <span class="list_prev_rank">Rank Last Year: 21 (up 11)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+</ol>
+
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+</div>
+</div>
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+January 27, 2026
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+2025 CWE Top 25 Most Dangerous Software Weaknesses</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+2025&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+
+<div class="top25page">
+<h2 class="header">2025 CWE Top 25 Most Dangerous Software Weaknesses</h2>
+
+<div class="tablebutton"><a href="/top25/index.html">Top 25 Home</a></div>
+<span class="shareBar">Share via: <a class="twitter-share-button" href="https://twitter.com/intent/tweet?text=http://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html"><img src="/images/x-logo-black.png" width="18" height="18" style="position: relative; top:3px;" alt="Share via X" title="X"></a></span>
+<div class="tablebutton"><a href="#tableView">View in table format</a></div>
+<div class="tablebutton"><a href="/top25/archive/2025/2025_key_insights.html">Key Insights</a></div>
+<div class="tablebutton"><a href="/top25/archive/2025/2025_methodology.html">Methodology</a></div>
+<br />
+<div id="top25list"></div>
+<div id="tableView" class="overlay">
+<div class="popup">
+<div class="tablepopup">2025 CWE Top 25</div>
+<a class="popupclose" href="#top25list">&times;</a>
+<div class="popupcontent">
+
+<table id="Detail" style="margin-left:auto; margin-right:auto;" border="2" cellpadding="2" cellspacing="2">
+<thead><tr>
+    <th width="60px">Rank</th>
+    <th width="90px">ID</th>
+    <th class="top25name">Name</th><th width="80px">Score</th>
+    <th width="60px">CVEs in KEV</th>
+    <th width="60px">Rank Change vs. 2024</th>
+</tr></thead>
+
+<tr>
+    <td style="text-align:center;"><b>1</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/79.html" title="Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)">CWE-79</a></td>
+    <td>Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)</td>
+    <td style="text-align:center;">60.38</td>
+    <td style="text-align:center;">7</td>
+    <td style="text-align:center;">0</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>2</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/89.html" title="Improper Neutralization of Special Elements used in an SQL Command (&#x27;SQL Injection&#x27;)">CWE-89</a></td>
+    <td>Improper Neutralization of Special Elements used in an SQL Command (&#x27;SQL Injection&#x27;)</td>
+    <td style="text-align:center;">28.72</td>
+    <td style="text-align:center;">4</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>3</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/352.html" title="Cross-Site Request Forgery (CSRF)">CWE-352</a></td>
+    <td>Cross-Site Request Forgery (CSRF)</td>
+    <td style="text-align:center;">13.64</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>4</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/862.html" title="Missing Authorization">CWE-862</a></td>
+    <td>Missing Authorization</td>
+    <td style="text-align:center;">13.28</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+5</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>5</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/787.html" title="Out-of-bounds Write">CWE-787</a></td>
+    <td>Out-of-bounds Write</td>
+    <td style="text-align:center;">12.68</td>
+    <td style="text-align:center;">12</td>
+    <td style="text-align:center;">-3</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>6</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/22.html" title="Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)">CWE-22</a></td>
+    <td>Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)</td>
+    <td style="text-align:center;">8.99</td>
+    <td style="text-align:center;">10</td>
+    <td style="text-align:center;">-1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>7</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/416.html" title="Use After Free">CWE-416</a></td>
+    <td>Use After Free</td>
+    <td style="text-align:center;">8.47</td>
+    <td style="text-align:center;">14</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>8</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/125.html" title="Out-of-bounds Read">CWE-125</a></td>
+    <td>Out-of-bounds Read</td>
+    <td style="text-align:center;">7.88</td>
+    <td style="text-align:center;">3</td>
+    <td style="text-align:center;">-2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>9</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/78.html" title="Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)">CWE-78</a></td>
+    <td>Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)</td>
+    <td style="text-align:center;">7.85</td>
+    <td style="text-align:center;">20</td>
+    <td style="text-align:center;">-2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>10</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/94.html" title="Improper Control of Generation of Code (&#x27;Code Injection&#x27;)">CWE-94</a></td>
+    <td>Improper Control of Generation of Code (&#x27;Code Injection&#x27;)</td>
+    <td style="text-align:center;">7.57</td>
+    <td style="text-align:center;">7</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>11</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/120.html" title="Buffer Copy without Checking Size of Input (&#x27;Classic Buffer Overflow&#x27;)">CWE-120</a></td>
+    <td>Buffer Copy without Checking Size of Input (&#x27;Classic Buffer Overflow&#x27;)</td>
+    <td style="text-align:center;">6.96</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>12</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/434.html" title="Unrestricted Upload of File with Dangerous Type">CWE-434</a></td>
+    <td>Unrestricted Upload of File with Dangerous Type</td>
+    <td style="text-align:center;">6.87</td>
+    <td style="text-align:center;">4</td>
+    <td style="text-align:center;">-2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>13</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/476.html" title="NULL Pointer Dereference">CWE-476</a></td>
+    <td>NULL Pointer Dereference</td>
+    <td style="text-align:center;">6.41</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+8</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>14</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/121.html" title="Stack-based Buffer Overflow">CWE-121</a></td>
+    <td>Stack-based Buffer Overflow</td>
+    <td style="text-align:center;">5.75</td>
+    <td style="text-align:center;">4</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>15</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/502.html" title="Deserialization of Untrusted Data">CWE-502</a></td>
+    <td>Deserialization of Untrusted Data</td>
+    <td style="text-align:center;">5.23</td>
+    <td style="text-align:center;">11</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>16</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/122.html" title="Heap-based Buffer Overflow">CWE-122</a></td>
+    <td>Heap-based Buffer Overflow</td>
+    <td style="text-align:center;">5.21</td>
+    <td style="text-align:center;">6</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>17</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/863.html" title="Incorrect Authorization">CWE-863</a></td>
+    <td>Incorrect Authorization</td>
+    <td style="text-align:center;">4.14</td>
+    <td style="text-align:center;">4</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>18</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/20.html" title="Improper Input Validation">CWE-20</a></td>
+    <td>Improper Input Validation</td>
+    <td style="text-align:center;">4.09</td>
+    <td style="text-align:center;">2</td>
+    <td style="text-align:center;">-6</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>19</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/284.html" title="Improper Access Control">CWE-284</a></td>
+    <td>Improper Access Control</td>
+    <td style="text-align:center;">4.07</td>
+    <td style="text-align:center;">1</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>20</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/200.html" title="Exposure of Sensitive Information to an Unauthorized Actor">CWE-200</a></td>
+    <td>Exposure of Sensitive Information to an Unauthorized Actor</td>
+    <td style="text-align:center;">4.01</td>
+    <td style="text-align:center;">1</td>
+    <td style="text-align:center;">-3</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>21</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/306.html" title="Missing Authentication for Critical Function">CWE-306</a></td>
+    <td>Missing Authentication for Critical Function</td>
+    <td style="text-align:center;">3.47</td>
+    <td style="text-align:center;">11</td>
+    <td style="text-align:center;">+4</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>22</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/918.html" title="Server-Side Request Forgery (SSRF)">CWE-918</a></td>
+    <td>Server-Side Request Forgery (SSRF)</td>
+    <td style="text-align:center;">3.36</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-3</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>23</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/77.html" title="Improper Neutralization of Special Elements used in a Command (&#x27;Command Injection&#x27;)">CWE-77</a></td>
+    <td>Improper Neutralization of Special Elements used in a Command (&#x27;Command Injection&#x27;)</td>
+    <td style="text-align:center;">3.15</td>
+    <td style="text-align:center;">2</td>
+    <td style="text-align:center;">-10</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>24</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/639.html" title="Authorization Bypass Through User-Controlled Key">CWE-639</a></td>
+    <td>Authorization Bypass Through User-Controlled Key</td>
+    <td style="text-align:center;">2.62</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+6</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>25</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/770.html" title="Allocation of Resources Without Limits or Throttling">CWE-770</a></td>
+    <td>Allocation of Resources Without Limits or Throttling</td>
+    <td style="text-align:center;">2.54</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+1</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+
+<ol class="boxlist">
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/79.html" title="Improper Neutralization of Input During Web Page Generation (&#x27;Cross-site Scripting&#x27;)" target="_blank" rel="noopener noreferrer">CWE-79</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 7</span>
+        <span class="list_prev_rank">Rank Last Year: 1 </span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Special Elements used in an SQL Command (&#x27;SQL Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/89.html" title="Improper Neutralization of Special Elements used in an SQL Command (&#x27;SQL Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-89</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 4</span>
+        <span class="list_prev_rank">Rank Last Year: 3 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Cross-Site Request Forgery (CSRF)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/352.html" title="Cross-Site Request Forgery (CSRF)" target="_blank" rel="noopener noreferrer">CWE-352</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 4 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Missing Authorization</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/862.html" title="Missing Authorization" target="_blank" rel="noopener noreferrer">CWE-862</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 9 (up 5)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Out-of-bounds Write</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/787.html" title="Out-of-bounds Write" target="_blank" rel="noopener noreferrer">CWE-787</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 12</span>
+        <span class="list_prev_rank">Rank Last Year: 2 (down 3)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/22.html" title="Improper Limitation of a Pathname to a Restricted Directory (&#x27;Path Traversal&#x27;)" target="_blank" rel="noopener noreferrer">CWE-22</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 10</span>
+        <span class="list_prev_rank">Rank Last Year: 5 (down 1)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Use After Free</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/416.html" title="Use After Free" target="_blank" rel="noopener noreferrer">CWE-416</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 14</span>
+        <span class="list_prev_rank">Rank Last Year: 8 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Out-of-bounds Read</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/125.html" title="Out-of-bounds Read" target="_blank" rel="noopener noreferrer">CWE-125</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 3</span>
+        <span class="list_prev_rank">Rank Last Year: 6 (down 2)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/78.html" title="Improper Neutralization of Special Elements used in an OS Command (&#x27;OS Command Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-78</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 20</span>
+        <span class="list_prev_rank">Rank Last Year: 7 (down 2)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Control of Generation of Code (&#x27;Code Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/94.html" title="Improper Control of Generation of Code (&#x27;Code Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-94</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 7</span>
+        <span class="list_prev_rank">Rank Last Year: 11 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Buffer Copy without Checking Size of Input (&#x27;Classic Buffer Overflow&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/120.html" title="Buffer Copy without Checking Size of Input (&#x27;Classic Buffer Overflow&#x27;)" target="_blank" rel="noopener noreferrer">CWE-120</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Unrestricted Upload of File with Dangerous Type</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/434.html" title="Unrestricted Upload of File with Dangerous Type" target="_blank" rel="noopener noreferrer">CWE-434</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 4</span>
+        <span class="list_prev_rank">Rank Last Year: 10 (down 2)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">NULL Pointer Dereference</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/476.html" title="NULL Pointer Dereference" target="_blank" rel="noopener noreferrer">CWE-476</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 21 (up 8)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Stack-based Buffer Overflow</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/121.html" title="Stack-based Buffer Overflow" target="_blank" rel="noopener noreferrer">CWE-121</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 4</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Deserialization of Untrusted Data</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/502.html" title="Deserialization of Untrusted Data" target="_blank" rel="noopener noreferrer">CWE-502</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 11</span>
+        <span class="list_prev_rank">Rank Last Year: 16 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Heap-based Buffer Overflow</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/122.html" title="Heap-based Buffer Overflow" target="_blank" rel="noopener noreferrer">CWE-122</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 6</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Incorrect Authorization</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/863.html" title="Incorrect Authorization" target="_blank" rel="noopener noreferrer">CWE-863</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 4</span>
+        <span class="list_prev_rank">Rank Last Year: 18 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Input Validation</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/20.html" title="Improper Input Validation" target="_blank" rel="noopener noreferrer">CWE-20</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 2</span>
+        <span class="list_prev_rank">Rank Last Year: 12 (down 6)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Access Control</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/284.html" title="Improper Access Control" target="_blank" rel="noopener noreferrer">CWE-284</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 1</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Exposure of Sensitive Information to an Unauthorized Actor</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/200.html" title="Exposure of Sensitive Information to an Unauthorized Actor" target="_blank" rel="noopener noreferrer">CWE-200</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 1</span>
+        <span class="list_prev_rank">Rank Last Year: 17 (down 3)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Missing Authentication for Critical Function</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/306.html" title="Missing Authentication for Critical Function" target="_blank" rel="noopener noreferrer">CWE-306</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 11</span>
+        <span class="list_prev_rank">Rank Last Year: 25 (up 4)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Server-Side Request Forgery (SSRF)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/918.html" title="Server-Side Request Forgery (SSRF)" target="_blank" rel="noopener noreferrer">CWE-918</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 19 (down 3)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Neutralization of Special Elements used in a Command (&#x27;Command Injection&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/77.html" title="Improper Neutralization of Special Elements used in a Command (&#x27;Command Injection&#x27;)" target="_blank" rel="noopener noreferrer">CWE-77</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 2</span>
+        <span class="list_prev_rank">Rank Last Year: 13 (down 10)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Authorization Bypass Through User-Controlled Key</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/639.html" title="Authorization Bypass Through User-Controlled Key" target="_blank" rel="noopener noreferrer">CWE-639</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 30 (up 6)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Allocation of Resources Without Limits or Throttling</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/770.html" title="Allocation of Resources Without Limits or Throttling" target="_blank" rel="noopener noreferrer">CWE-770</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 26 (up 1)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+</ol>
+
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+
+</div>
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+December 15, 2025
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+2025 CWE Top 25 Most Dangerous Software Weaknesses</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+2025&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+   <div class="top25page">
+      <h2 class="header">2025 CWE Top 25 Key Insights</h2>
+
+<div class="tablebutton"><a href="/top25/index.html">Top 25 Home</a></div>
+            
+<p>The “<a href="/top25/archive/2025/2025_cwe_top25.html">2025 CWE Top 25 Most Dangerous Software Weaknesses</a>”
+highlights the most severe and prevalent weaknesses behind the 39,080
+<a href="https://www.cve.org/" target="_blank" rel="noopener noreferrer">Common Vulnerabilities and Exposures (CVE&trade;) Records</a>
+in this year’s dataset. Uncovering the technical root causes of these vulnerabilities serves as a powerful guide
+for investments, policies, and practices to prevent these vulnerabilities from occurring in the first place.</p>
+
+<p>The CWE Top 25 can help inform:</p>
+
+<ul>
+    <li><strong>Vulnerability Reduction:</strong> Drive valuable feedback into the SDLC and architectural planning, helping
+    to eliminate entire classes of defects (e.g., memory safety, injection).</li>
+    <li><strong>Cost Savings:</strong> Fewer weaknesses introduced during product development means fewer vulnerabilities
+    to manage post-deployment, where it is more expensive and resource intensive.</li>
+    <li><strong>Trend Analysis:</strong> Insight into vulnerability trends enables organizations to better focus and adapt
+    their security strategies. Organizations that look across the ecosystem can leverage these trends to identify systemic
+    issues and drive collective improvements in software security practices.</li>
+    <li><strong>Customer Trust:</strong> Transparency in how organizations address these weaknesses shows commitment to
+    product security and not repeating the same mistakes.</li>
+    <li><strong>Consumer Awareness:</strong> Educate software consumers about dangerous weaknesses and common
+    vulnerabilities, empowering them to make informed decisions when selecting products.</li>
+</ul>
+
+<p>The 2025 CWE Top 25 is a valuable resource for developers and security professionals, as well as a strategic guide for
+organizations aiming to make informed decisions in software, security, and risk management investments.</p>
+
+<h3>Analysis</h3>
+
+<p>While
+<a href="/data/definitions/79.html">CWE-79: Improper Neutralization of Input During Web Page Generation (‘Cross-Site Scripting’)</a>
+retains its spot at the top of the Top 25, there were many changes in rankings from last year’s list.</p>
+
+<p>The biggest movers up the list are:</p>
+
+<ul>
+    <li><a href="/data/definitions/862.html">CWE-862: Missing Authorization</a>, up 5 from #9 to #4</li>
+    <li><a href="/data/definitions/476.html">CWE-476: Null Pointer Dereference</a>, up 8 from #21 to #13</li>
+    <li><a href="/data/definitions/306.html">CWE-306: Missing Authentication</a>, up 4 from #25 to #21</li>
+</ul>
+
+<p>New entries in the Top 25 are:</p>
+
+<ul>
+    <li><a href="/data/definitions/120.html">CWE-120: Buffer Copy without Checking Size of Input ('Classic Buffer Overflow')</a>,
+    at #11 with no previous ranking</li>
+    <li><a href="/data/definitions/121.html">CWE-121: Stack-based Buffer Overflow</a>, at #14 with no previous ranking</li>
+    <li><a href="/data/definitions/122.html">CWE-122: Heap-based Buffer Overflow</a>, at #16 with no previous ranking</li>
+    <li><a href="/data/definitions/284.html">CWE-284: Improper Access Control</a>, at #19 with no previous ranking</li>
+    <li><a href="/data/definitions/639.html">CWE-639: Authorization Bypass Through User-Controlled Key</a>, up 6 from #30 to #24</li>
+    <li><a href="/data/definitions/770.html">CWE-770: Allocation of Resources Without Limits or Throttling</a>, up 1 from #26 to #25</li>
+</ul>
+
+<p>Four CWEs were not ranked in 2024 and earlier because of how previous Top 25 calculations were handled. For more
+    detailed information, see the <a href="/top25/archive/2025/2025_methodology.html">Methodology</a> page. In short,
+    the 2025 CWE Top 25 used all CWE mappings as provided and reviewed by CNAs, without normalizing them back to
+    <a href="/data/definitions/1003.html">View-1003: Weaknesses for Simplified Mapping of Published Vulnerabilities</a>,
+    a simplified collection of 130 weaknesses commonly used by the
+    <a href="https://nvd.nist.gov/" target="_blank" rel="noopener noreferrer">U.S. National Vulnerability Database (NVD)</a>
+    for their enrichment purposes. As a result, the 2025 CWE Top 25 reflects a more accurate picture of real-world
+    CWE mappings and offers greater insight into the CWE root cause mapping practices of the broader vulnerability
+    management community.</p>
+
+<p>The biggest downward movers are:</p>
+
+<ul>
+<li><a href="/data/definitions/787.html">CWE-787: Out-of-Bounds Write</a>, down 3 from #2 to #5</li>
+<li><a href="/data/definitions/20.html">CWE-20: Improper Input Validation</a>, down 6 from #12 to #18</li>
+<li><a href="/data/definitions/200.html">CWE-200: Exposure of Sensitive Information to an Unauthorized Actor</a>,
+down 3 from #17 to #20</li>
+<li><a href="/data/definitions/918.html">CWE-918: SSRF</a>, down 3 from #19 to #22</li>
+<li><a href="/data/definitions/77.html">CWE-77: Command Injection</a>, down 10 from #13 to #23</li>
+</ul>
+
+<p>Entries that fell off the Top 25 are:</p>
+
+<ul>
+    <li><a href="/data/definitions/269.html">CWE-269: Improper Privilege Management</a>, down 14 from #15 to #29</li>
+    <li><a href="/data/definitions/190.html">CWE-190: Integer Overflow or Wraparound</a>, down 7 from #23 to #30</li>
+    <li><a href="/data/definitions/287.html">CWE-287: Improper Authentication</a>, down 17 from #14 to #31</li>
+    <li><a href="/data/definitions/400.html">CWE-400: Uncontrolled Resource Consumption</a>, down 8 from #24 to #32</li>
+    <li><a href="/data/definitions/798.html">CWE-798: Use of Hard-coded Credentials</a>, down 13 from #22 to #35</li>
+    <li><a href="/data/definitions/119.html">CWE-119: Improper Restriction of Operations within the Bounds of a
+    Memory Buffer</a>, down 19 from #20 to #39</li>
+</ul>
+
+<p>Most of these downward-moving CWEs (except CWE-190 and CWE-918) may have had sharply reduced mappings because,
+    in previous years, mappings to their child CWEs were rolled up to them due to View-1003 normalization. For example,
+    CWE-269 had 219 CVEs in non-normalized data this year, while one of its children (CWE-250) was mapped by 88 CVEs.
+    If all of CWE-269’s children had been normalized to CWE-269, it would have had 633 CVEs this year. This likely
+    would have kept it in the Top 25. Notably, many of these CWEs are more abstract and Discouraged for mapping,
+    which may have led CNAs to use more precise mappings.</p>
+
+<h3>Mapping Usage</h3>
+
+<p>Every CWE on cwe.mitre.org is annotated with a “<a href="/documents/cwe_usage/guidance.html">mapping usage recommendation</a>”
+that suggests whether the CWE is recommended for vulnerability root cause mapping given its level of abstraction and
+actionability. These include Allowed, Allowed-with-Review, Discouraged, and Prohibited.</p>
+
+<p>The CWEs in the 2025 Top 25 received 28,336 total mappings and had the following mapping usage recommendations:</p>
+
+<ul>
+    <li>17 Allowed – 22,438 maps (79.19% of all Top 25 mappings)</li>
+    <li>5 Allowed-with-Review – 4,363 maps (15.40%)</li>
+    <li>3 Discouraged – 1,535 maps (5.42%)</li>
+</ul>
+
+<p>In contrast, last year’s 2024 Top 25 had the following mapping usage recommendations:</p>
+
+<ul>
+    <li>15 Allowed – 16,298 maps (82.33% of all Top 25 mappings)</li>
+    <li>4 Allowed-with-Review – 1,481 maps (7.48%)</li>
+    <li>6 Discouraged – 2,017 maps (10.19%)</li>
+</ul>
+
+<p>The decline in mappings to “Discouraged” CWEs suggests a marked improvement in root cause mapping practices, since
+    other prior years have been in the 10% or 11% range. Even using data normalized to View-1003 as in past years, there
+    was still a reduction. This is best illustrated by the removal of two Discouraged CWEs from the Top 25, namely CWE-119
+    and CWE-400.</p>
+
+<p>The Top 25 Team encourages
+    <a href="https://www.cve.org/ProgramOrganization/CNAs" target="_blank">CVE Numbering Authorities (CNAs)</a>
+    to continue striving for actionable and precise CWE mappings in their CVE Records.</p>
+
+<p>For more information about root cause mapping, see our
+    <a href="/documents/cwe_usage/guidance.html">CVE-to-CWE Root Cause Mapping Guidance</a>.</p>
+
+<h3>Abstraction</h3>
+
+<p>CWE contains over 900 weaknesses that range from abstract and conceptual to precise and technology- or language-specific.
+    A precise weakness will have a parent weakness that is more abstract, which may also have parent weaknesses, and so on.</p>
+
+<p>There are four types of weakness abstractions, from most abstract to most specific:
+    <a href="/documents/glossary/index.html#Pillar%20Weakness">Pillar</a>,
+    <a href="/documents/glossary/index.html#Class%20Weakness">Class</a>,
+    <a href="/documents/glossary/index.html#Base%20Weakness">Base</a>, and
+    <a href="/documents/glossary/index.html#Variant%20Weakness">Variant</a>.</p>
+
+<p>For root cause mapping, CWE recommends that Base and Variant level CWEs should be used whenever possible
+    to ensure providing adequate specificity and actionability. Class level CWEs may be used  if there is no
+    accurate Base or Variant level CWE. Pillar level weaknesses are rarely useful for root cause mapping,
+    if ever, with some rare exceptions for unusual or less widely researched weaknesses.</p>
+
+<p>In the 2025 Top 25, the number of mappings based on CWE abstraction were:</p>
+
+<ul>
+    <li>Base: 20,351 maps (71.82%) for 15 unique CWEs</li>
+    <li>Class: 3,705 maps (13.08%) for 5 unique CWEs</li>
+    <li>Compound: 1,750 maps (6.18%) for 1 unique CWE</li>
+    <li>Variant: 2,022 maps (7.14%) for 3 unique CWEs</li>
+    <li>Pillar: 508 maps (1.79%) for 1 unique CWE</li>
+</ul>
+
+<p>The 5 classes in 2025’s Top 25 represent a decrease from 2024’s 9 classes. At least part of this decrease is
+    due to the use of raw data, allowing lower-level CWEs to enter the Top 25.</p>
+
+<p>In 2024, the abstraction counts were:</p>
+
+<ul>
+    <li>Base: 14,342 maps (72.45%) for 14 unique CWEs</li>
+    <li>Class: 3,498 maps (17.67%) for 9 unique CWEs</li>
+    <li>Compound: 1,301 maps (6.57%) for 1 unique CWEs</li>
+    <li>Variant: 655 maps (3.31%) for 1 unique CWEs</li>
+</ul>
+
+<p>It should be noted that the “Compound” CWE is for
+    <a href="/data/definitions/352.html">Cross-Site Request Forgery (CSRF)</a>
+    (i.e., CWE-352), which is a composite of multiple weaknesses; CWE-352’s abstraction aligns with that of a Base.</p>
+
+<h3>Possible Causes of Rank Shifts</h3>
+
+<p>Given the increase in annual CVE Records, there were unsurprisingly higher CVE counts for most CWEs in this
+    year’s dataset analysis. The shift in scoring and the fewer CWE mappings in NVD data in 2024 also contributed
+    to this. For example, the number of CVE Records that mapped to CWE-79 increased by over 3,000 this year, and
+    CWE-89 by almost 1,000.</p>
+
+<p>As more CNAs contribute their own CWE mappings for CVE Records, it is possible that high-volume CNAs might
+    have mapping practices that are different than what has been experienced before. A per-CNA evaluation of mapping
+    practices could be informative, but it was outside the scope of this initial analysis.</p>
+
+<p>The Top 25 team is excited to see more and more CNAs routinely providing CWE mappings at the time of disclosure:</p>
+
+<ul>
+    <li>In the 2024 Top 25 dataset, 53% of CVE Records had a CWE mapping provided by the publishing CNA.</li>
+    <li>In the 2025 Top 25 dataset, this metric increased to 67%, an increase of 14% year over year.</li> 
+</ul>
+
+<p>The <a href="https://www.cve.org/" target="_blank" rel="noopener noreferrer">CVE Program</a>
+publishes regular <a target="_blank" href="https://www.cve.org/About/Metrics">metrics</a>,
+including the
+<a target="_blank" href="https://www.cve.org/About/Metrics#CNAEnrichmentRecognition">CVE Numbering Authority (CNA) Enrichment Recognition List</a>,
+which may be of interest to Top 25 readers.</p>
+
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+
+</div>
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+December 10, 2025
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+2025 CWE Top 25 Most Dangerous Software Weaknesses</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+2025 CWE Top 25 Methodology&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+   <div class="top25methodologypage">
+	<h2 class="header">2025 CWE Top 25 Methodology</h2>
+<div class="tablebutton"><a href="/top25/index.html">Top 25 Home</a></div>
+
+
+<p>The “<a href="/top25/archive/2025/2025_cwe_top25.html">2025 CWE Top 25 Most Dangerous Software Weaknesses</a>”
+list was calculated by analyzing public vulnerability information in
+<a target="_blank" href="https://www.cve.org/">Common Vulnerabilities and Exposures (CVE&trade;) Records</a>
+for CWE
+<a href="/documents/cwe_usage/guidance.html">root cause mappings</a>.</p>
+
+<p>This year’s dataset included 39,080 CVE Records for vulnerabilities published between June 1, 2024 and June 1, 2025.
+   Data was initially pulled on July 23, 2025, to share with
+   <a href="https://www.cve.org/ProgramOrganization/CNAs" target="_blank">CVE Numbering Authority(CNA)</a>
+   community partners for review. Data was pulled again on November 17, 2025, to ensure the most current
+   information was used to calculate the Top 25.</p>
+
+<h3>Dataset Collection/Scoping</h3>
+
+<p>The initial Top 25 dataset comprised all CVE-2024-XXXX and CVE-2025-XXXX published between June 1, 2024,
+   and June 1, 2025. To ensure collecting the complete set of publicly available CWE mappings, the Top 25 team
+   gathered those in the CVE List published by CNAs or added by
+   <a target="_blank" href="https://www.cisa.gov/news-events/news/unlocking-vulnrichment-enriching-cve-data">CISA Vulnrichment</a>
+   after publication, both of which are available on CVE.org. The team also cross-referenced any downstream, third-party mappings
+   by NVD analysts and published on nvd.nist.gov. The CVE Records were then analyzed using automated scanning to identify those
+   that would benefit from re-mapping analysis. These included CVE Records with CWE mappings that:
+	<ol>
+	<li>Were too abstract or commonly misused
+	<ul>
+	<li><i>A common mistake made when mapping a vulnerability to a CWE is choosing an abstract or ‘high-level’ entry
+      that is less precise and actionable. CWEs at the
+      <a href="/documents/glossary/index.html#Base%20Weakness">Base</a> and
+      <a href="/documents/glossary/index.html#Variant%20Weakness">Variant</a>
+      level ensure adequate specificity, actionability, and root cause information for a vulnerability.</i></li>
+	</ul>
+	</li>
+	<br/>
+	<li>Differed from a mapping found using a MITRE internal keyword matcher tool
+	<ul>
+	<li><i>Drawing on years of previous Top 25 analysis, the CWE team has identified a list of keywords found in CVE
+      descriptions that commonly indicate a specific root cause weakness. Although this keyword list is imperfect,
+      the CWE team has found it to be a good starting point to identify mappings that could be incorrect. If the
+      keyword matcher found a different mapping than was present, the CVE Record was kept in the dataset for
+      remapping analysis.</i></li>
+	</ul>
+	</li>
+	</ol>
+</p>
+
+<p>Ultimately, the dataset identified for re-mapping analysis &mdash; the Scoped Dataset &mdash; contained 9,468 CVE Records
+   (24% of all CVE Records in the dataset) originally published by 281 different CVE Numbering Authorities CNAs.</p>
+
+<h3>LLM Mapping Suggestions</h3>
+
+<p>The 2025 CWE Top 25 was the first to also employ CWE mapping suggestions from an LLM tool developed by
+   Chris Madden (<a target="_blank" href="https://www.yahoo.com">Yahoo!</a>) as part of the
+   <a href="/community/working_groups.html#rcm_wg">CWE Root Cause Mapping Working Group</a> (RCM WG).</p>
+
+<p>This year, each CVE in the Scoped Dataset was passed through the bulk assignment LLM tool that provided
+   a report with additionally suggested CWE information. This helped remap CVE Records with imprecise
+   CWE mappings by providing lower-level suggestions for the publishing CNA to consider. The tool utilized
+   a grounded LLM that was given the entire CWE corpus as its dataset and trained on sets of accurate
+   CVE-to-CWE mappings. Although the LLM-generated suggested mappings were not always selected, we believe
+   they acted as a good starting point for reviewers to perform re-analysis on the CVE Records in certain
+   cases. In some cases, the tool appeared to infer potential mappings from references containing low-level
+   details that would likely be missed by human analysts due to limitations of time or expertise.</p>
+
+<p>The CWE RCM WG will continue to strengthen this capability and work towards the
+   “new and the next” in enabling decentralized, accurate root cause mapping analysis at scale.</p>
+
+<h3>CNA Expert Collaboration</h3>
+
+<p>CNAs are best positioned to provide accurate CWE mapping determinations compared to third-party analysts, as CNAs are the
+   authority for vulnerability information within their CNA scope and those closest to the products themselves. To engage
+   this expert community in helping create the 2025 Top 25, the Scoped Dataset was divided into batches of CVEs based on
+   the CNA who published them, typically with one batch for CVE Records mapped to abstract CWEs, and a separate batch for
+   CVE Records with differences based on the internal keyword matcher. On August 19, 2025, the Top 25 team emailed each CNA
+   to review their batches.</p>
+
+<p>On November 17, 2025, the team finalized any CWE mapping changes provided by CNAs. Of the 9,468 CVE Records sent for review
+   by the 281 different CNAs, the Top 25 team received feedback on 2,459 CVE Records (26% of total requested) from 170 CNAs
+   (60% of total contacted) either correcting or confirming existing CWE mappings.</p>
+
+<p>The CWE Team plans to leverage the CNA mapping feedback for potential strengthening of the CWE root cause mapping guidance
+   and documentation.</p>
+
+<h3>Dataset Refinement</h3>
+
+<p>For the remaining CVE Records in the Scoped Dataset that did not receive CNA review, the Top 25 team analyzed a prioritized
+   subset that included the highest-producing CNA with 1,884 CVE Records in the dataset.</p>
+
+<p>The team discovered that the high-producing CNA frequently mapped to a correct lower-level CWE (e.g., a base or variant)
+   but also included the higher-level parent CWE as well. The Top 25 ranking calculations consider every CWE mapping, so the
+   inclusion of these parent CWE mappings influenced the dataset considerably. To resolve this, the CWE team removed all of
+   this CNA’s CWE mappings where one of its “child” CWEs were also mapped. This significantly reduced the number of more abstract,
+   less actionable CWE mappings in the Top 25.</p>
+
+<p>The Top 25 team also reviewed CVE Records published by the MITRE
+   <a target="_blank" href="https://www.cve.org/ResourcesSupport/Glossary#glossaryCNALR">CNA of Last Resort</a> (MITRE CNA-LR),
+   of which there were 1,266 in the dataset. It is important to note that traditional CNAs and CNAs of Last Resort operate
+   very differently. Within the CVE Program, the MITRE CNA-LR (one of three CNA-LRs) is authorized to assign CVE IDs and
+   publish corresponding CVE Records within the MITRE Top Level Root’s scope for vulnerabilities not covered by the Scope
+   of another CNA. It exists to serve when no appropriate CNA is available or willing &mdash; often cases with limited information.</p>
+
+<p>Like many CNAs, the MITRE CNA-LR is investing in the CVE “Quality Era” and exploring ways to improve data enrichment
+   even in scenarios of limited information &mdash; always with the goal of supporting defenders who rely on
+   CVE information every day. The Top 25 team reviewed 738 of the total 1,266 MITRE CNA-LR published CVE Records
+   in the Scoped Dataset, prioritizing those with adequate mapping information provided by the first party researcher
+   that engaged the CNA-LR, and deferring those that would require deeper, more time-intensive analysis.</p>
+
+<h3>Removal of CWE Mapping Normalization</h3>
+
+<p>In prior years, before calculating the Top 25, all CWE mappings were normalized to
+   <a href= "/data/definitions/1003.html">View-1003: Weaknesses for Simplified Mapping of Published Vulnerabilities</a>.
+   This was because the NVD, as part of its CVE Record enrichment process, typically maps CVE Records to CWEs within
+   View-1003, a simplified collection of 130 weaknesses. Records that did not map to a CWE within that View would be marked as
+   “NVD-CWE-Other”, or “NVD-CWE-noinfo” in cases where there was not information to make a determination.</p>
+
+<p>This meant that in prior years, any CWE mapping not present in View-1003 was forced to the next closest ancestor
+   in that collection, and if no valid ancestor existed, that mapping was excluded entirely.</p>
+
+<p>For the first time in 2025, the Top 25 used the actual CWE mappings as provided, without normalizing them back to
+   View-1003. As a result, the 2025 CWE Top 25 reflects a more accurate picture of real-world CWE mappings and offers
+   greater insight into the CWE root cause mapping practices of the broader vulnerability management community.</p>
+
+<h3>Scoring</h3>
+
+<p>After the collection, scoping, and remapping process, a scoring formula was used to calculate a rank order of weaknesses
+   that combines the frequency (the number of times that a CWE is the root cause of a vulnerability) with the average severity
+   of each of those vulnerabilities when they are exploited (as measured by the
+   <a target="_blank" href="https://nvd.nist.gov/vuln-metrics/cvss">Common Vulnerability Scoring System (CVSS)</a>
+   v3.0 or v3.1 base score). In both cases, the frequency and severity are normalized relative to the minimum and
+   maximum values observed in the dataset. These metrics are presented as “<strong>count</strong>” and
+   “<strong>average_CVSS</strong>”, respectively in the following formulas. Due to differences in the way CVSS base
+   scores are calculated across versions, only CVE Records that contain CVSS version 3.0 or 3.1 data were considered
+   in the calculations.</p>
+
+<p class="redbold">Frequency</p>
+
+<p>The scoring formula calculates the number of times a CWE was mapped to a CVE Record within the NVD.</p>
+
+<p class="indent">
+	<strong>Freq = {count(CWE_X' &isin; NVD) for each CWE_X' in NVD}</strong>
+</p>
+
+<p class="indent">
+	<strong>Fr(CWE_X) = (count(CWE_X &isin; NVD) - min(Freq)) / (max(Freq) - min(Freq))</strong>
+</p>
+
+<p class="redbold">Severity</p>
+
+<p>The scoring formula calculates the average CVSS score of all CVE Records that map to the CWE. The equation below is
+   used to calculate this value.</p>
+
+<p class="indent">
+	<strong>Sv(CWE_X) = (average_CVSS(CWE_X) - min(CVSS)) / (max(CVSS) - min(CVSS))</strong>
+</p>
+
+<p class="redbold">Danger Score</p>
+
+<p>The level of danger presented by a particular CWE was then determined by multiplying the severity score by the frequency score.</p>
+
+<p class="indent">
+	<strong>Score(CWE_X) = Fr(CWE_X) * Sv(CWE_X) * 100</strong>
+</p>
+
+<p>With this scoring approach:</p>
+	<ul>
+      <li>Weaknesses that were rarely discovered will not receive a high Frequency score, regardless of the typical consequence
+         associated with any exploitation. If developers are not making a particular mistake, then the weakness should not be
+         highlighted in the CWE Top 25.</li>
+      <li>Weaknesses whose exploitation was of low impact will not receive a high Severity score, regardless of how common it
+         was in the dataset. If the weakness typically results in low-impact exploited vulnerabilities, then the weakness
+         should not be highlighted in the CWE Top 25.</li>
+      <li>Weaknesses that are both common and caused significant harm will receive the highest scores.</li>
+	</ul>
+</p>
+
+<h3>Acknowledgments</h3>
+
+<p>The 2025 CWE Top 25 Team includes (in alphabetical order by first name): Alec Summers, Connor Mullaly, and Steve Christey Coley.</p>
+
+<p>Thank you to Chris Madden of <a target="_blank" href="https://www.yahoo.com">Yahoo!</a>
+for developing the LLM capability that allowed for additional CWE mapping suggestions to each CNA.</p>
+
+<p>Very special thanks to the 170 <a target="_blank" href="https://www.cve.org/ProgramOrganization/CNAs">CNAs</a> that contributed their time and expertise to this year’s analysis.</p>
+
+
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+
+</div>
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+January 23, 2026
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+2025 On the Cusp - Other Dangerous Software Weaknesses
+</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+2025 On the Cusp&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+
+<div class="top25page">
+<div class="top25cusppage">
+<h2 class="header">2025 “On the Cusp” – Other Dangerous Software Weaknesses</h2>
+
+<div class="tablebutton"><a href="/top25/index.html">Top 25 Home</a></div>
+<span class="shareBar">Share via:
+    <a class="x-share-button" href="https://twitter.com/intent/tweet?text=https://cwe.mitre.org/top25/archive/2025/2025_onthecusp_list.html"><img src="/images/x-logo-black.png" width="20" height="20" style="position: relative; top:3px;" alt="Share via" title="X"></a></span>
+<div class="tablebutton"><a href="#tableView">View in table format</a></div>
+<div class="tablebutton"><a href="/top25/archive/2025/2025_onthecusp_insights.html">On the Cusp Insights</a></div>
+<br />
+<div id="cusplist"></div>
+<div id="tableView" class="overlay">
+<div class="popup">
+<div class="tablepopup">2025 CWE Top 25 - On the Cusp</div>
+<a class="popupclose" href="#cusplist">&times;</a>
+<div class="popupcontent">
+
+<table id="Detail" style="margin-left:auto; margin-right:auto;" border="2" cellpadding="2" cellspacing="2">
+<thead><tr>
+    <th width="60px">Rank</th>
+    <th width="90px">ID</th>
+    <th class="top25name">Name</th><th width="80px">Score</th>
+    <th width="60px">CVEs in KEV</th>
+    <th width="60px">Rank Change vs. 2024</th>
+</tr></thead>
+
+<tr>
+    <td style="text-align:center;"><b>26</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/266.html" title="Incorrect Privilege Assignment">CWE-266</a></td>
+    <td>Incorrect Privilege Assignment</td>
+    <td style="text-align:center;">2.40</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>27</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/276.html" title="Incorrect Default Permissions">CWE-276</a></td>
+    <td>Incorrect Default Permissions</td>
+    <td style="text-align:center;">2.37</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+9</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>28</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/98.html" title="Improper Control of Filename for Include/Require Statement in PHP Program (&#x27;PHP Remote File Inclusion&#x27;)">CWE-98</a></td>
+    <td>Improper Control of Filename for Include/Require Statement in PHP Program (&#x27;PHP Remote File Inclusion&#x27;)</td>
+    <td style="text-align:center;">2.32</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>29</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/269.html" title="Improper Privilege Management">CWE-269</a></td>
+    <td>Improper Privilege Management</td>
+    <td style="text-align:center;">2.08</td>
+    <td style="text-align:center;">4</td>
+    <td style="text-align:center;">-14</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>30</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/190.html" title="Integer Overflow or Wraparound">CWE-190</a></td>
+    <td>Integer Overflow or Wraparound</td>
+    <td style="text-align:center;">2.06</td>
+    <td style="text-align:center;">2</td>
+    <td style="text-align:center;">-7</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>31</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/287.html" title="Improper Authentication">CWE-287</a></td>
+    <td>Improper Authentication</td>
+    <td style="text-align:center;">2.04</td>
+    <td style="text-align:center;">2</td>
+    <td style="text-align:center;">-17</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>32</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/400.html" title="Uncontrolled Resource Consumption">CWE-400</a></td>
+    <td>Uncontrolled Resource Consumption</td>
+    <td style="text-align:center;">2.02</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-8</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>33</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/288.html" title="Authentication Bypass Using an Alternate Path or Channel">CWE-288</a></td>
+    <td>Authentication Bypass Using an Alternate Path or Channel</td>
+    <td style="text-align:center;">1.87</td>
+    <td style="text-align:center;">6</td>
+    <td style="text-align:center;">N/A</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>34</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/427.html" title="Uncontrolled Search Path Element">CWE-427</a></td>
+    <td>Uncontrolled Search Path Element</td>
+    <td style="text-align:center;">1.72</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-5</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>35</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/798.html" title="Use of Hard-coded Credentials">CWE-798</a></td>
+    <td>Use of Hard-coded Credentials</td>
+    <td style="text-align:center;">1.59</td>
+    <td style="text-align:center;">2</td>
+    <td style="text-align:center;">-13</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>36</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/362.html" title="Concurrent Execution using Shared Resource with Improper Synchronization (&#x27;Race Condition&#x27;)">CWE-362</a></td>
+    <td>Concurrent Execution using Shared Resource with Improper Synchronization (&#x27;Race Condition&#x27;)</td>
+    <td style="text-align:center;">1.57</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-2</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>37</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/401.html" title="Missing Release of Memory after Effective Lifetime">CWE-401</a></td>
+    <td>Missing Release of Memory after Effective Lifetime</td>
+    <td style="text-align:center;">1.47</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">+11</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>38</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/732.html" title="Incorrect Permission Assignment for Critical Resource">CWE-732</a></td>
+    <td>Incorrect Permission Assignment for Critical Resource</td>
+    <td style="text-align:center;">1.47</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-6</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>39</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/119.html" title="Improper Restriction of Operations within the Bounds of a Memory Buffer">CWE-119</a></td>
+    <td>Improper Restriction of Operations within the Bounds of a Memory Buffer</td>
+    <td style="text-align:center;">1.43</td>
+    <td style="text-align:center;">1</td>
+    <td style="text-align:center;">-19</td>
+</tr>
+
+<tr>
+    <td style="text-align:center;"><b>40</b></td>
+    <td style="text-align:center;"><a target="_blank" rel="noopener noreferrer" href="/data/definitions/601.html" title="URL Redirection to Untrusted Site (&#x27;Open Redirect&#x27;)">CWE-601</a></td>
+    <td>URL Redirection to Untrusted Site (&#x27;Open Redirect&#x27;)</td>
+    <td style="text-align:center;">1.41</td>
+    <td style="text-align:center;">0</td>
+    <td style="text-align:center;">-7</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+
+<ol class="boxlist">
+<li>
+    <span class="list_entry">
+        <span class="list_title">Incorrect Privilege Assignment</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/266.html" title="Incorrect Privilege Assignment" target="_blank" rel="noopener noreferrer">CWE-266</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Incorrect Default Permissions</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/276.html" title="Incorrect Default Permissions" target="_blank" rel="noopener noreferrer">CWE-276</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 36 (up 9)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Control of Filename for Include/Require Statement in PHP Program (&#x27;PHP Remote File Inclusion&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/98.html" title="Improper Control of Filename for Include/Require Statement in PHP Program (&#x27;PHP Remote File Inclusion&#x27;)" target="_blank" rel="noopener noreferrer">CWE-98</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Privilege Management</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/269.html" title="Improper Privilege Management" target="_blank" rel="noopener noreferrer">CWE-269</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 4</span>
+        <span class="list_prev_rank">Rank Last Year: 15 (down 14)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Integer Overflow or Wraparound</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/190.html" title="Integer Overflow or Wraparound" target="_blank" rel="noopener noreferrer">CWE-190</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 2</span>
+        <span class="list_prev_rank">Rank Last Year: 23 (down 7)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Authentication</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/287.html" title="Improper Authentication" target="_blank" rel="noopener noreferrer">CWE-287</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 2</span>
+        <span class="list_prev_rank">Rank Last Year: 14 (down 17)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Uncontrolled Resource Consumption</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/400.html" title="Uncontrolled Resource Consumption" target="_blank" rel="noopener noreferrer">CWE-400</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 24 (down 8)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Authentication Bypass Using an Alternate Path or Channel</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/288.html" title="Authentication Bypass Using an Alternate Path or Channel" target="_blank" rel="noopener noreferrer">CWE-288</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 6</span>
+        <span class="list_prev_rank">Rank Last Year:  N/A</span>
+        
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Uncontrolled Search Path Element</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/427.html" title="Uncontrolled Search Path Element" target="_blank" rel="noopener noreferrer">CWE-427</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 29 (down 5)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Use of Hard-coded Credentials</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/798.html" title="Use of Hard-coded Credentials" target="_blank" rel="noopener noreferrer">CWE-798</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 2</span>
+        <span class="list_prev_rank">Rank Last Year: 22 (down 13)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Concurrent Execution using Shared Resource with Improper Synchronization (&#x27;Race Condition&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/362.html" title="Concurrent Execution using Shared Resource with Improper Synchronization (&#x27;Race Condition&#x27;)" target="_blank" rel="noopener noreferrer">CWE-362</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 34 (down 2)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Missing Release of Memory after Effective Lifetime</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/401.html" title="Missing Release of Memory after Effective Lifetime" target="_blank" rel="noopener noreferrer">CWE-401</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 48 (up 11)</span>
+        <img src="/top25/images/triangle-green.png" alt="upward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Incorrect Permission Assignment for Critical Resource</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/732.html" title="Incorrect Permission Assignment for Critical Resource" target="_blank" rel="noopener noreferrer">CWE-732</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 32 (down 6)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">Improper Restriction of Operations within the Bounds of a Memory Buffer</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/119.html" title="Improper Restriction of Operations within the Bounds of a Memory Buffer" target="_blank" rel="noopener noreferrer">CWE-119</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 1</span>
+        <span class="list_prev_rank">Rank Last Year: 20 (down 19)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+
+<li>
+    <span class="list_entry">
+        <span class="list_title">URL Redirection to Untrusted Site (&#x27;Open Redirect&#x27;)</span>
+        <br />
+        <span class="list_id"><a href="/data/definitions/601.html" title="URL Redirection to Untrusted Site (&#x27;Open Redirect&#x27;)" target="_blank" rel="noopener noreferrer">CWE-601</a></span> 
+        <span class="list_kev_count">CVEs in KEV: 0</span>
+        <span class="list_prev_rank">Rank Last Year: 33 (down 7)</span>
+        <img src="/top25/images/triangle-red.png" alt="downward trend">
+    </span>
+</li>
+</ol>
+
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+
+</div>
+</div>
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+January 27, 2026
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta name="description" content="Common Weakness Enumeration (CWE) is a list of software and hardware weaknesses." />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+	<link rel="shortcut icon" href="/favicon.ico" />
+	<link href="/css/main.css?version=4.20.043026" rel="stylesheet" type="text/css" />
+	<link href="/css/custom.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]>
+	<link rel="stylesheet" type="text/css" href="/css/ie.css?version=1.7" />
+	<![endif]-->
+	
+        <script src="/includes/custom_filter.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/browserheight.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/jquery.js" language="JavaScript" type="text/javascript"></script>               	
+	<script src="/includes/cwe_minimizer.js?version=4.12.062923" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/cookie.js?version=4.12.062923" language="Javascript" type="text/javascript"></script>
+	<script src="/includes/includeglossarydef.js" language="JavaScript" type="text/javascript"></script>
+	<script src="/includes/custom.js" language="JavaScript" type="text/javascript"></script>
+	<script src=https://cmp.osano.com/AzyhULTdPkqmy4aDN/318aa814-0420-45bb-857d-8fb5fac33ff8/osano.js></script>
+	<link href="/css/print.css?version=1.11" rel="stylesheet" media="print" type="text/css" />
+	<link href="/css/mappingonly.css" rel="stylesheet" type="text/css" />
+	<noscript>
+	<style type="text/css">
+		#script { visibility:collapse; visibility:hidden; font-size:0px; height:0px; width:0px  }
+		#noscript { visibility:visible; font-size:inherit;  height:inherit; width:inherit}
+	</style>
+	</noscript>
+	<title>CWE - 
+
+CWE Top 25 Archive
+</title>
+</head>
+<body onload="onloadCookie()">
+<a name="top" id="top"></a>
+	<div id="MastHead" style="width:100%">
+	
+	        <div style="width:60%;float:left;padding-top:15px;padding-left:10px;padding-bottom:2px;">
+	                <a href="/index.html" style="color:#32498D; text-decoration:none">
+	                <img src="/images/cwe_logo.jpg" width="153" height="55" style="float:left;border:0;margin-right:6px" alt="CWE" />
+	                <h1 style="color:#314a8d;font-size:1.5em;font-family:'Verdana',sans-serif;#eee;margin: .1em auto">Common Weakness Enumeration</h1>
+	                <p style="color:#314a8d;font-family:'Times New Roman';font-style:italic;font-size:1em;#eee;margin:.1em auto 0 auto">A community-developed list of SW &amp; HW weaknesses that can become vulnerabilities</p>
+	                </a>
+	        </div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:8px;padding-right:4px;padding-bottom:0px;"><a href="/about/new_to_cwe.html" title="New to CWE click here logo"><img src="/images/new_to_cwe/new_to_cwe_click_here.png" height="90" border="0" alt="New to CWE? click here!" style="text-align:center"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/topHW/index.html" title="CWE Most Important Hardware Weaknesses"> <img src="/images/mihw_logo.svg" width="90" border="0" alt="CWE Most Important Hardware Weaknesses" style="vertical-align:bottom"/></a></div>
+	<div style="float:right;padding-top:0px;text-align:right;padding-left:0px;padding-right:4px;padding-bottom:0px;"><a href="/top25/" title="CWE Top 25"><img src="/images/cwe_top_25_logo_simple.svg" width="90" border="0" alt="CWE Top 25 Most Dangerous Weaknesses" style="vertical-align:bottom"/></a></div>
+	
+	</div><!--End Masthead div-->
+
+
+<div id="HeaderBar" class="noprint">
+<table width="100%" border="0" cellpadding="0" cellspacing="0">  
+	<tr> 
+		<td width="100%" align="left" style="padding-left:10px; font-size:75%;"> 
+                <a href="/" >Home</a>  &gt;  <a href="/top25/index.html" >CWE Top 25</a>  &gt;  
+
+CWE Top 25 Archive
+&nbsp;
+		</td>
+		<td align="right" nowrap="nowrap" style="padding-right:12px">
+		<!-- Begin /includes/search_cwe_id.html -->
+<div class="noprint">
+  <form action="/cgi-bin/jumpmenu.cgi" align="right" style="padding:0px; margin:0px">
+	ID <label for="id" style="padding-right:5px">Lookup:</label>
+    <input id="id" name="id" type="text" style="width:50px; font-size:80%" maxlength="10" />
+	<input value="Go" style="padding: 0px; font-size:80%" type="submit">
+  </form>
+</div>
+<!-- End /includes/search_cwe_id.html --> 
+		</td>
+	</tr>
+</table>
+</div> <!--//HeaderBar-->
+<div class="yesprint">
+<hr width="100%" size="1" style="clear:both" color="#000000" />
+</div>
+
+<div class="topnav">
+<ul>
+<li><a href="/index.html">Home</a></li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">About &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/index.html">Who We Are</a>             
+            <a href="/about/user_stories.html">User Stories</a>        
+            <a href="/about/history.html">History</a>                                                          
+            <a href="/about/documents.html">Documents</a>
+            <a href="/about/cwe_videos.html">Videos</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Learn &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/about/new_to_cwe.html">Basics</a>
+            <div class="dropdown-sub-group">
+              <a href="/documents/cwe_usage/guidance.html">Root Cause Mapping &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/documents/cwe_usage/guidance.html">Guidance</a>
+                <a href="/documents/cwe_usage/quick_tips.html">Quick Tips</a>
+                <a href="/documents/cwe_usage/mapping_examples.html">Examples</a>
+              </div>
+            </div>
+            <a href="/community/submissions/overview.html">How to Contribute Weakness Content</a>
+            <a href="/about/faq.html">FAQs</a>
+            <a href="/documents/glossary/index.html">Glossary</a>           
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Access Content &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/scoring/index.html#top_n_lists">Top-N Lists &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/top25/">Top 25 Software</a>
+                <a href="/topHW/index.html">Top Hardware</a>     
+                <a href="/top25/archive/2025/2025_kev_list.html">Top 10 KEV Weaknesses</a>
+              </div>
+            </div>
+            <div class="dropdown-sub-group">
+              <a href="/data/index.html">CWE List &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+              <a href="/data/index.html">Current Version</a>                
+                <a href="/data/reports.html">Reports</a>
+                <a href="/data/pdfs.html">Visualizations</a>     
+                <a href="/data/archive.html">Releases Archive</a>
+              </div>
+            </div>
+            <a href="/data/downloads.html">Downloads</a>           
+            <a href="https://github.com/CWE-CAPEC/REST-API-wg/blob/main/Quick%20Start.md" target="_blank">REST API</a>
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Community &#x25BC;</button>
+          <div class="dropdown-content">
+            <div class="dropdown-sub-group">
+              <a href="/news/">News &nbsp; &#x25BA;</a>
+              <div class="dropdown-content-submenu">
+                <a href="/news/archives/news2026.html">Current News</a>
+                <a href="https://medium.com/@CWE_CAPEC" target="_blank">Blog</a>
+                <a href="/news/podcast.html">Podcast</a>
+                <a href="/news/archives/index.html">News Archive</a>
+              </div>
+            </div>
+            <a href="/community/board.html">CWE Board</a>            
+            <a href="/community/working_groups.html">Working Groups &amp; Special Interest Groups</a>  
+            <a href="/community/registration.html">Email Lists</a>  
+          </div>
+        </div>
+</li>
+<li>
+        <div class="dropdown">
+          <button class="dropbtn">Search &#x25BC;</button>
+          <div class="dropdown-content">
+            <a href="/">Search CWE List</a>         
+            <a href="/find/index.html">Search Website</a>            
+        </div>
+</li>
+
+</ul>
+
+</div>
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" id="MainPane">
+  <tr>
+	<!-- begin left side menu -->
+    <td valign="top" rowspan="2" id="LeftPane">
+	<!--include virtual="/includes/leftsidemenu.html" Removed 11212016--> 
+	<script type="text/javascript">browserheight();</script>
+	</td>
+	<!-- end left side menu -->
+    <td style="height:1px"></td>
+	<!-- begin right column -->
+	<td valign="top" align="center" rowspan="2" nowrap="nowrap" id="RightPane">
+
+
+	</td>
+	<!-- end right side menu -->
+  </tr>
+  <tr>
+	<!-- begin content pane -->
+    <td valign="top" width="100%" id="Contentpane">
+	
+	<!--Glossary tags-->
+	
+<div id="styled_popup" name="styled_popup" style="display:none; position:fixed; top:300; height:auto; width:300px; z-index:1000">
+<table width="300" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #32498D;">
+<tr style="background-color:#32498D; color:#ffffff;">
+<td width="100%" style="padding:1px 5px 1px 5px; border-bottom:1px solid #000000"><div width="100%" style="font-weight:bold;">CWE Glossary Definition</div></td>
+<td nowrap="nowrap" style="padding:1px; border-bottom:1px solid #000000" valign="top"><a href="javascript:styledPopupClose();"><img src="/images/layout/close.gif" border="0"  alt="x"></a></td>
+</tr>
+<tr><td colspan="2" style="background: url(/images/layout/ylgradient.jpg); background-repeat: repeat-x repeat-y; padding:5px; background-color:#FFFFCC; " valign="top">
+<div id="output" style="max-height:400px; overflow-y:auto"></div>
+</td></tr>
+</table>
+</div>
+
+<!--begin Main Content-->
+
+<h2>CWE Top 25 Archive</h2>
+
+<p>Past versions of the CWE Top 25 documents are included on this page. See the <a href="/top25/index.html">CWE Top 25</a> page for the most current version.</p>
+
+<style>
+#Compatible .head { font-weight:bold }
+#Compatible .indent { padding-left:20px }
+</style>
+	<table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2024/2024_cwe_top25.html">2024 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+	<table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2023/2023_cwe_top25.html">2023 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+	<table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2022/2022_cwe_top25.html">2022 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+	<table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2021/2021_cwe_top25.html">2021 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+    <table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2020/2020_cwe_top25.html">2020 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+    <table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+            <td class="head" nowrap="nowrap"><a href="/top25/archive/2019/2019_cwe_top25.html">2019 CWE Top 25</a></td>
+        </tr>
+    </table>
+    <br/>
+    <table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+        <tr>
+                <td class="head" nowrap="nowrap"><a href="/top25/archive/2011/2011_cwe_sans_top25.html">2011 CWE/SANS Top 25</a> (<a href="/top25/archive/2011/2011_cwe_sans_top25.pdf">PDF</a>)</td>
+        </tr>
+    <tr>
+        <td class="indent"><a href="/top25/archive/2011/2011_mitigations.html">Monster Mitigations</a></td>
+    </tr>
+    <tr>
+                <td class="indent"><a href="/top25/archive/2011/2011_contributors.html">Contributors</a></td>
+        </tr>
+    <tr>
+                <td class="indent"><a href="/top25/archive/2011/2011_onthecusp.html">On The Cusp</a></td>
+        </tr>
+    <tr>
+                <td class="indent"><a href="/top25/archive/2011/2011_faq.html">Top 25 Q &amp; A</a></td>
+        </tr>
+    <tr>
+                <td class="indent"><a href="/top25/archive/2011/2011_training.html">Training Materials</a></td>
+        </tr>
+    </table>
+    <br />
+    <table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+	<tr>
+		<td class="head" nowrap="nowrap"><a href="/top25/archive/2010/2010_cwe_sans_top25.html">2010 CWE/SANS Top 25</a> (<a href="/top25/archive/2010/2010_cwe_sans_top25.pdf">PDF</a>)</td>
+	</tr>
+    <tr>
+    	<td class="indent"><a href="/top25/archive/2010/2010_mitigations.html">Monster Mitigations</a></td>
+    </tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_quotes.html">Supporting Quotes</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_contributors.html">Contributors</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_onthecusp.html">On The Cusp</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_changelog.html">Change Log</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_process.html">Process</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_faq.html">Top 25 Q &amp; A</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_profiles.html">Focus Profiles</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2010/2010_training.html">Training Materials</a></td>
+	</tr>
+    </table>
+    <br />
+    <table cellpadding="0" cellspacing="0" border="0" id="Compatible" width="100%">
+	<tr>
+		<td class="head" nowrap="nowrap"><a href="/top25/archive/2009/2009_cwe_sans_top25.html">2009 CWE/SANS Top 25</a> (<a href="/top25/archive/2009/2009_cwe_sans_top_25.pdf">PDF</a>)</td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_quotes.html">Supporting Quotes</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_contributors.html">Contributors</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_onthecusp.html">On The Cusp</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_changelog.html">Change Log</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_process.html">Process</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_faq.html">Top 25 Q &amp; A</a></td>
+	</tr>
+    <tr> 
+		<td class="indent"><a href="/top25/archive/2009/2009_training.html">Training Materials</a></td>
+	</tr>
+</table>
+<div align="right" style="padding-top:5px; padding-bottom:5px; clear:right" class="noprint"><a class="backtop" href="#top">Back to top</a></div>
+
+<!--end Main Content-->
+
+	<div id="More_Message_Custom" style="display:none;">
+<div style="padding:15px 0px 0px 0px;color:#ff0000;font-size:95%;font-weight:bold;text-align:center;" >More information is available &mdash; Please edit the custom filter or select a different filter.</div></div>
+
+	</td>
+	<!-- end content pane -->
+  </tr>
+</table>
+<div id="FootPane" class="noprint">
+  <div id="footbar">
+    <b>Page Last Updated: </b>
+
+December 10, 2025
+  </div>
+  <div class="Footer noprint">
+  <a name="footer" id="footer"></a>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="ltgreybackground" style="clear:both">
+      <tr>
+        <td colspan="3" id="line"><div class="line">&nbsp;</div></td>
+      </tr>
+      <tr>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="http://www.mitre.org" target="_blank" rel="noopener noreferrer"><img src="/images/mitre_logo.gif" height="36" border="0" alt="MITRE" title="MITRE"/></a>
+          </div>
+        </td>
+        <td width="100%" valign="top" style="padding:6px 0px;">
+          <div id="footerlinks">
+            <a href="/sitemap.html">Site Map</a> | 
+            <a href="/about/termsofuse.html">Terms of Use</a> | 
+            <a href="#" onclick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Manage Cookies</a> | 
+            <a href="/about/cookie_notice.html">Cookie Notice</a> | 
+            <a href="/about/privacy_policy.html">Privacy Policy</a> | 
+            <a href="mailto:cwe@mitre.org">Contact Us</a> | 
+            <a target="_blank" href="https://x.com/CweCapec"><img src="/images/x-logo-black.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on X" title="CWE on X"></a>
+            <a target="_blank" href="https://www.linkedin.com/showcase/cve-cwe-capec"><img src="/images/linkedin_sm.jpg" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on LinkedIn" title="CWE on LinkedIn"></a>
+            <a target="_blank" href="https://bsky.app/profile/cweprogram.bsky.social"><img src="/images/bluesky_logo_sm.png" width="18" height="18" style="border:0;vertical-align:right;" alt="CWE on Bluesky" title="Bluesky"></a>
+            <a target="_blank" href="https://mastodon.social/@CWE_Program"><img src="/images/mastodon-logo.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE on Mastodon" title="CWE on Mastodon"></a>
+            <a target="_blank" href="https://www.youtube.com/channel/UCpY9VIpRmFK4ebD6orssifA"><img src="/images/youtube.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE YouTube channel" title="CWE YouTube Channel"></a> 
+            <a href="/news/podcast.html"><img src="/images/out_of_bounds_read_logo.png" width="22" height="22" style="border:0;vertical-align:right;" alt="CWE Out-of-Bounds-Read Podcast" title="CWE Out-of-Bounds-Read Podcast"></a>       
+			      <a target="_blank" href="https://medium.com/@CWE_CAPEC"><img src="/images/medium.png" width="20" height="20" style="border:0;vertical-align:right;" alt="CWE Blog on Medium blog" title="CWE Blog on Medium"></a>   
+          </div>
+          <p>Use of the Common Weakness Enumeration (CWE&trade;) and the associated references from this website are subject to the <a href="/about/termsofuse.html">Terms of Use</a>. CWE is sponsored by the <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/">U.S. Department of Homeland Security</a> (DHS) <a target="_blank" rel="noopener noreferrer" href="https://www.dhs.gov/cisa/cybersecurity-division">Cybersecurity and Infrastructure Security Agency</a> (CISA) and managed by the <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer">Homeland Security Systems Engineering and Development Institute</a> (HSSEDI) which is operated by <a target="_blank" rel="noopener noreferrer" href="http://www.mitre.org/">The MITRE Corporation</a> (MITRE). Copyright &copy; 2006&ndash;2026, The MITRE Corporation. CWE, CWSS, CWRAF, and the CWE logo are trademarks of The MITRE Corporation.</p>
+        </td>
+        <td valign="middle" nowrap="nowrap">
+          <div id="footerlinks" class="footlogo">
+            <a href="https://www.dhs.gov/science-and-technology/hssedi" target="_blank" rel="noopener noreferrer"><img src="/images/hssedi.png" height="36" border="0" alt="HSSEDI" title="HSSEDI"/></a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TCLW30GNGV"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TCLW30GNGV');
+</script>
+
+</body>
+</html>
+

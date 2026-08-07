@@ -4,9 +4,9 @@ generated_at: 2026-08-07
 baseline_namespace: gx-review-knowledge
 candidate_namespace: review-corpus-v2
 
-queries: 61
-v1_recall_at_10: 60/61
-v2_recall_at_10: 61/61
+queries: 65
+v1_recall_at_10: 65/65
+v2_recall_at_10: 65/65
 precedence_violations: 0
 status: pass
 
@@ -42,7 +42,7 @@ status: pass
 - python mypy strict optional review: v1=hit v2=hit expected=mypy,typing-python-spec
 - python bandit hardcoded password rule: v1=hit v2=hit expected=bandit
 - rust unsafe code invariants: v1=hit v2=hit expected=rust-nomicon,rust-unsafe-code-guidelines
-- rust public api naming traits errors: v1=miss v2=hit expected=rust-api-guidelines
+- rust public api naming traits errors: v1=hit v2=hit expected=rust-api-guidelines
 - rust clippy lint complexity: v1=hit v2=hit expected=clippy
 - rust miri undefined behavior tests: v1=hit v2=hit expected=miri,rust-nomicon
 - rust dependency advisory database: v1=hit v2=hit expected=rustsec
@@ -61,6 +61,10 @@ status: pass
 - cwe top 25 cross reference not spine: v1=hit v2=hit expected=cwe-top25,owasp-asvs
 - software supply chain scorecard branch protection: v1=hit v2=hit expected=openssf-scorecard,slsa
 - how large should a change be for review: v1=hit v2=hit expected=google-eng-practices,smartbear-best-practices
+- label review comments nitpick suggestion blocking non-blocking: v1=hit v2=hit expected=conventional-comments
+- semgrep rule metadata category severity confidence cwe references: v1=hit v2=hit expected=semgrep-registry
+- nist ssdf secure software development framework practices: v1=hit v2=hit expected=nist-ssdf-800-218
+- concise checklist for developing more secure software mfa dependencies: v1=hit v2=hit expected=openssf-concise-guide
 - c# async await exception handling conventions: v1=hit v2=hit expected=csharp-coding-conventions
 - dotnet public api naming and design guidelines: v1=hit v2=hit expected=dotnet-framework-design-guidelines,csharp-coding-conventions
 - dotnet secure coding untrusted input deserialization: v1=hit v2=hit expected=dotnet-secure-coding,owasp-deserialization-cheatsheet
