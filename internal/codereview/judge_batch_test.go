@@ -142,11 +142,120 @@ func (j abstainingJudge) Judge(_ context.Context, req judgeRequest) ([]judgeResu
 		result := judgeResult{CandidateID: candidate.ID, Verdict: "confirmed",
 			Impact: impactBreaking, Severity: 4, Confidence: 0.9}
 		if i >= j.decides {
-			result = judgeResult{CandidateID: candidate.ID, Verdict: "insufficient_evidence"}
+			result = judgeResult{CandidateID: candidate.ID, Verdict: "insufficient_evidence",
+				VerificationNote: "the excerpt omits the caller"}
 		}
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+// scriptedJudgeTransport returns one canned completion per call, in order.
+type scriptedJudgeTransport struct {
+	calls       int
+	completions []bedrockCompletion
+}
+
+func (s *scriptedJudgeTransport) detail() string { return "scripted" }
+
+func (s *scriptedJudgeTransport) complete(context.Context, string, string, string, int) (bedrockCompletion, error) {
+	if s.calls >= len(s.completions) {
+		panic("scriptedJudgeTransport: more calls than scripted completions")
+	}
+	completion := s.completions[s.calls]
+	s.calls++
+	return completion, nil
+}
+
+// A malformed reply must cost one retry, not the whole batch.
+//
+// The failure this pins: the call succeeds, the model answers in prose with no
+// results object, and every candidate in the batch ships unverified. Measured
+// at roughly one batch per 10-30 benchmark PRs. The reply shape is not
+// deterministic, so a single fresh completion usually recovers it.
+func TestJudgeRetriesOnceWhenTheReplyCarriesNoVerdicts(t *testing.T) {
+	valid := `{"results":[{"candidate_id":"f1","analysis":"checked","verdict":"confirmed","impact":"breaking","severity":4,"confidence":0.9,"verification_note":""}]}`
+	transport := &scriptedJudgeTransport{completions: []bedrockCompletion{
+		{Text: "I will look at the candidates now.", StopReason: "end_turn"},
+		{Text: valid, StopReason: "end_turn"},
+	}}
+	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+
+	results, err := judge.Judge(context.Background(), judgeRequest{
+		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
+	})
+	if err != nil {
+		t.Fatalf("Judge() error = %v, want the retry to recover the batch", err)
+	}
+	if len(results) != 1 || results[0].CandidateID != "f1" {
+		t.Fatalf("results = %#v, want the verdict from the second reply", results)
+	}
+	if transport.calls != 2 {
+		t.Fatalf("calls = %d, want exactly one retry", transport.calls)
+	}
+}
+
+// Two malformed replies is a failed batch — the loop must be bounded, and the
+// error must be the parse failure so the degraded reason says what happened.
+func TestJudgeGivesUpAfterOneRetry(t *testing.T) {
+	transport := &scriptedJudgeTransport{completions: []bedrockCompletion{
+		{Text: "prose, no object", StopReason: "end_turn"},
+		{Text: "still prose", StopReason: "end_turn"},
+	}}
+	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+
+	_, err := judge.Judge(context.Background(), judgeRequest{
+		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
+	})
+	if err == nil {
+		t.Fatal("Judge() = nil error after two malformed replies, want the parse failure")
+	}
+	if transport.calls != 2 {
+		t.Fatalf("calls = %d, want the retry bounded at one", transport.calls)
+	}
+}
+
+// A reply cut at the output cap is not retried: the cap binds identically on a
+// second attempt, so the retry would spend a batch's tokens reproducing it.
+func TestJudgeDoesNotRetryTruncation(t *testing.T) {
+	transport := &scriptedJudgeTransport{completions: []bedrockCompletion{
+		{Text: `{"results":[{"candidate_id":"f1","ana`, StopReason: "max_tokens"},
+	}}
+	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+
+	_, err := judge.Judge(context.Background(), judgeRequest{
+		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "output cap") {
+		t.Fatalf("Judge() error = %v, want the truncation named as the cause", err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("calls = %d, want no retry after truncation", transport.calls)
+	}
+}
+
+// TestRunJudgeRecordsWhyItAbstained pins that the reason survives.
+//
+// The count alone cannot be acted on: "could not verify" covers a clipped
+// excerpt, a missing diff, and a claim no file content could settle, and those
+// need three different fixes. judgeResult carries the judge's reasoning and
+// nothing rendered it, so the distinguishing information was being computed and
+// discarded on every review.
+func TestRunJudgeRecordsWhyItAbstained(t *testing.T) {
+	t.Setenv("GX_REVIEW_JUDGE_BATCH_SIZE", "10")
+	candidates := judgeBatchCandidates(10)
+
+	outcome := runJudge(context.Background(), abstainingJudge{decides: 8}, ReviewContext{}, candidates)
+
+	if len(outcome.AbstentionNotes) != outcome.Abstained {
+		t.Fatalf("AbstentionNotes = %d for %d abstentions, want one note each",
+			len(outcome.AbstentionNotes), outcome.Abstained)
+	}
+	for _, note := range outcome.AbstentionNotes {
+		if !strings.Contains(note, "the excerpt omits the caller") {
+			t.Fatalf("note = %q, want the judge's stated reason carried through", note)
+		}
+	}
 }
 
 // TestRunJudgeSeparatesAbstentionsFromOmissions is the distinction the split

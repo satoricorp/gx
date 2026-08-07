@@ -44,16 +44,35 @@ const (
 	// excerpts it can name as dropped, rather than by building a request whose
 	// size only shows up as latency.
 	maxJudgeBatchBytes = 256 * 1024
+	// maxJudgeDiffBytes bounds ONE file's hunks, and maxJudgeDiffBatchBytes the
+	// batch's. Budgeted separately from file content rather than sharing its
+	// allowance, because the two answer different questions — the diff says what
+	// changed, the content says what the code now is — and a large diff must not
+	// be able to starve the excerpts that verify everything else.
+	maxJudgeDiffBytes      = 16 * 1024
+	maxJudgeDiffBatchBytes = 128 * 1024
 	// judgeWindowContextLines is how much of a file either side of an anchored
 	// line the judge is shown.
 	//
 	// The judge's question is always local — "does this line do what the
 	// finding says" — so the answer is in the lines around it, not in the first
 	// 600 lines of the file, which is what a head-truncated excerpt supplied
-	// regardless of where the finding pointed. 80 either side is a full screen
-	// of context in both directions: enough to see a function's signature,
-	// guards and returns around a body claim.
-	judgeWindowContextLines = 80
+	// regardless of where the finding pointed.
+	//
+	// Raised from 80 because the window, not the byte budget, is what runs out
+	// first: one anchor at 80 either side is ~160 lines, roughly 6KB against a
+	// maxJudgeFileBytes allowance of 24KB, so the excerpt was stopping at about
+	// a quarter of what it was allowed to send. That shortfall is not free — the
+	// prompt instructs the judge to answer unverifiable rather than guess when a
+	// decision needs code that fell in an omitted stretch, so every line the
+	// window clips converts directly into abstentions. Measured on the
+	// discourse benchmark repo before this change: 10 of 72 findings (14%) came
+	// back explicitly unverifiable, and none were omissions.
+	//
+	// 250 either side stays inside the same per-file budget for a typical
+	// source file while covering the callers, guards and helpers a body claim
+	// usually depends on.
+	judgeWindowContextLines = 250
 	// minSurfaceConfidence is the confidence floor for surfacing a confirmed
 	// finding whose impact is only functional (not breaking).
 	minSurfaceConfidence = 0.5
@@ -116,7 +135,24 @@ type unavailableReviewJudge struct {
 type judgeRequest struct {
 	ChangedFiles []string              `json:"changed_files"`
 	Files        []judgeContentSnippet `json:"files"`
-	Candidates   []judgeCandidate      `json:"candidates"`
+	// Diffs are the hunks that produced the review, for the files this batch
+	// names. Without them a whole class of finding is unverifiable by
+	// construction: "this value changed from X to Y" cannot be checked against
+	// post-change content, which shows only Y.
+	//
+	// Measured on the discourse benchmark repo with whole-file excerpts already
+	// in place, five of eight abstentions said exactly this — "the original
+	// pre-diff value cannot be confirmed", "we only see the new file content".
+	// The reviewer read these hunks to raise the findings; the judge was being
+	// asked to check its work without them.
+	Diffs      []judgeDiffSnippet `json:"diffs,omitempty"`
+	Candidates []judgeCandidate   `json:"candidates"`
+}
+
+// judgeDiffSnippet is one file's hunks as the judge sees them.
+type judgeDiffSnippet struct {
+	File string `json:"file"`
+	Diff string `json:"diff"`
 }
 
 // judgeCandidate names its files; the content lives in judgeRequest.Files.
@@ -226,19 +262,36 @@ func (j bedrockReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judg
 	if j.client == nil {
 		return nil, fmt.Errorf("review judge is not configured")
 	}
-	completion, err := j.client.completeJSON(ctx, judgeDeveloperPrompt(), mustJSON(req), defaultJudgeMaxOutputTokens)
-	if err != nil {
-		return nil, err
+	input := mustJSON(req)
+	asked := judgeCandidateIDs(req.Candidates)
+	// One retry, for malformed replies only. A batch whose reply carries no
+	// results object loses every candidate in it at once, and the failure is
+	// not deterministic — it is the model wandering out of its output contract,
+	// which a fresh completion of the same request generally does not repeat.
+	// Measured on the benchmark runs before this: roughly one batch per 10-30
+	// PRs failed this way. Transport-level failures are retried a layer down
+	// (see bedrockRetryBackoffs); this loop is only for a call that succeeded
+	// and answered in the wrong shape.
+	var lastParseErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		completion, err := j.client.completeJSON(ctx, judgeDeveloperPrompt(), input, defaultJudgeMaxOutputTokens)
+		if err != nil {
+			return nil, err
+		}
+		results, parseErr := parseJudgeResponse(completion.Text, asked)
+		if parseErr == nil {
+			return results, nil
+		}
+		if completion.truncated() {
+			// A batch cut off at the cap has no complete verdict set, only a
+			// prefix of one — and the cap binds the same way on a retry, so
+			// re-asking spends a full batch's tokens to reproduce the failure.
+			// Report it so the batch fails open and says why.
+			return nil, describeTruncatedCompletion("judge", defaultJudgeMaxOutputTokens, parseErr)
+		}
+		lastParseErr = parseErr
 	}
-	results, parseErr := parseJudgeResponse(completion.Text, judgeCandidateIDs(req.Candidates))
-	if parseErr != nil && completion.truncated() {
-		// A batch cut off at the cap has no complete verdict set, only a
-		// prefix of one. Report it as a failure so the batch fails open and
-		// says why, rather than reading a partial answer as a whole one and
-		// silently dropping every candidate the model never reached.
-		return nil, describeTruncatedCompletion("judge", defaultJudgeMaxOutputTokens, parseErr)
-	}
-	return results, parseErr
+	return nil, lastParseErr
 }
 
 // parseJudgeResponse tolerates a model that wraps its JSON in prose or a fenced
@@ -462,6 +515,8 @@ func judgeDeveloperPrompt() string {
 		"INPUT SHAPE: file content is in the top-level `files` array, once per file, shared by every candidate in this batch. A candidate's `named_files` lists which of those files it concerns — look them up there. A file named by a candidate but absent from `files` was not provided at all.",
 		"Each file's `text` is a line-numbered excerpt, not the whole file. Every line is prefixed with its real 1-based line number and `| `, so a claim about a line number can be checked against that exact line. The excerpt is built around the lines the findings point at.",
 		"A line reading `[... N line(s) omitted ...]` means that stretch of the file was not sent. Absent from the excerpt is NOT absent from the file: never treat an omitted stretch as proof that something does not exist. If deciding a candidate needs code that fell in an omitted stretch, answer unverifiable rather than guessing from what you were shown.",
+		"The top-level `diffs` array holds the changes under review, as unified diff hunks, keyed by file. `files` shows what the code IS NOW; `diffs` shows what CHANGED to make it that way. A candidate whose claim is about a change — a value that moved, a line that was removed, a guard that used to be there — is decided by the diff, so read it there rather than answering unverifiable because the current content alone cannot show a before state.",
+		"A file with no entry in `diffs` had no hunks provided. That is not evidence the file is unchanged; treat it the same as an omitted stretch.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
 		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
@@ -527,8 +582,48 @@ func buildJudgeRequest(ctx ReviewContext, findings []Finding) judgeRequest {
 	return judgeRequest{
 		ChangedFiles: normalizedChangedFiles(ctx.Brief.Static.ChangedFiles),
 		Files:        judgeFileContentSnippets(ctx.Brief.RepoRoot, ordered, hints),
+		Diffs:        judgeDiffSnippets(ctx.Brief.Static.DiffSnippets, ordered),
 		Candidates:   candidates,
 	}
+}
+
+// judgeDiffSnippets picks the hunks for the files this batch names, in the same
+// order as Files so the two read together.
+//
+// Only the batch's own files: a diff for a file no candidate mentions is spend
+// with nothing to verify against, and the batch is deliberately small so that
+// its request stays small.
+func judgeDiffSnippets(available []DiffSnippet, ordered []string) []judgeDiffSnippet {
+	if len(available) == 0 || len(ordered) == 0 {
+		return nil
+	}
+	byFile := make(map[string]string, len(available))
+	for _, snippet := range available {
+		if file := normalizeReviewPath(snippet.File); file != "" {
+			byFile[file] = snippet.Diff
+		}
+	}
+	remaining := maxJudgeDiffBatchBytes
+	var out []judgeDiffSnippet
+	for _, file := range ordered {
+		diff := strings.TrimSpace(byFile[file])
+		if diff == "" {
+			continue
+		}
+		// Truncating at a hunk boundary keeps every hunk that survives readable
+		// as a diff; cutting mid-hunk would hand the judge a fragment whose
+		// line numbers no longer add up.
+		diff = truncateAtHunkBoundary(diff, min(maxJudgeDiffBytes, remaining))
+		if strings.TrimSpace(diff) == "" {
+			continue
+		}
+		remaining -= len(diff)
+		out = append(out, judgeDiffSnippet{File: file, Diff: diff})
+		if remaining <= 0 {
+			break
+		}
+	}
+	return out
 }
 
 // findingLineHints is where in each file this finding says the problem is,
@@ -711,6 +806,21 @@ type judgeBatchOutcome struct {
 	// reported as two numbers.
 	Omitted   int
 	Abstained int
+	// AbstentionNotes is what the judge said when it declined to decide, one
+	// entry per abstaining candidate.
+	//
+	// "The judge could not verify this" is a useless fact on its own: it could
+	// mean the excerpt clipped the code that decides the claim, that the claim
+	// is about a change and only the post-change file was sent, or that the
+	// claim is architectural and no file content could settle it. Those want
+	// three different fixes, and the reasoning that distinguishes them is
+	// already in judgeResult.Analysis — which nothing renders, so the answer
+	// was being computed and dropped on every run.
+	//
+	// Collected unconditionally (they are strings already in memory) and
+	// surfaced only under GX_REVIEW_JUDGE_TRACE, because an ordinary review
+	// should not carry the judge's working out in its degraded reasons.
+	AbstentionNotes []string
 }
 
 // Unanswered is every candidate a successful batch left without a usable
@@ -797,6 +907,8 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 			// named was dropped.
 			if _, seen := mentioned[id]; seen {
 				outcome.Abstained++
+				outcome.AbstentionNotes = append(outcome.AbstentionNotes,
+					abstentionNote(finding, out[i].results))
 			} else {
 				outcome.Omitted++
 			}
@@ -823,6 +935,39 @@ func answeredCandidateIDs(results []judgeResult) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+// maxAbstentionNoteChars keeps one note readable in a degraded-reasons list.
+// The judge's analysis runs to paragraphs; what identifies the cause is the
+// first sentence or two, and the rest restates the finding.
+const maxAbstentionNoteChars = 400
+
+// abstentionNote pairs a declined candidate with what the judge said about it,
+// so the reason can be read rather than inferred from a count.
+func abstentionNote(finding Finding, results []judgeResult) string {
+	id := strings.TrimSpace(finding.ID)
+	for _, result := range results {
+		if strings.TrimSpace(result.CandidateID) != id {
+			continue
+		}
+		// VerificationNote is the judge's own summary of why it stopped; the
+		// analysis is the longer reasoning behind it. Prefer the summary and
+		// fall back, because either one answers the question and neither is
+		// guaranteed to be filled in.
+		reason := strings.TrimSpace(result.VerificationNote)
+		if reason == "" {
+			reason = strings.TrimSpace(result.Analysis)
+		}
+		if reason == "" {
+			reason = "(no reason given)"
+		}
+		if len(reason) > maxAbstentionNoteChars {
+			reason = reason[:maxAbstentionNoteChars] + "…"
+		}
+		return fmt.Sprintf("%s [%s] %q: %s",
+			id, strings.TrimSpace(result.Verdict), strings.TrimSpace(finding.Title), reason)
+	}
+	return fmt.Sprintf("%s %q: (verdict not found in reply)", id, strings.TrimSpace(finding.Title))
 }
 
 // mentionedCandidateIDs is every candidate the reply named at all, including the
@@ -1108,6 +1253,58 @@ func judgeFileContentSnippets(repoRoot string, files []string, hints map[string]
 // judgeLineRange is an inclusive, 1-based span of a file.
 type judgeLineRange struct{ start, end int }
 
+// fittedLineRanges picks the widest window whose spans still fit the budget.
+//
+// Without this the width is fixed and the budget silently decides how much of
+// each span survives — which, because spans render from their start, means it
+// decides whether the anchored line is reached at all. Halving until it fits
+// keeps the anchor and trades away only surrounding context, which is the right
+// direction: context around a line the judge cannot see is worth nothing.
+//
+// The floor is not zero. A window of 0 is still one line — the anchor itself —
+// and an excerpt showing only the lines under dispute beats one showing their
+// neighbours instead.
+func fittedLineRanges(fileLines []string, lines []int, limit int) []judgeLineRange {
+	window := judgeWindowContextLines
+	for {
+		spans := judgeLineRangesWithWindow(lines, len(fileLines), window)
+		if window == 0 || renderedSpansSize(fileLines, spans) <= limit {
+			return spans
+		}
+		window /= 2
+	}
+}
+
+// renderedSpansSize is what these spans cost once numbered, omission markers
+// included — they are content and have carried an excerpt past its cap before.
+func renderedSpansSize(fileLines []string, spans []judgeLineRange) int {
+	size, shown := 0, 0
+	for _, span := range spans {
+		if span.start > shown+1 {
+			size += len(fmt.Sprintf("[... %d line(s) omitted ...]\n", span.start-shown-1))
+		}
+		for n := span.start; n <= span.end; n++ {
+			size += len(strconv.Itoa(n)) + len("| ") + len(fileLines[n-1]) + len("\n")
+		}
+		shown = max(shown, span.end)
+	}
+	if shown < len(fileLines) {
+		size += len(fmt.Sprintf("[... %d line(s) omitted ...]\n", len(fileLines)-shown))
+	}
+	return size
+}
+
+// renderedLinesSize is how many bytes these lines occupy once numbered, which
+// is what the budget is actually spent on — the `N| ` prefix is not free, and
+// on a file of short lines it is a noticeable share of the total.
+func renderedLinesSize(fileLines []string) int {
+	size := 0
+	for n, line := range fileLines {
+		size += len(strconv.Itoa(n+1)) + len("| ") + len(line) + len("\n")
+	}
+	return size
+}
+
 // judgeLineRanges turns the lines a batch's findings pointed at into merged,
 // in-bounds spans to show.
 //
@@ -1117,6 +1314,18 @@ type judgeLineRange struct{ start, end int }
 // line: a claim about line 5000 of a 100-line file is one the judge should see
 // the whole file to reject.
 func judgeLineRanges(lines []int, total int) []judgeLineRange {
+	return judgeLineRangesWithWindow(lines, total, judgeWindowContextLines)
+}
+
+// judgeLineRangesWithWindow is judgeLineRanges at a caller-chosen width, so an
+// excerpt can narrow its windows to fit a budget instead of being cut off.
+//
+// A span is centered on its anchor but rendered from its start, so a window
+// wider than the budget can afford spends the whole allowance on the lines
+// BEFORE the anchor and never reaches it — the excerpt drops precisely the line
+// it exists to show. Widening the window made that reachable in practice, which
+// is why the width is now chosen against the budget rather than fixed.
+func judgeLineRangesWithWindow(lines []int, total, window int) []judgeLineRange {
 	var anchors []int
 	for _, line := range lines {
 		if line > 0 && line <= total {
@@ -1130,8 +1339,8 @@ func judgeLineRanges(lines []int, total int) []judgeLineRange {
 	var out []judgeLineRange
 	for _, line := range anchors {
 		next := judgeLineRange{
-			start: max(1, line-judgeWindowContextLines),
-			end:   min(total, line+judgeWindowContextLines),
+			start: max(1, line-window),
+			end:   min(total, line+window),
 		}
 		// Merge windows that touch or overlap, so two findings a few lines
 		// apart produce one span rather than two copies of the same code.
@@ -1186,7 +1395,24 @@ func judgeFileExcerpt(content string, lines []int, budget int) string {
 		b.WriteString(text)
 		return true
 	}
-	for _, span := range judgeLineRanges(lines, len(fileLines)) {
+	// Whole file when it fits, windows only when it does not.
+	//
+	// An omitted stretch is not a neutral saving: the prompt tells the judge to
+	// answer unverifiable rather than guess when a decision needs code that
+	// fell in one, so every marker is a potential abstention. Measured on the
+	// discourse benchmark repo, half the abstentions cited exactly that — "in
+	// omitted lines 365+", "may be in the omitted portion", "truncated before
+	// that key appears" — while the excerpts themselves were running at roughly
+	// a quarter of maxJudgeFileBytes. Spending the unused budget removes the
+	// question rather than widening the window and hoping it now reaches.
+	//
+	// Windowing still earns its keep on files too big to send, which is where
+	// it was doing real work all along.
+	spans := fittedLineRanges(fileLines, lines, limit)
+	if renderedLinesSize(fileLines) <= limit {
+		spans = []judgeLineRange{{start: 1, end: len(fileLines)}}
+	}
+	for _, span := range spans {
 		if span.start > shown+1 {
 			if !write(fmt.Sprintf("[... %d line(s) omitted ...]\n", span.start-shown-1)) {
 				break

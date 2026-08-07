@@ -119,14 +119,29 @@ func TestJudgeRequestSendsEachFileOnce(t *testing.T) {
 }
 
 // Findings a few lines apart must not produce two copies of the same code.
+//
+// The bounds are derived from judgeWindowContextLines rather than written out,
+// because that constant is tuned against abstention rates on real repositories
+// and a hard-coded {20 190} turns every such tuning into a test failure that
+// says nothing about merging — which is the only thing under test here.
 func TestJudgeLineRangesMergeOverlappingWindows(t *testing.T) {
-	ranges := judgeLineRanges([]int{100, 110}, 1000)
+	const total = 1000
+	first, second := 100, 110
+	// Overlap is the premise of the test, not an assumption to leave implicit.
+	if second-first > judgeWindowContextLines {
+		t.Fatalf("windows %d lines apart do not overlap at a %d-line window; pick closer lines",
+			second-first, judgeWindowContextLines)
+	}
+
+	ranges := judgeLineRanges([]int{first, second}, total)
 
 	if len(ranges) != 1 {
 		t.Fatalf("ranges = %v, want the two overlapping windows merged into one", ranges)
 	}
-	if ranges[0].start != 20 || ranges[0].end != 190 {
-		t.Fatalf("merged range = %v, want {20 190}", ranges[0])
+	wantStart := max(1, first-judgeWindowContextLines)
+	wantEnd := min(total, second+judgeWindowContextLines)
+	if ranges[0].start != wantStart || ranges[0].end != wantEnd {
+		t.Fatalf("merged range = %v, want {%d %d}", ranges[0], wantStart, wantEnd)
 	}
 }
 
@@ -185,6 +200,122 @@ func TestJudgeRequestCarriesNoLocalAbsolutePath(t *testing.T) {
 
 // The per-file budget must bound one file, and the batch budget the whole
 // request, so a review over many large files cannot quietly build a giant call.
+// The hunks that produced a finding must reach the judge that checks it.
+//
+// A claim of the form "this value changed from X to Y" cannot be settled by
+// post-change content, which shows only Y. Measured on the discourse benchmark
+// repo, five of eight abstentions said so outright — "the original pre-diff
+// value cannot be confirmed", "we only see the new file content" — while gx
+// held the hunks the whole time.
+func TestJudgeRequestCarriesTheDiffForNamedFiles(t *testing.T) {
+	ctx := judgeExcerptRepo(t, map[string]string{"src/app.scss": numberedLines(50)})
+	ctx.Brief.Static.DiffSnippets = []DiffSnippet{
+		{File: "src/app.scss", Diff: "@@ -10,3 +10,3 @@\n-  lightness: 30%;\n+  lightness: 70%;\n"},
+		{File: "src/other.scss", Diff: "@@ -1,2 +1,2 @@\n-unrelated\n+change\n"},
+	}
+	finding := Finding{ID: "f1", Title: "lightness moved the wrong way",
+		File: "src/app.scss", Line: 10}
+
+	req := buildJudgeRequest(ctx, []Finding{finding})
+
+	if len(req.Diffs) != 1 {
+		t.Fatalf("Diffs = %#v, want only the file this batch names", req.Diffs)
+	}
+	if req.Diffs[0].File != "src/app.scss" {
+		t.Fatalf("Diffs[0].File = %q, want the named file", req.Diffs[0].File)
+	}
+	// The before value is the whole point: without it the claim is undecidable.
+	if !strings.Contains(req.Diffs[0].Diff, "lightness: 30%") {
+		t.Errorf("diff does not carry the pre-change value:\n%s", req.Diffs[0].Diff)
+	}
+}
+
+// A batch's request must not carry hunks for files nothing in it mentions —
+// that is spend with no candidate to verify against.
+func TestJudgeRequestOmitsDiffsForUnnamedFiles(t *testing.T) {
+	ctx := judgeExcerptRepo(t, map[string]string{"src/a.go": numberedLines(20)})
+	ctx.Brief.Static.DiffSnippets = []DiffSnippet{
+		{File: "src/unrelated.go", Diff: "@@ -1,1 +1,1 @@\n-a\n+b\n"},
+	}
+
+	req := buildJudgeRequest(ctx, []Finding{{ID: "f1", File: "src/a.go", Line: 1}})
+
+	if len(req.Diffs) != 0 {
+		t.Fatalf("Diffs = %#v, want none for a file no candidate names", req.Diffs)
+	}
+}
+
+// Diffs honor their own budget, and a huge one must not be able to consume it
+// all and starve the rest of the batch.
+func TestJudgeDiffSnippetsRespectTheBatchBudget(t *testing.T) {
+	var huge strings.Builder
+	for i := 0; i < 20000; i++ {
+		fmt.Fprintf(&huge, "@@ -%d,1 +%d,1 @@\n-old %d\n+new %d\n", i, i, i, i)
+	}
+	available := []DiffSnippet{
+		{File: "a.go", Diff: huge.String()},
+		{File: "b.go", Diff: huge.String()},
+		{File: "c.go", Diff: huge.String()},
+	}
+
+	out := judgeDiffSnippets(available, []string{"a.go", "b.go", "c.go"})
+
+	total := 0
+	for _, snippet := range out {
+		if len(snippet.Diff) > maxJudgeDiffBytes {
+			t.Errorf("%s diff is %d bytes, over the %d per-file cap",
+				snippet.File, len(snippet.Diff), maxJudgeDiffBytes)
+		}
+		total += len(snippet.Diff)
+	}
+	if total > maxJudgeDiffBatchBytes {
+		t.Errorf("diffs total %d bytes, over the %d batch cap", total, maxJudgeDiffBatchBytes)
+	}
+}
+
+// A file small enough to send whole must arrive whole, with no omitted
+// stretches anywhere in it.
+//
+// The judge is instructed to answer unverifiable rather than guess when a
+// decision needs code inside an omitted stretch, so a marker on a file that
+// comfortably fit the budget is an abstention bought for nothing. Observed on
+// the discourse benchmark repo: verdicts reading "the implementation is in
+// omitted lines 365+" against excerpts using about a quarter of their
+// allowance.
+func TestJudgeExcerptSendsSmallFilesWhole(t *testing.T) {
+	content := numberedLines(200)
+	// One anchor near the top: windowing would clip the tail, which is exactly
+	// the case that produced "in omitted lines N+" abstentions.
+	text := judgeFileExcerpt(content, []int{10}, maxJudgeFileBytes)
+
+	if strings.Contains(text, "omitted") {
+		t.Errorf("excerpt of a %d-byte file under a %d-byte budget still omits lines:\n%s",
+			len(content), maxJudgeFileBytes, firstLines(text, 5))
+	}
+	for _, line := range []int{1, 100, 200} {
+		if !strings.Contains(text, fmt.Sprintf("%d| content of line %d", line, line)) {
+			t.Errorf("line %d missing from a whole-file excerpt", line)
+		}
+	}
+}
+
+// The whole-file path must not become a way around the cap: a file too big to
+// send whole still gets windowed and still honors its budget.
+func TestJudgeExcerptStillWindowsFilesTooBigToSendWhole(t *testing.T) {
+	const budget = 4096
+	text := judgeFileExcerpt(numberedLines(10000), []int{5000}, budget)
+
+	if len(text) > budget {
+		t.Fatalf("excerpt is %d bytes, over the %d budget", len(text), budget)
+	}
+	if !strings.Contains(text, "omitted") {
+		t.Error("a file far larger than the budget should say what it left out")
+	}
+	if !strings.Contains(text, "5000| content of line 5000") {
+		t.Error("windowing dropped the anchored line it exists to preserve")
+	}
+}
+
 func TestJudgeExcerptRespectsItsBudget(t *testing.T) {
 	text := judgeFileExcerpt(numberedLines(10000), nil, 2048)
 
