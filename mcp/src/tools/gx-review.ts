@@ -47,13 +47,15 @@ export const metadata: ToolMetadata = {
 };
 
 export default async function gxReview(params: InferSchema<typeof schema>) {
-  // --no-publish is not optional here. Without it `gx review` posts a review
-  // comment on the matching GitHub PR and records the run to gx Cloud, so a
-  // tool annotated readOnlyHint would write to a pull request other people
-  // read — and an agent calling it for context mid-codegen would comment on
-  // the PR every time it asked a question. Publishing is a deliberate act that
-  // belongs to the CLI, where a human typed the command.
-  const args = ["review", "--no-publish"];
+  // --no-comment is not optional here. Without it `gx review` posts a review
+  // comment on the matching GitHub PR, so a tool annotated readOnlyHint would
+  // write to a pull request other people read — and an agent calling it for
+  // context mid-codegen would comment on the PR every time it asked a
+  // question. Commenting is a deliberate act that belongs to the CLI, where a
+  // human typed the command. The run itself still records to gx Cloud history
+  // (unlike --no-publish, which suppresses that too) so MCP reviews count in
+  // per-surface usage; --client mcp labels the row.
+  const args = ["review", "--no-comment", "--client", "mcp"];
   if (params.scope) {
     args.push("--scope", params.scope);
   }
@@ -77,8 +79,8 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
     args.push(prompt);
   }
   try {
-    // No init, no hooks, no gx state, and nothing published: `gx review
-    // --no-publish` reads the repo and reports back, which is what
+    // No init, no hooks, no gx state, and no PR comment: `gx review
+    // --no-comment` reads the repo and reports back, which is what
     // readOnlyHint promises the caller.
     return formatResult(await runTt(args, { cwd: params.cwd, timeoutMs: 300_000 }), {
       action: "review",

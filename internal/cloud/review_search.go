@@ -17,6 +17,11 @@ type ReviewSearchRequest struct {
 	SymbolQuery  string   `json:"symbol_query,omitempty"`
 	SourceKinds  []string `json:"source_kinds,omitempty"`
 	Limit        int      `json:"limit,omitempty"`
+	// Languages and Categories narrow target "knowledge" searches: when
+	// present the server runs a second, signal-filtered corpus query
+	// alongside the broad one. Older servers ignore them.
+	Languages  []string `json:"languages,omitempty"`
+	Categories []string `json:"categories,omitempty"`
 }
 
 // ReviewSearchRow is one retrieved chunk. Attributes carry the namespace

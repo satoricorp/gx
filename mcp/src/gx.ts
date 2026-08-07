@@ -58,6 +58,7 @@ export function commandEnvironment() {
   const env = { ...process.env };
   env.GX_REVIEW_AI = "1";
   env.GX_MCP = "1";
+  env.GX_CLIENT = "mcp";
   const pathEntries = [
     join(homedir(), ".local", "bin"),
     env.PATH || "",

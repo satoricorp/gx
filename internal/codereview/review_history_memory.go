@@ -176,6 +176,10 @@ func reviewHistoryLanguage(file string) string {
 		return "c"
 	case ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
 		return "cpp"
+	case ".cs":
+		return "csharp"
+	case ".dart":
+		return "dart"
 	default:
 		return ""
 	}

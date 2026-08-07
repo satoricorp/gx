@@ -105,13 +105,16 @@ pre-push hook is the only publish path.
 
 ## Review: gx review
 
+Run reviews from this skill with `GX_CLIENT=skill` set — it labels the run as a
+skill invocation so review usage is countable per surface:
+
 ```bash
-gx review                                    # patch-focused default
-gx review "did we break the retry contract?" # steer with a prompt
-gx review --repo                             # review the codebase, not just the current change
-gx review --scope security                   # architecture, security, performance, etc.
-gx review --focus src/auth --deep            # deep pass limited to a path prefix
-gx review --verbose                          # include repo facts, docs, changed files
+GX_CLIENT=skill gx review                                    # patch-focused default
+GX_CLIENT=skill gx review "did we break the retry contract?" # steer with a prompt
+GX_CLIENT=skill gx review --repo                             # review the codebase, not just the current change
+GX_CLIENT=skill gx review --scope security                   # architecture, security, performance, etc.
+GX_CLIENT=skill gx review --focus src/auth --deep            # deep pass limited to a path prefix
+GX_CLIENT=skill gx review --verbose                          # include repo facts, docs, changed files
 ```
 
 Without `--repo`, a dirty working tree is the review subject: gx reviews the diff. Use

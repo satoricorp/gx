@@ -83,6 +83,10 @@ func languageFromPath(path string) string {
 		return "c"
 	case ".cc", ".cpp", ".hpp", ".hh":
 		return "cpp"
+	case ".cs":
+		return "csharp"
+	case ".dart":
+		return "dart"
 	case ".sh", ".bash", ".zsh":
 		return "shell"
 	case ".sql":

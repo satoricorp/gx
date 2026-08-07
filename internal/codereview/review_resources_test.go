@@ -66,12 +66,11 @@ func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 			t.Fatalf("filtered query missing %s in %s", want, filtered)
 		}
 	}
-	// The v2 corpus schema declares neither framework_tags nor the two
-	// *_tag_values attributes; naming any of them makes TurboPuffer reject the
-	// whole query with HTTP 400.
-	for _, banned := range []string{"framework_tags", "risk_tag_values", "review_tag_values"} {
-		if strings.Contains(filtered, banned) {
-			t.Fatalf("filtered query names undeclared attribute %s in %s", banned, filtered)
+	// The corpus schema declares only tier and language_tags filterable among
+	// the signal attributes; undeclared ones would 400 the whole query.
+	for _, reject := range []string{`"framework_tags"`, `"risk_tag_values"`, `"review_tag_values"`} {
+		if strings.Contains(filtered, reject) {
+			t.Fatalf("filtered query has undeclared filter attribute %s in %s", reject, filtered)
 		}
 	}
 	if len(snippets) != 1 {

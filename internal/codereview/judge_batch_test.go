@@ -56,17 +56,18 @@ func judgeBatchCandidates(n int) []Finding {
 // candidates than its output budget can answer for.
 func TestRunJudgeSplitsCandidatesIntoBoundedBatches(t *testing.T) {
 	judge := &recordingJudge{}
-	candidates := judgeBatchCandidates(judgeBatchSize*2 + 5)
+	batchSize := resolveJudgeBatchSize()
+	candidates := judgeBatchCandidates(batchSize*2 + 5)
 
 	outcome := runJudge(context.Background(), judge, ReviewContext{}, candidates)
 
 	if outcome.Batches != 3 {
 		t.Fatalf("Batches = %d, want 3 for %d candidates at batch size %d",
-			outcome.Batches, len(candidates), judgeBatchSize)
+			outcome.Batches, len(candidates), batchSize)
 	}
 	for _, size := range judge.sizes {
-		if size > judgeBatchSize {
-			t.Fatalf("a judge call carried %d candidates, want at most %d", size, judgeBatchSize)
+		if size > batchSize {
+			t.Fatalf("a judge call carried %d candidates, want at most %d", size, batchSize)
 		}
 	}
 	if len(outcome.Judged) != len(candidates) {
@@ -83,7 +84,7 @@ func TestRunJudgeSplitsCandidatesIntoBoundedBatches(t *testing.T) {
 // every finding at once.
 func TestRunJudgeKeepsCandidatesFromFailedBatches(t *testing.T) {
 	judge := &recordingJudge{failAfterCalls: 1}
-	candidates := judgeBatchCandidates(judgeBatchSize * 2)
+	candidates := judgeBatchCandidates(resolveJudgeBatchSize() * 2)
 
 	outcome := runJudge(context.Background(), judge, ReviewContext{}, candidates)
 
@@ -137,6 +138,11 @@ func (j partialJudge) Judge(_ context.Context, req judgeRequest) ([]judgeResult,
 // which the engine reads as a clean, complete verification. Measured before the
 // fix: candidates=10 judged=4 unjudged=0 failed=0 err=nil.
 func TestRunJudgeKeepsCandidatesTheJudgeNeverAnsweredFor(t *testing.T) {
+	// One batch, so the shortfall under test is one reply covering part of its
+	// own batch. partialJudge answers the first `answers` candidates of EVERY
+	// batch, so letting the default batch size split these 10 would measure the
+	// fixture's arithmetic rather than the invariant.
+	t.Setenv("GX_REVIEW_JUDGE_BATCH_SIZE", "10")
 	candidates := judgeBatchCandidates(10)
 
 	outcome := runJudge(context.Background(), partialJudge{answers: 4}, ReviewContext{}, candidates)

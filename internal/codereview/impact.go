@@ -98,14 +98,15 @@ func FileImpact(file string, policy ReviewPolicy) ChangeImpact {
 // summary, and a lockfile is the last thing worth spending a review context
 // slot on. Both callers need the same list, so there is one.
 //
-// The list is exactly the one internal/publication shipped, `bun.lock`'s
-// absence included. Adding to it would change which hunks a PR summary calls
-// out, and this extraction is meant to move that logic, not edit it. A
-// `bun.lock` still sorts below source code in the context budget, because
-// isDependencyFile catches it either way.
+// The list started as exactly the one internal/publication shipped,
+// `bun.lock`'s absence included — that extraction moved the logic without
+// editing it. A `bun.lock` still sorts below source code in the context
+// budget, because isDependencyFile catches it either way. `pubspec.lock` was
+// added with Dart support: pub writes it, and a PR summary should name its
+// churn the way it names a go.sum's.
 func IsLockfilePath(file string) bool {
 	switch strings.ToLower(path.Base(strings.TrimSpace(file))) {
-	case "go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "cargo.lock", "gemfile.lock", "poetry.lock", "composer.lock":
+	case "go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "cargo.lock", "gemfile.lock", "poetry.lock", "composer.lock", "pubspec.lock":
 		return true
 	default:
 		return false
