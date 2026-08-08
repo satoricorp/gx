@@ -19,7 +19,20 @@ import (
 const (
 	githubDeviceCodeURL  = "https://github.com/login/device/code"
 	githubAccessTokenURL = "https://github.com/login/oauth/access_token"
+
+	// authRequestAttempts bounds retries for the login requests that run after
+	// the interactive device flow. A single transient failure there (TLS
+	// handshake timeout, DNS blip, 5xx) would otherwise discard the GitHub
+	// authorization the user just completed and force a whole new device code.
+	authRequestAttempts = 4
+	// pollTransportFailures bounds consecutive network failures tolerated while
+	// polling GitHub for the access token.
+	pollTransportFailures = 5
 )
+
+// authRetryBase is the first backoff delay; it doubles per attempt. A variable
+// so tests can shorten it.
+var authRetryBase = time.Second
 
 // AuthEndpoints override GitHub and Convex URLs for tests.
 type AuthEndpoints struct {
@@ -166,7 +179,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 		MachineID:         machineID,
 		MachineName:       machineName,
 		GxVersion:         version.Current(),
-	})
+	}, opts.Out)
 	if err != nil {
 		return CloudCredentials{}, err
 	}
@@ -199,7 +212,18 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 			cloudURL = CloudURL()
 		}
 		if cloudURL != "" {
-			validation, err := validateCloudAPISessionAtURL(ctx, httpClient, cloudURL, creds.CLISessionToken)
+			var validation CloudAPISessionValidation
+			err := retryAuthRequest(ctx, opts.Out, "gx console session check", func() (bool, error) {
+				v, err := validateCloudAPISessionAtURL(ctx, httpClient, cloudURL, creds.CLISessionToken)
+				if err != nil {
+					return true, err
+				}
+				if !v.Valid && retryableStatus(v.StatusCode) {
+					return true, fmt.Errorf("gx console session check: status %d", v.StatusCode)
+				}
+				validation = v
+				return false, nil
+			})
 			if err != nil {
 				return CloudCredentials{}, err
 			}
@@ -282,6 +306,7 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		deadline = time.Now().Add(15 * time.Minute)
 	}
 
+	consecutiveFailures := 0
 	for {
 		if time.Now().After(deadline) {
 			return accessTokenResponse{}, fmt.Errorf("github device authorization timed out")
@@ -299,17 +324,35 @@ func pollGitHubAccessToken(ctx context.Context, client *http.Client, tokenURL, c
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "application/json")
 
-		resp, err := client.Do(req)
-		if err != nil {
-			return accessTokenResponse{}, fmt.Errorf("poll github access token: %w", err)
-		}
-
+		// A network blip mid-poll must not discard the code the user just
+		// entered: keep polling until the device code itself expires.
 		var tokenResp accessTokenResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&tokenResp)
-		resp.Body.Close()
-		if decodeErr != nil {
-			return accessTokenResponse{}, fmt.Errorf("decode github access token response: %w", decodeErr)
+		resp, err := client.Do(req)
+		if err == nil {
+			var decoded accessTokenResponse
+			decodeErr := json.NewDecoder(resp.Body).Decode(&decoded)
+			resp.Body.Close()
+			if decodeErr != nil {
+				err = fmt.Errorf("decode github access token response: %w", decodeErr)
+			} else {
+				tokenResp = decoded
+			}
+		} else {
+			err = fmt.Errorf("poll github access token: %w", err)
 		}
+		if err != nil {
+			consecutiveFailures++
+			if consecutiveFailures >= pollTransportFailures {
+				return accessTokenResponse{}, err
+			}
+			select {
+			case <-ctx.Done():
+				return accessTokenResponse{}, ctx.Err()
+			case <-time.After(time.Duration(interval) * time.Second):
+			}
+			continue
+		}
+		consecutiveFailures = 0
 
 		if tokenResp.AccessToken != "" {
 			return tokenResp, nil
@@ -463,14 +506,71 @@ func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, clou
 	}, nil
 }
 
-func completeConvexAuth(ctx context.Context, client *http.Client, convexURL string, body completeAuthRequest) (CompleteAuthResponse, error) {
+// retryableStatus reports whether an HTTP status is worth another attempt.
+func retryableStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// sleepCtx waits for d, or returns early if ctx is cancelled.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// retryAuthRequest runs fn until it succeeds, fails permanently, or runs out of
+// attempts. fn reports whether its error is worth retrying.
+func retryAuthRequest(ctx context.Context, out io.Writer, label string, fn func() (bool, error)) error {
+	var lastErr error
+	for attempt := 1; attempt <= authRequestAttempts; attempt++ {
+		if attempt > 1 {
+			if out != nil {
+				fmt.Fprintf(out, "%s failed (%v); retrying (%d/%d)\n", label, lastErr, attempt, authRequestAttempts)
+			}
+			if err := sleepCtx(ctx, authRetryBase<<(attempt-2)); err != nil {
+				return err
+			}
+		}
+		retryable, err := fn()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !retryable || ctx.Err() != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%w (%d attempts; check your network or proxy, then run `gx auth login` again)", lastErr, authRequestAttempts)
+}
+
+func completeConvexAuth(ctx context.Context, client *http.Client, convexURL string, body completeAuthRequest, out io.Writer) (CompleteAuthResponse, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return CompleteAuthResponse{}, fmt.Errorf("marshal auth complete payload: %w", err)
 	}
+
+	var complete CompleteAuthResponse
+	err = retryAuthRequest(ctx, out, "auth complete", func() (bool, error) {
+		var attemptErr error
+		var retryable bool
+		complete, retryable, attemptErr = completeConvexAuthOnce(ctx, client, convexURL, payload)
+		return retryable, attemptErr
+	})
+	if err != nil {
+		return CompleteAuthResponse{}, err
+	}
+	return complete, nil
+}
+
+func completeConvexAuthOnce(ctx context.Context, client *http.Client, convexURL string, payload []byte) (CompleteAuthResponse, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, convexURL+"/cx/auth/complete", bytes.NewReader(payload))
 	if err != nil {
-		return CompleteAuthResponse{}, fmt.Errorf("create auth complete request: %w", err)
+		return CompleteAuthResponse{}, false, fmt.Errorf("create auth complete request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -478,18 +578,18 @@ func completeConvexAuth(ctx context.Context, client *http.Client, convexURL stri
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return CompleteAuthResponse{}, fmt.Errorf("auth complete request: %w", err)
+		return CompleteAuthResponse{}, true, fmt.Errorf("auth complete request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return CompleteAuthResponse{}, fmt.Errorf("auth complete: status %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		return CompleteAuthResponse{}, retryableStatus(resp.StatusCode), fmt.Errorf("auth complete: status %s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
 
 	var complete CompleteAuthResponse
 	if err := json.NewDecoder(resp.Body).Decode(&complete); err != nil {
-		return CompleteAuthResponse{}, fmt.Errorf("decode auth complete response: %w", err)
+		return CompleteAuthResponse{}, false, fmt.Errorf("decode auth complete response: %w", err)
 	}
-	return complete, nil
+	return complete, false, nil
 }

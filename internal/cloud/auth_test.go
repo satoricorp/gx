@@ -363,3 +363,141 @@ func TestRequestGitHubDeviceCodeForm(t *testing.T) {
 		t.Fatalf("form = %v", gotForm)
 	}
 }
+
+// dropConnection simulates a transport-level failure (TLS handshake timeout,
+// reset, proxy drop) by closing the connection without a response.
+func dropConnection(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Fatal("ResponseWriter is not a Hijacker")
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		t.Fatalf("Hijack: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestLoginRetriesTransientCompleteFailure(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("GITHUB_CLIENT_ID", "test-client")
+	authRetryBase = time.Millisecond
+	t.Cleanup(func() { authRetryBase = time.Second })
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/device/code":
+			_ = json.NewEncoder(w).Encode(deviceCodeResponse{
+				DeviceCode: "device-code-3", UserCode: "AAAA-1111", ExpiresIn: 30,
+			})
+		case "/login/oauth/access_token":
+			_ = json.NewEncoder(w).Encode(accessTokenResponse{AccessToken: "gho_flaky"})
+		}
+	}))
+	defer github.Close()
+
+	var completeCalls int
+	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		completeCalls++
+		switch completeCalls {
+		case 1:
+			dropConnection(t, w) // stands in for the TLS handshake timeout
+		case 2:
+			w.WriteHeader(http.StatusBadGateway)
+		default:
+			_ = json.NewEncoder(w).Encode(CompleteAuthResponse{UserID: "u3", Login: "flaky"})
+		}
+	}))
+	defer convex.Close()
+
+	var out bytes.Buffer
+	creds, err := Login(context.Background(), LoginOptions{
+		Endpoints: AuthEndpoints{
+			GitHubDeviceCodeURL:  github.URL + "/login/device/code",
+			GitHubAccessTokenURL: github.URL + "/login/oauth/access_token",
+			ConvexSiteURL:        convex.URL,
+		},
+		HTTPClient: github.Client(),
+		Out:        &out,
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+	if creds.Login != "flaky" {
+		t.Fatalf("creds = %+v", creds)
+	}
+	if completeCalls != 3 {
+		t.Fatalf("complete calls = %d, want 3", completeCalls)
+	}
+	if !strings.Contains(out.String(), "retrying") {
+		t.Fatalf("output missing retry notice: %q", out.String())
+	}
+}
+
+func TestCompleteConvexAuthGivesUpAfterAttempts(t *testing.T) {
+	authRetryBase = time.Millisecond
+	t.Cleanup(func() { authRetryBase = time.Second })
+
+	var calls int
+	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		dropConnection(t, w)
+	}))
+	defer convex.Close()
+
+	_, err := completeConvexAuth(context.Background(), convex.Client(), convex.URL, completeAuthRequest{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != authRequestAttempts {
+		t.Fatalf("calls = %d, want %d", calls, authRequestAttempts)
+	}
+	if !strings.Contains(err.Error(), "gx auth login") {
+		t.Fatalf("error missing remediation hint: %v", err)
+	}
+}
+
+func TestCompleteConvexAuthDoesNotRetryClientError(t *testing.T) {
+	authRetryBase = time.Millisecond
+	t.Cleanup(func() { authRetryBase = time.Second })
+
+	var calls int
+	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "bad github token", http.StatusUnauthorized)
+	}))
+	defer convex.Close()
+
+	_, err := completeConvexAuth(context.Background(), convex.Client(), convex.URL, completeAuthRequest{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1 (4xx must not retry)", calls)
+	}
+}
+
+func TestPollGitHubAccessTokenSurvivesTransientFailure(t *testing.T) {
+	var calls int
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			dropConnection(t, w)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(accessTokenResponse{AccessToken: "gho_after_blip"})
+	}))
+	defer github.Close()
+
+	token, err := pollGitHubAccessToken(context.Background(), github.Client(), github.URL, "cid", deviceCodeResponse{
+		DeviceCode: "d", UserCode: "u", ExpiresIn: 30, Interval: 1,
+	})
+	if err != nil {
+		t.Fatalf("pollGitHubAccessToken() error = %v", err)
+	}
+	if token.AccessToken != "gho_after_blip" {
+		t.Fatalf("token = %+v", token)
+	}
+}
