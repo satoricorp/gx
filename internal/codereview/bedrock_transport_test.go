@@ -48,7 +48,7 @@ func TestBedrockCanonicalRequestMatchesAWSExpectation(t *testing.T) {
 		payloadHash,
 	}, "\n")
 
-	got := bedrockCanonicalRequest(http.MethodPost, bedrockCanonicalPath(bedrockColonModel), signed, values, payloadHash)
+	got := bedrockCanonicalRequest(http.MethodPost, bedrockCanonicalPath(bedrockColonModel, "invoke"), signed, values, payloadHash)
 	if got != want {
 		t.Fatalf("canonical request mismatch\n got: %q\nwant: %q", got, want)
 	}
@@ -58,10 +58,10 @@ func TestBedrockCanonicalRequestMatchesAWSExpectation(t *testing.T) {
 // encoded once, the canonical path twice, and for a model ID that needs no
 // escaping the two coincide — which is why the A leg never noticed.
 func TestBedrockPathEncodingLayers(t *testing.T) {
-	if got, want := bedrockRequestPath(bedrockColonModel), "/model/us.anthropic.claude-opus-4-5-20251101-v1%3A0/invoke"; got != want {
+	if got, want := bedrockRequestPath(bedrockColonModel, "invoke"), "/model/us.anthropic.claude-opus-4-5-20251101-v1%3A0/invoke"; got != want {
 		t.Errorf("bedrockRequestPath() = %q, want %q", got, want)
 	}
-	if got, want := bedrockCanonicalPath(bedrockColonModel), "/model/us.anthropic.claude-opus-4-5-20251101-v1%253A0/invoke"; got != want {
+	if got, want := bedrockCanonicalPath(bedrockColonModel, "invoke"), "/model/us.anthropic.claude-opus-4-5-20251101-v1%253A0/invoke"; got != want {
 		t.Errorf("bedrockCanonicalPath() = %q, want %q", got, want)
 	}
 	// A literal, not defaultBedrockReviewModelA: this case is about an ID with
@@ -69,9 +69,9 @@ func TestBedrockPathEncodingLayers(t *testing.T) {
 	// default made it fail the moment the default changed to one whose ID ends
 	// in ":0" — which is the escaping case the assertions above already cover.
 	plain := "us.anthropic.claude-opus-4-6-v1"
-	if bedrockRequestPath(plain) != bedrockCanonicalPath(plain) {
+	if bedrockRequestPath(plain, "invoke") != bedrockCanonicalPath(plain, "invoke") {
 		t.Errorf("model %q needs no escaping, so both paths must agree; got %q and %q",
-			plain, bedrockRequestPath(plain), bedrockCanonicalPath(plain))
+			plain, bedrockRequestPath(plain, "invoke"), bedrockCanonicalPath(plain, "invoke"))
 	}
 }
 
