@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -231,6 +232,98 @@ func TestJudgeDoesNotRetryTruncation(t *testing.T) {
 	}
 	if transport.calls != 1 {
 		t.Fatalf("calls = %d, want no retry after truncation", transport.calls)
+	}
+}
+
+// fileRequestingJudge abstains on everything until the named file appears in
+// the request, then confirms.
+type fileRequestingJudge struct {
+	wants string
+	calls int
+}
+
+func (j *fileRequestingJudge) Available() bool { return true }
+
+func (j *fileRequestingJudge) Judge(_ context.Context, req judgeRequest) ([]judgeResult, error) {
+	j.calls++
+	has := false
+	for _, f := range req.Files {
+		if f.File == j.wants {
+			has = true
+			break
+		}
+	}
+	var results []judgeResult
+	for _, c := range req.Candidates {
+		if has {
+			results = append(results, judgeResult{CandidateID: c.ID, Verdict: "confirmed",
+				Impact: impactBreaking, Severity: 4, Confidence: 0.9})
+		} else {
+			results = append(results, judgeResult{CandidateID: c.ID, Verdict: "unverifiable",
+				NeededFiles: []string{j.wants}})
+		}
+	}
+	return results, nil
+}
+
+// An abstention that names its missing file must get a second round with that
+// file present, and come back decided.
+//
+// This is the case the traced abstentions begged for: "app/models/blocked_email.rb
+// was not provided" — the file sitting in the local checkout the whole time.
+func TestRunJudgeFetchesTheFilesTheJudgeAsksFor(t *testing.T) {
+	t.Setenv("GX_REVIEW_JUDGE_BATCH_SIZE", "10")
+	root := t.TempDir()
+	writeFile(t, root, "app/models/blocked_email.go", "package models\nfunc ShouldBlock() bool { return false }\n")
+	ctx := ReviewContext{Brief: ReviewBrief{RepoRoot: root}}
+	judge := &fileRequestingJudge{wants: "app/models/blocked_email.go"}
+
+	outcome := runJudge(context.Background(), judge, ctx, judgeBatchCandidates(2))
+
+	if judge.calls != 2 {
+		t.Fatalf("judge calls = %d, want the initial batch plus one supplemental round", judge.calls)
+	}
+	if len(outcome.Judged) != 2 || len(outcome.Unjudged) != 0 {
+		t.Fatalf("judged/unjudged = %d/%d, want both candidates decided once the file arrived",
+			len(outcome.Judged), len(outcome.Unjudged))
+	}
+	if outcome.Abstained != 0 {
+		t.Fatalf("Abstained = %d, want the answered abstentions no longer counted", outcome.Abstained)
+	}
+}
+
+// The judge's file requests are model output; a path outside the repository
+// must be dropped, not read.
+func TestResolveRequestedFileRejectsEscapes(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app/a.go", "package app\n")
+	for _, evil := range []string{"../../../../etc/passwd", "/etc/passwd", "a/../../b"} {
+		if got := resolveRequestedFile(context.Background(), root, evil); got != "" {
+			t.Fatalf("resolveRequestedFile(%q) = %q, want rejected", evil, got)
+		}
+	}
+}
+
+// A bare file name resolves through the git index only when unambiguous.
+func TestResolveRequestedFileResolvesUniqueBasenames(t *testing.T) {
+	root := t.TempDir()
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-q")
+	writeFile(t, root, "app/models/blocked_email.rb", "class BlockedEmail; end\n")
+	writeFile(t, root, "app/models/user.rb", "class User; end\n")
+	writeFile(t, root, "lib/user.rb", "module Lib; end\n")
+	runGit("add", "-A")
+
+	if got := resolveRequestedFile(context.Background(), root, "blocked_email.rb"); got != "app/models/blocked_email.rb" {
+		t.Fatalf("unique basename resolved to %q, want app/models/blocked_email.rb", got)
+	}
+	if got := resolveRequestedFile(context.Background(), root, "user.rb"); got != "" {
+		t.Fatalf("ambiguous basename resolved to %q, want dropped", got)
 	}
 }
 

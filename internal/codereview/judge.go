@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -202,6 +204,14 @@ type judgeResult struct {
 	Severity         int     `json:"severity"`
 	Confidence       float64 `json:"confidence"`
 	VerificationNote string  `json:"verification_note"`
+	// NeededFiles is how an abstaining judge asks for what it lacked: the
+	// repo-relative paths (or bare file names) whose absence forced an
+	// unverifiable verdict. The traced abstentions already named their missing
+	// files this precisely in prose — "app/models/blocked_email.rb was not
+	// provided" — so this field just makes the request machine-readable, and a
+	// second round supplies the files and re-asks. Empty on any decided
+	// verdict.
+	NeededFiles []string `json:"needed_files"`
 }
 
 // judgeFromEnvWithPolicy builds the verification model.
@@ -517,6 +527,7 @@ func judgeDeveloperPrompt() string {
 		"A line reading `[... N line(s) omitted ...]` means that stretch of the file was not sent. Absent from the excerpt is NOT absent from the file: never treat an omitted stretch as proof that something does not exist. If deciding a candidate needs code that fell in an omitted stretch, answer unverifiable rather than guessing from what you were shown.",
 		"The top-level `diffs` array holds the changes under review, as unified diff hunks, keyed by file. `files` shows what the code IS NOW; `diffs` shows what CHANGED to make it that way. A candidate whose claim is about a change — a value that moved, a line that was removed, a guard that used to be there — is decided by the diff, so read it there rather than answering unverifiable because the current content alone cannot show a before state.",
 		"A file with no entry in `diffs` had no hunks provided. That is not evidence the file is unchanged; treat it the same as an omitted stretch.",
+		"When your verdict is unverifiable because a SPECIFIC file, class, or template you can name was not provided — an implementation the candidate's claim depends on, a caller that would rescue the exception, the template that binds the variable — set `needed_files` to the repo-relative paths (bare file names are acceptable when you do not know the directory). They will be fetched and the candidate re-asked with them present. Use it only for that: an unverifiable verdict with an empty needed_files means no specific file would settle the claim.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
 		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
@@ -875,6 +886,7 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 	wg.Wait()
 
 	outcome := judgeBatchOutcome{Batches: len(batches)}
+	var retriable []retriableAbstention
 	for i, batch := range batches {
 		if out[i].err != nil {
 			outcome.BatchesFailed++
@@ -899,6 +911,12 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		// a verdict nobody gave.
 		verdicts := answeredCandidateIDs(out[i].results)
 		mentioned := mentionedCandidateIDs(out[i].results)
+		byID := map[string]judgeResult{}
+		for _, result := range out[i].results {
+			if id := strings.TrimSpace(result.CandidateID); id != "" {
+				byID[id] = result
+			}
+		}
 		var judged, silent []Finding
 		for _, finding := range batch {
 			id := strings.TrimSpace(finding.ID)
@@ -913,6 +931,10 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 				outcome.Abstained++
 				outcome.AbstentionNotes = append(outcome.AbstentionNotes,
 					abstentionNote(finding, out[i].results))
+				if needs := byID[id].NeededFiles; len(needs) > 0 {
+					retriable = append(retriable, retriableAbstention{finding: finding, needs: needs})
+					continue
+				}
 			} else {
 				outcome.Omitted++
 			}
@@ -921,7 +943,130 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		outcome.Judged = append(outcome.Judged, applyJudgeResults(judged, out[i].results)...)
 		outcome.Unjudged = append(outcome.Unjudged, silent...)
 	}
+	rejudgeWithRequestedFiles(ctx, judge, reviewContext, retriable, &outcome)
 	return outcome
+}
+
+// retriableAbstention is an abstention the judge itself said how to fix: the
+// candidate plus the files whose absence forced the unverifiable verdict.
+type retriableAbstention struct {
+	finding Finding
+	needs   []string
+}
+
+// maxJudgeRequestedFiles bounds how many judge-requested files one second
+// round fetches. The traced abstentions each named one or two files; a reply
+// requesting many more is fishing, not verifying.
+const maxJudgeRequestedFiles = 8
+
+// rejudgeWithRequestedFiles runs one supplemental round for abstentions that
+// named their missing files.
+//
+// The first round's abstentions are precise about what they lack — "the view
+// file was not provided", naming it — and every named file sits in the local
+// checkout the review is already reading. Fetching it and re-asking converts
+// an unverifiable verdict into a real one in a single extra call: either a
+// confirmation with evidence, or — the case that pays for precision — a
+// refutation of a claim the judge previously had to wave through unverified.
+// One round only; a candidate still unverifiable with the files it asked for
+// stays unverified, and the failure mode is the status quo.
+func rejudgeWithRequestedFiles(ctx context.Context, judge FindingJudge,
+	reviewContext ReviewContext, retriable []retriableAbstention, outcome *judgeBatchOutcome) {
+	if len(retriable) == 0 {
+		return
+	}
+	repoRoot := reviewContext.Brief.RepoRoot
+	var findings []Finding
+	requested := map[string]struct{}{}
+	for _, r := range retriable {
+		findings = append(findings, r.finding)
+		for _, need := range r.needs {
+			if len(requested) >= maxJudgeRequestedFiles {
+				break
+			}
+			if resolved := resolveRequestedFile(ctx, repoRoot, need); resolved != "" {
+				requested[resolved] = struct{}{}
+			}
+		}
+	}
+	fallBack := func() {
+		outcome.Unjudged = append(outcome.Unjudged, findings...)
+	}
+	if len(requested) == 0 {
+		fallBack()
+		return
+	}
+	request := buildJudgeRequest(reviewContext, findings)
+	present := map[string]struct{}{}
+	for _, snippet := range request.Files {
+		present[snippet.File] = struct{}{}
+	}
+	hints := map[string][]int{}
+	var extra []string
+	for file := range requested {
+		if _, ok := present[file]; !ok {
+			extra = append(extra, file)
+		}
+	}
+	sort.Strings(extra)
+	request.Files = append(request.Files, judgeFileContentSnippets(repoRoot, extra, hints)...)
+
+	results, err := judge.Judge(ctx, request)
+	if err != nil {
+		fallBack()
+		return
+	}
+	verdicts := answeredCandidateIDs(results)
+	var judged, still []Finding
+	for _, finding := range findings {
+		if _, ok := verdicts[strings.TrimSpace(finding.ID)]; ok {
+			judged = append(judged, finding)
+			continue
+		}
+		still = append(still, finding)
+	}
+	answered := applyJudgeResults(judged, results)
+	outcome.Judged = append(outcome.Judged, answered...)
+	outcome.Unjudged = append(outcome.Unjudged, still...)
+	// The candidates that got real verdicts this round are no longer
+	// abstentions; the rest stay counted from round one.
+	outcome.Abstained -= len(judged)
+	if outcome.Abstained < 0 {
+		outcome.Abstained = 0
+	}
+}
+
+// resolveRequestedFile turns a judge-named file into a repo-relative path it is
+// safe to read: inside the repository, existing, and matched by exact path
+// first, then by unique basename via the git index. The judge's request is
+// model output — a path that escapes the root or matches nothing is dropped,
+// never guessed at.
+func resolveRequestedFile(ctx context.Context, repoRoot, need string) string {
+	need = normalizeReviewPath(strings.TrimSpace(need))
+	if need == "" || strings.Contains(need, "..") || path.IsAbs(need) {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(need))); err == nil {
+		return need
+	}
+	// Bare or wrong-directory name: let the git index find it, and accept the
+	// match only when it is unambiguous.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "--", "*/"+path.Base(need), path.Base(need))
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var matches []string
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			matches = append(matches, line)
+		}
+	}
+	if len(matches) == 1 {
+		return normalizeReviewPath(matches[0])
+	}
+	return ""
 }
 
 // answeredCandidateIDs is the set of candidates a verdict set speaks to. A
