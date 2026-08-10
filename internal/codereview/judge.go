@@ -682,6 +682,10 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 			continue // non-breaking and low confidence — noise
 		}
 		finding.Strength = strengthFromImpact(result.Impact)
+		finding.JudgeVerdict = "confirmed"
+		finding.JudgeImpact = strings.TrimSpace(strings.ToLower(result.Impact))
+		finding.JudgeSeverity = result.Severity
+		finding.JudgeConfidence = result.Confidence
 		if note := strings.TrimSpace(result.VerificationNote); note != "" {
 			finding.Evidence = append(finding.Evidence, Evidence{Label: "Judge verification", Value: note})
 		}

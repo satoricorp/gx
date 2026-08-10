@@ -31,6 +31,7 @@ type aiRecommendation struct {
 	Summary        string          `json:"summary"`
 	Benefit        string          `json:"benefit"`
 	Recommendation string          `json:"recommendation"`
+	Kind           string          `json:"kind"`
 	Strength       string          `json:"strength"`
 	Evidence       []string        `json:"evidence"`
 	File           string          `json:"file"`
@@ -131,6 +132,22 @@ func aiNotableChangesToNotableChanges(raw []aiNotableChange) []NotableChange {
 	return out
 }
 
+// normalizeFindingKind folds the model's kind label onto the three the schema
+// defines. Empty stays empty rather than defaulting: "the model did not say"
+// is information — downstream ranking must not treat an unlabeled finding as a
+// labeled one.
+func normalizeFindingKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "defect", "bug":
+		return "defect"
+	case "hardening", "robustness":
+		return "hardening"
+	case "suggestion", "improvement", "style":
+		return "suggestion"
+	}
+	return ""
+}
+
 func aiRecommendationsToFindings(recommendations []aiRecommendation, brief ReviewBrief) []Finding {
 	var out []Finding
 	for i, rec := range recommendations {
@@ -178,6 +195,7 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation, brief Revie
 			Line:            line,
 			Anchors:         anchors,
 			Recommendation:  recommendation,
+			Kind:            normalizeFindingKind(rec.Kind),
 			Strength:        strength,
 			ResolvedSources: resolveSourceLabels(brief, labels),
 		})

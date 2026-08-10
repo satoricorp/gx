@@ -25,6 +25,26 @@ type Finding struct {
 	File     string          `json:"file,omitempty"`
 	Line     int             `json:"line,omitempty"`
 
+	// Kind is the reviewer's own classification of what the finding asks of
+	// the reader: "defect" (the code does something wrong now), "hardening"
+	// (correct today, fragile tomorrow), or "suggestion" (nothing is wrong).
+	// Empty means the reviewer did not say. Measured on the review benchmark:
+	// findings claiming a present defect matched a human-recorded issue five
+	// times as often as hardening or suggestion findings, so this label is the
+	// strongest single noise separator the review produces.
+	Kind string `json:"kind,omitempty"`
+
+	// JudgeVerdict and the fields after it carry the verification model's
+	// assessment through to the report: "confirmed", "unverified" (the judge
+	// abstained or never ran), or empty for findings that predate the judge.
+	// The values were previously computed, used to order the report, and then
+	// discarded — leaving a reader (or any downstream ranking) no way to tell
+	// a finding the judge verified at 0.95 from one it waved through.
+	JudgeVerdict    string  `json:"judge_verdict,omitempty"`
+	JudgeImpact     string  `json:"judge_impact,omitempty"`
+	JudgeSeverity   int     `json:"judge_severity,omitempty"`
+	JudgeConfidence float64 `json:"judge_confidence,omitempty"`
+
 	// Corroboration names the independent reviewer legs that each raised this
 	// finding on their own. Two flagship models converging on the same problem
 	// is the strongest quality signal a multi-model panel produces, and it used
