@@ -361,15 +361,7 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 		result.Duration = time.Since(started)
 		// Persist the manifest anyway: it records the configuration the index
 		// was verified against.
-		state.Namespace = namespace
-		state.RepoFullName = fullName
-		state.RepoRoot = absRoot
-		state.EmbeddingModel = cfg.OpenAIEmbeddingModel
-		state.Dimensions = cfg.EmbeddingDimensions
-		state.ChunkerVersion = CodeChunkerVersion
-		state.SchemaVersion = IndexSchemaVersion
-		state.CommitID = commitID
-		state.Files = nextFiles
+		applyIndexManifest(state, namespace, fullName, absRoot, cfg, commitID, nextFiles)
 		if err := SaveRepoIndexState(statePath, state); err != nil {
 			return result, err
 		}
@@ -386,9 +378,81 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 	}
 	logf("embedding %d chunks in %d batches", len(pending), len(batches))
 
+	// Track completion per file so a failed run can bank what finished. Before
+	// this, state was saved only after every batch succeeded, so one dead
+	// connection minutes into a large first index threw away the whole run —
+	// the upserted rows persisted (row IDs are content-addressed and upserts
+	// idempotent) but the manifest that makes the next run incremental did not,
+	// and the next run re-embedded and re-paid for everything. Three attempts
+	// at indexing one benchmark repo on a flaky link cost three full embeds and
+	// produced nothing.
+	pendingPerFile := map[string]int{}
+	for _, chunk := range pending {
+		if path, _ := chunk.Attributes[codeFieldFilePath].(string); path != "" {
+			pendingPerFile[path]++
+		}
+	}
+	var doneMu sync.Mutex
+	donePerFile := map[string]int{}
+	completedBatches := 0
+
+	// bankPartialState persists the files whose pending chunks have all been
+	// upserted. Called under doneMu.
+	bankPartialState := func() int {
+		banked := 0
+		partial := make(map[string]FileIndexState, len(state.Files))
+		for path, fileState := range state.Files {
+			partial[path] = fileState
+		}
+		for path, next := range nextFiles {
+			if count := pendingPerFile[path]; count == 0 || donePerFile[path] == count {
+				partial[path] = next
+				if count > 0 {
+					banked++
+				}
+			}
+		}
+		snapshot := *state
+		applyIndexManifest(&snapshot, namespace, fullName, absRoot, cfg, commitID, partial)
+		if saveErr := SaveRepoIndexState(statePath, &snapshot); saveErr != nil {
+			logf("could not save partial index state: %v", saveErr)
+		}
+		return banked
+	}
+
+	// bankEveryNBatches trades a little JSON writing for crash safety. The
+	// error-path save below covers a run that fails and returns; it cannot
+	// cover a run that is killed — a harness timeout, a closed laptop — and a
+	// first index of a large repository runs long enough to meet both. Measured
+	// before this: a one-hour sentry embed killed at a timeout banked nothing.
+	const bankEveryNBatches = 25
+
 	if err := runBatches(ctx, batches, opts.Concurrency, func(ctx context.Context, batch []Chunk) error {
-		return embedAndUpsert(ctx, embedder, store, batch)
+		if err := embedAndUpsert(ctx, embedder, store, batch); err != nil {
+			return err
+		}
+		doneMu.Lock()
+		for _, chunk := range batch {
+			if path, _ := chunk.Attributes[codeFieldFilePath].(string); path != "" {
+				donePerFile[path]++
+			}
+		}
+		completedBatches++
+		if completedBatches%bankEveryNBatches == 0 {
+			bankPartialState()
+		}
+		doneMu.Unlock()
+		return nil
 	}); err != nil {
+		// Bank every file whose pending chunks all made it. Seeded from
+		// state.Files — what the next run may reuse — not previousFiles, so an
+		// interrupted full rebuild banks only what it actually rebuilt.
+		doneMu.Lock()
+		banked := bankPartialState()
+		doneMu.Unlock()
+		if banked > 0 {
+			logf("index failed with %d file(s) completed; partial state saved, the next run resumes from it", banked)
+		}
 		result.Duration = time.Since(started)
 		return result, err
 	}
@@ -402,15 +466,7 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 		result.ChunksDeleted = len(deleteIDs)
 	}
 
-	state.Namespace = namespace
-	state.RepoFullName = fullName
-	state.RepoRoot = absRoot
-	state.EmbeddingModel = cfg.OpenAIEmbeddingModel
-	state.Dimensions = cfg.EmbeddingDimensions
-	state.ChunkerVersion = CodeChunkerVersion
-	state.SchemaVersion = IndexSchemaVersion
-	state.CommitID = commitID
-	state.Files = nextFiles
+	applyIndexManifest(state, namespace, fullName, absRoot, cfg, commitID, nextFiles)
 	if err := SaveRepoIndexState(statePath, state); err != nil {
 		result.Duration = time.Since(started)
 		return result, err
@@ -516,6 +572,23 @@ func batchChunks(chunks []Chunk, maxCount, maxBytes int) [][]Chunk {
 		batches = append(batches, current)
 	}
 	return batches
+}
+
+// applyIndexManifest stamps the configuration an index run was built against.
+// Three save sites write these same fields — success, up-to-date, and the
+// partial save on failure — and a field added to one but not the others would
+// quietly produce states that disagree about their own compatibility.
+func applyIndexManifest(state *RepoIndexState, namespace, fullName, absRoot string,
+	cfg Config, commitID string, files map[string]FileIndexState) {
+	state.Namespace = namespace
+	state.RepoFullName = fullName
+	state.RepoRoot = absRoot
+	state.EmbeddingModel = cfg.OpenAIEmbeddingModel
+	state.Dimensions = cfg.EmbeddingDimensions
+	state.ChunkerVersion = CodeChunkerVersion
+	state.SchemaVersion = IndexSchemaVersion
+	state.CommitID = commitID
+	state.Files = files
 }
 
 func runBatches(ctx context.Context, batches [][]Chunk, concurrency int, fn func(context.Context, []Chunk) error) error {

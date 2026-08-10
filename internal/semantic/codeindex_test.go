@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,82 @@ func testIndexOptions(t *testing.T, root string, embedder Embedder, store CodeVe
 		Store:        store,
 		StatePath:    filepath.Join(t.TempDir(), "manifest.json"),
 		Concurrency:  2,
+	}
+}
+
+// pathFailingStore refuses upserts for rows of one file and records the rest.
+type pathFailingStore struct {
+	*recordingStore
+	failPath string
+}
+
+func (s *pathFailingStore) Upsert(ctx context.Context, rows []VectorRow) error {
+	for _, row := range rows {
+		if path, _ := row.Attributes[codeFieldFilePath].(string); path == s.failPath {
+			return context.DeadlineExceeded
+		}
+	}
+	return s.recordingStore.Upsert(ctx, rows)
+}
+
+// A failed index run must bank the files that completed, so the rerun pays for
+// the failure, not for the whole repository again.
+//
+// Before this, state saved only after every batch succeeded: one dead
+// connection minutes into a first index of a large repo meant the next run
+// re-embedded everything — three attempts on a flaky link cost three full
+// embeds and produced no index at all.
+func TestIndexRepositoryBanksCompletedFilesOnFailure(t *testing.T) {
+	root := t.TempDir()
+	// Enough single-function files that the pending chunks span several embed
+	// batches (codeEmbedBatchSize caps a batch at 32 chunks), with the failing
+	// file sorted last so the walk order puts earlier batches ahead of it.
+	// Serial execution then guarantees at least one whole batch of files
+	// completes before the failure — without spanning batches the test would
+	// only ever exercise the nothing-completed case.
+	const fileCount = 40
+	for i := 0; i < fileCount; i++ {
+		name := fmt.Sprintf("internal/alpha_%02d.go", i)
+		body := fmt.Sprintf("package alpha\n\nfunc Alpha%02d() string {\n\treturn %q\n}\n", i, name)
+		writeTestFile(t, root, name, body)
+	}
+	const failFile = "internal/zzz_fail.go"
+	writeTestFile(t, root, failFile, "package alpha\n\nfunc ZZZ() string {\n\treturn \"boom\"\n}\n")
+
+	embedder := &recordingEmbedder{}
+	failing := &pathFailingStore{recordingStore: newRecordingStore(), failPath: failFile}
+	opts := testIndexOptions(t, root, embedder, failing)
+	opts.Concurrency = 1
+
+	if _, err := IndexRepository(context.Background(), opts); err == nil {
+		t.Fatal("first run: expected the injected upsert failure")
+	}
+
+	state := LoadRepoIndexState(opts.StatePath)
+	if state == nil || len(state.Files) == 0 {
+		t.Fatal("no partial state saved; a rerun would re-embed the whole repository")
+	}
+	if _, ok := state.Files[failFile]; ok {
+		t.Fatal("the failed file must not be banked — it would never be re-embedded")
+	}
+
+	// The rerun must resume: skip everything banked, index the remainder, and
+	// account for every file either way.
+	embedder.reset()
+	opts.Store = newRecordingStore()
+	second, err := IndexRepository(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if second.FilesSkipped == 0 {
+		t.Fatalf("second run = %+v, want the banked files skipped rather than re-embedded", second)
+	}
+	if second.FilesIndexed == 0 {
+		t.Fatalf("second run = %+v, want the unbanked remainder indexed", second)
+	}
+	if total := second.FilesSkipped + second.FilesIndexed; total != fileCount+1 {
+		t.Fatalf("skipped(%d) + indexed(%d) = %d, want every one of the %d files accounted for",
+			second.FilesSkipped, second.FilesIndexed, total, fileCount+1)
 	}
 }
 
