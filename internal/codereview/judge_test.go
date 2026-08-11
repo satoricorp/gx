@@ -147,27 +147,28 @@ func TestApplyJudgeResultsPrecisionFilter(t *testing.T) {
 	}
 }
 
-// TestApplyJudgeResultsHonorsTheJudgesRank pins the ordering contract: a
-// batch-relative rank from the judge beats every absolute signal, because it is
-// the only ordering computed with all candidates in view. Unranked findings
-// keep the old impact/confidence order, after every ranked one.
-func TestApplyJudgeResultsHonorsTheJudgesRank(t *testing.T) {
+// TestApplyJudgeResultsRecordsRankWithoutReordering pins the measured decision:
+// the judge's batch-relative rank is carried onto the finding for offline
+// analysis, but the report order stays impact/confidence — on the 30-PR
+// benchmark, ordering by the judge's stated rank scored BELOW ordering by its
+// own severity+confidence at every top-K (39 vs 42 F1 at top-2).
+func TestApplyJudgeResultsRecordsRankWithoutReordering(t *testing.T) {
 	findings := []Finding{
-		{ID: "f.a"}, {ID: "f.b"}, {ID: "f.c"}, {ID: "f.unranked"},
+		{ID: "f.a"}, {ID: "f.b"}, {ID: "f.c"},
 	}
 	results := []judgeResult{
-		// Rank inverts what impact+confidence alone would produce.
+		// Rank inverts what impact+confidence would produce; ordering must
+		// ignore it and follow impact then confidence anyway.
 		{CandidateID: "f.a", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.95, Rank: 3},
 		{CandidateID: "f.b", Verdict: "confirmed", Impact: "functional", Severity: 3, Confidence: 0.8, Rank: 1},
 		{CandidateID: "f.c", Verdict: "confirmed", Impact: "breaking", Severity: 4, Confidence: 0.9, Rank: 2},
-		{CandidateID: "f.unranked", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.99},
 	}
 	got := applyJudgeResults(findings, results)
-	if gotIDs := findingIDs(got); gotIDs != "f.b,f.c,f.a,f.unranked" {
-		t.Fatalf("order = %q, want the judge's rank first (b,c,a) and the unranked finding last", gotIDs)
+	if gotIDs := findingIDs(got); gotIDs != "f.a,f.c,f.b" {
+		t.Fatalf("order = %q, want impact then confidence (a,c,b), ignoring the judge's rank", gotIDs)
 	}
-	if got[0].JudgeRank != 1 {
-		t.Fatalf("JudgeRank = %d, want the rank carried onto the finding", got[0].JudgeRank)
+	if got[0].JudgeRank != 3 || got[2].JudgeRank != 1 {
+		t.Fatalf("JudgeRank not carried: got %d,%d,%d", got[0].JudgeRank, got[1].JudgeRank, got[2].JudgeRank)
 	}
 }
 

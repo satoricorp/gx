@@ -715,18 +715,14 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 		kept = append(kept, judged{finding: finding, result: result})
 	}
 	sort.SliceStable(kept, func(i, j int) bool {
-		// The judge's batch-relative rank leads: it is the one signal computed
-		// by something that has read every candidate, and the measured absolute
-		// scores cluster too tightly to order by. Unranked (0) sorts after any
-		// ranked finding; the pre-rank keys below still decide among unranked
-		// findings and between batches' ties.
-		oi, oj := kept[i].result.Rank, kept[j].result.Rank
-		if oi > 0 && oj > 0 && oi != oj {
-			return oi < oj
-		}
-		if (oi > 0) != (oj > 0) {
-			return oi > 0
-		}
+		// The judge's batch-relative rank is recorded on the finding but does
+		// NOT order the report. That was the plan — the one model that reads
+		// every candidate side by side should out-order clustered absolute
+		// scores — and it measured false: on the 30-PR benchmark, top-K by the
+		// judge's stated rank scored below top-K by its own severity+confidence
+		// at every K (F1 39 vs 42 at top-2, converging by top-4). The rank adds
+		// noise, not signal, so it stays a recorded field for future
+		// measurement and the ordering keeps the keys that won.
 		if ri, rj := impactRank(kept[i].result.Impact), impactRank(kept[j].result.Impact); ri != rj {
 			return ri > rj
 		}
