@@ -147,6 +147,30 @@ func TestApplyJudgeResultsPrecisionFilter(t *testing.T) {
 	}
 }
 
+// TestApplyJudgeResultsHonorsTheJudgesRank pins the ordering contract: a
+// batch-relative rank from the judge beats every absolute signal, because it is
+// the only ordering computed with all candidates in view. Unranked findings
+// keep the old impact/confidence order, after every ranked one.
+func TestApplyJudgeResultsHonorsTheJudgesRank(t *testing.T) {
+	findings := []Finding{
+		{ID: "f.a"}, {ID: "f.b"}, {ID: "f.c"}, {ID: "f.unranked"},
+	}
+	results := []judgeResult{
+		// Rank inverts what impact+confidence alone would produce.
+		{CandidateID: "f.a", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.95, Rank: 3},
+		{CandidateID: "f.b", Verdict: "confirmed", Impact: "functional", Severity: 3, Confidence: 0.8, Rank: 1},
+		{CandidateID: "f.c", Verdict: "confirmed", Impact: "breaking", Severity: 4, Confidence: 0.9, Rank: 2},
+		{CandidateID: "f.unranked", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.99},
+	}
+	got := applyJudgeResults(findings, results)
+	if gotIDs := findingIDs(got); gotIDs != "f.b,f.c,f.a,f.unranked" {
+		t.Fatalf("order = %q, want the judge's rank first (b,c,a) and the unranked finding last", gotIDs)
+	}
+	if got[0].JudgeRank != 1 {
+		t.Fatalf("JudgeRank = %d, want the rank carried onto the finding", got[0].JudgeRank)
+	}
+}
+
 func TestCapKeepsTopThreeAdvisoryFindings(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "0")
 	root := t.TempDir()

@@ -204,6 +204,16 @@ type judgeResult struct {
 	Severity         int     `json:"severity"`
 	Confidence       float64 `json:"confidence"`
 	VerificationNote string  `json:"verification_note"`
+	// Rank is the judge's batch-relative reading order: 1 is the candidate a
+	// maintainer most needs to see. It exists because the judge's absolute
+	// scores cluster — measured on 30 PRs, confirmed confidence bunches in
+	// 0.8-0.9 and severity floors cost recall without buying precision — while
+	// the judge is the only participant that has read every candidate in the
+	// batch and can say which matters MORE. Relative orderings are the one
+	// signal absolute scoring cannot Goodhart into uniformity. 0 = unranked
+	// (older judge reply, or a parse that dropped it); sorting treats those as
+	// last. Ranks are only comparable within one batch.
+	Rank int `json:"rank"`
 	// NeededFiles is how an abstaining judge asks for what it lacked: the
 	// repo-relative paths (or bare file names) whose absence forced an
 	// unverifiable verdict. The traced abstentions already named their missing
@@ -530,7 +540,7 @@ func judgeDeveloperPrompt() string {
 		"When your verdict is unverifiable because a SPECIFIC file, class, or template you can name was not provided — an implementation the candidate's claim depends on, a caller that would rescue the exception, the template that binds the variable — set `needed_files` to the repo-relative paths (bare file names are acceptable when you do not know the directory). They will be fetched and the candidate re-asked with them present. Use it only for that: an unverifiable verdict with an empty needed_files means no specific file would settle the claim.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
-		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
+		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string,\"rank\":int}]}",
 		"THINK IN THE analysis FIELD. Write it first, before the verdict of the same object, and use it to do the actual work: quote the lines of the provided file content that decide the claim, state what that code really does, and name any part of the claimed mechanism the file contradicts. Then let the verdict follow from it.",
 		"Take as many sentences in analysis as the candidate needs. An analysis that only restates the claim is a verdict guessed rather than checked, and a wrong confirmation costs a reviewer more than a long analysis costs you.",
 		"analysis is the only place reasoning may appear. Never write it outside the JSON object. Every result object must carry a non-empty analysis; a result without one has skipped the check the field exists to force.",
@@ -547,6 +557,7 @@ func judgeDeveloperPrompt() string {
 		"- none: not a real issue.",
 		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — gx will not surface those.",
 		"Severity is 1-5. Confidence is 0-1. verification_note is one line for the reader, summarizing the analysis.",
+		"rank is this batch's reading order: 1 for the candidate a maintainer most needs to see before merge, 2 for the next, and so on, one distinct rank per candidate with no ties — refuted and benign candidates go last. You have read every candidate in this batch, so rank them against EACH OTHER: which single finding matters most, which next. This is a different judgment from severity or confidence — those score each candidate alone and tend to cluster; the ordering is what decides what a reader sees first, so weigh real-world consequence, how sure you are, and how actionable the finding is.",
 		"Emit exactly one result object per candidate_id you were given, in the order given. A candidate you leave out is a finding gx must ship unverified, so leave none out.",
 		"Reply with the JSON object alone. No preamble, no fence, no trailing remarks.",
 	}, "\n")
@@ -697,12 +708,25 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 		finding.JudgeImpact = strings.TrimSpace(strings.ToLower(result.Impact))
 		finding.JudgeSeverity = result.Severity
 		finding.JudgeConfidence = result.Confidence
+		finding.JudgeRank = result.Rank
 		if note := strings.TrimSpace(result.VerificationNote); note != "" {
 			finding.Evidence = append(finding.Evidence, Evidence{Label: "Judge verification", Value: note})
 		}
 		kept = append(kept, judged{finding: finding, result: result})
 	}
 	sort.SliceStable(kept, func(i, j int) bool {
+		// The judge's batch-relative rank leads: it is the one signal computed
+		// by something that has read every candidate, and the measured absolute
+		// scores cluster too tightly to order by. Unranked (0) sorts after any
+		// ranked finding; the pre-rank keys below still decide among unranked
+		// findings and between batches' ties.
+		oi, oj := kept[i].result.Rank, kept[j].result.Rank
+		if oi > 0 && oj > 0 && oi != oj {
+			return oi < oj
+		}
+		if (oi > 0) != (oj > 0) {
+			return oi > 0
+		}
 		if ri, rj := impactRank(kept[i].result.Impact), impactRank(kept[j].result.Impact); ri != rj {
 			return ri > rj
 		}

@@ -44,6 +44,11 @@ type Finding struct {
 	JudgeImpact     string  `json:"judge_impact,omitempty"`
 	JudgeSeverity   int     `json:"judge_severity,omitempty"`
 	JudgeConfidence float64 `json:"judge_confidence,omitempty"`
+	// JudgeRank is the judge's batch-relative reading order (1 = read first),
+	// the ordering key for the report. Absolute judge scores cluster (measured:
+	// confidence mass sits in 0.8-0.9), so the ordering comes from the one
+	// model that read every candidate side by side. 0 means unranked.
+	JudgeRank int `json:"judge_rank,omitempty"`
 
 	// Corroboration names the independent reviewer legs that each raised this
 	// finding on their own. Two flagship models converging on the same problem
