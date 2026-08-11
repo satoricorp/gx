@@ -69,8 +69,8 @@ func newIndexCommand(ctx context.Context) *cobra.Command {
 			fmt.Fprintln(out, labelValue("Repository", firstNonEmptyString(result.RepoFullName, result.RepoRoot)))
 			fmt.Fprintln(out, labelValue("Files", fmt.Sprintf("%d scanned, %d indexed, %d unchanged, %d removed",
 				result.FilesScanned, result.FilesIndexed, result.FilesSkipped, result.FilesRemoved)))
-			fmt.Fprintln(out, labelValue("Chunks", fmt.Sprintf("%d total, %d uploaded, %d deleted",
-				result.ChunksTotal, result.ChunksUpserted, result.ChunksDeleted)))
+			fmt.Fprintln(out, labelValue("Chunks", fmt.Sprintf("%d total, %d uploaded (%d vectors reused from cache), %d deleted",
+				result.ChunksTotal, result.ChunksUpserted, result.ChunksFromCache, result.ChunksDeleted)))
 			fmt.Fprintln(out, labelValue("Embedded", fmt.Sprintf("%d bytes in %d batches", result.BytesEmbedded, result.EmbedBatches)))
 			fmt.Fprintln(out, labelValue("Duration", result.Duration.Round(1e6).String()))
 			if result.UpToDate() {

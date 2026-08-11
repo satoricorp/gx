@@ -438,6 +438,94 @@ func TestBatchChunksRespectsCountAndByteBudgets(t *testing.T) {
 	}
 }
 
+// Two checkouts of one repository at different SHAs share a namespace and
+// therefore a manifest, so syncing them alternately makes every run see the
+// other checkout's state and re-embed the delta between the two SHAs — the
+// same chunks, every time. Observed during Code Review Bench: the sentry and
+// keycloak namespaces re-embedded thousands of chunks per run and rate-limited
+// at four workers. The rows must still be rewritten on every alternation (row
+// ids are positional; the last writer owns them), but after each SHA's first
+// sync the vectors must come from the local cache, not the embedding API.
+func TestIndexRepositoryAlternatingCheckoutsEmbedNothingTwice(t *testing.T) {
+	const sharedBody = "package widgets\n\nfunc Shared() string {\n\treturn \"same in both checkouts\"\n}\n"
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	writeTestFile(t, rootA, "internal/shared.go", sharedBody)
+	writeTestFile(t, rootB, "internal/shared.go", sharedBody)
+	writeTestFile(t, rootA, "internal/feature.go", "package widgets\n\nfunc Feature() string {\n\treturn \"alpha\"\n}\n")
+	writeTestFile(t, rootB, "internal/feature.go", "package widgets\n\nfunc Feature() string {\n\treturn \"bravo\"\n}\n")
+
+	embedder := &recordingEmbedder{}
+	store := newRecordingStore()
+	optsA := testIndexOptions(t, rootA, embedder, store)
+	optsA.EmbedCache = NewEmbedCache(t.TempDir(), optsA.Config.OpenAIEmbeddingModel, optsA.Config.EmbeddingDimensions, 0)
+	// Same manifest, same store, same cache: only the checkout differs, which
+	// is exactly what a shared namespace produces.
+	optsB := optsA
+	optsB.RepoRoot = rootB
+	optsB.CommitID = "commit-b"
+
+	if _, err := IndexRepository(context.Background(), optsA); err != nil {
+		t.Fatalf("first sync of A: %v", err)
+	}
+	warm, err := IndexRepository(context.Background(), optsB)
+	if err != nil {
+		t.Fatalf("first sync of B: %v", err)
+	}
+	if warm.FilesSkipped != 1 || embedder.count() == 0 {
+		t.Fatalf("first sync of B = %+v with %d embeds, want the shared file skipped and the delta embedded", warm, embedder.count())
+	}
+
+	// The warmup is over: every later alternation must embed nothing. The
+	// order matters — the manifest currently holds B, so A must go first for
+	// each run to be a genuine alternation rather than an up-to-date no-op.
+	cycles := []struct {
+		name string
+		opts RepoIndexOptions
+	}{{"A", optsA}, {"B", optsB}, {"A again", optsA}}
+	for _, step := range cycles {
+		cycle, opts := step.name, step.opts
+		embedder.reset()
+		store.reset()
+		result, err := IndexRepository(context.Background(), opts)
+		if err != nil {
+			t.Fatalf("re-sync of %s: %v", cycle, err)
+		}
+		if embedder.count() != 0 {
+			t.Fatalf("re-sync of %s embedded %d chunks whose vectors were already cached", cycle, embedder.count())
+		}
+		if result.ChunksUpserted == 0 || result.ChunksFromCache != result.ChunksUpserted {
+			t.Fatalf("re-sync of %s = %+v, want every upserted row served from the cache", cycle, result)
+		}
+		if result.BytesEmbedded != 0 || result.EmbedBatches != 0 {
+			t.Fatalf("re-sync of %s = %+v, want zero embedder traffic", cycle, result)
+		}
+	}
+
+	// The rows still ping-pong to the last writer, and a cached vector must be
+	// the one its row's text was embedded to — the recording embedder encodes
+	// len(text) into the vector, so the pairing is checkable.
+	if _, err := IndexRepository(context.Background(), optsB); err != nil {
+		t.Fatalf("final sync of B: %v", err)
+	}
+	sawFeature := false
+	for _, row := range store.rows {
+		text, _ := row.Attributes[transcriptFieldText].(string)
+		if path, _ := row.Attributes[codeFieldFilePath].(string); path == "internal/feature.go" {
+			sawFeature = true
+			if !strings.Contains(text, "bravo") {
+				t.Fatalf("after B's sync the feature row holds %q, want B's content", text)
+			}
+		}
+		if len(row.Vector) == 0 || row.Vector[0] != float32(len(text)) {
+			t.Fatalf("row vector %v does not correspond to its text (len %d)", row.Vector, len(text))
+		}
+	}
+	if !sawFeature {
+		t.Fatal("no row for the differing file was upserted")
+	}
+}
+
 func writeTestFile(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
