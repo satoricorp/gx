@@ -319,12 +319,26 @@ func reviewerFromEnvFast(fast bool) AIReviewer {
 			modelA, modelB = modelB, ""
 		}
 	}
+	// A leg's transport follows its model: openai:-prefixed models go to the
+	// OpenAI API, everything else rides the resolved Bedrock plan. A missing
+	// OPENAI_API_KEY surfaces as that leg being unavailable with the fix in
+	// the reason, never as a silently absent reviewer.
+	buildLeg := func(name, slot, model string) namedAIReviewer {
+		if modelUsesOpenAI(model) {
+			transport, err := newOpenAITransport()
+			if err != nil {
+				return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: unavailableAIReviewer{reason: err.Error()}}
+			}
+			return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: newBedrockReviewer(transport, model)}
+		}
+		return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), model)}
+	}
 	var reviewers []namedAIReviewer
 	if modelA != "" {
-		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)})
+		reviewers = append(reviewers, buildLeg("bedrock-a", "Bedrock A", modelA))
 	}
 	if modelB != "" {
-		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)})
+		reviewers = append(reviewers, buildLeg("bedrock-b", "Bedrock B", modelB))
 	}
 	if len(reviewers) == 0 {
 		// Both legs off is a configuration mistake, not a request for a review

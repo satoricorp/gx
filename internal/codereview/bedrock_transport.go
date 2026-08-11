@@ -145,6 +145,8 @@ func bedrockTransportShortName(kind string) string {
 		return "AWS"
 	case bedrockTransportKindCloud:
 		return "gx Cloud"
+	case "openai":
+		return "OpenAI"
 	default:
 		return ""
 	}
