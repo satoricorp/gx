@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -202,6 +204,24 @@ type judgeResult struct {
 	Severity         int     `json:"severity"`
 	Confidence       float64 `json:"confidence"`
 	VerificationNote string  `json:"verification_note"`
+	// Rank is the judge's batch-relative reading order: 1 is the candidate a
+	// maintainer most needs to see. It exists because the judge's absolute
+	// scores cluster — measured on 30 PRs, confirmed confidence bunches in
+	// 0.8-0.9 and severity floors cost recall without buying precision — while
+	// the judge is the only participant that has read every candidate in the
+	// batch and can say which matters MORE. Relative orderings are the one
+	// signal absolute scoring cannot Goodhart into uniformity. 0 = unranked
+	// (older judge reply, or a parse that dropped it); sorting treats those as
+	// last. Ranks are only comparable within one batch.
+	Rank int `json:"rank"`
+	// NeededFiles is how an abstaining judge asks for what it lacked: the
+	// repo-relative paths (or bare file names) whose absence forced an
+	// unverifiable verdict. The traced abstentions already named their missing
+	// files this precisely in prose — "app/models/blocked_email.rb was not
+	// provided" — so this field just makes the request machine-readable, and a
+	// second round supplies the files and re-asks. Empty on any decided
+	// verdict.
+	NeededFiles []string `json:"needed_files"`
 }
 
 // judgeFromEnvWithPolicy builds the verification model.
@@ -517,9 +537,10 @@ func judgeDeveloperPrompt() string {
 		"A line reading `[... N line(s) omitted ...]` means that stretch of the file was not sent. Absent from the excerpt is NOT absent from the file: never treat an omitted stretch as proof that something does not exist. If deciding a candidate needs code that fell in an omitted stretch, answer unverifiable rather than guessing from what you were shown.",
 		"The top-level `diffs` array holds the changes under review, as unified diff hunks, keyed by file. `files` shows what the code IS NOW; `diffs` shows what CHANGED to make it that way. A candidate whose claim is about a change — a value that moved, a line that was removed, a guard that used to be there — is decided by the diff, so read it there rather than answering unverifiable because the current content alone cannot show a before state.",
 		"A file with no entry in `diffs` had no hunks provided. That is not evidence the file is unchanged; treat it the same as an omitted stretch.",
+		"When your verdict is unverifiable because a SPECIFIC file, class, or template you can name was not provided — an implementation the candidate's claim depends on, a caller that would rescue the exception, the template that binds the variable — set `needed_files` to the repo-relative paths (bare file names are acceptable when you do not know the directory). They will be fetched and the candidate re-asked with them present. Use it only for that: an unverifiable verdict with an empty needed_files means no specific file would settle the claim.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
-		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string}]}",
+		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string,\"rank\":int}]}",
 		"THINK IN THE analysis FIELD. Write it first, before the verdict of the same object, and use it to do the actual work: quote the lines of the provided file content that decide the claim, state what that code really does, and name any part of the claimed mechanism the file contradicts. Then let the verdict follow from it.",
 		"Take as many sentences in analysis as the candidate needs. An analysis that only restates the claim is a verdict guessed rather than checked, and a wrong confirmation costs a reviewer more than a long analysis costs you.",
 		"analysis is the only place reasoning may appear. Never write it outside the JSON object. Every result object must carry a non-empty analysis; a result without one has skipped the check the field exists to force.",
@@ -536,6 +557,7 @@ func judgeDeveloperPrompt() string {
 		"- none: not a real issue.",
 		"Reserve breaking and functional for changes a senior engineer would want to see before merge. If you are confident a finding cannot break anything, mark it cosmetic or none — gx will not surface those.",
 		"Severity is 1-5. Confidence is 0-1. verification_note is one line for the reader, summarizing the analysis.",
+		"rank is this batch's reading order: 1 for the candidate a maintainer most needs to see before merge, 2 for the next, and so on, one distinct rank per candidate with no ties — refuted and benign candidates go last. You have read every candidate in this batch, so rank them against EACH OTHER: which single finding matters most, which next. This is a different judgment from severity or confidence — those score each candidate alone and tend to cluster; the ordering is what decides what a reader sees first, so weigh real-world consequence, how sure you are, and how actionable the finding is.",
 		"Emit exactly one result object per candidate_id you were given, in the order given. A candidate you leave out is a finding gx must ship unverified, so leave none out.",
 		"Reply with the JSON object alone. No preamble, no fence, no trailing remarks.",
 	}, "\n")
@@ -682,12 +704,25 @@ func applyJudgeResults(findings []Finding, results []judgeResult) []Finding {
 			continue // non-breaking and low confidence — noise
 		}
 		finding.Strength = strengthFromImpact(result.Impact)
+		finding.JudgeVerdict = "confirmed"
+		finding.JudgeImpact = strings.TrimSpace(strings.ToLower(result.Impact))
+		finding.JudgeSeverity = result.Severity
+		finding.JudgeConfidence = result.Confidence
+		finding.JudgeRank = result.Rank
 		if note := strings.TrimSpace(result.VerificationNote); note != "" {
 			finding.Evidence = append(finding.Evidence, Evidence{Label: "Judge verification", Value: note})
 		}
 		kept = append(kept, judged{finding: finding, result: result})
 	}
 	sort.SliceStable(kept, func(i, j int) bool {
+		// The judge's batch-relative rank is recorded on the finding but does
+		// NOT order the report. That was the plan — the one model that reads
+		// every candidate side by side should out-order clustered absolute
+		// scores — and it measured false: on the 30-PR benchmark, top-K by the
+		// judge's stated rank scored below top-K by its own severity+confidence
+		// at every K (F1 39 vs 42 at top-2, converging by top-4). The rank adds
+		// noise, not signal, so it stays a recorded field for future
+		// measurement and the ordering keeps the keys that won.
 		if ri, rj := impactRank(kept[i].result.Impact), impactRank(kept[j].result.Impact); ri != rj {
 			return ri > rj
 		}
@@ -871,6 +906,7 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 	wg.Wait()
 
 	outcome := judgeBatchOutcome{Batches: len(batches)}
+	var retriable []retriableAbstention
 	for i, batch := range batches {
 		if out[i].err != nil {
 			outcome.BatchesFailed++
@@ -895,6 +931,12 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		// a verdict nobody gave.
 		verdicts := answeredCandidateIDs(out[i].results)
 		mentioned := mentionedCandidateIDs(out[i].results)
+		byID := map[string]judgeResult{}
+		for _, result := range out[i].results {
+			if id := strings.TrimSpace(result.CandidateID); id != "" {
+				byID[id] = result
+			}
+		}
 		var judged, silent []Finding
 		for _, finding := range batch {
 			id := strings.TrimSpace(finding.ID)
@@ -909,6 +951,10 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 				outcome.Abstained++
 				outcome.AbstentionNotes = append(outcome.AbstentionNotes,
 					abstentionNote(finding, out[i].results))
+				if needs := byID[id].NeededFiles; len(needs) > 0 {
+					retriable = append(retriable, retriableAbstention{finding: finding, needs: needs})
+					continue
+				}
 			} else {
 				outcome.Omitted++
 			}
@@ -917,7 +963,130 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 		outcome.Judged = append(outcome.Judged, applyJudgeResults(judged, out[i].results)...)
 		outcome.Unjudged = append(outcome.Unjudged, silent...)
 	}
+	rejudgeWithRequestedFiles(ctx, judge, reviewContext, retriable, &outcome)
 	return outcome
+}
+
+// retriableAbstention is an abstention the judge itself said how to fix: the
+// candidate plus the files whose absence forced the unverifiable verdict.
+type retriableAbstention struct {
+	finding Finding
+	needs   []string
+}
+
+// maxJudgeRequestedFiles bounds how many judge-requested files one second
+// round fetches. The traced abstentions each named one or two files; a reply
+// requesting many more is fishing, not verifying.
+const maxJudgeRequestedFiles = 8
+
+// rejudgeWithRequestedFiles runs one supplemental round for abstentions that
+// named their missing files.
+//
+// The first round's abstentions are precise about what they lack — "the view
+// file was not provided", naming it — and every named file sits in the local
+// checkout the review is already reading. Fetching it and re-asking converts
+// an unverifiable verdict into a real one in a single extra call: either a
+// confirmation with evidence, or — the case that pays for precision — a
+// refutation of a claim the judge previously had to wave through unverified.
+// One round only; a candidate still unverifiable with the files it asked for
+// stays unverified, and the failure mode is the status quo.
+func rejudgeWithRequestedFiles(ctx context.Context, judge FindingJudge,
+	reviewContext ReviewContext, retriable []retriableAbstention, outcome *judgeBatchOutcome) {
+	if len(retriable) == 0 {
+		return
+	}
+	repoRoot := reviewContext.Brief.RepoRoot
+	var findings []Finding
+	requested := map[string]struct{}{}
+	for _, r := range retriable {
+		findings = append(findings, r.finding)
+		for _, need := range r.needs {
+			if len(requested) >= maxJudgeRequestedFiles {
+				break
+			}
+			if resolved := resolveRequestedFile(ctx, repoRoot, need); resolved != "" {
+				requested[resolved] = struct{}{}
+			}
+		}
+	}
+	fallBack := func() {
+		outcome.Unjudged = append(outcome.Unjudged, findings...)
+	}
+	if len(requested) == 0 {
+		fallBack()
+		return
+	}
+	request := buildJudgeRequest(reviewContext, findings)
+	present := map[string]struct{}{}
+	for _, snippet := range request.Files {
+		present[snippet.File] = struct{}{}
+	}
+	hints := map[string][]int{}
+	var extra []string
+	for file := range requested {
+		if _, ok := present[file]; !ok {
+			extra = append(extra, file)
+		}
+	}
+	sort.Strings(extra)
+	request.Files = append(request.Files, judgeFileContentSnippets(repoRoot, extra, hints)...)
+
+	results, err := judge.Judge(ctx, request)
+	if err != nil {
+		fallBack()
+		return
+	}
+	verdicts := answeredCandidateIDs(results)
+	var judged, still []Finding
+	for _, finding := range findings {
+		if _, ok := verdicts[strings.TrimSpace(finding.ID)]; ok {
+			judged = append(judged, finding)
+			continue
+		}
+		still = append(still, finding)
+	}
+	answered := applyJudgeResults(judged, results)
+	outcome.Judged = append(outcome.Judged, answered...)
+	outcome.Unjudged = append(outcome.Unjudged, still...)
+	// The candidates that got real verdicts this round are no longer
+	// abstentions; the rest stay counted from round one.
+	outcome.Abstained -= len(judged)
+	if outcome.Abstained < 0 {
+		outcome.Abstained = 0
+	}
+}
+
+// resolveRequestedFile turns a judge-named file into a repo-relative path it is
+// safe to read: inside the repository, existing, and matched by exact path
+// first, then by unique basename via the git index. The judge's request is
+// model output — a path that escapes the root or matches nothing is dropped,
+// never guessed at.
+func resolveRequestedFile(ctx context.Context, repoRoot, need string) string {
+	need = normalizeReviewPath(strings.TrimSpace(need))
+	if need == "" || strings.Contains(need, "..") || path.IsAbs(need) {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(need))); err == nil {
+		return need
+	}
+	// Bare or wrong-directory name: let the git index find it, and accept the
+	// match only when it is unambiguous.
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "ls-files", "--", "*/"+path.Base(need), path.Base(need))
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var matches []string
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			matches = append(matches, line)
+		}
+	}
+	if len(matches) == 1 {
+		return normalizeReviewPath(matches[0])
+	}
+	return ""
 }
 
 // answeredCandidateIDs is the set of candidates a verdict set speaks to. A

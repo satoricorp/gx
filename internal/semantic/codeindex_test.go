@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,82 @@ func testIndexOptions(t *testing.T, root string, embedder Embedder, store CodeVe
 		Store:        store,
 		StatePath:    filepath.Join(t.TempDir(), "manifest.json"),
 		Concurrency:  2,
+	}
+}
+
+// pathFailingStore refuses upserts for rows of one file and records the rest.
+type pathFailingStore struct {
+	*recordingStore
+	failPath string
+}
+
+func (s *pathFailingStore) Upsert(ctx context.Context, rows []VectorRow) error {
+	for _, row := range rows {
+		if path, _ := row.Attributes[codeFieldFilePath].(string); path == s.failPath {
+			return context.DeadlineExceeded
+		}
+	}
+	return s.recordingStore.Upsert(ctx, rows)
+}
+
+// A failed index run must bank the files that completed, so the rerun pays for
+// the failure, not for the whole repository again.
+//
+// Before this, state saved only after every batch succeeded: one dead
+// connection minutes into a first index of a large repo meant the next run
+// re-embedded everything — three attempts on a flaky link cost three full
+// embeds and produced no index at all.
+func TestIndexRepositoryBanksCompletedFilesOnFailure(t *testing.T) {
+	root := t.TempDir()
+	// Enough single-function files that the pending chunks span several embed
+	// batches (codeEmbedBatchSize caps a batch at 32 chunks), with the failing
+	// file sorted last so the walk order puts earlier batches ahead of it.
+	// Serial execution then guarantees at least one whole batch of files
+	// completes before the failure — without spanning batches the test would
+	// only ever exercise the nothing-completed case.
+	const fileCount = 40
+	for i := 0; i < fileCount; i++ {
+		name := fmt.Sprintf("internal/alpha_%02d.go", i)
+		body := fmt.Sprintf("package alpha\n\nfunc Alpha%02d() string {\n\treturn %q\n}\n", i, name)
+		writeTestFile(t, root, name, body)
+	}
+	const failFile = "internal/zzz_fail.go"
+	writeTestFile(t, root, failFile, "package alpha\n\nfunc ZZZ() string {\n\treturn \"boom\"\n}\n")
+
+	embedder := &recordingEmbedder{}
+	failing := &pathFailingStore{recordingStore: newRecordingStore(), failPath: failFile}
+	opts := testIndexOptions(t, root, embedder, failing)
+	opts.Concurrency = 1
+
+	if _, err := IndexRepository(context.Background(), opts); err == nil {
+		t.Fatal("first run: expected the injected upsert failure")
+	}
+
+	state := LoadRepoIndexState(opts.StatePath)
+	if state == nil || len(state.Files) == 0 {
+		t.Fatal("no partial state saved; a rerun would re-embed the whole repository")
+	}
+	if _, ok := state.Files[failFile]; ok {
+		t.Fatal("the failed file must not be banked — it would never be re-embedded")
+	}
+
+	// The rerun must resume: skip everything banked, index the remainder, and
+	// account for every file either way.
+	embedder.reset()
+	opts.Store = newRecordingStore()
+	second, err := IndexRepository(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if second.FilesSkipped == 0 {
+		t.Fatalf("second run = %+v, want the banked files skipped rather than re-embedded", second)
+	}
+	if second.FilesIndexed == 0 {
+		t.Fatalf("second run = %+v, want the unbanked remainder indexed", second)
+	}
+	if total := second.FilesSkipped + second.FilesIndexed; total != fileCount+1 {
+		t.Fatalf("skipped(%d) + indexed(%d) = %d, want every one of the %d files accounted for",
+			second.FilesSkipped, second.FilesIndexed, total, fileCount+1)
 	}
 }
 
@@ -358,6 +435,94 @@ func TestBatchChunksRespectsCountAndByteBudgets(t *testing.T) {
 	}
 	if len(batchChunks(nil, 3, 100)) != 0 {
 		t.Fatal("empty input produced batches")
+	}
+}
+
+// Two checkouts of one repository at different SHAs share a namespace and
+// therefore a manifest, so syncing them alternately makes every run see the
+// other checkout's state and re-embed the delta between the two SHAs — the
+// same chunks, every time. Observed during Code Review Bench: the sentry and
+// keycloak namespaces re-embedded thousands of chunks per run and rate-limited
+// at four workers. The rows must still be rewritten on every alternation (row
+// ids are positional; the last writer owns them), but after each SHA's first
+// sync the vectors must come from the local cache, not the embedding API.
+func TestIndexRepositoryAlternatingCheckoutsEmbedNothingTwice(t *testing.T) {
+	const sharedBody = "package widgets\n\nfunc Shared() string {\n\treturn \"same in both checkouts\"\n}\n"
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	writeTestFile(t, rootA, "internal/shared.go", sharedBody)
+	writeTestFile(t, rootB, "internal/shared.go", sharedBody)
+	writeTestFile(t, rootA, "internal/feature.go", "package widgets\n\nfunc Feature() string {\n\treturn \"alpha\"\n}\n")
+	writeTestFile(t, rootB, "internal/feature.go", "package widgets\n\nfunc Feature() string {\n\treturn \"bravo\"\n}\n")
+
+	embedder := &recordingEmbedder{}
+	store := newRecordingStore()
+	optsA := testIndexOptions(t, rootA, embedder, store)
+	optsA.EmbedCache = NewEmbedCache(t.TempDir(), optsA.Config.OpenAIEmbeddingModel, optsA.Config.EmbeddingDimensions, 0)
+	// Same manifest, same store, same cache: only the checkout differs, which
+	// is exactly what a shared namespace produces.
+	optsB := optsA
+	optsB.RepoRoot = rootB
+	optsB.CommitID = "commit-b"
+
+	if _, err := IndexRepository(context.Background(), optsA); err != nil {
+		t.Fatalf("first sync of A: %v", err)
+	}
+	warm, err := IndexRepository(context.Background(), optsB)
+	if err != nil {
+		t.Fatalf("first sync of B: %v", err)
+	}
+	if warm.FilesSkipped != 1 || embedder.count() == 0 {
+		t.Fatalf("first sync of B = %+v with %d embeds, want the shared file skipped and the delta embedded", warm, embedder.count())
+	}
+
+	// The warmup is over: every later alternation must embed nothing. The
+	// order matters — the manifest currently holds B, so A must go first for
+	// each run to be a genuine alternation rather than an up-to-date no-op.
+	cycles := []struct {
+		name string
+		opts RepoIndexOptions
+	}{{"A", optsA}, {"B", optsB}, {"A again", optsA}}
+	for _, step := range cycles {
+		cycle, opts := step.name, step.opts
+		embedder.reset()
+		store.reset()
+		result, err := IndexRepository(context.Background(), opts)
+		if err != nil {
+			t.Fatalf("re-sync of %s: %v", cycle, err)
+		}
+		if embedder.count() != 0 {
+			t.Fatalf("re-sync of %s embedded %d chunks whose vectors were already cached", cycle, embedder.count())
+		}
+		if result.ChunksUpserted == 0 || result.ChunksFromCache != result.ChunksUpserted {
+			t.Fatalf("re-sync of %s = %+v, want every upserted row served from the cache", cycle, result)
+		}
+		if result.BytesEmbedded != 0 || result.EmbedBatches != 0 {
+			t.Fatalf("re-sync of %s = %+v, want zero embedder traffic", cycle, result)
+		}
+	}
+
+	// The rows still ping-pong to the last writer, and a cached vector must be
+	// the one its row's text was embedded to — the recording embedder encodes
+	// len(text) into the vector, so the pairing is checkable.
+	if _, err := IndexRepository(context.Background(), optsB); err != nil {
+		t.Fatalf("final sync of B: %v", err)
+	}
+	sawFeature := false
+	for _, row := range store.rows {
+		text, _ := row.Attributes[transcriptFieldText].(string)
+		if path, _ := row.Attributes[codeFieldFilePath].(string); path == "internal/feature.go" {
+			sawFeature = true
+			if !strings.Contains(text, "bravo") {
+				t.Fatalf("after B's sync the feature row holds %q, want B's content", text)
+			}
+		}
+		if len(row.Vector) == 0 || row.Vector[0] != float32(len(text)) {
+			t.Fatalf("row vector %v does not correspond to its text (len %d)", row.Vector, len(text))
+		}
+	}
+	if !sawFeature {
+		t.Fatal("no row for the differing file was upserted")
 	}
 }
 

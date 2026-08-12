@@ -207,7 +207,7 @@ func TestPatchFocusedReviewIgnoresNotableChanges(t *testing.T) {
 
 func TestBedrockAnthropicReviewerReviewForSummaryParsesNotableChanges(t *testing.T) {
 	reviewer := &bedrockAnthropicReviewer{
-		model: "test-model",
+		model: "anthropic.test-model",
 		transport: &directBedrockTransport{
 			region: "us-east-1", accessKey: "key", secretKey: "secret",
 			client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -227,7 +227,7 @@ func TestBedrockAnthropicReviewerReviewForSummaryParsesNotableChanges(t *testing
 
 func TestBedrockAnthropicReviewerParsesCannedResponse(t *testing.T) {
 	reviewer := &bedrockAnthropicReviewer{
-		model: "test-model",
+		model: "anthropic.test-model",
 		transport: &directBedrockTransport{
 			region: "us-east-1", accessKey: "key", secretKey: "secret",
 			client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {

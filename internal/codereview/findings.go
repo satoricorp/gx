@@ -25,6 +25,31 @@ type Finding struct {
 	File     string          `json:"file,omitempty"`
 	Line     int             `json:"line,omitempty"`
 
+	// Kind is the reviewer's own classification of what the finding asks of
+	// the reader: "defect" (the code does something wrong now), "hardening"
+	// (correct today, fragile tomorrow), or "suggestion" (nothing is wrong).
+	// Empty means the reviewer did not say. Measured on the review benchmark:
+	// findings claiming a present defect matched a human-recorded issue five
+	// times as often as hardening or suggestion findings, so this label is the
+	// strongest single noise separator the review produces.
+	Kind string `json:"kind,omitempty"`
+
+	// JudgeVerdict and the fields after it carry the verification model's
+	// assessment through to the report: "confirmed", "unverified" (the judge
+	// abstained or never ran), or empty for findings that predate the judge.
+	// The values were previously computed, used to order the report, and then
+	// discarded — leaving a reader (or any downstream ranking) no way to tell
+	// a finding the judge verified at 0.95 from one it waved through.
+	JudgeVerdict    string  `json:"judge_verdict,omitempty"`
+	JudgeImpact     string  `json:"judge_impact,omitempty"`
+	JudgeSeverity   int     `json:"judge_severity,omitempty"`
+	JudgeConfidence float64 `json:"judge_confidence,omitempty"`
+	// JudgeRank is the judge's batch-relative reading order (1 = read first),
+	// the ordering key for the report. Absolute judge scores cluster (measured:
+	// confidence mass sits in 0.8-0.9), so the ordering comes from the one
+	// model that read every candidate side by side. 0 means unranked.
+	JudgeRank int `json:"judge_rank,omitempty"`
+
 	// Corroboration names the independent reviewer legs that each raised this
 	// finding on their own. Two flagship models converging on the same problem
 	// is the strongest quality signal a multi-model panel produces, and it used
@@ -388,6 +413,12 @@ func securityQualityHintCopy(kind string) (title, recommendation string) {
 	}
 }
 
+// staticToolFailureFindings turns failed tool runs into the one deterministic
+// Blocking finding. Skipped results never qualify — that is where timeouts and
+// environment failures land (the tool never ran because dependencies are not
+// installed, or failed for a reason only the host can cause; see
+// staticToolEnvironmentFailure) — so a bare clone does not get a published
+// "fix your tools" comment about its own missing node_modules.
 func staticToolFailureFindings(ctx ReviewContext) []Finding {
 	var failed []StaticToolResult
 	for _, result := range ctx.Brief.Static.ToolResults {

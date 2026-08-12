@@ -147,6 +147,31 @@ func TestApplyJudgeResultsPrecisionFilter(t *testing.T) {
 	}
 }
 
+// TestApplyJudgeResultsRecordsRankWithoutReordering pins the measured decision:
+// the judge's batch-relative rank is carried onto the finding for offline
+// analysis, but the report order stays impact/confidence — on the 30-PR
+// benchmark, ordering by the judge's stated rank scored BELOW ordering by its
+// own severity+confidence at every top-K (39 vs 42 F1 at top-2).
+func TestApplyJudgeResultsRecordsRankWithoutReordering(t *testing.T) {
+	findings := []Finding{
+		{ID: "f.a"}, {ID: "f.b"}, {ID: "f.c"},
+	}
+	results := []judgeResult{
+		// Rank inverts what impact+confidence would produce; ordering must
+		// ignore it and follow impact then confidence anyway.
+		{CandidateID: "f.a", Verdict: "confirmed", Impact: "breaking", Severity: 5, Confidence: 0.95, Rank: 3},
+		{CandidateID: "f.b", Verdict: "confirmed", Impact: "functional", Severity: 3, Confidence: 0.8, Rank: 1},
+		{CandidateID: "f.c", Verdict: "confirmed", Impact: "breaking", Severity: 4, Confidence: 0.9, Rank: 2},
+	}
+	got := applyJudgeResults(findings, results)
+	if gotIDs := findingIDs(got); gotIDs != "f.a,f.c,f.b" {
+		t.Fatalf("order = %q, want impact then confidence (a,c,b), ignoring the judge's rank", gotIDs)
+	}
+	if got[0].JudgeRank != 3 || got[2].JudgeRank != 1 {
+		t.Fatalf("JudgeRank not carried: got %d,%d,%d", got[0].JudgeRank, got[1].JudgeRank, got[2].JudgeRank)
+	}
+}
+
 func TestCapKeepsTopThreeAdvisoryFindings(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "0")
 	root := t.TempDir()

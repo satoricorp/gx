@@ -126,6 +126,11 @@ type RepoIndexOptions struct {
 	StatePath string
 	Now       func() time.Time
 	Logf      func(format string, args ...any)
+	// EmbedCache overrides the local vector cache. When nil the run resolves
+	// the default cache from the environment — but only alongside a real
+	// embedder: a test that injects an Embedder must not be silently coupled
+	// to a persistent cache in the developer's $GX_HOME.
+	EmbedCache *EmbedCache
 }
 
 // RepoIndexResult reports exactly what a run did. Every number is observable so
@@ -144,12 +149,17 @@ type RepoIndexResult struct {
 	FilesRemoved   int
 	ChunksTotal    int
 	ChunksUpserted int
-	ChunksDeleted  int
-	BytesScanned   int64
-	BytesEmbedded  int64
-	EmbedBatches   int
-	Duration       time.Duration
-	FullRebuild    bool
+	// ChunksFromCache counts upserted chunks whose vector came from the local
+	// embed cache instead of the embedding API.
+	ChunksFromCache int
+	ChunksDeleted   int
+	BytesScanned    int64
+	// BytesEmbedded and EmbedBatches count only what was actually sent to the
+	// embedder; cache hits appear in neither.
+	BytesEmbedded int64
+	EmbedBatches  int
+	Duration      time.Duration
+	FullRebuild   bool
 }
 
 // UpToDate reports whether the run had nothing to do.
@@ -159,9 +169,9 @@ func (r RepoIndexResult) UpToDate() bool {
 
 func (r RepoIndexResult) String() string {
 	return fmt.Sprintf(
-		"namespace=%s files=%d indexed=%d skipped=%d removed=%d chunks=%d upserted=%d deleted=%d bytes=%d batches=%d duration=%s",
+		"namespace=%s files=%d indexed=%d skipped=%d removed=%d chunks=%d upserted=%d reused=%d deleted=%d bytes=%d batches=%d duration=%s",
 		r.Namespace, r.FilesScanned, r.FilesIndexed, r.FilesSkipped, r.FilesRemoved,
-		r.ChunksTotal, r.ChunksUpserted, r.ChunksDeleted, r.BytesEmbedded, r.EmbedBatches,
+		r.ChunksTotal, r.ChunksUpserted, r.ChunksFromCache, r.ChunksDeleted, r.BytesEmbedded, r.EmbedBatches,
 		r.Duration.Round(time.Millisecond),
 	)
 }
@@ -231,6 +241,10 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 	embedder := opts.Embedder
 	if embedder == nil {
 		embedder = NewOpenAIEmbedder(cfg)
+	}
+	cache := opts.EmbedCache
+	if cache == nil && opts.Embedder == nil {
+		cache = OpenDefaultEmbedCache(cfg)
 	}
 
 	statePath := strings.TrimSpace(opts.StatePath)
@@ -361,15 +375,7 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 		result.Duration = time.Since(started)
 		// Persist the manifest anyway: it records the configuration the index
 		// was verified against.
-		state.Namespace = namespace
-		state.RepoFullName = fullName
-		state.RepoRoot = absRoot
-		state.EmbeddingModel = cfg.OpenAIEmbeddingModel
-		state.Dimensions = cfg.EmbeddingDimensions
-		state.ChunkerVersion = CodeChunkerVersion
-		state.SchemaVersion = IndexSchemaVersion
-		state.CommitID = commitID
-		state.Files = nextFiles
+		applyIndexManifest(state, namespace, fullName, absRoot, cfg, commitID, nextFiles)
 		if err := SaveRepoIndexState(statePath, state); err != nil {
 			return result, err
 		}
@@ -378,17 +384,89 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 	}
 
 	batches := batchChunks(pending, codeEmbedBatchSize, codeEmbedBatchBytes)
-	result.EmbedBatches = len(batches)
-	for _, batch := range batches {
-		for _, chunk := range batch {
-			result.BytesEmbedded += int64(len(chunk.Text))
-		}
-	}
 	logf("embedding %d chunks in %d batches", len(pending), len(batches))
 
+	// Track completion per file so a failed run can bank what finished. Before
+	// this, state was saved only after every batch succeeded, so one dead
+	// connection minutes into a large first index threw away the whole run —
+	// the upserted rows persisted (row IDs are content-addressed and upserts
+	// idempotent) but the manifest that makes the next run incremental did not,
+	// and the next run re-embedded and re-paid for everything. Three attempts
+	// at indexing one benchmark repo on a flaky link cost three full embeds and
+	// produced nothing.
+	pendingPerFile := map[string]int{}
+	for _, chunk := range pending {
+		if path, _ := chunk.Attributes[codeFieldFilePath].(string); path != "" {
+			pendingPerFile[path]++
+		}
+	}
+	var doneMu sync.Mutex
+	donePerFile := map[string]int{}
+	completedBatches := 0
+
+	// bankPartialState persists the files whose pending chunks have all been
+	// upserted. Called under doneMu.
+	bankPartialState := func() int {
+		banked := 0
+		partial := make(map[string]FileIndexState, len(state.Files))
+		for path, fileState := range state.Files {
+			partial[path] = fileState
+		}
+		for path, next := range nextFiles {
+			if count := pendingPerFile[path]; count == 0 || donePerFile[path] == count {
+				partial[path] = next
+				if count > 0 {
+					banked++
+				}
+			}
+		}
+		snapshot := *state
+		applyIndexManifest(&snapshot, namespace, fullName, absRoot, cfg, commitID, partial)
+		if saveErr := SaveRepoIndexState(statePath, &snapshot); saveErr != nil {
+			logf("could not save partial index state: %v", saveErr)
+		}
+		return banked
+	}
+
+	// bankEveryNBatches trades a little JSON writing for crash safety. The
+	// error-path save below covers a run that fails and returns; it cannot
+	// cover a run that is killed — a harness timeout, a closed laptop — and a
+	// first index of a large repository runs long enough to meet both. Measured
+	// before this: a one-hour sentry embed killed at a timeout banked nothing.
+	const bankEveryNBatches = 25
+
 	if err := runBatches(ctx, batches, opts.Concurrency, func(ctx context.Context, batch []Chunk) error {
-		return embedAndUpsert(ctx, embedder, store, batch)
+		stats, err := embedAndUpsert(ctx, embedder, store, cache, batch)
+		if err != nil {
+			return err
+		}
+		doneMu.Lock()
+		for _, chunk := range batch {
+			if path, _ := chunk.Attributes[codeFieldFilePath].(string); path != "" {
+				donePerFile[path]++
+			}
+		}
+		result.ChunksFromCache += stats.reused
+		result.BytesEmbedded += stats.embeddedBytes
+		if stats.embedded > 0 {
+			result.EmbedBatches++
+		}
+		completedBatches++
+		if completedBatches%bankEveryNBatches == 0 {
+			bankPartialState()
+		}
+		doneMu.Unlock()
+		return nil
 	}); err != nil {
+		// Bank every file whose pending chunks all made it. Seeded from
+		// state.Files — what the next run may reuse — not previousFiles, so an
+		// interrupted full rebuild banks only what it actually rebuilt.
+		doneMu.Lock()
+		banked := bankPartialState()
+		doneMu.Unlock()
+		if banked > 0 {
+			logf("index failed with %d file(s) completed; partial state saved, the next run resumes from it", banked)
+		}
 		result.Duration = time.Since(started)
 		return result, err
 	}
@@ -402,18 +480,18 @@ func IndexRepository(ctx context.Context, opts RepoIndexOptions) (RepoIndexResul
 		result.ChunksDeleted = len(deleteIDs)
 	}
 
-	state.Namespace = namespace
-	state.RepoFullName = fullName
-	state.RepoRoot = absRoot
-	state.EmbeddingModel = cfg.OpenAIEmbeddingModel
-	state.Dimensions = cfg.EmbeddingDimensions
-	state.ChunkerVersion = CodeChunkerVersion
-	state.SchemaVersion = IndexSchemaVersion
-	state.CommitID = commitID
-	state.Files = nextFiles
+	applyIndexManifest(state, namespace, fullName, absRoot, cfg, commitID, nextFiles)
 	if err := SaveRepoIndexState(statePath, state); err != nil {
 		result.Duration = time.Since(started)
 		return result, err
+	}
+
+	// Only a run that wrote new cache entries can push the cache over its cap,
+	// so up-to-date and all-hit runs skip the walk entirely.
+	if result.BytesEmbedded > 0 {
+		if removed := cache.Prune(); removed > 0 {
+			logf("evicted %d cached vectors to stay under the cache cap", removed)
+		}
 	}
 
 	result.Duration = time.Since(started)
@@ -518,6 +596,23 @@ func batchChunks(chunks []Chunk, maxCount, maxBytes int) [][]Chunk {
 	return batches
 }
 
+// applyIndexManifest stamps the configuration an index run was built against.
+// Three save sites write these same fields — success, up-to-date, and the
+// partial save on failure — and a field added to one but not the others would
+// quietly produce states that disagree about their own compatibility.
+func applyIndexManifest(state *RepoIndexState, namespace, fullName, absRoot string,
+	cfg Config, commitID string, files map[string]FileIndexState) {
+	state.Namespace = namespace
+	state.RepoFullName = fullName
+	state.RepoRoot = absRoot
+	state.EmbeddingModel = cfg.OpenAIEmbeddingModel
+	state.Dimensions = cfg.EmbeddingDimensions
+	state.ChunkerVersion = CodeChunkerVersion
+	state.SchemaVersion = IndexSchemaVersion
+	state.CommitID = commitID
+	state.Files = files
+}
+
 func runBatches(ctx context.Context, batches [][]Chunk, concurrency int, fn func(context.Context, []Chunk) error) error {
 	if len(batches) == 0 {
 		return nil
@@ -565,23 +660,56 @@ func runBatches(ctx context.Context, batches [][]Chunk, concurrency int, fn func
 	return firstErr
 }
 
-func embedAndUpsert(ctx context.Context, embedder Embedder, store CodeVectorStore, batch []Chunk) error {
-	inputs := make([]string, 0, len(batch))
-	for _, chunk := range batch {
-		inputs = append(inputs, chunk.Text)
+type embedStats struct {
+	embedded      int
+	reused        int
+	embeddedBytes int64
+}
+
+// embedAndUpsert uploads one batch, taking each vector from the local cache
+// when the exact same text has been embedded before and from the embedder
+// otherwise. The upsert itself is never skipped: row ids are positional, so
+// when two checkouts of one repository alternate into a shared namespace, each
+// sync must still rewrite the rows the other checkout overwrote — reusing the
+// vector removes only the API call, which is the part that was being paid for
+// repeatedly (and rate-limited) before the cache existed.
+func embedAndUpsert(ctx context.Context, embedder Embedder, store CodeVectorStore, cache *EmbedCache, batch []Chunk) (embedStats, error) {
+	var stats embedStats
+	vectors := make([][]float32, len(batch))
+	missIndexes := make([]int, 0, len(batch))
+	missInputs := make([]string, 0, len(batch))
+	for index, chunk := range batch {
+		if vector := cache.Get(chunk.Text); vector != nil {
+			vectors[index] = vector
+			stats.reused++
+			continue
+		}
+		missIndexes = append(missIndexes, index)
+		missInputs = append(missInputs, chunk.Text)
 	}
-	embeddings, err := embedder.Embed(ctx, inputs)
-	if err != nil {
-		return fmt.Errorf("embed code chunks: %w", err)
-	}
-	if len(embeddings) != len(batch) {
-		return fmt.Errorf("embedder returned %d embeddings for %d chunks", len(embeddings), len(batch))
+	if len(missInputs) > 0 {
+		embeddings, err := embedder.Embed(ctx, missInputs)
+		if err != nil {
+			return stats, fmt.Errorf("embed code chunks: %w", err)
+		}
+		if len(embeddings) != len(missInputs) {
+			return stats, fmt.Errorf("embedder returned %d embeddings for %d chunks", len(embeddings), len(missInputs))
+		}
+		for position, index := range missIndexes {
+			vectors[index] = embeddings[position]
+			// Cached before the upsert on purpose: a vector is valid the moment
+			// the embedder returns it, and a run that dies on upload should
+			// still leave its retry a warm cache.
+			cache.Put(batch[index].Text, embeddings[position])
+			stats.embeddedBytes += int64(len(missInputs[position]))
+		}
+		stats.embedded = len(missInputs)
 	}
 	rows := make([]VectorRow, 0, len(batch))
 	for index, chunk := range batch {
-		rows = append(rows, VectorRow{ID: chunk.ID, Vector: embeddings[index], Attributes: chunk.Attributes})
+		rows = append(rows, VectorRow{ID: chunk.ID, Vector: vectors[index], Attributes: chunk.Attributes})
 	}
-	return store.Upsert(ctx, rows)
+	return stats, store.Upsert(ctx, rows)
 }
 
 // listRepositoryFiles prefers `git ls-files` so .gitignore is honoured without

@@ -294,8 +294,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		if len(outcome.Unjudged) > 0 {
 			// Unverified candidates fall back to the deduped, strength-capped
 			// set rather than being dropped, because an unreachable judge is
-			// not a verdict.
-			advisory = append(advisory, capAdvisoryFindings(outcome.Unjudged, opts.MaxFindings)...)
+			// not a verdict. Marked so a reader can tell them from findings the
+			// judge actually checked.
+			unjudged := capAdvisoryFindings(outcome.Unjudged, opts.MaxFindings)
+			for i := range unjudged {
+				unjudged[i].JudgeVerdict = "unverified"
+			}
+			advisory = append(advisory, unjudged...)
 		}
 		if outcome.BatchesFailed > 0 {
 			// A failed verification used to be invisible: findings silently

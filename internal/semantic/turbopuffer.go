@@ -110,8 +110,12 @@ func (c *TurboPufferClient) Upsert(ctx context.Context, rows []VectorRow) error 
 	return lastErr
 }
 
-// upsertMaxAttempts bounds retries of one upsert request.
-const upsertMaxAttempts = 4
+// upsertMaxAttempts bounds retries of one upsert request. Six attempts with
+// exponential backoff spans roughly a minute of outage; the previous four
+// spanned seven seconds, which a marginal route — 4-second TLS handshakes,
+// minute-long DNS blips, measured while indexing the benchmark repos — walked
+// straight through, costing whole index runs to weather one flaky window.
+const upsertMaxAttempts = 6
 
 // upsertOnce performs a single upsert and reports whether a failure is worth
 // retrying.

@@ -145,6 +145,8 @@ func bedrockTransportShortName(kind string) string {
 		return "AWS"
 	case bedrockTransportKindCloud:
 		return "gx Cloud"
+	case "openai":
+		return "OpenAI"
 	default:
 		return ""
 	}
@@ -197,6 +199,84 @@ func bedrockRequestPayload(system, input string, maxOutputTokens int) bedrockReq
 	}
 }
 
+// bedrockModelSpeaksAnthropic reports whether a model takes the Anthropic
+// messages body on InvokeModel. Anthropic model IDs — bare, profile-prefixed,
+// or inside an ARN — all carry "anthropic."; every other vendor on Bedrock
+// (Amazon Nova, Meta Llama, Mistral, Writer, ...) has its own native body, and
+// the one shape they all share is the Converse API.
+func bedrockModelSpeaksAnthropic(model string) bool {
+	return strings.Contains(model, "anthropic.")
+}
+
+// bedrockActionForModel is the bedrock-runtime endpoint suffix for one model:
+// Anthropic models keep the InvokeModel wire gx has always spoken; everyone
+// else goes through Converse, whose request and reply shapes are model-agnostic.
+func bedrockActionForModel(model string) string {
+	if bedrockModelSpeaksAnthropic(model) {
+		return "invoke"
+	}
+	return "converse"
+}
+
+// converseRequestBody is the Converse API's model-agnostic request shape. It
+// exists so a reviewer leg can be a non-Anthropic model without gx learning
+// each vendor's native InvokeModel dialect.
+type converseRequestBody struct {
+	System          []converseText          `json:"system,omitempty"`
+	Messages        []converseMessage       `json:"messages"`
+	InferenceConfig converseInferenceConfig `json:"inferenceConfig"`
+}
+
+type converseText struct {
+	Text string `json:"text"`
+}
+
+type converseMessage struct {
+	Role    string         `json:"role"`
+	Content []converseText `json:"content"`
+}
+
+type converseInferenceConfig struct {
+	MaxTokens int `json:"maxTokens"`
+}
+
+// converseResponseBody is the Converse reply. Content blocks other than text —
+// a reasoning model's reasoningContent, for instance — decode with an empty
+// Text and are skipped by text(), which is the behaviour we want: the leg's
+// answer is its answer, not its scratch work.
+type converseResponseBody struct {
+	Output struct {
+		Message struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	} `json:"output"`
+	StopReason string `json:"stopReason"`
+}
+
+func (r converseResponseBody) text() string {
+	var b strings.Builder
+	for _, block := range r.Output.Message.Content {
+		b.WriteString(block.Text)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func converseRequestPayload(system, input string, maxOutputTokens int) converseRequestBody {
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = defaultReviewMaxOutputTokens
+	}
+	body := converseRequestBody{
+		Messages:        []converseMessage{{Role: "user", Content: []converseText{{Text: input}}}},
+		InferenceConfig: converseInferenceConfig{MaxTokens: maxOutputTokens},
+	}
+	if strings.TrimSpace(system) != "" {
+		body.System = []converseText{{Text: system}}
+	}
+	return body
+}
+
 // directBedrockTransport signs and posts InvokeModel itself.
 //
 // gx depends on no AWS SDK, so the SigV4 signing below is the whole of it. That
@@ -238,7 +318,11 @@ func (t *directBedrockTransport) complete(ctx context.Context, model, system, in
 	if t == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
-	body, err := json.Marshal(bedrockRequestPayload(system, input, maxOutputTokens))
+	var payload any = bedrockRequestPayload(system, input, maxOutputTokens)
+	if !bedrockModelSpeaksAnthropic(model) {
+		payload = converseRequestPayload(system, input, maxOutputTokens)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return bedrockCompletion{}, fmt.Errorf("marshal Bedrock request: %w", err)
 	}
@@ -295,15 +379,24 @@ func (t *directBedrockTransport) completeOnce(ctx context.Context, model string,
 	if readErr != nil {
 		return bedrockCompletion{}, true, fmt.Errorf("read Bedrock response for %s: %w", model, readErr)
 	}
-	var decoded bedrockResponseBody
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return bedrockCompletion{}, false, fmt.Errorf("decode Bedrock response for %s: %w", model, err)
+	var text, stopReason string
+	if bedrockModelSpeaksAnthropic(model) {
+		var decoded bedrockResponseBody
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return bedrockCompletion{}, false, fmt.Errorf("decode Bedrock response for %s: %w", model, err)
+		}
+		text, stopReason = decoded.text(), decoded.StopReason
+	} else {
+		var decoded converseResponseBody
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return bedrockCompletion{}, false, fmt.Errorf("decode Bedrock Converse response for %s: %w", model, err)
+		}
+		text, stopReason = decoded.text(), decoded.StopReason
 	}
-	text := decoded.text()
 	if text == "" {
 		return bedrockCompletion{}, false, fmt.Errorf("Bedrock model %s returned no content", model)
 	}
-	return bedrockCompletion{Text: text, StopReason: decoded.StopReason}, false, nil
+	return bedrockCompletion{Text: text, StopReason: stopReason}, false, nil
 }
 
 func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model string, body []byte) (*http.Request, error) {
@@ -312,13 +405,14 @@ func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model str
 		return nil, fmt.Errorf("Bedrock request has no model")
 	}
 	host := "bedrock-runtime." + t.region + ".amazonaws.com"
+	action := bedrockActionForModel(model)
 	// The request line carries the path escaped once; the canonical request
 	// carries it escaped twice. See bedrockCanonicalPath for why they differ.
-	rawPath := bedrockRequestPath(model)
+	rawPath := bedrockRequestPath(model, action)
 	endpoint := &url.URL{
 		Scheme:  "https",
 		Host:    host,
-		Path:    "/model/" + model + "/invoke",
+		Path:    "/model/" + model + "/" + action,
 		RawPath: rawPath,
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
@@ -327,7 +421,7 @@ func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model str
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if err := t.signV4(req, host, bedrockCanonicalPath(model), body, time.Now().UTC()); err != nil {
+	if err := t.signV4(req, host, bedrockCanonicalPath(model, action), body, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	return req, nil
@@ -335,8 +429,8 @@ func (t *directBedrockTransport) newSignedRequest(ctx context.Context, model str
 
 // bedrockRequestPath is the path that goes on the wire: each path segment
 // percent-encoded once, which is what an HTTP request line requires.
-func bedrockRequestPath(model string) string {
-	return "/model/" + awsEscapePathSegment(model) + "/invoke"
+func bedrockRequestPath(model, action string) string {
+	return "/model/" + awsEscapePathSegment(model) + "/" + action
 }
 
 // bedrockCanonicalPath is the path that goes into the SigV4 canonical request,
@@ -360,8 +454,8 @@ func bedrockRequestPath(model string) string {
 // AWS itself supplied the expected canonical string in that error response, and
 // TestBedrockCanonicalRequestMatchesAWSExpectation pins this function's output
 // against it verbatim.
-func bedrockCanonicalPath(model string) string {
-	return "/model/" + awsEscapePathSegment(awsEscapePathSegment(model)) + "/invoke"
+func bedrockCanonicalPath(model, action string) string {
+	return "/model/" + awsEscapePathSegment(awsEscapePathSegment(model)) + "/" + action
 }
 
 // signV4 applies AWS Signature Version 4 to a bedrock-runtime request.
@@ -486,6 +580,12 @@ func (t *cloudBedrockTransport) detail() string {
 func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, input string, maxOutputTokens int) (bedrockCompletion, error) {
 	if t == nil || t.client == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
+	}
+	if !bedrockModelSpeaksAnthropic(model) {
+		// gx Cloud's /gx/bedrock/fight normalizes the Anthropic messages shape
+		// only. Refusing here is honest; forwarding would fail server-side with
+		// an error that points at the wrong layer.
+		return bedrockCompletion{}, fmt.Errorf("model %s needs Bedrock's Converse API, which gx Cloud does not speak yet; set %s=1 with AWS_* credentials to use it on your own AWS account", model, bedrockDirectEnvVar)
 	}
 	payload := bedrockRequestPayload(system, input, maxOutputTokens)
 	resp, err := t.client.BedrockFight(ctx, cloud.BedrockFightRequest{

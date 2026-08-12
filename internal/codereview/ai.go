@@ -319,12 +319,26 @@ func reviewerFromEnvFast(fast bool) AIReviewer {
 			modelA, modelB = modelB, ""
 		}
 	}
+	// A leg's transport follows its model: openai:-prefixed models go to the
+	// OpenAI API, everything else rides the resolved Bedrock plan. A missing
+	// OPENAI_API_KEY surfaces as that leg being unavailable with the fix in
+	// the reason, never as a silently absent reviewer.
+	buildLeg := func(name, slot, model string) namedAIReviewer {
+		if modelUsesOpenAI(model) {
+			transport, err := newOpenAITransport()
+			if err != nil {
+				return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: unavailableAIReviewer{reason: err.Error()}}
+			}
+			return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: newBedrockReviewer(transport, model)}
+		}
+		return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), model)}
+	}
 	var reviewers []namedAIReviewer
 	if modelA != "" {
-		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-a", label: bedrockLegLabel("Bedrock A", modelA, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelA)})
+		reviewers = append(reviewers, buildLeg("bedrock-a", "Bedrock A", modelA))
 	}
 	if modelB != "" {
-		reviewers = append(reviewers, namedAIReviewer{name: "bedrock-b", label: bedrockLegLabel("Bedrock B", modelB, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), modelB)})
+		reviewers = append(reviewers, buildLeg("bedrock-b", "Bedrock B", modelB))
 	}
 	if len(reviewers) == 0 {
 		// Both legs off is a configuration mistake, not a request for a review
@@ -850,7 +864,8 @@ func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 		"Use review_profile and depth to choose behavior: patch_focused means current-change review; prompt_directed means use review_prompt to guide a broader review of how the current diff affects the surrounding codebase; scope_focused means the requested scope; deep_full_spectrum means full-spectrum review.",
 		"Use triage.class and triage.risk_tags to weight your review: for security-sensitive changes prioritize the tagged risks; for mechanical changes only report real breakage.",
 		"When review_prompt is present, answer it directly. Treat static.diff_snippets as evidence for why the prompted concern matters now, but inspect surrounding Modules, Interfaces, tests, docs, local policy, and retrieved context when they explain impact or the correct fix.",
-		"For patch_focused and pr_summary reviews, prioritize concrete bugs, security/auth issues, data correctness, race/idempotency, error handling, missing tests, observability, deploy/CI risks, and dependency regressions introduced or exposed by static.diff_snippets.",
+		"For patch_focused and pr_summary reviews, prioritize present-behavior defects introduced or exposed by static.diff_snippets: wrong logic (a value, condition, or control flow that computes the wrong thing), API-contract misuse (a call a library, framework, or interface does not support or that violates its documented semantics — verify the contract against the retrieved code or the definition, do not assume), null/missing-value handling on inputs the code actually receives, security/auth issues demonstrable on a reachable path, race/idempotency hazards with a nameable interleaving, data correctness, and locale/i18n correctness.",
+		"Error-handling gaps, missing tests, observability, and hypothetical concurrency are the classic noise of automated review: report them only when you can name the input or interleaving that occurs on a path this change actually executes. A rescue that would matter if a caller someday passed something new is hardening, not a defect, and padding the review with such findings buries the defect the reader needed to see.",
 		"For patch_focused and pr_summary reviews, broad architecture, naming, docs, cleanup, or Module-depth advice is invalid unless it directly explains a changed-line bug or review risk.",
 		"For prompt_directed reviews, prioritize findings where review_prompt, the current diff, and broader repo context intersect. Do not limit yourself to changed lines, but do not emit generic repo-wide advice unrelated to review_prompt.",
 		"For deep_full_spectrum reviews, check security, bugs, data integrity, concurrency, idempotency, architecture, testing, observability, performance, dependencies, docs, and operability while still grounding every finding in changed files, tool output, local policy, or retrieved context.",
@@ -878,7 +893,8 @@ func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
 		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
-		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"kind\":\"defect|hardening|suggestion\",\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		"`kind` classifies what the finding asks of the reader, and honesty here matters more than severity: `defect` means the change's code does something wrong RIGHT NOW — a stated mechanism produces a crash, a wrong value, a race, a broken flow on inputs the code actually receives. `hardening` means the code is correct today but fragile — the failure needs a hypothetical future change or an input nothing currently sends. `suggestion` means style, naming, structure, tests, docs, or any improvement where nothing is incorrect. Do not inflate a hardening or suggestion into a defect to make it land; a reader who acts on a defect label and finds working code stops trusting every label.",
 		fmt.Sprintf("Return at most %d recommendations, ordered by significance. Report every real defect you find up to that ceiling — do not stop early to be brief, and do not pad to reach it.", resolveMaxFindings(brief.MaxFindings)),
 	}
 }
