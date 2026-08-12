@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -154,6 +157,100 @@ func TestReviewResourceQueryTextIncludesPromptedReviewIntent(t *testing.T) {
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("prompted query missing %q in:\n%s", want, query)
+		}
+	}
+}
+
+// The tag strings here are the contract with scripts/review-knowledge/sources.yaml:
+// reviewResourceSignalFilter matches them against language_tags, so a tag that
+// does not appear verbatim under a `languages:` key can never match a corpus
+// source, and that source stays reachable only through the unfiltered leg.
+func TestLanguageTagsForFiles(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{name: "typescript implies javascript", files: []string{"web/app.tsx"}, want: []string{"javascript", "typescript"}},
+		{name: "javascript", files: []string{"web/app.mjs"}, want: []string{"javascript"}},
+		{name: "python", files: []string{"svc/main.py"}, want: []string{"python"}},
+		{name: "go", files: []string{"internal/review/engine.go"}, want: []string{"go"}},
+		{name: "rust", files: []string{"src/lib.rs"}, want: []string{"rust"}},
+		{name: "java", files: []string{"src/Main.java"}, want: []string{"java"}},
+		{name: "c", files: []string{"src/parse.c"}, want: []string{"c"}},
+		{name: "cpp", files: []string{"src/parse.cpp"}, want: []string{"cpp"}},
+		{name: "ambiguous header", files: []string{"src/parse.h"}, want: []string{"c", "cpp"}},
+		{name: "csharp", files: []string{"src/Program.cs"}, want: []string{"csharp"}},
+		{name: "sql", files: []string{"db/migrations/001_add_users.sql"}, want: []string{"sql"}},
+		{name: "shell", files: []string{"scripts/deploy.sh"}, want: []string{"shell"}},
+		{name: "shell basenames", files: []string{"Makefile", "justfile"}, want: []string{"shell"}},
+		{name: "php", files: []string{"public/index.php"}, want: []string{"php"}},
+		{name: "kotlin", files: []string{"app/Main.kt"}, want: []string{"kotlin"}},
+		{name: "swift", files: []string{"ios/AppDelegate.swift"}, want: []string{"swift"}},
+		{name: "ruby", files: []string{"app/models/user.rb"}, want: []string{"ruby"}},
+		{name: "ruby rake task", files: []string{"lib/tasks/import.rake"}, want: []string{"ruby"}},
+		{name: "ruby gemspec", files: []string{"gx.gemspec"}, want: []string{"ruby"}},
+		{name: "ruby basenames", files: []string{"Rakefile", "Gemfile", "Gemfile.lock"}, want: []string{"ruby"}},
+		{name: "dart", files: []string{"lib/main.dart"}, want: []string{"dart"}},
+		{name: "terraform", files: []string{"infra/main.tf"}, want: []string{"terraform"}},
+		{name: "terraform vars", files: []string{"infra/prod.tfvars"}, want: []string{"terraform"}},
+		{name: "html", files: []string{"public/index.html"}, want: []string{"html"}},
+		{name: "htm", files: []string{"public/legacy.htm"}, want: []string{"html"}},
+		{name: "dockerfile", files: []string{"Dockerfile"}, want: []string{"docker", "shell"}},
+		{name: "dockerfile variant", files: []string{"deploy/Dockerfile.prod"}, want: []string{"docker", "shell"}},
+		{name: "dockerfile extension", files: []string{"deploy/api.dockerfile"}, want: []string{"docker", "shell"}},
+		{name: "unmapped extension", files: []string{"README.md", "config.yaml"}, want: nil},
+		// Kubernetes manifests are plain YAML with no distinguishing path or
+		// extension, so the kubernetes corpus tag stays deliberately unmapped
+		// here rather than guessed at from a filename.
+		{name: "kubernetes manifest stays unmapped", files: []string{"k8s/deployment.yaml"}, want: nil},
+		{name: "mixed change set", files: []string{"app/models/user.rb", "lib/main.dart", "infra/main.tf", "public/index.html"}, want: []string{"dart", "html", "ruby", "terraform"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := languageTagsForFiles(tt.files)
+			if len(got) != len(tt.want) {
+				t.Fatalf("languageTagsForFiles(%v) = %#v, want %#v", tt.files, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("languageTagsForFiles(%v) = %#v, want %#v", tt.files, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// Guards the mapping above against the manifest itself: every tag the extension
+// map can emit must exist verbatim as a `languages:` value in sources.yaml.
+func TestLanguageTagsForFilesMatchManifestTags(t *testing.T) {
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "review-knowledge", "sources.yaml"))
+	if err != nil {
+		t.Fatalf("read sources.yaml: %v", err)
+	}
+	declared := map[string]bool{}
+	for _, match := range regexp.MustCompile(`languages:\s*\[([^\]]*)\]`).FindAllStringSubmatch(string(manifest), -1) {
+		for _, tag := range strings.Split(match[1], ",") {
+			if tag = strings.TrimSpace(tag); tag != "" {
+				declared[tag] = true
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatalf("no languages: tags parsed from sources.yaml")
+	}
+
+	emitted := languageTagsForFiles([]string{
+		"web/app.tsx", "web/app.mjs", "svc/main.py", "internal/review/engine.go",
+		"src/lib.rs", "src/Main.java", "src/parse.c", "src/parse.cpp", "src/parse.h",
+		"src/Program.cs", "db/001.sql", "scripts/deploy.sh", "public/index.php",
+		"app/Main.kt", "ios/AppDelegate.swift", "app/models/user.rb", "lib/main.dart",
+		"infra/main.tf", "public/index.html", "Dockerfile",
+	})
+	for _, tag := range emitted {
+		if !declared[tag] {
+			t.Errorf("languageTagsForFiles emits %q, which no sources.yaml source declares under languages:", tag)
 		}
 	}
 }

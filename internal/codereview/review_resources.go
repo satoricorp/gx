@@ -625,9 +625,30 @@ func languageTagsForFiles(files []string) []string {
 			tags["kotlin"] = struct{}{}
 		case ".swift":
 			tags["swift"] = struct{}{}
+		case ".rb", ".rake", ".gemspec":
+			tags["ruby"] = struct{}{}
+		case ".dart":
+			tags["dart"] = struct{}{}
+		case ".tf", ".tfvars":
+			tags["terraform"] = struct{}{}
+		case ".html", ".htm":
+			tags["html"] = struct{}{}
+		case ".dockerfile":
+			tags["docker"] = struct{}{}
+			tags["shell"] = struct{}{}
 		}
 		switch base {
-		case "dockerfile", "makefile", "justfile":
+		case "makefile", "justfile":
+			tags["shell"] = struct{}{}
+		case "rakefile", "gemfile", "gemfile.lock":
+			tags["ruby"] = struct{}{}
+		}
+		// Dockerfile, and the Dockerfile.<variant> convention. Both tags: the
+		// corpus source is Dockerfile-specific (layer ordering, multi-stage,
+		// pinning, USER), while RUN lines are still shell and were already
+		// picking up shell guidance before docker was mapped at all.
+		if base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") {
+			tags["docker"] = struct{}{}
 			tags["shell"] = struct{}{}
 		}
 	}
