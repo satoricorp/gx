@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.docker.com/build/building/best-practices/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c1f7ea6bf8e06d094b9f65c4ba32a4b5012d1371e7fdecada48048144f831396",
+  "source_id": "docker-build-best-practices"
+}

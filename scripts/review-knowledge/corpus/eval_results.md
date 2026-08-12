@@ -1,6 +1,6 @@
 # Review Corpus Eval Results
 
-generated_at: 2026-08-07
+generated_at: 2026-08-12
 baseline_namespace: gx-review-knowledge
 candidate_namespace: review-corpus-v2
 

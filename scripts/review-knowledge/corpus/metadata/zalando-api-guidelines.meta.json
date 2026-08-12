@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://opensource.zalando.com/restful-api-guidelines/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ceffba72a7838433fafc046d405fb925f793e06b80ec859c26b99bcd2d050ef1",
+  "source_id": "zalando-api-guidelines"
+}

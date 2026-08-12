@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/security.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3e3471710fd560cafa4202cc918b6e1145d1946a9917b35b4d3e8eb23a92d322",
+  "source_id": "rails-security"
+}

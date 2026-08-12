@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://abseil.io/resources/swe-book/html/ch12.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "9edd34d84fd36d41fa1245dfa33c5246c4fe2a03ee186b9a3a83717d4a56d6e3",
+  "source_id": "abseil-swe-unit-testing"
+}

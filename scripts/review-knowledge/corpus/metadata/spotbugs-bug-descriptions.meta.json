@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://spotbugs.readthedocs.io/en/stable/bugDescriptions.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c35341659ee15617135a79f0e5783189665618c6a22a03ac2778adb2c6b3fffb",
+  "source_id": "spotbugs-bug-descriptions"
+}

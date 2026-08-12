@@ -370,6 +370,172 @@ sources:
     tier: security
     languages: [dart]
     notes: "Flutter security philosophy and app hardening best practices."
+  # --- 2026-08-12 gap fill: language-agnostic architecture/API design, testing,
+  # accessibility, IaC, and the Java/Kotlin/C-C++/Ruby/Swift/PHP ecosystems. ---
+  - id: azure-cloud-design-patterns
+    url: https://learn.microsoft.com/en-us/azure/architecture/patterns/
+    tier: process
+    authority: 1
+    crawl_depth: 1
+    max_urls: 60
+    notes: "Cloud design patterns catalog (retry, circuit breaker, saga, CQRS, etc.). Index links each pattern page; the patterns are language-agnostic architecture guidance directly citable in reviews."
+  - id: google-aip
+    url: https://google.aip.dev/
+    tier: process
+    authority: 1
+    crawl_depth: 2
+    max_urls: 150
+    notes: "Google API Improvement Proposals: resource-oriented API design, naming, standard methods, errors, versioning. One AIP per page chunks atomically. CC-BY. Crawl from the root: crawl_links only follows path-prefix matches, and per-AIP paths (/121) do not extend /general — depth 2 reaches root -> index -> AIP pages."
+  - id: zalando-api-guidelines
+    url: https://opensource.zalando.com/restful-api-guidelines/
+    tier: process
+    authority: 2
+    notes: "Zalando RESTful API guidelines, CC-BY. Single-page render of the full guideline set with MUST/SHOULD/MAY rule numbering."
+  - id: twelve-factor
+    url: https://12factor.net/
+    tier: process
+    crawl_depth: 1
+    notes: "12-Factor App methodology, CC-BY. Factor pages are small atomic chunks; config/backing-services/logs factors are the review-relevant ones."
+  - id: aws-well-architected
+    url: https://docs.aws.amazon.com/pdfs/wellarchitected/latest/framework/wellarchitected-framework.pdf
+    tier: process
+    authority: 3
+    fetch: pdf
+    notes: "AWS Well-Architected Framework pillars, whole-framework PDF. The HTML welcome page yields 3.5KB (TOC is JS-injected and crawl_links cannot expand past welcome.html); the official PDF export carries the full text."
+  - id: abseil-swe-testing-overview
+    url: https://abseil.io/resources/swe-book/html/ch11.html
+    tier: process
+    license: verify
+    notes: "SWE at Google book ch11 Testing Overview (test sizes, scope, Beyonce rule). CC BY-NC-ND - verify redistribution posture before any public corpus export."
+  - id: abseil-swe-unit-testing
+    url: https://abseil.io/resources/swe-book/html/ch12.html
+    tier: process
+    license: verify
+    notes: "SWE at Google book ch12 Unit Testing (change-detector tests, testing state vs interactions, DAMP over DRY). Same CC BY-NC-ND caveat as ch11."
+  - id: aria-authoring-practices
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/
+    tier: language
+    languages: [html, typescript, javascript]
+    crawl_depth: 1
+    max_urls: 60
+    notes: "W3C ARIA Authoring Practices Guide component patterns: correct roles/states/keyboard interaction per widget. W3C document license."
+  - id: wcag-understanding
+    url: https://www.w3.org/WAI/WCAG22/Understanding/
+    tier: language
+    languages: [html, typescript, javascript]
+    crawl_depth: 1
+    max_urls: 120
+    notes: "WCAG 2.2 Understanding docs: one page per success criterion with intent, examples, and failures. The quickref is a JS app and does not fetch; these pages are static."
+  - id: docker-build-best-practices
+    url: https://docs.docker.com/build/building/best-practices/
+    tier: language
+    languages: [docker]
+    notes: "Dockerfile best practices: layer ordering, multi-stage builds, pinning, secrets, USER. Single page."
+  - id: kubernetes-config-best-practices
+    url: https://kubernetes.io/docs/concepts/configuration/overview/
+    tier: language
+    languages: [kubernetes]
+    notes: "Kubernetes configuration best practices: naked pods, labels, probes, resource limits. Single page, CC-BY."
+  - id: terraform-style-guide
+    url: https://developer.hashicorp.com/terraform/language/style
+    tier: style
+    languages: [terraform]
+    notes: "HashiCorp Terraform style and structure guide. developer.hashicorp.com is SSR; check fetch report."
+  - id: github-actions-security-hardening
+    url: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
+    tier: security
+    notes: "GitHub Actions hardening: script injection via contexts, pull_request_target, pinning actions to SHAs, secrets handling. Cross-cutting CI review guidance."
+  - id: google-javaguide
+    url: https://google.github.io/styleguide/javaguide.html
+    tier: language
+    languages: [java]
+    authority: 1
+    precedence_group: java-style
+    notes: "Google Java Style Guide. Single page like tsguide."
+  - id: errorprone-bugpatterns
+    url: https://errorprone.info/
+    tier: style
+    languages: [java]
+    authority: 1
+    precedence_group: java-style
+    crawl_depth: 2
+    max_urls: 550
+    notes: "Error Prone bug patterns: per-pattern pages with problem/fix examples, the Java analogue of clippy/eslint rule pages. Crawl from the root: /bugpattern/X paths do not extend /bugpatterns so the index page alone cannot expand; depth 2 reaches root -> bugpatterns index -> per-pattern pages. Large crawl like shellcheck."
+  - id: spotbugs-bug-descriptions
+    url: https://spotbugs.readthedocs.io/en/stable/bugDescriptions.html
+    tier: style
+    languages: [java]
+    notes: "SpotBugs bug descriptions, one big page covering correctness/malicious-code/security categories. readthedocs allows fetch (the old robots failures were the urllib UA artifact)."
+  - id: oracle-secure-coding-java
+    url: https://www.oracle.com/java/technologies/javase/seccodeguide.html
+    tier: security
+    languages: [java]
+    notes: "Oracle Secure Coding Guidelines for Java SE: injection, accessibility/extensibility, serialization. Single long page; check fetch report for robots."
+  - id: kotlin-coding-conventions
+    url: https://kotlinlang.org/docs/coding-conventions.html
+    tier: language
+    languages: [kotlin]
+    authority: 1
+    precedence_group: kotlin-style
+    notes: "Official Kotlin coding conventions."
+  - id: android-kotlin-style
+    url: https://developer.android.com/kotlin/style-guide
+    tier: language
+    languages: [kotlin]
+    precedence_group: kotlin-style
+    notes: "Android Kotlin style guide; mechanical rules for Android codebases. Loses to kotlinlang conventions on conflicts outside Android."
+  - id: cpp-core-guidelines
+    url: https://github.com/isocpp/CppCoreGuidelines/blob/master/CppCoreGuidelines.md
+    tier: language
+    languages: [cpp]
+    authority: 1
+    fetch: github-md
+    notes: "Stroustrup/Sutter C++ Core Guidelines, one very large markdown; sections chunk along rule ids (ES.*, R.*, CP.*). The closest thing C++ has to a review spine."
+  - id: clang-tidy-checks
+    url: https://github.com/llvm/llvm-project/tree/main/clang-tools-extra/docs/clang-tidy/checks
+    tier: style
+    languages: [cpp, c]
+    fetch: github-md
+    crawl_depth: 2
+    max_urls: 500
+    notes: "clang-tidy per-check docs (bugprone-*, cert-*, cppcoreguidelines-*, modernize-*) as .rst from the LLVM repo, like sqlfluff. The rendered list.html cannot expand (check pages do not extend the list.html path prefix). Depth 2 recurses into the per-module subdirectories. cert-* checks partially cover SEI CERT, whose Confluence wiki cannot be crawled directly."
+  - id: ruby-style-guide
+    url: https://rubystyle.guide/
+    tier: language
+    languages: [ruby]
+    authority: 1
+    precedence_group: ruby-style
+    notes: "Community Ruby style guide (RuboCop's rule basis). Single long page."
+  - id: rails-style-guide
+    url: https://rails.rubystyle.guide/
+    tier: language
+    languages: [ruby]
+    precedence_group: ruby-style
+    notes: "Community Rails style guide. Single long page."
+  - id: rails-security
+    url: https://guides.rubyonrails.org/security.html
+    tier: security
+    languages: [ruby]
+    notes: "Official Rails security guide: mass assignment, CSRF, SQL injection, sessions. Single long page."
+  - id: swift-api-design-guidelines
+    url: https://www.swift.org/documentation/api-design-guidelines/
+    tier: language
+    languages: [swift]
+    authority: 1
+    precedence_group: swift-style
+    notes: "Official Swift API design guidelines."
+  - id: google-swift-style
+    url: https://google.github.io/swift/
+    tier: language
+    languages: [swift]
+    precedence_group: swift-style
+    notes: "Google Swift style guide. Single page."
+  - id: php-fig-per-coding-style
+    url: https://www.php-fig.org/per/coding-style/
+    tier: language
+    languages: [php]
+    authority: 1
+    notes: "PHP-FIG PER Coding Style (successor to PSR-12)."
   - id: bacchelli-bird-2013
     url: https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
     tier: research

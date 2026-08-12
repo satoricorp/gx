@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://developer.hashicorp.com/terraform/language/style",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "b6a75a39e75ef8fcedf6c4a0288f03f3f4672bacd68587f59cb8a2827c74238d",
+  "source_id": "terraform-style-guide"
+}

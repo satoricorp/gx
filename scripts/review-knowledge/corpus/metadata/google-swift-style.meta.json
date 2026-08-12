@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://google.github.io/swift/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "968d1236282365c85721177474f014c2c5810b7eab0ca20ee01b26b825b8723f",
+  "source_id": "google-swift-style"
+}

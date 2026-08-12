@@ -1,11 +1,11 @@
 # Review Corpus Build Log
 
-generated_at: 2026-08-07
-chunks: 7645
+generated_at: 2026-08-12
+chunks: 15999
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=6 p50=101 max=916
+token_histogram: min=6 p50=85 max=916
 
 ## Chunks Per Source
 - google-eng-practices: 12
@@ -70,6 +70,33 @@ token_histogram: min=6 p50=101 max=916
 - dart-linter-rules: 155
 - flutter-perf-best-practices: 20
 - flutter-security: 9
+- azure-cloud-design-patterns: 406
+- google-aip: 878
+- zalando-api-guidelines: 149
+- twelve-factor: 104
+- aws-well-architected: 363
+- abseil-swe-testing-overview: 12
+- abseil-swe-unit-testing: 9
+- aria-authoring-practices: 208
+- wcag-understanding: 1346
+- docker-build-best-practices: 30
+- kubernetes-config-best-practices: 25
+- terraform-style-guide: 28
+- github-actions-security-hardening: 33
+- google-javaguide: 95
+- errorprone-bugpatterns: 98
+- spotbugs-bug-descriptions: 512
+- oracle-secure-coding-java: 25
+- kotlin-coding-conventions: 74
+- android-kotlin-style: 50
+- cpp-core-guidelines: 2630
+- clang-tidy-checks: 756
+- ruby-style-guide: 283
+- rails-style-guide: 117
+- rails-security: 31
+- swift-api-design-guidelines: 13
+- google-swift-style: 71
+- php-fig-per-coding-style: 8
 - bacchelli-bird-2013: 0
 - sadowski-2018-google: 0
 - rigby-bird-2013: 0

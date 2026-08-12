@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://kubernetes.io/blog/2025/11/25/configuration-good-practices/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3a9411439f268ed29c33168623d232bfd73fb328fde2c7d8997bab9b3ea42117",
+  "source_id": "kubernetes-config-best-practices"
+}

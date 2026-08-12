@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://www.swift.org/documentation/api-design-guidelines/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "cb71ae3ceba9b0805438bab52185acf783e37be92836be82e2633d67d286c533",
+  "source_id": "swift-api-design-guidelines"
+}
