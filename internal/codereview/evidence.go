@@ -20,6 +20,12 @@ const (
 	EvidenceMissing     = "missing"
 	EvidenceUnavailable = "unavailable"
 	EvidenceDisabled    = "disabled"
+	// EvidenceSkipped means this review decided not to ask a source that was
+	// configured and reachable. It is distinct from disabled, which is a fact
+	// about the environment rather than about this review, and the reason
+	// belongs in Detail: a source the reader expects to see is more alarming
+	// absent from the listing than present with "skipped — docs-only change".
+	EvidenceSkipped = "skipped"
 )
 
 // EvidenceStatus is what happened to one retrieval source during one review.
@@ -63,6 +69,10 @@ func (s EvidenceStatus) Degraded() bool {
 type EvidenceLog struct {
 	mu       sync.Mutex
 	statuses []EvidenceStatus
+	// parent, when set, makes this log a scope: statuses are written through to
+	// the parent and counted here. See scope.
+	parent  *EvidenceLog
+	written int
 }
 
 // Record files one status. Safe for concurrent use.
@@ -78,19 +88,49 @@ func (l *EvidenceLog) Record(status EvidenceStatus) {
 		status.State = EvidenceOK
 	}
 	l.mu.Lock()
+	if l.parent != nil {
+		l.written++
+		l.mu.Unlock()
+		l.parent.Record(status)
+		return
+	}
 	defer l.mu.Unlock()
+	l.written++
 	l.statuses = append(l.statuses, status)
 }
 
-// count reports how many statuses have been filed so far. The composite uses it
-// to tell a retriever that reported for itself from one that did not.
-func (l *EvidenceLog) count() int {
+// scope returns a log that writes through to l but counts only the statuses
+// filed through it.
+//
+// The composite hands each sub-retriever its own scope because it has to know
+// whether *that* retriever reported for itself before deciding to file a
+// fallback line. Counting the shared log instead answers a different question —
+// "did anyone report while it was running" — and the retrievers run
+// concurrently, so for the slowest source in the set the answer is nearly
+// always yes. That is how the shared review-knowledge corpus came to be
+// missing from most reviews: the code index files one status per namespace
+// probe, and while a corpus query (an embedding call plus two vector queries)
+// was still in flight those probes made it look like it had already reported.
+// Its fallback line was skipped, so a review that queried the corpus and a
+// review that never reached it produced identical reports — on a different
+// subset of reviews every run, since it turned on which goroutine happened to
+// finish first.
+func (l *EvidenceLog) scope() *EvidenceLog {
+	if l == nil {
+		return nil
+	}
+	return &EvidenceLog{parent: l}
+}
+
+// recorded reports how many statuses were filed through this log. On a scope
+// that is what one retriever reported about itself.
+func (l *EvidenceLog) recorded() int {
 	if l == nil {
 		return 0
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.statuses)
+	return l.written
 }
 
 // Statuses returns the recorded statuses in a stable order. Retrievers run in

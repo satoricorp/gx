@@ -56,11 +56,14 @@ func (r CompositeContextRetriever) Retrieve(ctx context.Context, in RetrieveInpu
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Anything a retriever files on the shared log counts as it having
-			// reported for itself.
-			before := in.Evidence.count()
-			snippets, err := retriever.Retrieve(ctx, in)
-			reported[i] = in.Evidence.count() > before
+			// Each retriever writes through its own scope of the shared log, so
+			// "did this retriever report for itself?" is answered by what it
+			// filed rather than by whatever the retrievers running alongside it
+			// happened to file first.
+			scoped := in
+			scoped.Evidence = in.Evidence.scope()
+			snippets, err := retriever.Retrieve(ctx, scoped)
+			reported[i] = scoped.Evidence.recorded() > 0
 			if err != nil {
 				errs[i] = err
 				return

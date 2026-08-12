@@ -3,6 +3,7 @@ package codereview
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -337,6 +338,174 @@ func TestCompactContextSnippetsKeepsReviewResourcesNearTop(t *testing.T) {
 	if got[0].Kind != "repo_doc" || got[1].Kind != "review_resource" {
 		t.Fatalf("compacted snippets = %#v", got)
 	}
+}
+
+// Every outcome of a corpus query has to leave a line in the evidence log. A
+// review that skipped the corpus, one whose query failed, and one that read
+// 15,999 chunks and found nothing used to be indistinguishable in the report:
+// all three simply had no review-knowledge line.
+func TestReviewResourceRetrieverRecordsEvidenceForEveryOutcome(t *testing.T) {
+	rows := []reviewResourceRow{{
+		"source_id": "owasp-sql-injection",
+		"chunk_id":  "owasp-sql-injection::queries::0002",
+		"body":      "Prefer parameterized queries and prepared statements.",
+	}}
+	input := func(plan ReviewExecutionPlan) RetrieveInput {
+		return RetrieveInput{
+			RepoRoot:     "/missing-repo",
+			Options:      normalizeOptions(Options{Scope: "security"}),
+			Plan:         plan,
+			Facts:        RepoFacts{Files: []string{"internal/auth/session.go"}},
+			ChangedFiles: []string{"internal/auth/session.go"},
+		}
+	}
+	tests := []struct {
+		name       string
+		retriever  ReviewResourceRetriever
+		in         RetrieveInput
+		wantState  string
+		wantDetail string
+		wantErr    bool
+	}{
+		{
+			name:      "rows found",
+			retriever: ReviewResourceRetriever{Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}}, Store: &recordingReviewResourceStore{rows: rows}},
+			in:        input(ReviewExecutionPlan{}),
+			wantState: EvidenceOK,
+		},
+		{
+			name:       "corpus matched nothing",
+			retriever:  ReviewResourceRetriever{Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}}, Store: &recordingReviewResourceStore{}},
+			in:         input(ReviewExecutionPlan{}),
+			wantState:  EvidenceEmpty,
+			wantDetail: "matched no rows",
+		},
+		{
+			name:       "rows without body text",
+			retriever:  ReviewResourceRetriever{Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}}, Store: &recordingReviewResourceStore{rows: []reviewResourceRow{{"source_id": "empty-source"}}}},
+			in:         input(ReviewExecutionPlan{}),
+			wantState:  EvidenceEmpty,
+			wantDetail: "none carried body text",
+		},
+		{
+			name:       "query failed",
+			retriever:  ReviewResourceRetriever{Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}}, Store: failingReviewResourceStore{err: errors.New("status 400 Bad Request")}},
+			in:         input(ReviewExecutionPlan{}),
+			wantState:  EvidenceUnavailable,
+			wantDetail: "400 Bad Request",
+			wantErr:    true,
+		},
+		{
+			name:       "embedding failed",
+			retriever:  ReviewResourceRetriever{Embedder: failingReviewResourceEmbedder{err: errors.New("429 rate limited")}, Store: &recordingReviewResourceStore{rows: rows}},
+			in:         input(ReviewExecutionPlan{}),
+			wantState:  EvidenceUnavailable,
+			wantDetail: "429 rate limited",
+			wantErr:    true,
+		},
+		{
+			name:       "skipped by triage",
+			retriever:  ReviewResourceRetriever{Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}}, Store: &recordingReviewResourceStore{rows: rows}},
+			in:         input(ReviewExecutionPlan{Triage: ChangeTriage{Class: "docs-only"}, RunReviewResources: false}),
+			wantState:  EvidenceSkipped,
+			wantDetail: "docs-only",
+		},
+		{
+			name:       "switched off",
+			retriever:  ReviewResourceRetriever{Disabled: "GX_REVIEW_RESOURCES=0"},
+			in:         input(ReviewExecutionPlan{}),
+			wantState:  EvidenceDisabled,
+			wantDetail: "GX_REVIEW_RESOURCES=0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			log := &EvidenceLog{}
+			in := tt.in
+			in.Evidence = log
+			_, err := tt.retriever.Retrieve(context.Background(), in)
+			if tt.wantErr != (err != nil) {
+				t.Fatalf("Retrieve() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			statuses := log.Statuses()
+			if len(statuses) != 1 {
+				t.Fatalf("statuses = %#v, want exactly one review-knowledge line", statuses)
+			}
+			if statuses[0].Source != reviewKnowledgeEvidenceSource {
+				t.Fatalf("source = %q", statuses[0].Source)
+			}
+			if statuses[0].State != tt.wantState {
+				t.Fatalf("state = %q, want %q", statuses[0].State, tt.wantState)
+			}
+			if tt.wantDetail != "" && !strings.Contains(statuses[0].Detail, tt.wantDetail) {
+				t.Fatalf("detail = %q, want it to mention %q", statuses[0].Detail, tt.wantDetail)
+			}
+		})
+	}
+}
+
+// The narrowed query is a second read of the same source. When it fails after
+// the broad one answered, the review is entitled to both facts: what it got,
+// and that it did not get all of it.
+func TestReviewResourceRetrieverReportsAPartialReadWhenTheNarrowedQueryFails(t *testing.T) {
+	log := &EvidenceLog{}
+	retriever := ReviewResourceRetriever{
+		Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}},
+		Store: &secondQueryFailingStore{rows: []reviewResourceRow{{
+			"source_id": "owasp-sql-injection",
+			"chunk_id":  "owasp-sql-injection::queries::0002",
+			"body":      "Prefer parameterized queries.",
+		}}, err: errors.New("status 400 Bad Request")},
+	}
+	snippets, err := retriever.Retrieve(context.Background(), RetrieveInput{
+		RepoRoot:     "/missing-repo",
+		Options:      normalizeOptions(Options{Scope: "security"}),
+		Facts:        RepoFacts{Files: []string{"internal/auth/session.go"}},
+		ChangedFiles: []string{"internal/auth/session.go"},
+		Evidence:     log,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve() error = %v", err)
+	}
+	if len(snippets) != 1 {
+		t.Fatalf("snippets = %#v, want the broad query's result kept", snippets)
+	}
+	statuses := log.Statuses()
+	if len(statuses) != 2 {
+		t.Fatalf("statuses = %#v, want the answer and the failed narrowing", statuses)
+	}
+	warnings := EvidenceWarnings(statuses)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "read in part") {
+		t.Fatalf("warnings = %v, want a partial-read warning", warnings)
+	}
+}
+
+type failingReviewResourceStore struct{ err error }
+
+func (s failingReviewResourceStore) Query(context.Context, reviewResourceQuery) ([]reviewResourceRow, error) {
+	return nil, s.err
+}
+
+// secondQueryFailingStore answers the broad query and fails the narrowed one.
+type secondQueryFailingStore struct {
+	rows    []reviewResourceRow
+	err     error
+	queries int
+}
+
+func (s *secondQueryFailingStore) Query(context.Context, reviewResourceQuery) ([]reviewResourceRow, error) {
+	s.queries++
+	if s.queries == 1 {
+		return s.rows, nil
+	}
+	return nil, s.err
+}
+
+type failingReviewResourceEmbedder struct{ err error }
+
+func (f failingReviewResourceEmbedder) Embed(context.Context, []string) ([][]float32, error) {
+	return nil, f.err
 }
 
 type fakeReviewResourceEmbedder struct {

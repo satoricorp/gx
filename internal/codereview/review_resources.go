@@ -33,6 +33,11 @@ type ReviewResourceRetriever struct {
 	// CloudSearcher overrides the gx Cloud retrieval client; injected in
 	// tests. When nil it is resolved from the signed-in credentials.
 	CloudSearcher reviewCloudSearcher
+	// Disabled, when set, is the reason this retriever will not query the
+	// corpus. It is carried on the retriever rather than expressed by leaving
+	// the retriever out of the set, so that turning the corpus off still shows
+	// up in the review as a line saying so.
+	Disabled string
 }
 
 type reviewResourceEmbedder interface {
@@ -62,7 +67,9 @@ type turboPufferReviewResourceStore struct {
 
 func reviewResourceRetrieverFromEnv() ContextRetriever {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_RESOURCES")), "0") {
-		return nil
+		// Still registered, so the review states that its shared guidance was
+		// switched off rather than simply arriving without any.
+		return ReviewResourceRetriever{Disabled: "GX_REVIEW_RESOURCES=0"}
 	}
 	retriever := ReviewResourceRetriever{
 		Limit: reviewEnvInt("GX_REVIEW_RESOURCES_TOP_K", defaultReviewResourceTopK),
@@ -170,14 +177,41 @@ func (r ReviewResourceRetriever) retrieveKnowledgeViaCloud(
 	return snippets, nil
 }
 
+// Retrieve searches the shared review-knowledge corpus and records what
+// happened to it, in every case.
+//
+// Every exit from here files exactly one status (two when the broad query
+// answered and the narrowed one did not), because the alternative is what this
+// source used to do: return early on a triage skip or an empty query with no
+// evidence line at all, and rely on the composite to notice the silence. A
+// missing line is unreadable — it looks the same as a source that was never
+// configured — and it is the one thing the evidence log exists to prevent.
 func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput) ([]ContextSnippet, error) {
+	if reason := strings.TrimSpace(r.Disabled); reason != "" {
+		in.Evidence.Record(EvidenceStatus{
+			Source: reviewKnowledgeEvidenceSource,
+			State:  EvidenceDisabled,
+			Detail: reason,
+		})
+		return nil, nil
+	}
 	if !in.Plan.RunReviewResources && in.Plan.Triage.Class != "" {
+		in.Evidence.Record(EvidenceStatus{
+			Source: reviewKnowledgeEvidenceSource,
+			State:  EvidenceSkipped,
+			Detail: "triage classified this change as " + strings.TrimSpace(in.Plan.Triage.Class) + ", so the shared corpus was not queried",
+		})
 		return nil, nil
 	}
 	opts := in.Options
 	signals := reviewResourceSignals(in)
 	queryText := reviewResourceQueryText(opts, signals)
 	if strings.TrimSpace(queryText) == "" {
+		in.Evidence.Record(EvidenceStatus{
+			Source: reviewKnowledgeEvidenceSource,
+			State:  EvidenceSkipped,
+			Detail: "no query text could be built for this change",
+		})
 		return nil, nil
 	}
 	if r.Embedder == nil || r.Store == nil {
@@ -201,10 +235,13 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 	}
 	vectors, err := r.Embedder.Embed(ctx, []string{queryText})
 	if err != nil {
+		r.recordUnavailable(in, "embedding the corpus query failed: "+err.Error())
 		return nil, err
 	}
 	if len(vectors) != 1 {
-		return nil, fmt.Errorf("review resource embedding returned %d vectors", len(vectors))
+		err := fmt.Errorf("review resource embedding returned %d vectors", len(vectors))
+		r.recordUnavailable(in, err.Error())
+		return nil, err
 	}
 
 	limit := r.Limit
@@ -252,21 +289,72 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 		IncludeAttributes: include,
 	})
 	if err != nil {
+		r.recordUnavailable(in, "the corpus query failed: "+err.Error())
 		return nil, err
 	}
 	rows := append([]reviewResourceRow{}, broadRows...)
+	// A narrowed query that fails is reported alongside whatever the broad one
+	// found, so the review says it read the corpus in part rather than
+	// presenting a half-read source as a whole one.
+	narrowedDetail := ""
 	if filter := reviewResourceSignalFilter(signals); filter != nil {
-		if filteredRows, err := r.Store.Query(ctx, reviewResourceQuery{
+		filteredRows, err := r.Store.Query(ctx, reviewResourceQuery{
 			Vector:            vectors[0],
 			Text:              queryText,
 			Limit:             limit,
 			Filters:           filter,
 			IncludeAttributes: include,
-		}); err == nil {
+		})
+		if err != nil {
+			narrowedDetail = "the signal-narrowed corpus query failed: " + err.Error()
+		} else {
 			rows = append(rows, filteredRows...)
 		}
 	}
-	return reviewResourceSnippets(rows, limit, r.Namespace), nil
+	snippets := reviewResourceSnippets(rows, limit, r.Namespace)
+	status := EvidenceStatus{
+		Source:    reviewKnowledgeEvidenceSource,
+		Namespace: r.namespaceLabel(),
+		State:     EvidenceOK,
+		Snippets:  len(snippets),
+	}
+	switch {
+	case len(rows) == 0:
+		status.State = EvidenceEmpty
+		status.Detail = "the shared review-knowledge corpus matched no rows for this change"
+	case len(snippets) == 0:
+		// Rows came back and none of them carried usable text. That is a corpus
+		// defect, not an empty answer to the question asked, and it is worth
+		// saying so: "empty" alone would send the reader looking at their query.
+		status.State = EvidenceEmpty
+		status.Detail = fmt.Sprintf("%d corpus row(s) matched but none carried body text", len(rows))
+	}
+	in.Evidence.Record(status)
+	if narrowedDetail != "" {
+		in.Evidence.Record(EvidenceStatus{
+			Source:    reviewKnowledgeEvidenceSource,
+			Namespace: r.namespaceLabel(),
+			State:     EvidenceUnavailable,
+			Detail:    narrowedDetail,
+		})
+	}
+	return snippets, nil
+}
+
+func (r ReviewResourceRetriever) recordUnavailable(in RetrieveInput, detail string) {
+	in.Evidence.Record(EvidenceStatus{
+		Source:    reviewKnowledgeEvidenceSource,
+		Namespace: r.namespaceLabel(),
+		State:     EvidenceUnavailable,
+		Detail:    detail,
+	})
+}
+
+func (r ReviewResourceRetriever) namespaceLabel() string {
+	if namespace := strings.TrimSpace(r.Namespace); namespace != "" {
+		return namespace
+	}
+	return defaultReviewKnowledgeNamespace
 }
 
 func (s turboPufferReviewResourceStore) Query(ctx context.Context, req reviewResourceQuery) ([]reviewResourceRow, error) {

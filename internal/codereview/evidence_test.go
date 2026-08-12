@@ -89,7 +89,7 @@ func TestEvidenceLogToleratesNilReceiver(t *testing.T) {
 	if statuses := log.Statuses(); statuses != nil {
 		t.Fatalf("Statuses() = %#v, want nil", statuses)
 	}
-	if log.count() != 0 {
+	if log.recorded() != 0 {
 		t.Fatal("count() on a nil log must be zero")
 	}
 }
