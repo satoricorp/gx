@@ -413,6 +413,12 @@ func securityQualityHintCopy(kind string) (title, recommendation string) {
 	}
 }
 
+// staticToolFailureFindings turns failed tool runs into the one deterministic
+// Blocking finding. Skipped results never qualify — that is where timeouts and
+// environment failures land (the tool never ran because dependencies are not
+// installed, or failed for a reason only the host can cause; see
+// staticToolEnvironmentFailure) — so a bare clone does not get a published
+// "fix your tools" comment about its own missing node_modules.
 func staticToolFailureFindings(ctx ReviewContext) []Finding {
 	var failed []StaticToolResult
 	for _, result := range ctx.Brief.Static.ToolResults {

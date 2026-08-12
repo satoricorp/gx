@@ -543,6 +543,28 @@ func TestStaticToolFailureBeatsSpeculativeFindings(t *testing.T) {
 	}
 }
 
+// A tool that failed because the checkout cannot support it — dependencies not
+// installed, toolchain too old — arrives marked Skipped with a reason, and
+// must never become the published Blocking finding: on a bare clone that
+// finding is an environment artifact with the review's byline on it.
+func TestEnvironmentFailuresProduceNoStaticFailureFinding(t *testing.T) {
+	findings := evaluateFindings(ReviewContext{
+		ActiveScopes: []string{"architecture", "testing", "maintainability", "dependencies"},
+		Sources:      []Source{{ID: "google-eng-practices", Scopes: []string{"maintainability", "testing"}}},
+		Brief: ReviewBrief{Static: StaticSnapshot{ToolResults: []StaticToolResult{{
+			Name:     "tsc",
+			Command:  "tsc --noEmit",
+			ExitCode: 1,
+			Output:   "src/a.ts(1,24): error TS2307: Cannot find module 'react'.",
+			Skipped:  true,
+			Reason:   "dependencies are not installed on this checkout: package.json declares dependencies but node_modules is missing",
+		}}}},
+	}, defaultRules())
+	if hasFinding(findings, "tools.static-failure") {
+		t.Fatalf("Findings = %#v, want no static-failure finding for an environment failure", findings)
+	}
+}
+
 func TestPatchFocusedReviewFiltersGenericArchitectureFindings(t *testing.T) {
 	findings := filterPatchFocusedFindings(ReviewContext{
 		Options: Options{PatchFocused: true},

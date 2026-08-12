@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStaticToolsUseAffectedPackagesForNarrowGoChanges(t *testing.T) {
@@ -410,5 +411,190 @@ func writeExecutable(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("WriteFile(%s) error = %v", path, err)
+	}
+}
+
+func TestNodeToolsSkipWhenDependenciesNotInstalled(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "tsconfig.json", "{}\n")
+	writeFile(t, root, "eslint.config.js", "export default []\n")
+	writeFile(t, root, "package.json", "{\n  \"devDependencies\": { \"typescript\": \"^5\" }\n}\n")
+	writeFile(t, root, "src/a.ts", "export const a = 1\n")
+	tools := t.TempDir()
+	writeExecutable(t, filepath.Join(tools, "tsc"), "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(tools, "eslint"), "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
+
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, []string{"src/a.ts"})
+	if len(results) != 2 {
+		t.Fatalf("results = %#v, want skipped tsc and eslint", results)
+	}
+	for _, result := range results {
+		if !result.Skipped || !strings.Contains(result.Reason, "not installed") {
+			t.Fatalf("result = %#v, want skipped with a dependencies-not-installed reason", result)
+		}
+		if result.Command == "" || result.ExitCode != 0 || result.Output != "" {
+			t.Fatalf("result = %#v, want the command recorded and the tool never run", result)
+		}
+	}
+
+	// Installing dependencies (a node_modules directory) makes both tools run.
+	writeExecutable(t, filepath.Join(root, "node_modules", ".bin", "tsc"), "#!/bin/sh\nexit 0\n")
+	results = collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, []string{"src/a.ts"})
+	if len(results) != 2 || results[0].Skipped || results[1].Skipped {
+		t.Fatalf("results = %#v, want both tools run once node_modules exists", results)
+	}
+}
+
+func TestNodeDependenciesUnready(t *testing.T) {
+	root := t.TempDir()
+	env := staticToolEnv{repoRoot: root}
+	if got := nodeDependenciesUnready(env); got != "" {
+		t.Fatalf("nodeDependenciesUnready(no package.json) = %q, want ready", got)
+	}
+	writeFile(t, root, "package.json", "{\n  \"scripts\": { \"test\": \"jest\" }\n}\n")
+	if got := nodeDependenciesUnready(env); got != "" {
+		t.Fatalf("nodeDependenciesUnready(no declared dependencies) = %q, want ready", got)
+	}
+	writeFile(t, root, "package.json", "{\n  \"dependencies\": { \"react\": \"^18\" }\n}\n")
+	if got := nodeDependenciesUnready(env); got == "" {
+		t.Fatal("nodeDependenciesUnready(dependencies, no node_modules) = ready, want a reason")
+	}
+	// Yarn Plug'n'Play installs without a node_modules directory.
+	writeFile(t, root, ".pnp.cjs", "// pnp\n")
+	if got := nodeDependenciesUnready(env); got != "" {
+		t.Fatalf("nodeDependenciesUnready(yarn pnp) = %q, want ready", got)
+	}
+}
+
+func TestDartAnalyzeSkipsWithoutPackageConfig(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "pubspec.yaml", "name: app\n")
+	writeFile(t, root, "lib/a.dart", "void main() {}\n")
+	tools := t.TempDir()
+	writeExecutable(t, filepath.Join(tools, "dart"), "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
+
+	results := collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, []string{"lib/a.dart"})
+	if len(results) != 1 || !results[0].Skipped || !strings.Contains(results[0].Reason, "dart pub get") {
+		t.Fatalf("results = %#v, want dart analyze skipped until pub get has run", results)
+	}
+
+	writeFile(t, root, ".dart_tool/package_config.json", "{}\n")
+	results = collectStaticToolResults(context.Background(), root, RepoFacts{}, Options{}, []string{"lib/a.dart"})
+	if len(results) != 1 || results[0].Skipped {
+		t.Fatalf("results = %#v, want dart analyze run once packages are resolved", results)
+	}
+}
+
+func TestStaticToolEnvironmentFailureClassification(t *testing.T) {
+	tests := []struct {
+		name    string
+		tool    string
+		output  string
+		wantEnv bool
+	}{
+		{
+			name:    "go toolchain older than go.mod",
+			tool:    "go test",
+			output:  "go: go.mod requires go >= 1.24.0 (running go 1.22.1; GOTOOLCHAIN=local)",
+			wantEnv: true,
+		},
+		{
+			name:    "go module download without network",
+			tool:    "go vet",
+			output:  `go: github.com/x/y@v1.2.3: Get "https://proxy.golang.org/...": dial tcp: lookup proxy.golang.org: no such host`,
+			wantEnv: true,
+		},
+		{
+			name:    "go test failure stays a failure",
+			tool:    "go test",
+			output:  "--- FAIL: TestX (0.00s)\nFAIL\nexit status 1",
+			wantEnv: false,
+		},
+		{
+			// The change may have edited go.mod without `go mod tidy` — that
+			// is the finding the rule exists to publish, not an environment
+			// artifact.
+			name:    "go missing go.sum entry stays a failure",
+			tool:    "go test",
+			output:  "go: github.com/x/y@v1.2.3: missing go.sum entry; to add it:\n\tgo mod download github.com/x/y",
+			wantEnv: false,
+		},
+		{
+			name:    "dial tcp inside a test log stays a failure",
+			tool:    "go test",
+			output:  "--- FAIL: TestDial (0.00s)\n    client_test.go:10: dial tcp 127.0.0.1:5432: connection refused\nFAIL",
+			wantEnv: false,
+		},
+		{
+			name:    "cargo registry unreachable",
+			tool:    "cargo check",
+			output:  "error: failed to load source for dependency `serde`\n\nCaused by:\n  Unable to update registry `crates-io`",
+			wantEnv: true,
+		},
+		{
+			name:    "cargo compile error stays a failure",
+			tool:    "cargo check",
+			output:  "error[E0432]: unresolved import `foo`",
+			wantEnv: false,
+		},
+		{
+			name:    "dotnet restore cannot reach its feed",
+			tool:    "dotnet build",
+			output:  "error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json.",
+			wantEnv: true,
+		},
+		{
+			name:    "dotnet compile error stays a failure",
+			tool:    "dotnet build",
+			output:  "Program.cs(1,1): error CS1002: ; expected",
+			wantEnv: false,
+		},
+		{
+			name:    "flutter implicit pub get failure",
+			tool:    "flutter analyze",
+			output:  "Got socket error trying to find package flutter_lints at https://pub.dev.\npub get failed",
+			wantEnv: true,
+		},
+		{
+			// eslint failures are never classified after the fact: the change
+			// can break eslint's own config, and the missing-install case is
+			// caught before the tool runs by nodeDependenciesUnready.
+			name:    "eslint module resolution stays a failure",
+			tool:    "eslint",
+			output:  "Error: Cannot find module 'eslint-plugin-import'",
+			wantEnv: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := staticToolEnvironmentFailure(test.tool, test.output)
+			if (got != "") != test.wantEnv {
+				t.Fatalf("staticToolEnvironmentFailure(%q) = %q, wantEnv %v", test.tool, got, test.wantEnv)
+			}
+		})
+	}
+}
+
+func TestRunStaticToolMarksEnvironmentFailureSkipped(t *testing.T) {
+	tools := t.TempDir()
+	bin := filepath.Join(tools, "go")
+	writeExecutable(t, bin, "#!/bin/sh\necho 'go: go.mod requires go >= 1.99.0 (running go 1.22.1; GOTOOLCHAIN=local)'\nexit 1\n")
+
+	result := runStaticTool(context.Background(), t.TempDir(), time.Minute, "go test", staticToolCommand{bin: bin, argv: []string{"go", "test", "./..."}})
+	if !result.Skipped || !strings.Contains(result.Reason, "toolchain") {
+		t.Fatalf("result = %#v, want skipped with a toolchain reason", result)
+	}
+	if result.ExitCode != 1 || !strings.Contains(result.Output, "go.mod requires go") {
+		t.Fatalf("result = %#v, want exit code and output preserved for the brief", result)
+	}
+
+	writeExecutable(t, bin, "#!/bin/sh\necho '--- FAIL: TestX (0.00s)'\nexit 1\n")
+	result = runStaticTool(context.Background(), t.TempDir(), time.Minute, "go test", staticToolCommand{bin: bin, argv: []string{"go", "test", "./..."}})
+	if result.Skipped || result.ExitCode != 1 {
+		t.Fatalf("result = %#v, want a real test failure kept as a failure", result)
 	}
 }

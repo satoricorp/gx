@@ -26,8 +26,14 @@ type StaticToolResult struct {
 	Command  string `json:"command"`
 	ExitCode int    `json:"exit_code"`
 	Output   string `json:"output,omitempty"`
-	Skipped  bool   `json:"skipped,omitempty"`
-	Reason   string `json:"reason,omitempty"`
+	// Skipped marks a run that says nothing about the code: the tool was never
+	// started (dependencies not installed on this checkout), timed out, or
+	// failed for a reason only the host environment can cause. ExitCode and
+	// Output are kept so the AI brief still shows what happened, but the
+	// deterministic tools.static-failure finding ignores skipped results — a
+	// bare clone must not be told to "fix" its own missing node_modules.
+	Skipped bool   `json:"skipped,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // staticToolEnv is what every runner detects against: the repo on disk, the
@@ -79,6 +85,16 @@ type staticToolRunner struct {
 	// Linters and per-file checks are not marked: they are proportional to the
 	// change and cheap enough to keep even when optimizing for wall clock.
 	wholeProject bool
+	// unready reports why a detected tool must not run on this checkout —
+	// package.json declares dependencies nobody installed, pub never resolved
+	// its packages. It differs from detect returning false (the ecosystem or
+	// binary is absent, skipped silently) in that the tool *would* run and
+	// would fail against every import, telling the reader about the checkout
+	// rather than the change. An unready tool is recorded as a skipped result
+	// with this reason: a review missing its type-check must not read like a
+	// review whose type-check passed. Nil means the tool has no readiness
+	// precondition beyond detection.
+	unready func(env staticToolEnv) string
 }
 
 // staticToolRunners is the registry; adding an ecosystem is one entry plus its
@@ -86,12 +102,12 @@ type staticToolRunner struct {
 var staticToolRunners = []staticToolRunner{
 	{name: "go test", progress: "Running go test", detect: goStaticTool("test"), wholeProject: true},
 	{name: "go vet", progress: "Running go vet", detect: goStaticTool("vet")},
-	{name: "tsc", progress: "Running tsc", detect: detectTypeScriptCompiler, wholeProject: true},
-	{name: "eslint", progress: "Running eslint", detect: detectESLint},
+	{name: "tsc", progress: "Running tsc", detect: detectTypeScriptCompiler, wholeProject: true, unready: nodeDependenciesUnready},
+	{name: "eslint", progress: "Running eslint", detect: detectESLint, unready: nodeDependenciesUnready},
 	{name: "ruff", progress: "Running ruff", detect: detectRuff},
 	{name: "mypy", progress: "Running mypy", detect: detectMypy, wholeProject: true},
 	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck, wholeProject: true},
-	{name: "dart analyze", progress: "Running dart analyze", detect: detectDartAnalyze},
+	{name: "dart analyze", progress: "Running dart analyze", detect: detectDartAnalyze, unready: dartDependenciesUnready},
 	{name: "flutter analyze", progress: "Running flutter analyze", detect: detectFlutterAnalyze, wholeProject: true},
 	{name: "dotnet build", progress: "Running dotnet build", detect: detectDotnetBuild, wholeProject: true},
 }
@@ -128,6 +144,10 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	type plannedStaticTool struct {
 		runner  staticToolRunner
 		command staticToolCommand
+		// skip, when non-nil, is the pre-resolved result for a tool the
+		// checkout cannot support; both run paths copy it out instead of
+		// executing anything.
+		skip *StaticToolResult
 	}
 	var planned []plannedStaticTool
 	var skippedForSpeed []string
@@ -140,7 +160,19 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		if !ok {
 			continue
 		}
-		planned = append(planned, plannedStaticTool{runner: runner, command: command})
+		plan := plannedStaticTool{runner: runner, command: command}
+		if runner.unready != nil {
+			if reason := runner.unready(env); reason != "" {
+				reviewProgress(opts, "Skipping "+runner.name+" ("+reason+")")
+				plan.skip = &StaticToolResult{
+					Name:    runner.name,
+					Command: strings.Join(command.argv, " "),
+					Skipped: true,
+					Reason:  reason,
+				}
+			}
+		}
+		planned = append(planned, plan)
 	}
 	// Say what was not run. A review missing its test results must not read
 	// like a review whose tests passed.
@@ -157,6 +189,10 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	out := make([]StaticToolResult, len(planned))
 	if !opts.Deep {
 		for i, tool := range planned {
+			if tool.skip != nil {
+				out[i] = *tool.skip
+				continue
+			}
 			reviewProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}
@@ -165,6 +201,10 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 
 	var wg sync.WaitGroup
 	for i, tool := range planned {
+		if tool.skip != nil {
+			out[i] = *tool.skip
+			continue
+		}
 		i, tool := i, tool
 		wg.Add(1)
 		go func() {
@@ -387,6 +427,38 @@ func pubspecDeclaresFlutter(repoRoot string) bool {
 	return repoFileContains(repoRoot, "pubspec.yaml", "flutter:")
 }
 
+// nodeDependenciesUnready reports why tsc or eslint must not run: package.json
+// declares dependencies that nobody installed. A compiler pointed at such a
+// checkout — a bare clone in CI, a benchmark harness, a reviewer who never ran
+// npm install — reports a wall of unresolved imports that describes the
+// checkout, not the change. A repo whose manifest declares no dependencies is
+// left alone: there is nothing to install, so whatever the tool reports is
+// about the code. Yarn Plug'n'Play installs resolve without a node_modules
+// directory, so a .pnp.cjs/.pnp.js file counts as installed.
+func nodeDependenciesUnready(env staticToolEnv) string {
+	if !repoFileContains(env.repoRoot, "package.json", `"dependencies"`) &&
+		!repoFileContains(env.repoRoot, "package.json", `"devDependencies"`) {
+		return ""
+	}
+	if repoDirExists(env.repoRoot, "node_modules") ||
+		repoFileExists(env.repoRoot, ".pnp.cjs", ".pnp.js") {
+		return ""
+	}
+	return "dependencies are not installed on this checkout: package.json declares dependencies but node_modules is missing"
+}
+
+// dartDependenciesUnready keeps `dart analyze` off checkouts where pub has
+// never resolved packages: without .dart_tool/package_config.json (or the
+// legacy .packages) every package: import is an error about the checkout.
+// flutter analyze needs no equivalent — the flutter tool runs pub get itself
+// when the package config is missing.
+func dartDependenciesUnready(env staticToolEnv) string {
+	if repoFileExists(env.repoRoot, ".dart_tool/package_config.json", ".packages") {
+		return ""
+	}
+	return "dependencies are not resolved on this checkout: run `dart pub get` to create .dart_tool/package_config.json"
+}
+
 // detectDotnetBuild compiles the solution or project; like `cargo check` that
 // is not "runs nothing" — MSBuild executes the repo's own targets and analyzers
 // during a build, and the run writes bin/ and obj/ next to each project. There
@@ -542,6 +614,92 @@ func changedFilesIncludeBase(files []string, bases ...string) bool {
 	return false
 }
 
+// staticToolEnvironmentFailure reports why a failed run says nothing about the
+// code under review: the tool broke against the host before it could judge the
+// change. Publishing that as the Blocking tools.static-failure finding blames
+// the change for the checkout — on a bare clone with no dependencies installed
+// that finding is pure noise, and on a public PR it is noise with a byline.
+// A non-empty reason marks the result skipped; exit code and output survive
+// into the AI brief so the review still records what could not run.
+//
+// The empty string means the failure is — or even might be — about the code,
+// and the caller must keep it as a real failure. Every marker below is one a
+// change cannot cause through code alone. The ambiguous failures stay
+// deliberately unclassified: a missing go.sum entry or an eslint config crash
+// is most often the change forgetting `go mod tidy` or breaking its own
+// config, which is exactly what the finding exists to publish. A change whose
+// only diagnostic is one unresolvable import therefore still surfaces; the
+// checkout-wide version of that case is caught before the tool runs, by the
+// unready checks on the runner registry.
+func staticToolEnvironmentFailure(name, output string) string {
+	switch name {
+	case "go test", "go vet":
+		return goEnvironmentFailure(output)
+	case "cargo check":
+		if outputContainsAny(output,
+			"failed to load source for dependency",
+			"failed to download",
+			"failed to fetch",
+			"network failure seems to have happened",
+		) {
+			return "crate dependencies could not be downloaded on this checkout"
+		}
+	case "dotnet build":
+		if outputContainsAny(output, "error NU1301", "Unable to load the service index") {
+			return "NuGet restore could not reach its package sources on this checkout"
+		}
+	case "flutter analyze":
+		if strings.Contains(output, "pub get failed") {
+			return "flutter's implicit pub get failed, so the analyzer never saw the code"
+		}
+	}
+	return ""
+}
+
+// goEnvironmentFailure matches the go tool's own load-time failures that only
+// the host can cause: a toolchain older than go.mod demands, a module cache it
+// cannot create, or module fetches its network refused. Network markers are
+// only honoured on lines the go command itself prints ("go: " prefixed) —
+// `go test` output includes the reviewed repo's test logs, and a test failing
+// on "dial tcp 127.0.0.1:5432" is a result, not an environment problem.
+func goEnvironmentFailure(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "go.mod requires go >=") {
+			return "host Go toolchain is older than go.mod requires"
+		}
+		if strings.Contains(line, "could not create module cache") ||
+			strings.Contains(line, "toolchain not available") {
+			return "host cannot provide the Go toolchain or module cache"
+		}
+		if strings.HasPrefix(line, "go: ") && outputContainsAny(line,
+			"dial tcp", "no such host", "i/o timeout", "connection refused", "TLS handshake timeout",
+		) {
+			return "module downloads failed on this checkout (network unavailable)"
+		}
+	}
+	return ""
+}
+
+func outputContainsAny(output string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(output, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func repoDirExists(repoRoot string, names ...string) bool {
+	for _, name := range names {
+		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(name)))
+		if err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 func repoFileExists(repoRoot string, names ...string) bool {
 	for _, name := range names {
 		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(name)))
@@ -598,6 +756,9 @@ func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, 
 		if toolCtx.Err() == context.DeadlineExceeded {
 			result.Skipped = true
 			result.Reason = "timed out"
+		} else if reason := staticToolEnvironmentFailure(name, result.Output); reason != "" {
+			result.Skipped = true
+			result.Reason = reason
 		}
 	}
 	return result
