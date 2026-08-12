@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://developer.android.com/kotlin/style-guide",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "682f7f438ce5e483a751f9c07096d431de18c31dcc5282496cecfef651886c49",
+  "source_id": "android-kotlin-style"
+}

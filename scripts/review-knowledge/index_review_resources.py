@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime as dt
+import gzip
 import hashlib
 import html.parser
 import json
@@ -24,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import urllib.robotparser
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -398,7 +400,20 @@ def fetch_source(
         if not robots_allowed(url, robots):
             raise RuntimeError(f"robots.txt disallows fetch: {url}")
         throttle(url, last_by_domain)
-        raw, final_url, status, content_type = fetch_url(resolve_fetch_url(url, source.fetch), timeout)
+        try:
+            raw, final_url, status, content_type = fetch_url(resolve_fetch_url(url, source.fetch), timeout)
+        except Exception:
+            # Only the seed URL is load-bearing. A crawled page that 404s (a
+            # stale link on the source site) used to abort the entire source
+            # mid-crawl and leave a partial normalized file behind.
+            if depth == 0:
+                raise
+            continue
+        if source.fetch == "html" and content_type and not is_textual_content_type(content_type):
+            # An html crawl can reach binary payloads linked from a page (an
+            # .epub download, an image): decoding those as UTF-8 injects
+            # mojibake into the normalized corpus, so skip them entirely.
+            continue
         if source.fetch == "pdf" and "application/pdf" not in content_type.lower() and not final_url.lower().endswith(".pdf"):
             pdf_links = [link for link in extract_links(raw, final_url) if link.lower().endswith(".pdf")]
             if pdf_links:
@@ -407,7 +422,7 @@ def fetch_source(
         raw_parts.append(raw)
         text_parts.append(normalize_payload(raw, content_type, source.fetch, final_url))
         if source.fetch == "html" and depth < source.crawl_depth:
-            for link in crawl_links(raw, final_url, source.crawl_depth - depth):
+            for link in crawl_links(raw, final_url, source.crawl_depth - depth, anchor_url=source.url):
                 if link in seen_urls:
                     continue
                 seen_urls.add(link)
@@ -515,7 +530,19 @@ def fetch_url(url: str, timeout: float) -> tuple[bytes, str, int, str]:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 # 20MB bound: enough for any real doc or paper (a truncated
                 # PDF parses as 0 pages and silently yields no chunks).
-                return response.read(20_000_000), response.geturl(), response.status, response.headers.get("Content-Type", "")
+                payload = response.read(20_000_000)
+                # Some CDNs (swift.org via Fastly) gzip the body even though
+                # this client never sends Accept-Encoding; an undecoded body
+                # normalizes to mojibake and chunks as a single garbage blob.
+                content_encoding = (response.headers.get("Content-Encoding") or "").lower()
+                try:
+                    if "gzip" in content_encoding:
+                        payload = gzip.decompress(payload)
+                    elif "deflate" in content_encoding:
+                        payload = zlib.decompress(payload)
+                except OSError:
+                    pass  # header lied; keep the raw payload
+                return payload, response.geturl(), response.status, response.headers.get("Content-Type", "")
         except urllib.error.HTTPError as exc:
             if exc.code in {401, 402, 403, 404, 451}:
                 raise RuntimeError(f"http {exc.code} for {url}") from exc
@@ -541,6 +568,14 @@ def resolve_fetch_url(url: str, fetch: str) -> str:
     if fetch == "pdf" and parsed.netloc == "arxiv.org" and parsed.path.startswith("/abs/"):
         return "https://arxiv.org/pdf/" + parsed.path.removeprefix("/abs/")
     return url
+
+
+def is_textual_content_type(content_type: str) -> bool:
+    lowered = content_type.lower()
+    return any(
+        marker in lowered
+        for marker in ("text/", "html", "xml", "markdown", "json", "application/pdf")
+    )
 
 
 def normalize_payload(raw: bytes, content_type: str, fetch: str, url: str) -> str:
@@ -707,10 +742,16 @@ def pdf_to_text(raw: bytes) -> str:
     return normalize_text("\n\n".join(parts))
 
 
-def crawl_links(raw: bytes, base_url: str, depth: int) -> list[str]:
+def crawl_links(raw: bytes, base_url: str, depth: int, anchor_url: str | None = None) -> list[str]:
     if depth <= 0:
         return []
-    parsed_base = urllib.parse.urlparse(base_url)
+    # Scope the crawl to the manifest URL's subtree, not the current page's.
+    # Anchoring to each page made multi-level crawls physically impossible for
+    # sites whose child pages do not nest under the index page's path (the
+    # errorprone.info /bugpatterns index links /bugpattern/X pages), and
+    # silently truncated depth-2 crawls like google-eng-practices to whatever
+    # the seed page linked directly.
+    parsed_base = urllib.parse.urlparse(anchor_url or base_url)
     base_path = parsed_base.path.rstrip("/")
     out: list[str] = []
     seen: set[str] = set()

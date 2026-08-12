@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/isocpp/CppCoreGuidelines/master/CppCoreGuidelines.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "27b53e7de83994ffe5c4e4c302a97a2fe83e48eccc7b09a0d734906609079ca7",
+  "source_id": "cpp-core-guidelines"
+}

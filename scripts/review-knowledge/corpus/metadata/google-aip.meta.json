@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://google.aip.dev/news/2020-03",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c6eec011a5de3b84cfb8b7f548a78104efd3b5cce94ae3d053fc42d1b6b02ec2",
+  "source_id": "google-aip"
+}

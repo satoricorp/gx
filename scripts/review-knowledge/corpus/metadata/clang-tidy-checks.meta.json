@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/llvm/llvm-project/main/clang-tools-extra/docs/clang-tidy/checks/readability/ambiguous-smartptr-reset-call.rst",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "20a848d09f1db94ff923500e462a9608aefae1243dd72c431d4832dc24dd6cf0",
+  "source_id": "clang-tidy-checks"
+}

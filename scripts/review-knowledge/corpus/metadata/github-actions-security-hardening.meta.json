@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.github.com/en/actions/reference/security/secure-use",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "74dfcc01fb1278dc31488c57edfb6ad80e9691c116c9e80c1a076c38a68c5cfb",
+  "source_id": "github-actions-security-hardening"
+}

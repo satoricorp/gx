@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "946eb933418382e828d184ba0bd2be6dae8e64c014e2b03eba58641576dc1268",
+  "source_id": "aria-authoring-practices"
+}

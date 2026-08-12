@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://rails.rubystyle.guide/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ce76032f0fd0d1f6343743363640d3c90a705ed86be249d79dfae64fa7e4ed70",
+  "source_id": "rails-style-guide"
+}

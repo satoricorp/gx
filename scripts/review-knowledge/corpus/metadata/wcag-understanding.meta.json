@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://www.w3.org/WAI/WCAG22/Understanding/understanding-metadata",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "edd7a23cb5b339d441bedb8ba478965c1d02b023998e2fa343f3feec31a77e05",
+  "source_id": "wcag-understanding"
+}

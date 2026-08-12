@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://errorprone.info/docs/flags",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "edca6fbf0bb9345286667451cdcb72acb24966b6432dc03b44fb366c25b82efc",
+  "source_id": "errorprone-bugpatterns"
+}

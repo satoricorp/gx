@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.aws.amazon.com/pdfs/wellarchitected/latest/framework/wellarchitected-framework.pdf",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8ca74bd68de844bbb36bc5d7f0ab338ec612964b270ed0fb2997ca498fd269df",
+  "source_id": "aws-well-architected"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://google.github.io/styleguide/javaguide.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "9cc671f4c74d8bb4ea4c93861f4ec0e88d0f21267c73abe46817c14bdeb6d6b2",
+  "source_id": "google-javaguide"
+}

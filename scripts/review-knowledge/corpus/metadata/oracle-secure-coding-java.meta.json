@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://www.oracle.com/java/technologies/javase/seccodeguide.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "1baf9075cf99e8ac4009f14276d5d6154574fe4eadf2f35c027080283691dca8",
+  "source_id": "oracle-secure-coding-java"
+}

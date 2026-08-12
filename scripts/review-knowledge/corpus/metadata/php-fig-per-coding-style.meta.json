@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://www.php-fig.org/per/coding-style/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c12f666ee43eb76e3dc4a43696418bb5e39763efa98a7e827adb0bc4d208c962",
+  "source_id": "php-fig-per-coding-style"
+}

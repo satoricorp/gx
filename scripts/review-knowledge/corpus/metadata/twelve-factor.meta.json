@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://12factor.net/12factor.epub",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "911fd38f7b41b249119f7aa8a91c5afab99a1f590665b0f3ab053c96f2ab295e",
+  "source_id": "twelve-factor"
+}

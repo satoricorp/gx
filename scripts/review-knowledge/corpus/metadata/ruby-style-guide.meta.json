@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://rubystyle.guide/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ee11cf1b455b8530df6eef30ddafb2dfff227e52db219d7f3920d33ab95eb10c",
+  "source_id": "ruby-style-guide"
+}
