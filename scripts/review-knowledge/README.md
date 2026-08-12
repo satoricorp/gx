@@ -173,6 +173,17 @@ Chunk normalized sources and write build artifacts:
 python3 scripts/review-knowledge/index_review_resources.py chunk
 ```
 
+`corpus/raw/` and `corpus/chunks/*.jsonl` are gitignored, so a fresh clone has
+neither. Neither is an input: `fetch` writes `raw/` and nothing reads it back,
+and `chunk` rebuilds the chunk files from `normalized/` offline, with no network
+or API calls. Run `chunk` after cloning if you need them locally. They stopped
+being committed once both had passed GitHub's 100MB per-file hard limit, which
+rejects the push outright.
+
+`corpus/normalized/` and `corpus/metadata/` stay committed. `normalized/` is the
+real input to `chunk` and `index`, and for sources that refuse the crawler its
+markdown is placed there by hand, so it does not survive a re-`fetch`.
+
 Index normalized chunks into candidate `review-corpus-v2` and
 `research-corpus-v1`:
 

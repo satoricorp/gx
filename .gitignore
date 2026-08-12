@@ -30,3 +30,13 @@ docs-site/.source/
 
 # Python bytecode from running scripts/ directly
 __pycache__/
+
+# Derived review-corpus build artifacts. `fetch` writes corpus/raw/ but nothing
+# ever reads it back — normalized/ is what chunk and index consume — and
+# corpus/chunks/*.jsonl is regenerated offline from normalized/ by `chunk`.
+# Both had outgrown GitHub's 100MB per-file hard limit, which blocks the push
+# rather than warning about it. normalized/ and metadata/ stay tracked: the
+# first is the pipeline's real input and is hand-authored for sources that
+# refuse the crawler, and the second is fetch provenance.
+scripts/review-knowledge/corpus/raw/
+scripts/review-knowledge/corpus/chunks/*.jsonl
