@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/caching_with_rails.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8cd940f83679fe80843a772b5657699f19d0e52a07ce9b8cc912e2fa68d10853",
+  "source_id": "rails-caching"
+}

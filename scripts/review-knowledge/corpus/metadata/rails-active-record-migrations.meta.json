@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/active_record_migrations.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "23ba24e8190a616beafc1de44266224171a7db03d4039db7baaa277ea4424ba3",
+  "source_id": "rails-active-record-migrations"
+}

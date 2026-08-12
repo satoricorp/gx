@@ -4,9 +4,9 @@ generated_at: 2026-08-12
 baseline_namespace: gx-review-knowledge
 candidate_namespace: review-corpus-v2
 
-queries: 68
-v1_recall_at_10: 68/68
-v2_recall_at_10: 68/68
+queries: 112
+v1_recall_at_10: 71/112
+v2_recall_at_10: 112/112
 precedence_violations: 0
 status: pass
 
@@ -79,3 +79,47 @@ status: pass
 - dart linter rule pages for mechanical style: v1=hit v2=hit expected=dart-linter-rules,effective-dart
 - flutter widget rebuild performance const constructors: v1=hit v2=hit expected=flutter-perf-best-practices
 - flutter app security hardening best practices: v1=hit v2=hit expected=flutter-security,owasp-asvs
+- does the transactional annotation apply to a method called from within the same class: v1=miss v2=hit expected=spring-framework-reference
+- spring boot configuration property precedence and profile overrides: v1=miss v2=hit expected=spring-boot-reference
+- django run code only after the transaction commits: v1=miss v2=hit expected=django-topics
+- useeffect dependency array and cleanup contract: v1=miss v2=hit expected=react-reference,react-learn
+- you might not need an effect derived state during render: v1=miss v2=hit expected=react-learn
+- next.js server component caching and revalidation semantics: v1=miss v2=hit expected=nextjs-docs
+- nestjs request scoped provider and interceptor execution order: v1=miss v2=hit expected=nestjs-docs
+- vue reactivity caveat mutating props and lifecycle order: v1=miss v2=hit expected=vue-guide
+- express async handler error must be passed to next: v1=miss v2=hit expected=express-error-handling
+- lazy initialization exception on a detached entity outside the persistence context: v1=miss v2=hit expected=hibernate-user-guide,jakarta-persistence-spec
+- does merge cascade to associations for a detached jpa entity: v1=miss v2=hit expected=jakarta-persistence-spec,hibernate-user-guide
+- active record callback runs outside the surrounding transaction after_commit: v1=miss v2=hit expected=rails-active-record-callbacks
+- n+1 query includes preload eager_load difference: v1=miss v2=hit expected=rails-active-record-querying
+- uniqueness validation race condition needs a database unique index: v1=miss v2=hit expected=rails-active-record-validations
+- background job must be idempotent because delivery is at least once: v1=miss v2=hit expected=rails-active-job-basics,gcp-pubsub-exactly-once
+- sqlalchemy session lifetime expire on commit detached instance: v1=miss v2=hit expected=sqlalchemy-orm
+- connection pool size pre ping and recycle for serverless: v1=miss v2=hit expected=sqlalchemy-pooling,prisma-orm-docs
+- prisma interactive transaction isolation and connection limit: v1=miss v2=hit expected=prisma-orm-docs
+- gorm preload versus joins and hooks inside the transaction: v1=miss v2=hit expected=gorm-docs
+- double checked locking requires volatile happens before: v1=miss v2=hit expected=java-memory-model-jls,java-util-concurrent
+- do not pool virtual threads and avoid pinning in synchronized blocks: v1=miss v2=hit expected=java-virtual-threads
+- unsynchronized map write data race in goroutine: v1=miss v2=hit expected=go-memory-model,go-race-detector
+- context cancel must be called and deadlines propagate: v1=miss v2=hit expected=go-context-package,grpc-guides
+- blocking call inside the asyncio event loop: v1=miss v2=hit expected=python-asyncio-dev
+- fire and forget task garbage collected without a strong reference: v1=miss v2=hit expected=python-asyncio-tasks,python-asyncio-dev
+- process.nexttick versus setimmediate microtask ordering: v1=miss v2=hit expected=node-event-loop,mdn-js-execution-model
+- synchronous cpu work blocks the node event loop: v1=miss v2=hit expected=node-blocking-event-loop
+- sync over async result deadlock and async void: v1=miss v2=hit expected=aspnet-async-guidance,dotnet-async-programming
+- reusing a protobuf field number is a breaking change: v1=miss v2=hit expected=protobuf-dos-donts,protobuf-proto3-guide
+- which proto changes break wire compatibility versus source compatibility: v1=miss v2=hit expected=buf-breaking-rules,protobuf-proto3-guide
+- is adding a method to a public trait a major version bump: v1=miss v2=hit expected=cargo-semver,semver-spec
+- adding a field to an exported struct in a go module: v1=miss v2=hit expected=go-module-compatibility
+- binary versus source compatibility when changing a public dotnet api: v1=miss v2=hit expected=dotnet-library-change-rules
+- retry storm needs exponential backoff with jitter and a budget: v1=hit v2=hit expected=google-sre-book,azure-cloud-design-patterns
+- load shedding and cascading failure from overload: v1=miss v2=hit expected=google-sre-book
+- rpc call without a deadline and retry policy: v1=miss v2=hit expected=grpc-guides
+- idempotency key scope and replayed response for a retried write: v1=miss v2=hit expected=stripe-idempotency
+- ack deadline redelivery and consumer side deduplication: v1=miss v2=hit expected=gcp-pubsub-exactly-once
+- rubocop cop rationale and default configuration for a lint department: v1=hit v2=hit expected=rubocop-cops,ruby-style-guide
+- rails mass assignment and unsafe dynamic render path warning: v1=hit v2=hit expected=brakeman-warning-types,rails-security
+- rails migration reversibility and index creation hazards: v1=miss v2=hit expected=rails-active-record-migrations
+- dependent destroy versus delete_all callback semantics: v1=miss v2=hit expected=rails-association-basics
+- rails cache key based expiry and fragment invalidation: v1=miss v2=hit expected=rails-caching
+- java multithreading rule catalog for shared mutable state: v1=miss v2=hit expected=pmd-java-rules,errorprone-bugpatterns

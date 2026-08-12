@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://expressjs.com/en/guide/error-handling/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "e0242c62e527fc0cf502a5be1943b928df7ae2416fa3ce73721c92ea08426a1d",
+  "source_id": "express-error-handling"
+}

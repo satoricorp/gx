@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://grpc.io/docs/guides/wait-for-ready/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "34bc77abda92a8555300fec34137988593dd9104c45f29849e8d035001b18286",
+  "source_id": "grpc-guides"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://pkg.go.dev/context",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3138c1c2a95db1208cd4f36b8bf5210826abb9d0ca934e5875434a9fa10f9fde",
+  "source_id": "go-context-package"
+}

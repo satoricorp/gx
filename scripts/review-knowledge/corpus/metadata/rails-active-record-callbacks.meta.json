@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/active_record_callbacks.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3c3efe8b35999c2c17d97874baa4f1b9284b41e3e5dfeaa7c67df020850ac968",
+  "source_id": "rails-active-record-callbacks"
+}

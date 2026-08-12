@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.djangoproject.com/en/6.1/topics/i18n/formatting/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "e797ca96e72a420446f3b7006646280a777db0b33de74c2192d9839294d8cf3d",
+  "source_id": "django-topics"
+}

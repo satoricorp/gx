@@ -1,11 +1,11 @@
 # Review Corpus Build Log
 
 generated_at: 2026-08-12
-chunks: 15999
+chunks: 29354
 
 embedding_model: text-embedding-3-small
 embedding_dimensions: 512
-token_histogram: min=6 p50=85 max=916
+token_histogram: min=6 p50=105 max=916
 
 ## Chunks Per Source
 - google-eng-practices: 12
@@ -97,6 +97,57 @@ token_histogram: min=6 p50=85 max=916
 - swift-api-design-guidelines: 13
 - google-swift-style: 71
 - php-fig-per-coding-style: 8
+- spring-framework-reference: 1770
+- spring-boot-reference: 440
+- django-topics: 604
+- react-reference: 829
+- react-learn: 552
+- nextjs-docs: 2078
+- vue-guide: 598
+- nestjs-docs: 1045
+- express-security: 16
+- express-performance: 25
+- express-error-handling: 10
+- hibernate-user-guide: 376
+- jakarta-persistence-spec: 260
+- rails-active-record-querying: 99
+- rails-active-record-callbacks: 33
+- rails-active-record-validations: 34
+- rails-association-basics: 70
+- rails-active-record-migrations: 30
+- rails-caching: 33
+- rails-active-job-basics: 40
+- sqlalchemy-orm: 564
+- sqlalchemy-pooling: 21
+- prisma-orm-docs: 721
+- gorm-docs: 444
+- java-memory-model-jls: 12
+- java-util-concurrent: 8
+- java-virtual-threads: 17
+- go-memory-model: 20
+- go-context-package: 30
+- go-race-detector: 15
+- python-asyncio-dev: 11
+- python-asyncio-tasks: 18
+- node-event-loop: 4
+- node-blocking-event-loop: 6
+- mdn-js-execution-model: 16
+- dotnet-async-programming: 44
+- aspnet-async-guidance: 32
+- protobuf-proto3-guide: 59
+- protobuf-dos-donts: 4
+- buf-breaking-rules: 10
+- semver-spec: 3
+- cargo-semver: 61
+- go-module-compatibility: 9
+- dotnet-library-change-rules: 14
+- google-sre-book: 655
+- grpc-guides: 131
+- stripe-idempotency: 3
+- gcp-pubsub-exactly-once: 25
+- rubocop-cops: 1392
+- brakeman-warning-types: 50
+- pmd-java-rules: 14
 - bacchelli-bird-2013: 0
 - sadowski-2018-google: 0
 - rigby-bird-2013: 0

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://nodejs.org/learn/asynchronous-work/dont-block-the-event-loop",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "ffe6c94192cb00880e6bbc778aadc7f14686884a9c8fc31c71ea805348fb09eb",
+  "source_id": "node-blocking-event-loop"
+}

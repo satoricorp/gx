@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/core/compatibility/library-change-rules",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "6efc1443c84a7e420a38cc3d02be6ed8d0d1185802fa948986322eec0dd5b36e",
+  "source_id": "dotnet-library-change-rules"
+}

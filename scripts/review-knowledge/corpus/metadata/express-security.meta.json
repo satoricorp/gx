@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://expressjs.com/en/advanced/best-practice-security/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "f7a4ad9f8b5837c4b78fa25e88540d7c9c4f90f2e2120506e0f9ee55991092b3",
+  "source_id": "express-security"
+}

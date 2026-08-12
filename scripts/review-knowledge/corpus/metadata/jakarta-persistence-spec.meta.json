@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://jakarta.ee/specifications/persistence/3.2/jakarta-persistence-spec-3.2.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "956e60be6d163a84983e9a2be23d156a4376dcebd4c3fd0f1039c429678402c3",
+  "source_id": "jakarta-persistence-spec"
+}

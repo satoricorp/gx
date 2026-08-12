@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/active_record_querying.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "51c964bb9ea0773462db071321916b98bc7db9f7057d0e99e1490414becca24f",
+  "source_id": "rails-active-record-querying"
+}

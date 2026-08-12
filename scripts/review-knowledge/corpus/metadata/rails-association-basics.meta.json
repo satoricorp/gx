@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/association_basics.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "23d16dedec226f09b3515c662a32572f6b2d16be56a6647f6a5a9fd5a36eb6f6",
+  "source_id": "rails-association-basics"
+}

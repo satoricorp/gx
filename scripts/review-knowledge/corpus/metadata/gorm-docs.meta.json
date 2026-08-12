@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/go-gorm/gorm.io/master/pages/docs/write_plugins.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "e287874330e49c1c4adf174a9702bd1c0792d820b977b98b71d0e518babaaa32",
+  "source_id": "gorm-docs"
+}

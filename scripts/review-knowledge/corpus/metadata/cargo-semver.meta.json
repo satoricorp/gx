@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://doc.rust-lang.org/cargo/reference/semver.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8047fb14b3e5e56d3c31e7fcb458cdeec8a0208a89ab5d1ab63d0737637f1019",
+  "source_id": "cargo-semver"
+}

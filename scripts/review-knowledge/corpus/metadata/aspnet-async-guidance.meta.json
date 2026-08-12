@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/davidfowl/AspNetCoreDiagnosticScenarios/master/AsyncGuidance.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "168b737d2e04212a192d649e725cf48f9de80c27764a47e2973055964cc93057",
+  "source_id": "aspnet-async-guidance"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://nextjs.org/docs/about",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "9ef5437289df13dd8fe6fb46f68af6beae52e3317b740b4a75d77d55809a2067",
+  "source_id": "nextjs-docs"
+}

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.rubocop.org/rubocop/latest/about/license.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "468fd5f8f3d0002a7db7de1b22dc57183949efc966d66dbe91109c97eacae335",
+  "source_id": "rubocop-cops"
+}

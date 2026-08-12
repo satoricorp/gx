@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://buf.build/docs/breaking/rules/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8ede3e59634be6ba10344a84e0e223cdfe9b5bbc3df9ab20fbfff8fb4534dd15",
+  "source_id": "buf-breaking-rules"
+}

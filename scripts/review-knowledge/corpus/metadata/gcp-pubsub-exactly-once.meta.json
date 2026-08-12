@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.cloud.google.com/pubsub/docs/exactly-once-delivery",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "b2d208af3978b67f2b82d768a2bc56af7e4f4bc518786c5796e7b46762da0668",
+  "source_id": "gcp-pubsub-exactly-once"
+}

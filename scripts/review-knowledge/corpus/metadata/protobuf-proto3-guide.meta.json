@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://protobuf.dev/programming-guides/proto3/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d3b03f3e84b7c4e8c0a4faa82b55f077aee246c804f925f45c45f76807aa73c4",
+  "source_id": "protobuf-proto3-guide"
+}

@@ -24,9 +24,19 @@ Prefer primary or official sources:
 - secure-coding bodies: SEI CERT, MISRA, ISO/IEC secure-coding references
 - large-scale practice: Google, Microsoft, GitLab, Mozilla
 - language docs: TypeScript, JavaScript, Python, Go, Rust, Java, C, C++,
-  SQL, C#, shell, PHP, Kotlin, Swift
-- framework and vendor docs: Spring, .NET, PostgreSQL, MySQL, SQL Server,
-  dbt, Android, Apple platforms
+  SQL, C#, shell, PHP, Kotlin, Swift, Ruby, Dart
+- framework and vendor docs: Spring/Spring Boot, Django, React, Next.js, Vue,
+  NestJS, Express, Rails, .NET, PostgreSQL, MySQL, SQL Server, dbt, Android,
+  Apple platforms
+- ORM and data-access semantics: Jakarta Persistence, Hibernate, Active Record,
+  SQLAlchemy, Prisma, GORM
+- concurrency and async contracts: the Java memory model (JLS 17),
+  java.util.concurrent, virtual threads, the Go memory model and `context`,
+  asyncio, the Node/JS event loop, .NET async
+- API evolution: SemVer, protobuf/Buf breaking-change rules, Cargo SemVer,
+  Go module compatibility, .NET library change rules
+- distributed-systems correctness: the SRE book, gRPC deadlines/retries,
+  idempotency-key and delivery-semantics contracts
 - tool docs: typescript-eslint, Ruff, mypy, Bandit, govulncheck, Clippy, Miri,
   RustSec, cargo-deny, Error Prone, SpotBugs, Checkstyle, PMD, clang-tidy,
   Cppcheck, SQLFluff, Roslyn analyzers, ShellCheck, PHPStan, detekt, SwiftLint
@@ -62,9 +72,29 @@ disallow-everything; their actual policies permit the fetch.
 ## Current Coverage
 
 The v2 manifest covers review process, cross-cutting security, TypeScript,
-Python, Go, Rust, C#/.NET, Dart/Flutter, SQL, shell, style/linter sources, and
-empirical research. Research sources are routed to `research-corpus-v1` and are
-not used for review-time retrieval.
+Python, Go, Rust, C#/.NET, Java/Kotlin, Ruby, C/C++, Swift, PHP, Dart/Flutter,
+SQL, shell, IaC, style/linter sources, and empirical research. Research sources
+are routed to `research-corpus-v1` and are not used for review-time retrieval.
+
+Style and lint sources say how code should *look*. They do not say what a
+framework or library *promises*, which is why API-contract misuse measured as
+the weakest retrieval category (~36% recall) while TypeScript and Go style were
+well covered. The 2026-08-12 contract gap fill added six layers aimed at that:
+framework contracts (Spring/Spring Boot, Django, React, Next.js, Vue, NestJS,
+Express), ORM and data-access semantics (Jakarta Persistence, Hibernate, Active
+Record, SQLAlchemy incl. pooling, Prisma, GORM), per-language concurrency and
+async, API evolution and compatibility, distributed-systems correctness, and
+Ruby/Java rule-catalog depth. Prefer these over style guides for "is this a
+correct use of X" questions; keep them below repo-local `REVIEW.md` policy.
+
+Two known limits on how far a `languages:` tag carries a source. First,
+`languageTagsForFiles` in `internal/codereview/review_resources.go` maps file
+extensions to language tags and has no case for `.rb`, `.dart`, `.tf`, `.proto`,
+or `.html`, so sources tagged with those languages are only reachable through
+the unfiltered retrieval leg, never the signal-filtered one. Second, the v2
+index has no `frameworks` column (see `review_corpus_schema`), so a
+framework-specific source can only be tagged by its host language; framework
+targeting rides on the BM25 leg matching framework vocabulary in the body.
 
 The six .NET documents from the v1 `urls.json` manifest are re-ingested here as
 v2 sources (same ids where possible) rather than served from their legacy

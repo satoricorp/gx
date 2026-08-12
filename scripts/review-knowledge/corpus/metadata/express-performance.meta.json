@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://expressjs.com/en/advanced/best-practice-performance/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "15e4e95b881daf6095fd5720857d7a9b9fcc04c2ee1ca9fc4aa8ce99b852d24f",
+  "source_id": "express-performance"
+}

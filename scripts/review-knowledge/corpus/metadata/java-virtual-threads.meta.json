@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.oracle.com/en/java/javase/25/core/virtual-threads.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "b62dc2bf378a9b104c1c039202605cfd3ccc3384b83f84d962ac4f3dc647faf9",
+  "source_id": "java-virtual-threads"
+}

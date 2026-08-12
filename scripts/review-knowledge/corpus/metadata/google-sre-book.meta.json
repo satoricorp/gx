@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://sre.google/sre-book/evolving-sre-engagement-model/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3ae6b80388ddce8bd63f5fd206dff29375a375f12ca819ee822eb46e448134a6",
+  "source_id": "google-sre-book"
+}

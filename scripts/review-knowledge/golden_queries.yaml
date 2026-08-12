@@ -203,3 +203,139 @@ queries:
   - query: "flutter app security hardening best practices"
     expected_source_ids: [flutter-security, owasp-asvs]
     focus: dart
+  # 2026-08-12 contract gap fill. These queries are phrased as API-contract
+  # questions ("does X fire inside the transaction", "is this change breaking")
+  # rather than style questions, because contract misuse was the weakest
+  # measured category and the corpus previously had nothing to answer them with.
+  - query: "does the transactional annotation apply to a method called from within the same class"
+    expected_source_ids: [spring-framework-reference]
+    focus: framework
+  - query: "spring boot configuration property precedence and profile overrides"
+    expected_source_ids: [spring-boot-reference]
+    focus: framework
+  - query: "django run code only after the transaction commits"
+    expected_source_ids: [django-topics]
+    focus: framework
+  - query: "useeffect dependency array and cleanup contract"
+    expected_source_ids: [react-reference, react-learn]
+    focus: framework
+  - query: "you might not need an effect derived state during render"
+    expected_source_ids: [react-learn]
+    focus: framework
+  - query: "next.js server component caching and revalidation semantics"
+    expected_source_ids: [nextjs-docs]
+    focus: framework
+  - query: "nestjs request scoped provider and interceptor execution order"
+    expected_source_ids: [nestjs-docs]
+    focus: framework
+  - query: "vue reactivity caveat mutating props and lifecycle order"
+    expected_source_ids: [vue-guide]
+    focus: framework
+  - query: "express async handler error must be passed to next"
+    expected_source_ids: [express-error-handling]
+    focus: framework
+  - query: "lazy initialization exception on a detached entity outside the persistence context"
+    expected_source_ids: [hibernate-user-guide, jakarta-persistence-spec]
+    focus: orm
+  - query: "does merge cascade to associations for a detached jpa entity"
+    expected_source_ids: [jakarta-persistence-spec, hibernate-user-guide]
+    focus: orm
+  - query: "active record callback runs outside the surrounding transaction after_commit"
+    expected_source_ids: [rails-active-record-callbacks]
+    focus: orm
+  - query: "n+1 query includes preload eager_load difference"
+    expected_source_ids: [rails-active-record-querying]
+    focus: orm
+  - query: "uniqueness validation race condition needs a database unique index"
+    expected_source_ids: [rails-active-record-validations]
+    focus: orm
+  - query: "background job must be idempotent because delivery is at least once"
+    expected_source_ids: [rails-active-job-basics, gcp-pubsub-exactly-once]
+    focus: distributed
+  - query: "sqlalchemy session lifetime expire on commit detached instance"
+    expected_source_ids: [sqlalchemy-orm]
+    focus: orm
+  - query: "connection pool size pre ping and recycle for serverless"
+    expected_source_ids: [sqlalchemy-pooling, prisma-orm-docs]
+    focus: orm
+  - query: "prisma interactive transaction isolation and connection limit"
+    expected_source_ids: [prisma-orm-docs]
+    focus: orm
+  - query: "gorm preload versus joins and hooks inside the transaction"
+    expected_source_ids: [gorm-docs]
+    focus: orm
+  - query: "double checked locking requires volatile happens before"
+    expected_source_ids: [java-memory-model-jls, java-util-concurrent]
+    focus: concurrency
+  - query: "do not pool virtual threads and avoid pinning in synchronized blocks"
+    expected_source_ids: [java-virtual-threads]
+    focus: concurrency
+  - query: "unsynchronized map write data race in goroutine"
+    expected_source_ids: [go-memory-model, go-race-detector]
+    focus: concurrency
+  - query: "context cancel must be called and deadlines propagate"
+    expected_source_ids: [go-context-package, grpc-guides]
+    focus: concurrency
+  - query: "blocking call inside the asyncio event loop"
+    expected_source_ids: [python-asyncio-dev]
+    focus: concurrency
+  - query: "fire and forget task garbage collected without a strong reference"
+    expected_source_ids: [python-asyncio-tasks, python-asyncio-dev]
+    focus: concurrency
+  - query: "process.nexttick versus setimmediate microtask ordering"
+    expected_source_ids: [node-event-loop, mdn-js-execution-model]
+    focus: concurrency
+  - query: "synchronous cpu work blocks the node event loop"
+    expected_source_ids: [node-blocking-event-loop]
+    focus: concurrency
+  - query: "sync over async result deadlock and async void"
+    expected_source_ids: [aspnet-async-guidance, dotnet-async-programming]
+    focus: concurrency
+  - query: "reusing a protobuf field number is a breaking change"
+    expected_source_ids: [protobuf-dos-donts, protobuf-proto3-guide]
+    focus: api-evolution
+  - query: "which proto changes break wire compatibility versus source compatibility"
+    expected_source_ids: [buf-breaking-rules, protobuf-proto3-guide]
+    focus: api-evolution
+  - query: "is adding a method to a public trait a major version bump"
+    expected_source_ids: [cargo-semver, semver-spec]
+    focus: api-evolution
+  - query: "adding a field to an exported struct in a go module"
+    expected_source_ids: [go-module-compatibility]
+    focus: api-evolution
+  - query: "binary versus source compatibility when changing a public dotnet api"
+    expected_source_ids: [dotnet-library-change-rules]
+    focus: api-evolution
+  - query: "retry storm needs exponential backoff with jitter and a budget"
+    expected_source_ids: [google-sre-book, azure-cloud-design-patterns]
+    focus: distributed
+  - query: "load shedding and cascading failure from overload"
+    expected_source_ids: [google-sre-book]
+    focus: distributed
+  - query: "rpc call without a deadline and retry policy"
+    expected_source_ids: [grpc-guides]
+    focus: distributed
+  - query: "idempotency key scope and replayed response for a retried write"
+    expected_source_ids: [stripe-idempotency]
+    focus: distributed
+  - query: "ack deadline redelivery and consumer side deduplication"
+    expected_source_ids: [gcp-pubsub-exactly-once]
+    focus: distributed
+  - query: "rubocop cop rationale and default configuration for a lint department"
+    expected_source_ids: [rubocop-cops, ruby-style-guide]
+    focus: ruby
+  - query: "rails mass assignment and unsafe dynamic render path warning"
+    expected_source_ids: [brakeman-warning-types, rails-security]
+    focus: ruby
+  - query: "rails migration reversibility and index creation hazards"
+    expected_source_ids: [rails-active-record-migrations]
+    focus: ruby
+  - query: "dependent destroy versus delete_all callback semantics"
+    expected_source_ids: [rails-association-basics]
+    focus: ruby
+  - query: "rails cache key based expiry and fragment invalidation"
+    expected_source_ids: [rails-caching]
+    focus: ruby
+  - query: "java multithreading rule catalog for shared mutable state"
+    expected_source_ids: [pmd-java-rules, errorprone-bugpatterns]
+    focus: java

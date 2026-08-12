@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://go.dev/ref/mem",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "d4450e52970c3a15ff583914a36316ad360b65560832466b4730d11c1528cfd9",
+  "source_id": "go-memory-model"
+}

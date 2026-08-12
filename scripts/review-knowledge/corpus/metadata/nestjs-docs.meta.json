@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/nestjs/docs.nestjs.com/master/content/websockets/pipes.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "fcfe208248d682243c0b790b2380a393348507a25d1307e0a95c6bb790415001",
+  "source_id": "nestjs-docs"
+}

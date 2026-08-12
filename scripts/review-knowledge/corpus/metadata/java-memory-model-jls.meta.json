@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "42359d084c5687346f99f1ef830cafa0b97563d7643c07a7a8d7d208a38d3dec",
+  "source_id": "java-memory-model-jls"
+}

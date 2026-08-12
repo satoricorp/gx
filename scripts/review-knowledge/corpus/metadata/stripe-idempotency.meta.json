@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.stripe.com/api/idempotent_requests",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "3ec85568b30da69e279e574bb34c4a99900c46d9d3226e119e92f519bc6f7d96",
+  "source_id": "stripe-idempotency"
+}

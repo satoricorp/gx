@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://nodejs.org/learn/asynchronous-work/event-loop-timers-and-nexttick",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "0080ff7cc1818bfcbed2e646899d7ed6ed6e5b470c359b0abf23eb194ab3f180",
+  "source_id": "node-event-loop"
+}

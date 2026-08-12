@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-scenarios",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "0a3db9019b9ee1040a296139ad5b703af0a4c0ffbe023d55aa7a3ba0b0a866a1",
+  "source_id": "dotnet-async-programming"
+}

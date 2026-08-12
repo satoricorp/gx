@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://brakemanscanner.org/docs/warning_types/weak_hash/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "6e58a6790c7f1678cd5a635b2ad37d44d361a27ffadc1205fc4ae458cc531028",
+  "source_id": "brakeman-warning-types"
+}

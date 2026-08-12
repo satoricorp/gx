@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://guides.rubyonrails.org/active_job_basics.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "a45ec84e6c072d072c410975c42a4dab600c3bbcfb75ee5b811bffba0d149689",
+  "source_id": "rails-active-job-basics"
+}

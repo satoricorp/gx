@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://go.dev/blog/module-compatibility",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4b065152a482caef90e0a24c037346081bf4851e201c5348901c13d3d0aea804",
+  "source_id": "go-module-compatibility"
+}

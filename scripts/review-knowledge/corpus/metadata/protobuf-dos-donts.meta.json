@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://protobuf.dev/best-practices/dos-donts/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "b37645a5760a22bb5427ba12d9a6d4c59c9dc2b9f34194ebf3c6788807459a3b",
+  "source_id": "protobuf-dos-donts"
+}

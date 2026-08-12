@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.spring.io/spring-boot/reference/actuator/cloud-foundry.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "8d109641364b36ba39947e32b4e1efecdc9a8a1400331ad97d3e9619e8e03c3f",
+  "source_id": "spring-boot-reference"
+}

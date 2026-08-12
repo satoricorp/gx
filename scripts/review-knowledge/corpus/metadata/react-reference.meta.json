@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/reactjs/react.dev/main/src/content/reference/react/useTransition.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "e7229b28ca976918cad8247abfeceb087a04506fc73a37a508204d76b0a3224d",
+  "source_id": "react-reference"
+}

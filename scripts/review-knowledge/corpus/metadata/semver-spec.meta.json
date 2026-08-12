@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://semver.org/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "1d282f7eb59a4e4d0199f30431e333d43181149cac41f77a0b46ab7229089c25",
+  "source_id": "semver-spec"
+}

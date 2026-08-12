@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.hibernate.org/orm/7.0/userguide/html_single/",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "6a461ba40ac1f4103606ff9e4024f325b8793c2045afaf8b89416a17dde73f4b",
+  "source_id": "hibernate-user-guide"
+}

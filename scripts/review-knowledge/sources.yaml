@@ -536,6 +536,343 @@ sources:
     languages: [php]
     authority: 1
     notes: "PHP-FIG PER Coding Style (successor to PSR-12)."
+  # --- 2026-08-12 contract gap fill: the corpus was style/lint/security-shaped,
+  # which tells a reviewer how code should LOOK but never what a framework or
+  # library PROMISES. API-contract misuse was the measured weakest category
+  # (~36% recall) because that knowledge is framework-shaped, not
+  # language-shaped. Six layers added: framework contracts, ORM/data-access
+  # semantics, concurrency and async, API evolution/compatibility,
+  # distributed-systems correctness, and Ruby/Java depth. Every URL below was
+  # fetched and trafilatura-extracted before landing here; extracted-text sizes
+  # in the notes are from that check, so a later fetch that yields far less is a
+  # regression, not a surprise. ---
+  # Layer 1: framework contracts.
+  - id: spring-framework-reference
+    url: https://docs.spring.io/spring-framework/reference/
+    tier: language
+    languages: [java]
+    authority: 1
+    crawl_depth: 3
+    max_urls: 300
+    notes: "Spring Framework reference: bean scopes/lifecycle, @Transactional propagation and self-invocation, AOP proxy semantics, MVC, testing. MUST anchor at /reference/ - the Antora split means section pages (data-access.html) do not path-prefix their own children (data-access/transaction.html), so a data-access.html seed cannot expand. The index extracts thin (1.6KB, it is a nav page); leaf pages carry the content (transaction/declarative/annotations.html 18KB, core/beans/factory-scopes.html 24KB). Depth 3 = index -> section -> subsection -> leaf."
+  - id: spring-boot-reference
+    url: https://docs.spring.io/spring-boot/reference/
+    tier: language
+    languages: [java]
+    crawl_depth: 2
+    max_urls: 150
+    notes: "Spring Boot reference: auto-configuration, externalized config precedence, profiles, actuator exposure, test slices. features/external-config.html extracts 72KB. Same anchoring rule as spring-framework-reference."
+  - id: django-topics
+    url: https://docs.djangoproject.com/en/6.1/topics/
+    tier: language
+    languages: [python]
+    authority: 1
+    crawl_depth: 2
+    max_urls: 120
+    notes: "Django topic guides: transaction management (ATOMIC_REQUESTS, on_commit), queryset laziness and select_related/prefetch_related, middleware ordering, signals, auth. topics/db/transactions/ extracts 24KB. Version-pinned to 6.1 (current stable; /en/stable/ 302s here) - re-pin on the next Django release. robots.txt disallows only non-English locales and does not touch /en/."
+  - id: react-reference
+    url: https://github.com/reactjs/react.dev/tree/main/src/content/reference/react
+    tier: language
+    languages: [javascript, typescript]
+    authority: 1
+    fetch: github-md
+    crawl_depth: 1
+    notes: "React API reference as the docs site's own markdown (49 files): hook call rules, useEffect cleanup/dependency contract, StrictMode double-invocation, useMemo/useRef guarantees. The rendered react.dev pages are a Next.js app; the source markdown chunks along real headings."
+  - id: react-learn
+    url: https://github.com/reactjs/react.dev/tree/main/src/content/learn
+    tier: language
+    languages: [javascript, typescript]
+    fetch: github-md
+    crawl_depth: 1
+    notes: "React learn track (47 files): 'You Might Not Need an Effect', state structure, escape hatches, render purity. This is where the review-relevant misuse patterns are written down rather than the API surface."
+  - id: nextjs-docs
+    url: https://nextjs.org/docs
+    tier: language
+    languages: [typescript, javascript]
+    crawl_depth: 3
+    max_urls: 200
+    notes: "Next.js docs: server vs client components, caching and revalidation semantics, route handlers, server actions. Index extracts thin (2.5KB nav); leaf pages are real (app/getting-started/fetching-data 12KB). CAVEAT: tracks the current public stable release, so it can disagree with a repo on canary - keep it authority 2 and let repo-local docs win."
+  - id: vue-guide
+    url: https://github.com/vuejs/docs/tree/main/src/guide
+    tier: language
+    languages: [javascript, typescript]
+    authority: 1
+    fetch: github-md
+    crawl_depth: 2
+    notes: "Vue guide as source markdown: reactivity caveats, lifecycle order, props mutation, composition-API rules. The tree is 2 files plus 8 subdirectories (essentials/, components/, reusability/, scaling-up/, best-practices/), so depth 2 is required to reach the pages."
+  - id: nestjs-docs
+    url: https://github.com/nestjs/docs.nestjs.com/tree/master/content
+    tier: language
+    languages: [typescript]
+    fetch: github-md
+    crawl_depth: 2
+    notes: "NestJS docs as source markdown (16 files + 12 subdirectories): injection scopes and request-scoped providers, module encapsulation, guard/interceptor/pipe/filter execution order, lifecycle hooks. Depth 2 reaches the subdirectory pages."
+  - id: express-security
+    url: https://expressjs.com/en/advanced/best-practice-security.html
+    tier: security
+    languages: [javascript, typescript]
+    notes: "Express production security: helmet, cookie flags, TLS termination, dependency posture. 11KB."
+  - id: express-performance
+    url: https://expressjs.com/en/advanced/best-practice-performance.html
+    tier: language
+    languages: [javascript, typescript]
+    notes: "Express production performance: gzip, no synchronous work in handlers, NODE_ENV, cluster/process management. 17KB."
+  - id: express-error-handling
+    url: https://expressjs.com/en/guide/error-handling.html
+    tier: language
+    languages: [javascript, typescript]
+    authority: 1
+    notes: "The Express contract reviews actually break: errors from async handlers must reach next(err) or the request hangs; error middleware needs all four arguments. 7KB."
+  # Layer 2: ORM and data-access semantics - where SQL review and framework
+  # review meet and where the corpus had nothing between 'SQL' and 'style'.
+  - id: hibernate-user-guide
+    url: https://docs.jboss.org/hibernate/orm/7.0/userguide/html_single/Hibernate_User_Guide.html
+    tier: language
+    languages: [java]
+    authority: 1
+    notes: "Hibernate ORM 7.0 user guide, single-page HTML: persistence context and flush ordering, entity states (transient/managed/detached), cascade types, lazy loading and LazyInitializationException, fetch strategies, locking, batching. Extracts 1.06MB - expect a large chunk count like cpp-core-guidelines. depth 0 deliberately: docs.jboss.org asks for Crawl-Delay 20 and the single-page build already carries the whole manual."
+  - id: jakarta-persistence-spec
+    url: https://jakarta.ee/specifications/persistence/3.2/jakarta-persistence-spec-3.2.html
+    tier: language
+    languages: [java]
+    authority: 1
+    notes: "Jakarta Persistence 3.2 specification, normative JPA semantics behind Hibernate/Spring Data: what merge/persist/remove guarantee, when cascades apply, detached-entity rules, flush modes, optimistic locking. Extracts 1.25MB. Outranks vendor guides on contract questions; Hibernate wins on Hibernate-specific behavior."
+  - id: rails-active-record-querying
+    url: https://guides.rubyonrails.org/active_record_querying.html
+    tier: language
+    languages: [ruby]
+    authority: 1
+    notes: "Active Record querying: relation laziness, includes vs preload vs eager_load (the N+1 fix and its traps), find_each batching, locking, pluck/exists? costs."
+  - id: rails-active-record-callbacks
+    url: https://guides.rubyonrails.org/active_record_callbacks.html
+    tier: language
+    languages: [ruby]
+    authority: 1
+    notes: "Active Record callbacks: callback ordering, which callbacks run inside the surrounding transaction vs after_commit/after_rollback, halting the chain, callbacks skipped by update_column/delete. 36KB. The canonical 'the callback fires outside the transaction' review finding."
+  - id: rails-active-record-validations
+    url: https://guides.rubyonrails.org/active_record_validations.html
+    tier: language
+    languages: [ruby]
+    notes: "Active Record validations: which methods skip validation, uniqueness validation's race with the database (needs a unique index), conditional and custom validation contracts."
+  - id: rails-association-basics
+    url: https://guides.rubyonrails.org/association_basics.html
+    tier: language
+    languages: [ruby]
+    authority: 1
+    notes: "Active Record associations: dependent: :destroy vs :delete_all callback semantics, counter caches, polymorphic and has_many :through contracts, autosave."
+  - id: rails-active-record-migrations
+    url: https://guides.rubyonrails.org/active_record_migrations.html
+    tier: language
+    languages: [ruby]
+    notes: "Active Record migrations: reversibility, strong_migrations-style hazards, index creation, transactional DDL limits, schema vs structure dumps."
+  - id: rails-caching
+    url: https://guides.rubyonrails.org/caching_with_rails.html
+    tier: language
+    languages: [ruby]
+    notes: "Rails caching: key-based expiry, russian-doll fragment caching, cache_versioning, the invalidation contract for low-level Rails.cache use."
+  - id: rails-active-job-basics
+    url: https://guides.rubyonrails.org/active_job_basics.html
+    tier: language
+    languages: [ruby]
+    notes: "Active Job: serialization limits (GlobalID, no raw AR objects), retry_on/discard_on, at-least-once execution and why jobs must be idempotent, enqueue-after-commit."
+  - id: sqlalchemy-orm
+    url: https://github.com/sqlalchemy/sqlalchemy/tree/main/doc/build/orm
+    tier: language
+    languages: [python]
+    authority: 1
+    fetch: github-md
+    crawl_depth: 2
+    notes: "SQLAlchemy ORM docs as .rst from the repo (53 files + 2 subdirectories): Session/unit-of-work and transaction boundaries, expire-on-commit, lazy='select' vs selectin/joined loading, cascade and delete-orphan, detached instance errors. docs.sqlalchemy.org renders the same content but the repo tree chunks along section structure."
+  - id: sqlalchemy-pooling
+    url: https://github.com/sqlalchemy/sqlalchemy/blob/main/doc/build/core/pooling.rst
+    tier: language
+    languages: [python]
+    fetch: github-md
+    notes: "Connection pooling semantics: pool_size/max_overflow, pool_pre_ping, pool_recycle vs server-side timeouts, fork safety. The connection-pool half of data-access review; the ORM tree does not cover it."
+  - id: prisma-orm-docs
+    url: https://github.com/prisma/web/tree/main/apps/docs/content/docs/orm/prisma-client
+    tier: language
+    languages: [typescript, javascript]
+    fetch: github-md
+    crawl_depth: 3
+    max_urls: 200
+    notes: "Prisma Client docs as source .mdx (10 subdirectories: queries/, setup-and-configuration/, using-raw-sql/, testing/): interactive transactions and isolation, connection-pool sizing (connection_limit) for serverless, relation loading (include/select) and N+1, raw-query escape hatches. MUST come from the repo, not www.prisma.io: prisma.io content-negotiates on the indexer's Accept header and serves text/markdown, so the HTML crawl gets a body with no <a href> to follow and stops at the seed page (8.7KB total on the first attempt vs 580KB from the tree). Depth 3 = tree -> section -> subsection -> page. The docs live in prisma/web now; github.com/prisma/docs redirects there, but the canonical repo is named here so the URL does not depend on the redirect."
+  - id: gorm-docs
+    url: https://github.com/go-gorm/gorm.io/tree/master/pages/docs
+    tier: language
+    languages: [go]
+    fetch: github-md
+    crawl_depth: 1
+    notes: "GORM docs as source markdown (45 files, flat): transactions and nested transactions/SavePoint, hooks and their transaction, Preload vs Joins (N+1), Select/Omit, session config, soft delete's effect on every query."
+  # Layer 3: concurrency and async, per language.
+  - id: java-memory-model-jls
+    url: https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html
+    tier: language
+    languages: [java]
+    authority: 1
+    notes: "JLS SE 25 chapter 17: the normative Java memory model - happens-before, volatile, final-field freeze, safe publication, why double-checked locking without volatile is broken. 64KB. Java Concurrency in Practice is the usual citation here but is not public; this is the normative source it explains."
+  - id: java-util-concurrent
+    url: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html
+    tier: language
+    languages: [java]
+    authority: 1
+    notes: "java.util.concurrent package summary: memory-consistency effects of the concurrent collections, executor/queue contracts, the difference between the concurrent and synchronized collection guarantees. 17KB."
+  - id: java-virtual-threads
+    url: https://docs.oracle.com/en/java/javase/25/core/virtual-threads.html
+    tier: language
+    languages: [java]
+    notes: "Virtual threads: pinning by synchronized/native frames, why pooling virtual threads is wrong, thread-local cost, blocking-call assumptions that changed. 26KB."
+  - id: go-memory-model
+    url: https://go.dev/ref/mem
+    tier: language
+    languages: [go]
+    authority: 1
+    notes: "The Go memory model: normative happens-before for channels, mutexes, once, and atomics; explicitly documents the race-condition patterns gx should flag. 22KB."
+  - id: go-context-package
+    url: https://pkg.go.dev/context
+    tier: language
+    languages: [go]
+    authority: 1
+    notes: "context package docs: cancellation propagation, WithCancel's must-call-cancel contract, deadline inheritance, why contexts belong in the first parameter and not in structs. 20KB."
+  - id: go-race-detector
+    url: https://go.dev/doc/articles/race_detector
+    tier: language
+    languages: [go]
+    authority: 3
+    notes: "Race detector guide with the canonical unsynchronized-access examples (loop-variable capture, unprotected map writes). Tooling doc: advisory, ranks below go-memory-model."
+  - id: python-asyncio-dev
+    url: https://docs.python.org/3/library/asyncio-dev.html
+    tier: language
+    languages: [python]
+    authority: 1
+    notes: "Developing with asyncio: blocking calls in the event loop, never-awaited coroutines, fire-and-forget tasks getting garbage collected, thread-safety rules (call_soon_threadsafe/run_coroutine_threadsafe). 12KB - the asyncio pitfalls page."
+  - id: python-asyncio-tasks
+    url: https://docs.python.org/3/library/asyncio-task.html
+    tier: language
+    languages: [python]
+    authority: 1
+    notes: "asyncio tasks and coroutines: task lifetime and strong-reference requirement, TaskGroup vs gather(return_exceptions=...), cancellation and shielding, timeouts. 43KB."
+  - id: node-event-loop
+    url: https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick
+    tier: language
+    languages: [javascript, typescript]
+    authority: 1
+    notes: "Node event loop phases, timer ordering, process.nextTick vs setImmediate vs microtasks. 17KB. The ordering guarantees reviewers assert about and get wrong."
+  - id: node-blocking-event-loop
+    url: https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop
+    tier: language
+    languages: [javascript, typescript]
+    notes: "Don't block the event loop: sync fs/crypto calls, JSON on large payloads, REDOS as an availability bug, partitioning vs offloading CPU work. 28KB."
+  - id: mdn-js-execution-model
+    url: https://github.com/mdn/content/blob/main/files/en-us/web/javascript/reference/execution_model/index.md
+    tier: language
+    languages: [javascript, typescript]
+    fetch: github-md
+    notes: "MDN JavaScript execution model: run-to-completion, job queues/microtasks, agent isolation. Pulled from mdn/content because the rendered page is on developer.mozilla.org's crawl-restricted app; the markdown is the same document."
+  - id: dotnet-async-programming
+    url: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/
+    tier: language
+    languages: [csharp]
+    authority: 1
+    crawl_depth: 1
+    max_urls: 40
+    notes: "C# async/await guidance: task-based async pattern, async scenarios, cancellation tokens, async streams. Index alone extracts 32KB; depth 1 pulls the scenario pages."
+  - id: aspnet-async-guidance
+    url: https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md
+    tier: language
+    languages: [csharp]
+    authority: 3
+    license: verify
+    fetch: github-md
+    notes: "Fowler's ASP.NET Core async guidance (54KB markdown): sync-over-async and .Result deadlocks, async void, ConfigureAwait, fire-and-forget on the request thread, IAsyncEnumerable. Community-authored (not learn.microsoft), hence authority 3 - but it is the de-facto citation for .NET async review and has no primary-source equivalent. license: verify before any public corpus export."
+  # Layer 4: API evolution and compatibility - what makes a change BREAKING,
+  # which REST design guides (zalando, google-aip) never answer.
+  - id: protobuf-proto3-guide
+    url: https://protobuf.dev/programming-guides/proto3/
+    tier: process
+    authority: 1
+    notes: "proto3 language guide including 'Updating A Message Type': field-number reuse, reserved, wire-compatible type changes, optional/required history, enum evolution. 62KB. protobuf.dev serves no robots.txt."
+  - id: protobuf-dos-donts
+    url: https://protobuf.dev/best-practices/dos-donts/
+    tier: process
+    authority: 1
+    notes: "Proto best practices: never re-use a tag number, never change a field's type, don't use required, wrapper messages for RPC request/response. 66KB. (There is no /programming-guides/api/ page - that URL 404s.)"
+  - id: buf-breaking-rules
+    url: https://buf.build/docs/breaking/rules/
+    tier: process
+    authority: 3
+    notes: "Buf's enumerated breaking-change rule categories (FILE/PACKAGE/WIRE/WIRE_JSON): the closest thing to a machine-checkable list of what breaks a protobuf consumer, split by wire vs source vs JSON compatibility. 33KB. Vendor tool doc, so authority 3 under the protobuf.dev sources."
+  - id: semver-spec
+    url: https://semver.org/
+    tier: process
+    authority: 1
+    notes: "Semantic Versioning 2.0.0: the normative MAJOR/MINOR/PATCH contract a version-bump review is measured against. 31KB, CC-BY."
+  - id: cargo-semver
+    url: https://doc.rust-lang.org/cargo/reference/semver.html
+    tier: language
+    languages: [rust]
+    authority: 1
+    notes: "Cargo's SemVer compatibility reference: an itemized major/minor classification of Rust API changes (adding a trait item, sealing a struct, changing an inherent method) with examples. 65KB. The best per-language 'is this breaking?' table in existence; the model of what the other ecosystems' entries are for."
+  - id: go-module-compatibility
+    url: https://go.dev/blog/module-compatibility
+    tier: language
+    languages: [go]
+    authority: 3
+    notes: "Keeping your modules compatible: adding to interfaces and structs, variadic and option-struct techniques, when a change forces /v2. Official blog, so authority 3."
+  - id: dotnet-library-change-rules
+    url: https://learn.microsoft.com/en-us/dotnet/core/compatibility/library-change-rules
+    tier: language
+    languages: [csharp]
+    authority: 1
+    notes: ".NET library change rules: source vs binary vs behavioral compatibility, itemized allowed/disallowed changes for types, members, and attributes. 24KB. The C# analogue of cargo-semver."
+  # Layer 5: distributed-systems correctness as review criteria.
+  - id: google-sre-book
+    url: https://sre.google/sre-book/
+    tier: process
+    authority: 1
+    crawl_depth: 1
+    max_urls: 40
+    notes: "Site Reliability Engineering (the SRE book), free HTML edition: addressing cascading failures, handling overload and load shedding, retry amplification and jittered backoff, data integrity. Chapter pages extract well (addressing-cascading-failures 56KB); anchor at /sre-book/ because chapter paths do not extend /sre-book/table-of-contents."
+  - id: grpc-guides
+    url: https://grpc.io/docs/guides/
+    tier: process
+    crawl_depth: 1
+    max_urls: 40
+    notes: "gRPC guides: deadlines (and deadline propagation), retry and hedging policy, cancellation, error handling/status codes, keepalive. The concrete RPC-contract half of retries and timeouts."
+  - id: stripe-idempotency
+    url: https://docs.stripe.com/api/idempotent_requests
+    tier: process
+    authority: 3
+    notes: "Stripe's idempotency-key contract: key scope and lifetime, what a replayed response returns, which failures are safe to retry. 7KB. Vendor doc, but the reference implementation everyone's at-least-once write path is compared against."
+  - id: gcp-pubsub-exactly-once
+    url: https://cloud.google.com/pubsub/docs/exactly-once-delivery
+    tier: process
+    authority: 3
+    notes: "Pub/Sub delivery semantics: why at-least-once is the default, ack deadlines and redelivery, what 'exactly once' does and does not guarantee, and the consumer-side dedup/idempotency that follows. 15KB."
+  # Layer 6: language depth where the corpus was thinnest (Ruby, Java) - rule
+  # catalogs in the shape clippy/eslint/bandit already occupy for other stacks.
+  - id: rubocop-cops
+    url: https://docs.rubocop.org/rubocop/latest/
+    tier: style
+    languages: [ruby]
+    authority: 1
+    precedence_group: ruby-style
+    crawl_depth: 1
+    max_urls: 60
+    notes: "RuboCop cop reference, the Ruby analogue of clippy/eslint rule pages: per-department pages carry each cop's rationale, bad/good examples, and defaults (cops_lint.html alone is 494KB of HTML). DECISION-B tier - mechanical style defers to the enabled cop set, ruby-style-guide wins on design-level topics. Anchor at /rubocop/latest/ (which links every cops_*.html department page), NOT at cops.html: crawl_links matches on path prefix and cops_lint.html does not extend cops.html, so a cops.html seed reaches nothing. Bare /rubocop/cops.html is a 300-byte meta-refresh redirect - also unusable."
+  - id: brakeman-warning-types
+    url: https://brakemanscanner.org/docs/warning_types/
+    tier: security
+    languages: [ruby]
+    crawl_depth: 1
+    max_urls: 120
+    notes: "Brakeman warning types, one page per Rails security check (mass assignment, SQL injection, unsafe redirect, dynamic render path) with vulnerable and fixed code. The Rails analogue of bandit-plugins. Index is a 736-byte link list, so depth 1 is required. robots.txt carries only the Cloudflare content-signal preamble - no directives, nothing disallowed."
+  - id: pmd-java-rules
+    url: https://docs.pmd-code.org/latest/pmd_rules_java.html
+    tier: style
+    languages: [java]
+    authority: 3
+    notes: "PMD Java rule catalog (42KB single page): best-practices, error-prone, multithreading, and performance rule descriptions. Third Java rule source alongside errorprone-bugpatterns (authority 1) and spotbugs; its multithreading category is the reason it is here."
   - id: bacchelli-bird-2013
     url: https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/
     tier: research

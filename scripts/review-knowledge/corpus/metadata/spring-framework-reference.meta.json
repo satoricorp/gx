@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://docs.spring.io/spring-framework/reference/7.1-SNAPSHOT/core/beans/basics.html",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "4fc960e7bacbde866b11edf2ede312882f4fb794c7974dd66a227039de36eccd",
+  "source_id": "spring-framework-reference"
+}

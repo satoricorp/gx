@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://go.dev/doc/articles/race_detector",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "39ad85711ec454c2d8febb81ddc0aeb98bbd441ecc98d493ad69512b3442a5b6",
+  "source_id": "go-race-detector"
+}

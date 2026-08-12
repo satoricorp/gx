@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "fetched_at": "2026-08-12",
+  "final_url": "https://raw.githubusercontent.com/mdn/content/main/files/en-us/web/javascript/reference/execution_model/index.md",
+  "http_status": 200,
+  "license": "verify",
+  "license_status": "needs-verification",
+  "sha256": "c9b3700b3676dbf6e64423b8dc72883b866bdfeff86492692a233dd899d51690",
+  "source_id": "mdn-js-execution-model"
+}
