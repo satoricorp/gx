@@ -28,6 +28,7 @@ Default flow:
 - To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
 For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.
+Before shipping, run the ` + "`gx_constraints`" + ` MCP tool (or ` + "`gx constraints`" + `) to check the change against the pre-ship constraint gates.
 `
 
 type initSetupOptions struct {
@@ -67,7 +68,11 @@ func runInitRepoSetup(opts initSetupOptions) error {
 		if len(commands) == 0 {
 			fmt.Fprintln(opts.Out, labelValue("Command", muted("skipped (no supported agent found)")))
 		} else {
-			fmt.Fprintln(opts.Out, labelValue("Command", success("ok")+": /"+slashCommandName+" in "+strings.Join(commands, ", ")))
+			names := make([]string, 0, len(slashCommands()))
+			for _, cmd := range slashCommands() {
+				names = append(names, "/"+cmd.name)
+			}
+			fmt.Fprintln(opts.Out, labelValue("Command", success("ok")+": "+strings.Join(names, ", ")+" in "+strings.Join(commands, ", ")))
 		}
 	}
 

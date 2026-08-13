@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import gxConstraints, { metadata as constraintsMetadata, schema as constraintsSchema } from "../src/tools/gx-constraints";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 
 describe("gx_review metadata and schema", () => {
@@ -17,10 +18,21 @@ describe("gx_review metadata and schema", () => {
   });
 });
 
+describe("gx_constraints metadata and schema", () => {
+  test("describes the exit gate", () => {
+    expect(constraintsMetadata.name).toBe("gx_constraints");
+    expect(constraintsMetadata.description).toMatch(/ship\/no-ship verdict/i);
+    expect(constraintsMetadata.description).toMatch(/no-ship verdict is a successful run/i);
+    expect(constraintsMetadata.annotations?.readOnlyHint).toBe(true);
+    expect(constraintsSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
+    expect(constraintsSchema.verbose.parse(true)).toBe(true);
+  });
+});
+
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_review", () => {
-    const registered = [reviewMetadata.name].sort();
-    expect(registered).toEqual(["gx_review"]);
+  test("exposes exactly gx_review and gx_constraints", () => {
+    const registered = [reviewMetadata.name, constraintsMetadata.name].sort();
+    expect(registered).toEqual(["gx_constraints", "gx_review"]);
     expect(registered).not.toContain("gx_commit");
     expect(registered).not.toContain("gx_status");
     expect(registered).not.toContain("gx_push");
@@ -61,6 +73,14 @@ if [ "$1" = review ]; then
     exit 1
   fi
   echo "review ok"
+  exit 0
+fi
+if [ "$1" = constraints ]; then
+  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
+    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
+    exit 1
+  fi
+  echo "constraints ok"
   exit 0
 fi
 if [ "$1" = doctor ]; then
@@ -187,6 +207,49 @@ exit 1
       "gx cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",
     );
     expect(parsed.stderr).toContain("run `gx auth login` in a terminal");
+    expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
+  });
+
+  test("gx_constraints always runs report-only markdown and passes the hint", async () => {
+    // --report-only is load-bearing: `gx constraints` exits non-zero on a
+    // no-ship verdict, and runTt reads any non-zero exit as a tool failure.
+    const output = await gxConstraints({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
+    const parsed = JSON.parse(output);
+    expect(parsed.action).toBe("constraints");
+    expect(parsed.display).toBe("constraints ok");
+    expect(parsed.command).toEqual([
+      process.env.GX_BINARY,
+      "constraints",
+      "--report-only",
+      "--md",
+      "--client",
+      "mcp",
+      "--verbose",
+      "fix auth timeout",
+    ]);
+
+    const bare = JSON.parse(await gxConstraints({ cwd: repoRoot }));
+    expect(bare.command).toEqual([process.env.GX_BINARY, "constraints", "--report-only", "--md", "--client", "mcp"]);
+  });
+
+  test("gx_constraints never initializes the repo it checks", async () => {
+    const output = await gxConstraints({ cwd: repoRoot });
+    expect(JSON.parse(output).ok).toBe(true);
+
+    const calls = (await readFile(callLog, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("|constraints");
+    expect(calls.some((line) => line.includes("|init"))).toBe(false);
+    expect(existsSync(join(repoRoot, ".gx-initialized"))).toBe(false);
+  });
+
+  test("gx_constraints surfaces MCP auth login guidance", async () => {
+    process.env.GX_MOCK_AUTH_ERROR = "1";
+
+    const parsed = JSON.parse(await gxConstraints({ cwd: repoRoot }));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.action).toBe("constraints");
+    expect(parsed.auth_required).toBe(true);
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });
 });

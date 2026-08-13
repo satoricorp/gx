@@ -394,12 +394,18 @@ func fileDiff(ctx context.Context, repoRoot, file string) string {
 	return strings.Join(parts, "\n")
 }
 
+// diffUnavailableContentHeader marks a snippet that carries file content
+// rather than a diff (an untracked file has no diff to render). Consumers that
+// parse hunks — the constraints signals, for one — key on it to treat every
+// line as added.
+const diffUnavailableContentHeader = "No git diff was available for this changed file. Current file content:"
+
 func fileContentSnippet(repoRoot, file string) string {
 	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(file)))
 	if err != nil {
 		return ""
 	}
-	return "No git diff was available for this changed file. Current file content:\n" + string(data)
+	return diffUnavailableContentHeader + "\n" + string(data)
 }
 
 func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {
