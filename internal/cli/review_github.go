@@ -12,7 +12,12 @@ import (
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
-const reviewCommentMarker = "<!-- gx review summary -->"
+const summaryCommentMarker = "<!-- gx summary -->"
+
+// legacySummaryCommentMarker is the marker this command wrote before the
+// enhance rename. Matching it on upsert updates the existing comment in place
+// instead of forking a second one on PRs that already have it.
+const legacySummaryCommentMarker = "<!-- gx review summary -->"
 
 func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)
@@ -47,16 +52,17 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if err := postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
 		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx inline review comment: %v", err)))
 	}
-	commentBody := reviewCommentMarker + "\n" + codereview.RenderMarkdown(report)
+	commentBody := summaryCommentMarker + "\n" + codereview.RenderMarkdown(report)
 	_, err = client.UpsertIssueComment(ctx, github.IssueCommentOptions{
-		Owner:  owner,
-		Repo:   repoName,
-		Number: pr.Number,
-		Body:   commentBody,
-		Marker: reviewCommentMarker,
+		Owner:         owner,
+		Repo:          repoName,
+		Number:        pr.Number,
+		Body:          commentBody,
+		Marker:        summaryCommentMarker,
+		LegacyMarkers: []string{legacySummaryCommentMarker},
 	})
 	if err != nil {
-		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx review comment: %v", err)))
+		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx enhance comment: %v", err)))
 	}
 }
 
@@ -105,7 +111,7 @@ func renderInlineReviewComment(finding codereview.Finding) string {
 	var b strings.Builder
 	title := strings.TrimSpace(finding.Title)
 	if title == "" {
-		title = "gx review finding"
+		title = "gx enhance finding"
 	}
 	fmt.Fprintf(&b, "**%s**\n\n", title)
 	if summary := strings.TrimSpace(finding.Summary); summary != "" {

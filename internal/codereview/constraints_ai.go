@@ -11,7 +11,7 @@ import (
 // One model call judges every gate no command can decide: is the change in
 // scope, is it reviewable, is the UI change accessible, did a hot path get
 // slower. The call is grounded twice over — the deterministic gate results are
-// stated as facts, and the same retrieval sources `gx review` uses (code
+// stated as facts, and the same retrieval sources `gx enhance` uses (code
 // index, sessions, prior findings, knowledge corpus) are fetched concurrently
 // with the tool run and attached as labeled context.
 
@@ -195,7 +195,7 @@ func constraintsGateQuestion(id GateID) string {
 }
 
 // collectConstraintsContext fetches the retrieval grounding: the same
-// composite `gx review` uses, filtered to the indexed kinds, tightly budgeted,
+// composite `gx enhance` uses, filtered to the indexed kinds, tightly budgeted,
 // and bounded by its own timeout so a hung index cannot stall the gate. Any
 // failure returns nothing — grounding enriches the judgment, it is never a
 // precondition.

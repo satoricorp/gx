@@ -35,7 +35,7 @@ func TestAgentsMDContainsSnippet(t *testing.T) {
 		"git commit -m",
 		"`git commit --amend`",
 		"preserve the gx revision trailer",
-		"gx_review",
+		"gx_enhance",
 	} {
 		if !strings.Contains(agentsMDSnippet, want) {
 			t.Fatalf("agentsMDSnippet missing canonical guidance %q", want)
