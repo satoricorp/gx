@@ -144,6 +144,11 @@ func TestCheckConstraintsSecretFailsTheSecurityGate(t *testing.T) {
 	if len(gate.Findings) == 0 || gate.Findings[0].File != "internal/app/creds.go" || gate.Findings[0].Line != 3 {
 		t.Fatalf("secret finding = %#v, want anchored to internal/app/creds.go:3", gate.Findings)
 	}
+	// The report shows the code being discussed, not just its coordinates.
+	if !strings.Contains(gate.Findings[0].CodeExcerpt, "awsKey") || gate.Findings[0].CodeExcerptStart != 1 {
+		t.Fatalf("finding excerpt = %q (start %d), want the source lines around creds.go:3",
+			gate.Findings[0].CodeExcerpt, gate.Findings[0].CodeExcerptStart)
+	}
 }
 
 func TestCheckConstraintsSkipGatesByFlag(t *testing.T) {

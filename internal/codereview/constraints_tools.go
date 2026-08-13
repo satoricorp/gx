@@ -228,10 +228,10 @@ func constraintsCodeHealthGate(results []StaticToolResult, signals constraintSig
 	// told the review read less carefully than a small change would get.
 	if signals.NonGenLines > constraintsMaxReviewableLines || signals.NonGenerated > constraintsMaxReviewableFiles {
 		gate.Findings = append(gate.Findings, Finding{
-			ID:      "constraints.change-size",
-			Scopes:  []string{"maintainability"},
-			Title:   "Large change — review carefully",
-			Summary: fmt.Sprintf("%d changed lines across %d non-generated files is more than a human reviews carefully in one sitting; the other gates still ran, but weigh their PASSes accordingly.", signals.NonGenLines, signals.NonGenerated),
+			ID:             "constraints.change-size",
+			Scopes:         []string{"maintainability"},
+			Title:          "Large change — review carefully",
+			Summary:        fmt.Sprintf("%d changed lines across %d non-generated files is more than a human reviews carefully in one sitting; the other gates still ran, but weigh their PASSes accordingly.", signals.NonGenLines, signals.NonGenerated),
 			Recommendation: "Consider splitting future changes of this size — one concern per change — so each gets a full-attention review.",
 			Strength:       "Worth exploring",
 			Kind:           "suggestion",

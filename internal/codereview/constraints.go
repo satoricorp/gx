@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -365,10 +366,61 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 			result.Status = GateSkipped
 			result.SkipReason = "not evaluated"
 		}
+		attachConstraintsCodeExcerpts(repoRoot, result.Findings)
 		report.Gates = append(report.Gates, result)
 	}
 	report.Verdict = constraintsVerdict(report)
 	return report, nil
+}
+
+const (
+	// constraintsExcerptContext is how many lines surround a finding's line in
+	// its code excerpt; constraintsExcerptMaxLineBytes keeps a minified or
+	// generated line from turning the excerpt into a wall.
+	constraintsExcerptContext      = 2
+	constraintsExcerptMaxLineBytes = 200
+)
+
+// attachConstraintsCodeExcerpts reads the source lines each finding points at,
+// so the report shows the code being discussed rather than only naming it.
+// Best-effort by design: an unreadable file or a stale line number just leaves
+// the excerpt empty.
+func attachConstraintsCodeExcerpts(repoRoot string, findings []Finding) {
+	for i := range findings {
+		finding := &findings[i]
+		if finding.CodeExcerpt != "" || finding.File == "" || finding.Line <= 0 {
+			continue
+		}
+		rel, ok := staticToolRelPath(repoRoot, finding.File)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		if finding.Line > len(lines) {
+			continue
+		}
+		start := finding.Line - constraintsExcerptContext
+		if start < 1 {
+			start = 1
+		}
+		end := finding.Line + constraintsExcerptContext
+		if end > len(lines) {
+			end = len(lines)
+		}
+		excerpt := make([]string, 0, end-start+1)
+		for _, line := range lines[start-1 : end] {
+			if len(line) > constraintsExcerptMaxLineBytes {
+				line = line[:constraintsExcerptMaxLineBytes] + "…"
+			}
+			excerpt = append(excerpt, line)
+		}
+		finding.CodeExcerpt = strings.Join(excerpt, "\n")
+		finding.CodeExcerptStart = start
+	}
 }
 
 // constraintsVerdict rolls the gates up. Real failures outrank everything;

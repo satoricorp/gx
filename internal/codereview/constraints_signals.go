@@ -25,14 +25,14 @@ type constraintSignals struct {
 	SourceFilesChanged []string
 	TestFilesChanged   []string
 
-	UIFiles       []string
-	A11yFindings  []Finding
-	A11yHardFail  bool
-	PerfApplies   bool
-	PerfTriggers  []string
-	PerfFiles     []string
-	NonGenerated  int // changed files that are not generated
-	NonGenLines   int // changed lines outside generated files
+	UIFiles      []string
+	A11yFindings []Finding
+	A11yHardFail bool
+	PerfApplies  bool
+	PerfTriggers []string
+	PerfFiles    []string
+	NonGenerated int // changed files that are not generated
+	NonGenLines  int // changed lines outside generated files
 }
 
 // constraintsAddedLine is one "+" line of a diff with its post-change line

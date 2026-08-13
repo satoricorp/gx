@@ -16,8 +16,13 @@ func renderTestReport() ConstraintsReport {
 		Gates: []GateResult{
 			{Gate: GateCorrectness, Title: "Correctness", Status: GatePass, Summary: "go test: ok", Files: []string{"a.go"}},
 			{Gate: GateSecurity, Title: "Security", Status: GateFail, Summary: "1 possible secret(s) in added lines",
-				Findings: []Finding{{Title: "Possible AWS access key in the diff", File: "a.go", Line: 3, Recommendation: "Rotate it."}},
-				Files:    []string{"a.go"}},
+				Findings: []Finding{{
+					Title: "Possible AWS access key in the diff", File: "a.go", Line: 3,
+					Recommendation:   "Rotate it.",
+					CodeExcerpt:      "package app\n\nconst key = \"XXXX\"",
+					CodeExcerptStart: 1,
+				}},
+				Files: []string{"a.go"}},
 			{Gate: GateAccessibility, Title: "Accessibility", Status: GateSkipped, SkipReason: "no UI files changed"},
 		},
 	}
@@ -36,7 +41,12 @@ func TestRenderConstraintsTextPlain(t *testing.T) {
 		"PASS",
 		"FAIL",
 		"SKIPPED  no UI files changed",
-		"a.go:3 — Possible AWS access key in the diff — Rotate it.",
+		"a.go:3 — Possible AWS access key in the diff",
+		"How to resolve",
+		"1. Security — a.go:3 — Possible AWS access key in the diff",
+		"→    3 | const key = \"XXXX\"",
+		"   1 | package app",
+		"Fix: Rotate it.",
 		"Verdict: NO-SHIP — 1 gate(s) failed (security)",
 		"Next: address the findings above, then rerun `gx constraints`.",
 	} {
@@ -89,8 +99,10 @@ func TestRenderConstraintsMarkdownTable(t *testing.T) {
 		"| 1 | Correctness | ✅ PASS | go test: ok |",
 		"| 2 | Security | ❌ FAIL |",
 		"| 3 | Accessibility | ⏭️ SKIPPED | no UI files changed |",
-		"**Findings**",
-		"- **Security** — a.go:3 — Possible AWS access key in the diff — Rotate it.",
+		"### How to resolve",
+		"**1. Security — a.go:3 — Possible AWS access key in the diff**",
+		"```go\npackage app\n\nconst key = \"XXXX\"\n```",
+		"Fix: Rotate it.",
 		"**Verdict: NO-SHIP — 1 gate(s) failed (security)**",
 	} {
 		if !strings.Contains(out, want) {
@@ -111,6 +123,9 @@ func TestRenderConstraintsDegradedWarning(t *testing.T) {
 	}
 	if !strings.Contains(text, "Verdict: DEGRADED") {
 		t.Fatalf("text render missing the degraded verdict:\n%s", text)
+	}
+	if !strings.Contains(text, "Degraded run — not signed in to gx Cloud") {
+		t.Fatalf("text render missing the degraded resolve step:\n%s", text)
 	}
 	markdown := RenderConstraintsMarkdown(report)
 	if !strings.Contains(markdown, "> Warning: not signed in to gx Cloud") {

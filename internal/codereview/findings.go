@@ -73,6 +73,14 @@ type Finding struct {
 	// the survivor, and serialised in the JSON report.
 	MergedFindings []MergedFinding `json:"merged_findings,omitempty"`
 
+	// CodeExcerpt carries the source lines a finding points at, so the report
+	// can show the code being discussed instead of only naming it.
+	// CodeExcerptStart is the 1-based file line of the excerpt's first line.
+	// Populated by the constraints engine for findings with a File and Line;
+	// review findings leave both empty.
+	CodeExcerpt      string `json:"code_excerpt,omitempty"`
+	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
+
 	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
 	Recommendation  string           `json:"recommendation,omitempty"`
 	// Strength is the severity vocabulary gates read: "Blocking", "Strong",
