@@ -31,7 +31,7 @@ var (
 
 // constraintsExtraToolRunners are runners the constraints gate adds on top of
 // the review registry. They live here rather than in staticToolRunners so that
-// adding the exit gate does not silently change what `gx review` executes.
+// adding the exit gate does not silently change what `gx enhance` executes.
 var constraintsExtraToolRunners = []staticToolRunner{
 	{name: "pytest", progress: "Running pytest", detect: detectPytest, wholeProject: true},
 }

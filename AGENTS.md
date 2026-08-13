@@ -9,7 +9,7 @@ Default flow:
 - Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
 - To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
 
-For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
+To enhance the current change — AI-reported issues and tips to improve it — run the `gx_enhance` MCP tool (or the `gx enhance` CLI).
 
 ## Tests: seed through the writer production uses, or do not seed
 

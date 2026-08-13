@@ -28,12 +28,12 @@ type slashCommand struct {
 func slashCommands() []slashCommand {
 	return []slashCommand{
 		{
-			name:         "gx",
-			description:  "gx AI review of the current change",
-			argumentHint: "[optional reviewer prompt]",
-			bodyArgs:     slashGxBodyArgs,
-			bodyPlain:    slashGxBodyPlain,
-			legacyNames:  []string{"better-review"},
+			name:         "enhance",
+			description:  "gx issues and tips to improve the current change",
+			argumentHint: "[optional prompt]",
+			bodyArgs:     slashEnhanceBodyArgs,
+			bodyPlain:    slashEnhanceBodyPlain,
+			legacyNames:  []string{"gx"},
 		},
 		{
 			name:         "constraints",
@@ -46,20 +46,21 @@ func slashCommands() []slashCommand {
 }
 
 // Body for agents that substitute $ARGUMENTS (Claude Code, Codex).
-const slashGxBodyArgs = slashCommandMarker + `
+const slashEnhanceBodyArgs = slashCommandMarker + `
 
-Run an AI code review of the current change with gx.
+Run gx enhance on the current change: an AI pass that reports issues and tips
+to improve the code you are working on.
 
-Use the ` + "`gx_review`" + ` MCP tool if it is available, passing "$ARGUMENTS" as the
+Use the ` + "`gx_enhance`" + ` MCP tool if it is available, passing "$ARGUMENTS" as the
 ` + "`prompt`" + ` parameter (omit the parameter when it is empty) and ` + "`fast: true`" + `.
 If the MCP tool is unavailable, run the CLI instead:
-` + "`" + `GX_CLIENT=slash-gx gx review --fast "$ARGUMENTS"` + "`" + ` (plain
-` + "`GX_CLIENT=slash-gx gx review --fast`" + ` when there is no prompt). Keep the
-` + "`GX_CLIENT=slash-gx`" + ` prefix — it labels the run as a /gx invocation.
+` + "`" + `GX_CLIENT=slash-enhance gx enhance --fast "$ARGUMENTS"` + "`" + ` (plain
+` + "`GX_CLIENT=slash-enhance gx enhance --fast`" + ` when there is no prompt). Keep the
+` + "`GX_CLIENT=slash-enhance`" + ` prefix — it labels the run as an /enhance invocation.
 
-` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
+` + "`--fast`" + ` is right for an interactive run: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes
-findings without code examples. If the user asks for the most thorough review,
+findings without code examples. If the user asks for the most thorough pass,
 or wants the result posted to a pull request, drop ` + "`--fast`" + `.
 
 Report the findings. Do not change any code unless the user asks.
@@ -67,20 +68,21 @@ Report the findings. Do not change any code unless the user asks.
 
 // Body for Cursor, which appends the user's text after the command instead of
 // substituting a placeholder.
-const slashGxBodyPlain = slashCommandMarker + `
+const slashEnhanceBodyPlain = slashCommandMarker + `
 
-Run an AI code review of the current change with gx.
+Run gx enhance on the current change: an AI pass that reports issues and tips
+to improve the code you are working on.
 
-Use the ` + "`gx_review`" + ` MCP tool if it is available, with ` + "`fast: true`" + `. If the
+Use the ` + "`gx_enhance`" + ` MCP tool if it is available, with ` + "`fast: true`" + `. If the
 user added instructions after the command, pass them as the ` + "`prompt`" + `
 parameter. If the MCP tool is unavailable, run
-` + "`GX_CLIENT=slash-gx gx review --fast`" + ` instead, quoting those instructions as
-the positional prompt argument. Keep the ` + "`GX_CLIENT=slash-gx`" + ` prefix — it
-labels the run as a /gx invocation.
+` + "`GX_CLIENT=slash-enhance gx enhance --fast`" + ` instead, quoting those instructions as
+the positional prompt argument. Keep the ` + "`GX_CLIENT=slash-enhance`" + ` prefix — it
+labels the run as an /enhance invocation.
 
-` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
+` + "`--fast`" + ` is right for an interactive run: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes
-findings without code examples. If the user asks for the most thorough review,
+findings without code examples. If the user asks for the most thorough pass,
 or wants the result posted to a pull request, drop ` + "`--fast`" + `.
 
 Report the findings. Do not change any code unless the user asks.

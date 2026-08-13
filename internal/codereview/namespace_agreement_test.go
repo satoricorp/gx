@@ -10,7 +10,7 @@ import (
 
 // TestReviewReadsTheNamespaceIndexWrites is the end-to-end half of the
 // namespace regression: the real `gx index` write path against the real
-// `gx review` read path, with nothing re-derived in between.
+// `gx enhance` read path, with nothing re-derived in between.
 //
 // The observed failure: `gx index` in a checkout with no remote wrote
 // gx-local-yeet-8d862445e7e4-v2, while `gx review` in that same checkout probed

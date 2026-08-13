@@ -41,7 +41,7 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 			"code health, back-pressure, accessibility, performance — reporting PASS, FAIL,\n" +
 			"or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (tests,\n" +
 			"linters, secret scan, dependency audits) decide what they can; one AI judgment\n" +
-			"call covers the rest, grounded in the same context sources gx review uses.",
+			"call covers the rest, grounded in the same context sources gx enhance uses.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Store-free and state-write-free, like review: a pre-ship gate may
@@ -104,7 +104,7 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().StringVar(&skipGates, "skip-gates", "", "comma-separated gates to skip: "+strings.Join(constraintsGateNames(), ", "))
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "whole-run budget (default 5m; per-tool caps still apply)")
 	cmd.Flags().BoolVar(&reportOnly, "report-only", false, fmt.Sprintf("always exit 0; the verdict lives in the report only (without this, no-ship exits %d, nothing-to-check %d, degraded %d)", reviewFindingsExitCode, reviewNothingToReviewExitCode, reviewDegradedExitCode))
-	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-constraints")
+	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT: cli, mcp, skill, slash-enhance, slash-constraints")
 	return cmd
 }
 

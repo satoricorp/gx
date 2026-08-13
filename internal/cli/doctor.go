@@ -764,7 +764,7 @@ func writeJSON(cmd *cobra.Command, value any) error {
 // reportCodeIndexFreshness surfaces how far the local code index has drifted
 // from the checkout.
 //
-// `gx review` retrieves from this index, and a stale one fails silently: the
+// `gx enhance` retrieves from this index, and a stale one fails silently: the
 // query succeeds, returns chunks for code that has since changed, and the
 // review reads as fully informed. Measured on this repository, an index 30 days
 // behind HEAD scored 0.000 recall on every query targeting code written after

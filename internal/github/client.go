@@ -52,6 +52,10 @@ type IssueCommentOptions struct {
 	Number int
 	Body   string
 	Marker string
+	// LegacyMarkers are older marker strings that identified the same comment
+	// before a rename. A match updates that comment in place, so a marker
+	// change does not fork a second comment on PRs that already have one.
+	LegacyMarkers []string
 }
 
 type PullRequestReviewCommentOptions struct {
@@ -233,9 +237,12 @@ func (c *Client) UpsertIssueComment(ctx context.Context, opts IssueCommentOption
 	if err != nil {
 		return nil, err
 	}
+	markers := append([]string{marker}, opts.LegacyMarkers...)
 	for _, comment := range comments {
-		if strings.Contains(comment.Body, marker) {
-			return c.UpdateIssueComment(ctx, opts, comment.ID)
+		for _, candidate := range markers {
+			if candidate = strings.TrimSpace(candidate); candidate != "" && strings.Contains(comment.Body, candidate) {
+				return c.UpdateIssueComment(ctx, opts, comment.ID)
+			}
 		}
 	}
 	return c.CreateIssueComment(ctx, opts)

@@ -94,7 +94,7 @@ func runReviewCommand(t *testing.T, args ...string) (string, error) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs(append([]string{"review"}, args...))
+	cmd.SetArgs(append([]string{"enhance"}, args...))
 	err := cmd.Execute()
 	return out.String(), err
 }
@@ -107,7 +107,7 @@ func TestReviewJSONReportsTheResolvedCommitRange(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --json error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --json error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -170,13 +170,13 @@ func TestReviewNothingToReviewDoesNotClaimACleanReview(t *testing.T) {
 	// Gate off: this test is about the words, not the exit code.
 	out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review error = %v\n%s", err, out)
+		t.Fatalf("gx enhance error = %v\n%s", err, out)
 	}
 	if strings.Contains(out, "No material issues found in this change.") {
-		t.Fatalf("gx review claimed a clean review without inspecting anything:\n%s", out)
+		t.Fatalf("gx enhance claimed a clean review without inspecting anything:\n%s", out)
 	}
 	if !strings.Contains(out, "Nothing to review") {
-		t.Fatalf("gx review output missing the nothing-to-review outcome:\n%s", out)
+		t.Fatalf("gx enhance output missing the nothing-to-review outcome:\n%s", out)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
-		t.Fatalf("gx review --fail-on strong exited 0 with findings:\n%s", out)
+		t.Fatalf("gx enhance --fail-on strong exited 0 with findings:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewFindingsExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
@@ -199,11 +199,11 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 	// The same review under a stricter threshold has nothing blocking: a Strong
 	// deterministic finding is advisory, and only the blocking lane fails here.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "blocking", "--no-publish"); err != nil {
-		t.Fatalf("gx review --fail-on blocking error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --fail-on blocking error = %v\n%s", err, out)
 	}
 	// The default gate is "blocking", so it agrees with the line above.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--no-publish"); err != nil {
-		t.Fatalf("gx review without --fail-on error = %v\n%s", err, out)
+		t.Fatalf("gx enhance without --fail-on error = %v\n%s", err, out)
 	}
 	// And the gate can be switched off entirely.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "none", "--no-publish"); err != nil {
@@ -292,7 +292,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
-		t.Fatalf("gx review --fail-on any exited 0 without reviewing anything:\n%s", out)
+		t.Fatalf("gx enhance --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, err)
@@ -303,7 +303,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 
 	// With the gate switched off the same run stays exit 0 for advisory use.
 	if _, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
-		t.Fatalf("gx review --fail-on none error = %v", err)
+		t.Fatalf("gx enhance --fail-on none error = %v", err)
 	}
 }
 
@@ -326,7 +326,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 
 			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "none", "--json", "--no-publish")...)
 			if err != nil {
-				t.Fatalf("gx review error = %v\n%s", err, out)
+				t.Fatalf("gx enhance error = %v\n%s", err, out)
 			}
 			var report codereview.Report
 			if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -338,7 +338,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 
 			gateOut, gateErr := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "any", "--no-publish")...)
 			if gateErr == nil {
-				t.Fatalf("gx review --fail-on any passed on an empty repo:\n%s", gateOut)
+				t.Fatalf("gx enhance --fail-on any passed on an empty repo:\n%s", gateOut)
 			}
 			if code := ExitCode(gateErr); code != reviewNothingToReviewExitCode {
 				t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewNothingToReviewExitCode, gateErr)
@@ -390,7 +390,7 @@ func TestReviewBaseFlagSelectsTheRange(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--base", "main", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --base error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --base error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -415,7 +415,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --repo error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --repo error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -435,7 +435,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 	// Without the flag the same tree is a working-tree review, unchanged.
 	plain, err := runReviewCommand(t, "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review error = %v\n%s", err, plain)
+		t.Fatalf("gx enhance error = %v\n%s", err, plain)
 	}
 	var plainReport codereview.Report
 	if decodeErr := json.Unmarshal([]byte(plain), &plainReport); decodeErr != nil {
@@ -454,13 +454,13 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --repo error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --repo error = %v\n%s", err, out)
 	}
 	if strings.Contains(out, "Nothing to review") {
-		t.Fatalf("gx review --repo reported nothing to review:\n%s", out)
+		t.Fatalf("gx enhance --repo reported nothing to review:\n%s", out)
 	}
 	if !strings.Contains(out, "Reviewed the repository") {
-		t.Fatalf("gx review --repo does not say what it reviewed:\n%s", out)
+		t.Fatalf("gx enhance --repo does not say what it reviewed:\n%s", out)
 	}
 
 	// Saying it reviewed the repository is only honest if it read the
@@ -468,7 +468,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	// from there: this repo has no diff of any kind.
 	jsonOut, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --repo --json error = %v\n%s", err, jsonOut)
+		t.Fatalf("gx enhance --repo --json error = %v\n%s", err, jsonOut)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(jsonOut), &report); decodeErr != nil {
@@ -484,10 +484,10 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	// The same repo without the flag is still honest about reading nothing.
 	plain, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review error = %v\n%s", err, plain)
+		t.Fatalf("gx enhance error = %v\n%s", err, plain)
 	}
 	if !strings.Contains(plain, "Nothing to review") {
-		t.Fatalf("gx review lost the nothing-to-review outcome:\n%s", plain)
+		t.Fatalf("gx enhance lost the nothing-to-review outcome:\n%s", plain)
 	}
 }
 
@@ -501,7 +501,7 @@ func TestReviewRepoFlagWinsOverBaseAndSaysSo(t *testing.T) {
 
 	out, err := runReviewCommand(t, "--repo", "--base", "main", "--json", "--no-publish")
 	if err != nil {
-		t.Fatalf("gx review --repo --base error = %v\n%s", err, out)
+		t.Fatalf("gx enhance --repo --base error = %v\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -527,7 +527,7 @@ func TestReviewRejectsUnknownFailOnLevel(t *testing.T) {
 
 	_, err := runReviewCommand(t, "--fail-on", "critical", "--no-publish")
 	if err == nil {
-		t.Fatal("gx review accepted an unknown --fail-on level")
+		t.Fatal("gx enhance accepted an unknown --fail-on level")
 	}
 	if !strings.Contains(err.Error(), "unsupported --fail-on level") {
 		t.Fatalf("error = %v, want an unsupported-level error", err)

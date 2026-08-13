@@ -6,7 +6,7 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 
 1. `git add`, then `git commit` to record work. gx's `prepare-commit-msg` hook stamps each commit with its gx revision trailer and `post-commit` records it — no gx-specific commit verb is required.
 2. Publish with plain `git push` when the stack is ready — the gx pre-push hook captures the agent session, links edits to the changed hunks, and publishes the metadata that becomes the PR summary. Open the PR with `gh pr create`.
-3. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
+3. `gx_enhance` while coding: issues and tips to improve the code you are working on, grounded in local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 4. `gx_constraints` before shipping: the pre-ship exit gate that checks the change against six constraints and returns a ship/no-ship verdict.
 
 When a user says "save work", "save using gx", or "save with gx", treat that as
@@ -36,7 +36,7 @@ edits to the changed hunks, and publishes the metadata that becomes the PR summa
 then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
 bypass or suppress the hook.
 
-Use `gx_review` (MCP) or `gx review` (CLI) for review context on the current change.
+Use `gx_enhance` (MCP) or `gx enhance` (CLI) for issues and tips to improve the current change.
 Before shipping, run `gx_constraints` (MCP) or `gx constraints` (CLI) to check the change against the pre-ship constraint gates.
 
 gx PR summaries are posted for PRs whose branch was pushed through gx with `git push`
@@ -48,11 +48,11 @@ until the branch is pushed through gx.
 
 | Tool | CLI | Purpose |
 |------|-----|---------|
-| `gx_review` | `gx review --no-comment --client mcp [prompt]` | Gather local review/context with AI reviewers enabled |
+| `gx_enhance` | `gx enhance --no-comment --client mcp [prompt]` | Issues and tips to improve the current change, with AI reviewers enabled |
 | `gx_constraints` | `gx constraints --report-only --md --client mcp [hint]` | Pre-ship exit gate: six constraint checks with a ship/no-ship verdict |
 
-`gx_review` always passes `--no-comment` and `--client mcp`. `gx review` on its
-own posts a review comment on the matching GitHub pull request, which an agent
+`gx_enhance` always passes `--no-comment` and `--client mcp`. `gx enhance` on its
+own posts a comment on the matching GitHub pull request, which an agent
 calling the tool for context mid-codegen should never do — so commenting stays
 with the CLI, where a human typed the command. The run itself still records to
 gx Cloud review history, labeled as an MCP invocation, so per-surface review
@@ -108,7 +108,7 @@ gx auth login
 ```
 
 The installer provides the `gx` CLI and `gx-mcp` binary. Repo Git
-hooks are installed when a repo is initialized with `gx init`; the `gx_review`
+hooks are installed when a repo is initialized with `gx init`; the `gx_enhance`
 and `gx_constraints` MCP tools are read-only — they never initialize a repo,
 never write `~/.gx`, never touch `.git/index`, and never publish. The `pre-push` hook runs `gx capture push` for
 the pushed ref range, stages captured Claude/Codex/Cursor session context in

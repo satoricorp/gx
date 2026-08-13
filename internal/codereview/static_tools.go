@@ -59,7 +59,7 @@ type staticToolCommand struct {
 // silently — a missing tool is never a review finding.
 //
 // Runners must be fast and scoped to the change. They are NOT side-effect
-// free, and it is worth being exact about that because the rest of `gx review`
+// free, and it is worth being exact about that because the rest of `gx enhance`
 // is: outside Go the runners are type checkers and linters, but the Go runner
 // is `go test`, which compiles and executes the reviewed checkout's own test
 // binaries, and `cargo check` executes the crate's build.rs and proc macros.
@@ -114,7 +114,7 @@ var staticToolRunners = []staticToolRunner{
 
 // staticToolScope is the file set every runner detects against. It is the
 // change set, except for a whole-repo review that has no diff: there the
-// repository stands in for it. Without that, `gx review --repo` on a clean
+// repository stands in for it. Without that, `gx enhance --repo` on a clean
 // tree runs no compiler, no test, and no linter — collectStaticToolResults
 // returns before detection on an empty set — and then reports the repository
 // clean, which is the silent pass --fail-on exists to prevent.
