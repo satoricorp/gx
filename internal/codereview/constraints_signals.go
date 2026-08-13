@@ -181,6 +181,79 @@ func constraintsAddedLinesForDiff(diff string) []constraintsAddedLine {
 	return parseConstraintsAddedLines(diff)
 }
 
+// constraintsHunkContext is how many hunk lines surround the discussed line
+// when a finding shows its diff window.
+const constraintsHunkContext = 5
+
+// constraintsDiffHunkForLine returns the unified-diff window around a
+// post-change line, hunk header included, or "" when the line is not part of
+// this diff — a finding about untouched code has no hunk to show.
+func constraintsDiffHunkForLine(diff string, target int) string {
+	if target <= 0 || strings.HasPrefix(diff, diffUnavailableContentHeader) {
+		return ""
+	}
+	type diffHunk struct {
+		header string
+		lines  []string
+		// nums holds each line's post-change line number; 0 for removed lines,
+		// which exist only on the pre-change side.
+		nums []int
+	}
+	var hunks []diffHunk
+	newLine := 0
+	inHunk := false
+	for _, raw := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(raw, "@@"):
+			newLine = parseHunkNewStart(raw)
+			inHunk = newLine > 0
+			if inHunk {
+				hunks = append(hunks, diffHunk{header: raw})
+			}
+		case !inHunk:
+		case strings.HasPrefix(raw, "-"):
+			hunk := &hunks[len(hunks)-1]
+			hunk.lines = append(hunk.lines, raw)
+			hunk.nums = append(hunk.nums, 0)
+		default:
+			hunk := &hunks[len(hunks)-1]
+			hunk.lines = append(hunk.lines, raw)
+			hunk.nums = append(hunk.nums, newLine)
+			newLine++
+		}
+	}
+	for _, hunk := range hunks {
+		targetIndex := -1
+		for i, num := range hunk.nums {
+			if num == target {
+				targetIndex = i
+				break
+			}
+		}
+		if targetIndex < 0 {
+			continue
+		}
+		start := targetIndex - constraintsHunkContext
+		if start < 0 {
+			start = 0
+		}
+		end := targetIndex + constraintsHunkContext + 1
+		if end > len(hunk.lines) {
+			end = len(hunk.lines)
+		}
+		out := []string{hunk.header}
+		if start > 0 {
+			out = append(out, "…")
+		}
+		out = append(out, hunk.lines[start:end]...)
+		if end < len(hunk.lines) {
+			out = append(out, "…")
+		}
+		return strings.Join(out, "\n")
+	}
+	return ""
+}
+
 // parseConstraintsAddedLines walks a unified diff and returns the added lines
 // with their post-change line numbers.
 func parseConstraintsAddedLines(diff string) []constraintsAddedLine {

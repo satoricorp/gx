@@ -174,6 +174,36 @@ func constraintsHighlightCode(file, code string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// constraintsCodeLines renders whatever code a finding carries for the
+// terminal: the diff hunk when the finding is about the change, otherwise the
+// source excerpt.
+func constraintsCodeLines(report ConstraintsReport, finding Finding, indent string) []string {
+	if strings.TrimSpace(finding.DiffHunk) != "" {
+		return constraintsHunkLines(report, finding.DiffHunk, indent)
+	}
+	return constraintsExcerptLines(report, finding, indent)
+}
+
+// constraintsHunkLines renders a unified-diff window with the coloring a
+// terminal reader expects: additions green, removals red, the hunk header and
+// trims muted.
+func constraintsHunkLines(report ConstraintsReport, hunk, indent string) []string {
+	var out []string
+	for _, line := range strings.Split(hunk, "\n") {
+		painted := line
+		switch {
+		case strings.HasPrefix(line, "@@"), line == "…":
+			painted = constraintsColorize(report, termstyle.Muted, line)
+		case strings.HasPrefix(line, "+"):
+			painted = constraintsColorize(report, termstyle.Success, line)
+		case strings.HasPrefix(line, "-"):
+			painted = constraintsColorize(report, termstyle.Danger, line)
+		}
+		out = append(out, indent+painted)
+	}
+	return out
+}
+
 // constraintsExcerptLines renders a finding's excerpt with a line-number
 // gutter and a marker on the discussed line, syntax-highlighted when the
 // report is in color.
@@ -256,7 +286,7 @@ func RenderConstraintsText(report ConstraintsReport) string {
 		for index, step := range steps {
 			header := fmt.Sprintf("%d. %s — %s", index+1, step.gateTitle, constraintsFindingLine(step.finding))
 			fmt.Fprintf(&b, "  %s\n", header)
-			for _, line := range constraintsExcerptLines(report, step.finding, "     ") {
+			for _, line := range constraintsCodeLines(report, step.finding, "     ") {
 				fmt.Fprintln(&b, line)
 			}
 			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
@@ -312,7 +342,13 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 		for index, step := range steps {
 			fmt.Fprintln(&b)
 			fmt.Fprintf(&b, "**%d. %s — %s**\n", index+1, step.gateTitle, constraintsFindingLine(step.finding))
-			if strings.TrimSpace(step.finding.CodeExcerpt) != "" {
+			switch {
+			case strings.TrimSpace(step.finding.DiffHunk) != "":
+				// Raw hunk text in a diff fence: agents and GitHub render the
+				// +/− coloring themselves.
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "```diff\n%s\n```\n", step.finding.DiffHunk)
+			case strings.TrimSpace(step.finding.CodeExcerpt) != "":
 				fmt.Fprintln(&b)
 				fmt.Fprintf(&b, "```%s\n%s\n```\n", constraintsFenceLanguage(step.finding.File), step.finding.CodeExcerpt)
 			}

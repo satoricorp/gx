@@ -111,6 +111,27 @@ func TestRenderConstraintsMarkdownTable(t *testing.T) {
 	}
 }
 
+func TestRenderConstraintsShowsDiffHunks(t *testing.T) {
+	report := renderTestReport()
+	report.Gates[1].Findings[0].DiffHunk = "@@ -0,0 +1,3 @@\n+package app\n+\n+const key = \"XXXX\""
+	report.Gates[1].Findings[0].CodeExcerpt = ""
+
+	text := RenderConstraintsText(report)
+	for _, want := range []string{"@@ -0,0 +1,3 @@", "+const key = \"XXXX\""} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text render missing hunk line %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "   1 | package app") {
+		t.Fatalf("text render fell back to the file excerpt despite a hunk:\n%s", text)
+	}
+
+	markdown := RenderConstraintsMarkdown(report)
+	if !strings.Contains(markdown, "```diff\n@@ -0,0 +1,3 @@\n+package app\n+\n+const key = \"XXXX\"\n```") {
+		t.Fatalf("markdown render missing the raw diff fence:\n%s", markdown)
+	}
+}
+
 func TestRenderConstraintsDegradedWarning(t *testing.T) {
 	report := renderTestReport()
 	report.Verdict = VerdictDegraded

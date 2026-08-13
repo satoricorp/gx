@@ -73,11 +73,15 @@ type Finding struct {
 	// the survivor, and serialised in the JSON report.
 	MergedFindings []MergedFinding `json:"merged_findings,omitempty"`
 
-	// CodeExcerpt carries the source lines a finding points at, so the report
-	// can show the code being discussed instead of only naming it.
-	// CodeExcerptStart is the 1-based file line of the excerpt's first line.
-	// Populated by the constraints engine for findings with a File and Line;
-	// review findings leave both empty.
+	// DiffHunk and CodeExcerpt carry the code a finding points at, so the
+	// report shows what is being discussed instead of only naming it. DiffHunk
+	// is the unified-diff window around the finding's line and is set when the
+	// line is part of the change under review — a finding about a diff shows
+	// the diff. CodeExcerpt is the fallback for findings about lines the
+	// change did not touch: the current source, ±2 lines of context, with
+	// CodeExcerptStart as the 1-based file line of its first line. Populated
+	// by the constraints engine; review findings leave all three empty.
+	DiffHunk         string `json:"diff_hunk,omitempty"`
 	CodeExcerpt      string `json:"code_excerpt,omitempty"`
 	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
 
