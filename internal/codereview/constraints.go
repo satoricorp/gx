@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -357,6 +358,10 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 		gates[id] = result
 	}
 
+	diffsByFile := make(map[string]string, len(diffs))
+	for _, snippet := range diffs {
+		diffsByFile[snippet.File] = snippet.Diff
+	}
 	for _, id := range AllGateIDs() {
 		result := gates[id]
 		if result.Gate == "" {
@@ -365,10 +370,82 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 			result.Status = GateSkipped
 			result.SkipReason = "not evaluated"
 		}
+		// A finding about the change shows its diff hunk; only findings about
+		// lines the change did not touch fall back to the current source.
+		attachConstraintsDiffHunks(diffsByFile, result.Findings)
+		attachConstraintsCodeExcerpts(repoRoot, result.Findings)
 		report.Gates = append(report.Gates, result)
 	}
 	report.Verdict = constraintsVerdict(report)
 	return report, nil
+}
+
+const (
+	// constraintsExcerptContext is how many lines surround a finding's line in
+	// its code excerpt; constraintsExcerptMaxLineBytes keeps a minified or
+	// generated line from turning the excerpt into a wall.
+	constraintsExcerptContext      = 2
+	constraintsExcerptMaxLineBytes = 200
+)
+
+// attachConstraintsDiffHunks gives each finding whose line is part of the
+// change its unified-diff window, extracted from the same snippets the gates
+// read.
+func attachConstraintsDiffHunks(diffsByFile map[string]string, findings []Finding) {
+	for i := range findings {
+		finding := &findings[i]
+		if finding.DiffHunk != "" || finding.File == "" || finding.Line <= 0 {
+			continue
+		}
+		diff, ok := diffsByFile[finding.File]
+		if !ok {
+			continue
+		}
+		finding.DiffHunk = constraintsDiffHunkForLine(diff, finding.Line)
+	}
+}
+
+// attachConstraintsCodeExcerpts reads the source lines each finding points at,
+// so the report shows the code being discussed rather than only naming it.
+// Findings that already carry a diff hunk are left alone — the hunk is the
+// better evidence. Best-effort by design: an unreadable file or a stale line
+// number just leaves the excerpt empty.
+func attachConstraintsCodeExcerpts(repoRoot string, findings []Finding) {
+	for i := range findings {
+		finding := &findings[i]
+		if finding.DiffHunk != "" || finding.CodeExcerpt != "" || finding.File == "" || finding.Line <= 0 {
+			continue
+		}
+		rel, ok := staticToolRelPath(repoRoot, finding.File)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		if finding.Line > len(lines) {
+			continue
+		}
+		start := finding.Line - constraintsExcerptContext
+		if start < 1 {
+			start = 1
+		}
+		end := finding.Line + constraintsExcerptContext
+		if end > len(lines) {
+			end = len(lines)
+		}
+		excerpt := make([]string, 0, end-start+1)
+		for _, line := range lines[start-1 : end] {
+			if len(line) > constraintsExcerptMaxLineBytes {
+				line = line[:constraintsExcerptMaxLineBytes] + "…"
+			}
+			excerpt = append(excerpt, line)
+		}
+		finding.CodeExcerpt = strings.Join(excerpt, "\n")
+		finding.CodeExcerptStart = start
+	}
 }
 
 // constraintsVerdict rolls the gates up. Real failures outrank everything;

@@ -2,8 +2,13 @@ package codereview
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
@@ -92,19 +97,135 @@ func constraintsVerdictLines(report ConstraintsReport) (verdict, next string) {
 	}
 }
 
+// constraintsFindingLine is the compact one-liner under a gate: location and
+// claim only. The fix lives in the How to resolve section, once.
 func constraintsFindingLine(finding Finding) string {
-	var location string
+	return constraintsFindingLocation(finding) + strings.TrimSpace(finding.Title)
+}
+
+func constraintsFindingLocation(finding Finding) string {
 	switch {
 	case finding.File != "" && finding.Line > 0:
-		location = fmt.Sprintf("%s:%d — ", finding.File, finding.Line)
+		return fmt.Sprintf("%s:%d — ", finding.File, finding.Line)
 	case finding.File != "":
-		location = finding.File + " — "
+		return finding.File + " — "
+	default:
+		return ""
 	}
-	line := location + strings.TrimSpace(finding.Title)
-	if recommendation := strings.TrimSpace(finding.Recommendation); recommendation != "" {
-		line += " — " + recommendation
+}
+
+// constraintsResolveStep is one entry of the How to resolve section: a finding
+// with the gate it came from, or a degradation to repair.
+type constraintsResolveStep struct {
+	gateTitle string
+	finding   Finding
+}
+
+func constraintsResolveSteps(report ConstraintsReport) []constraintsResolveStep {
+	var steps []constraintsResolveStep
+	// Failed gates first: the steps that flip the verdict outrank the warnings.
+	for _, failing := range []bool{true, false} {
+		for _, gate := range report.Gates {
+			if (gate.Status == GateFail) != failing {
+				continue
+			}
+			for _, finding := range gate.Findings {
+				steps = append(steps, constraintsResolveStep{gateTitle: gate.Title, finding: finding})
+			}
+		}
 	}
-	return line
+	for _, reason := range report.DegradedReasons {
+		steps = append(steps, constraintsResolveStep{
+			gateTitle: "Degraded run",
+			finding: Finding{
+				Title:          reason,
+				Recommendation: "Restore this, then rerun `gx constraints` for a verdict worth shipping on.",
+			},
+		})
+	}
+	return steps
+}
+
+// constraintsHighlightCode syntax-highlights an excerpt for the terminal.
+// Plain text comes back on any failure — highlighting is presentation, never a
+// reason to lose the code.
+func constraintsHighlightCode(file, code string) string {
+	lexer := lexers.Match(filepath.Base(file))
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+	style := styles.Get("monokai")
+	if style == nil {
+		style = styles.Fallback
+	}
+	formatter := formatters.Get("terminal256")
+	if formatter == nil {
+		return code
+	}
+	iterator, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		return code
+	}
+	var b strings.Builder
+	if err := formatter.Format(&b, style, iterator); err != nil {
+		return code
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// constraintsCodeLines renders whatever code a finding carries for the
+// terminal: the diff hunk when the finding is about the change, otherwise the
+// source excerpt.
+func constraintsCodeLines(report ConstraintsReport, finding Finding, indent string) []string {
+	if strings.TrimSpace(finding.DiffHunk) != "" {
+		return constraintsHunkLines(report, finding.DiffHunk, indent)
+	}
+	return constraintsExcerptLines(report, finding, indent)
+}
+
+// constraintsHunkLines renders a unified-diff window with the coloring a
+// terminal reader expects: additions green, removals red, the hunk header and
+// trims muted.
+func constraintsHunkLines(report ConstraintsReport, hunk, indent string) []string {
+	var out []string
+	for _, line := range strings.Split(hunk, "\n") {
+		painted := line
+		switch {
+		case strings.HasPrefix(line, "@@"), line == "…":
+			painted = constraintsColorize(report, termstyle.Muted, line)
+		case strings.HasPrefix(line, "+"):
+			painted = constraintsColorize(report, termstyle.Success, line)
+		case strings.HasPrefix(line, "-"):
+			painted = constraintsColorize(report, termstyle.Danger, line)
+		}
+		out = append(out, indent+painted)
+	}
+	return out
+}
+
+// constraintsExcerptLines renders a finding's excerpt with a line-number
+// gutter and a marker on the discussed line, syntax-highlighted when the
+// report is in color.
+func constraintsExcerptLines(report ConstraintsReport, finding Finding, indent string) []string {
+	if strings.TrimSpace(finding.CodeExcerpt) == "" {
+		return nil
+	}
+	code := finding.CodeExcerpt
+	if report.Color && termstyle.Enabled() {
+		code = constraintsHighlightCode(finding.File, code)
+	}
+	var out []string
+	for i, line := range strings.Split(code, "\n") {
+		number := finding.CodeExcerptStart + i
+		gutter := constraintsColorize(report, termstyle.Muted, fmt.Sprintf("  %4d | ", number))
+		if number == finding.Line {
+			gutter = constraintsColorize(report, termstyle.Danger, "→ ") +
+				constraintsColorize(report, termstyle.Muted, fmt.Sprintf("%4d | ", number))
+		}
+		out = append(out, indent+gutter+line)
+	}
+	return out
 }
 
 func constraintsFilesLine(files []string) string {
@@ -158,6 +279,21 @@ func RenderConstraintsText(report ConstraintsReport) string {
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, constraintsColorize(report, termstyle.Danger, "Warning: "+strings.Join(report.DegradedReasons, "; ")))
 	}
+	if steps := constraintsResolveSteps(report); len(steps) > 0 {
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, constraintsAccent(report, "How to resolve"))
+		fmt.Fprintln(&b)
+		for index, step := range steps {
+			header := fmt.Sprintf("%d. %s — %s", index+1, step.gateTitle, constraintsFindingLine(step.finding))
+			fmt.Fprintf(&b, "  %s\n", header)
+			for _, line := range constraintsCodeLines(report, step.finding, "     ") {
+				fmt.Fprintln(&b, line)
+			}
+			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
+				fmt.Fprintf(&b, "     %s %s\n", constraintsColorize(report, termstyle.Success, "Fix:"), fix)
+			}
+		}
+	}
 	fmt.Fprintln(&b)
 	verdict, next := constraintsVerdictLines(report)
 	paint := termstyle.Success
@@ -200,17 +336,26 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 		fmt.Fprintf(&b, "| %d | %s | %s | %s |\n",
 			index+1, gate.Title, constraintsStatusEmoji(gate.Status), markdownTableCell(detail))
 	}
-	var findingLines []string
-	for _, gate := range report.Gates {
-		for _, finding := range gate.Findings {
-			findingLines = append(findingLines, fmt.Sprintf("- **%s** — %s", gate.Title, constraintsFindingLine(finding)))
-		}
-	}
-	if len(findingLines) > 0 {
+	if steps := constraintsResolveSteps(report); len(steps) > 0 {
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "**Findings**")
-		for _, line := range findingLines {
-			fmt.Fprintln(&b, line)
+		fmt.Fprintln(&b, "### How to resolve")
+		for index, step := range steps {
+			fmt.Fprintln(&b)
+			fmt.Fprintf(&b, "**%d. %s — %s**\n", index+1, step.gateTitle, constraintsFindingLine(step.finding))
+			switch {
+			case strings.TrimSpace(step.finding.DiffHunk) != "":
+				// Raw hunk text in a diff fence: agents and GitHub render the
+				// +/− coloring themselves.
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "```diff\n%s\n```\n", step.finding.DiffHunk)
+			case strings.TrimSpace(step.finding.CodeExcerpt) != "":
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "```%s\n%s\n```\n", constraintsFenceLanguage(step.finding.File), step.finding.CodeExcerpt)
+			}
+			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
+				fmt.Fprintln(&b)
+				fmt.Fprintf(&b, "Fix: %s\n", fix)
+			}
 		}
 	}
 	if report.Verbose {
@@ -241,4 +386,32 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 func markdownTableCell(text string) string {
 	text = strings.ReplaceAll(text, "|", "\\|")
 	return strings.ReplaceAll(text, "\n", " ")
+}
+
+// constraintsFenceLanguage tags a markdown code fence so renderers highlight
+// the excerpt. Empty is fine: an untagged fence still renders as code.
+func constraintsFenceLanguage(file string) string {
+	if language := qualityLanguage(file); language != "" {
+		return language
+	}
+	switch strings.ToLower(filepath.Ext(file)) {
+	case ".html":
+		return "html"
+	case ".vue":
+		return "vue"
+	case ".svelte":
+		return "svelte"
+	case ".sh", ".bash":
+		return "bash"
+	case ".yml", ".yaml":
+		return "yaml"
+	case ".json":
+		return "json"
+	case ".toml":
+		return "toml"
+	case ".mod":
+		return "go"
+	default:
+		return ""
+	}
 }

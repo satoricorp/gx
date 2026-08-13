@@ -1,6 +1,7 @@
 package codereview
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,50 @@ func TestConstraintsAddedLinesForContentFallback(t *testing.T) {
 	}
 	if added[0].Number != 1 || added[0].Text != "line one" || added[1].Number != 2 {
 		t.Fatalf("added = %#v, want 1-based file line numbers", added)
+	}
+}
+
+func TestConstraintsDiffHunkForLine(t *testing.T) {
+	diff := strings.Join([]string{
+		"diff --git a/app.go b/app.go",
+		"@@ -10,3 +12,4 @@ func Run() {",
+		" kept",
+		"-removed",
+		"+added one",
+		" kept",
+		"+added two",
+	}, "\n")
+	hunk := constraintsDiffHunkForLine(diff, 13)
+	if hunk == "" {
+		t.Fatalf("no hunk for line 13")
+	}
+	for _, want := range []string{"@@ -10,3 +12,4 @@", "-removed", "+added one", "+added two"} {
+		if !strings.Contains(hunk, want) {
+			t.Fatalf("hunk missing %q:\n%s", want, hunk)
+		}
+	}
+	if got := constraintsDiffHunkForLine(diff, 500); got != "" {
+		t.Fatalf("line outside the diff produced a hunk:\n%s", got)
+	}
+	if got := constraintsDiffHunkForLine(diffUnavailableContentHeader+"\ncontent\n", 1); got != "" {
+		t.Fatalf("content fallback produced a hunk:\n%s", got)
+	}
+}
+
+func TestConstraintsDiffHunkForLineTrimsLongHunks(t *testing.T) {
+	lines := []string{"@@ -1,40 +1,40 @@"}
+	for i := 1; i <= 40; i++ {
+		lines = append(lines, fmt.Sprintf(" line %d", i))
+	}
+	hunk := constraintsDiffHunkForLine(strings.Join(lines, "\n"), 20)
+	if !strings.Contains(hunk, "line 20") {
+		t.Fatalf("trimmed hunk lost the target line:\n%s", hunk)
+	}
+	if strings.Contains(hunk, "line 1\n") || strings.Contains(hunk, "line 40") {
+		t.Fatalf("hunk was not trimmed around the target:\n%s", hunk)
+	}
+	if strings.Count(hunk, "…") != 2 {
+		t.Fatalf("trimmed hunk should mark both cut edges:\n%s", hunk)
 	}
 }
 

@@ -64,10 +64,10 @@ func constraintsSecretFindings(diffs []DiffSnippet, addedByFile map[string][]con
 				continue
 			}
 			findings = append(findings, Finding{
-				ID:      "constraints.secret-in-diff",
-				Scopes:  []string{"security"},
-				Title:   "Possible " + label + " in the diff",
-				Summary: fmt.Sprintf("An added line in %s matches the shape of a %s. Anything that lands in a commit lands in every clone.", snippet.File, label),
+				ID:             "constraints.secret-in-diff",
+				Scopes:         []string{"security"},
+				Title:          "Possible " + label + " in the diff",
+				Summary:        fmt.Sprintf("An added line in %s matches the shape of a %s. Anything that lands in a commit lands in every clone.", snippet.File, label),
 				Recommendation: "Remove the credential from the change, move it to the environment or a secret store, and rotate it if it was ever real.",
 				Strength:       "Blocking",
 				Kind:           "defect",
@@ -100,8 +100,8 @@ func constraintsSecretScanExemptPath(rel string) bool {
 // static-tool registry: detect inspects the checkout and the installed
 // binaries; a missing auditor is evidence, never a failure.
 type constraintsAuditRunner struct {
-	name    string
-	detect  func(repoRoot string) (staticToolCommand, bool)
+	name   string
+	detect func(repoRoot string) (staticToolCommand, bool)
 	// missing explains an auditor that applies to this checkout but cannot
 	// run, for the evidence line ("govulncheck not installed").
 	missing func(repoRoot string) string

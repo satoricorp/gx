@@ -73,6 +73,18 @@ type Finding struct {
 	// the survivor, and serialised in the JSON report.
 	MergedFindings []MergedFinding `json:"merged_findings,omitempty"`
 
+	// DiffHunk and CodeExcerpt carry the code a finding points at, so the
+	// report shows what is being discussed instead of only naming it. DiffHunk
+	// is the unified-diff window around the finding's line and is set when the
+	// line is part of the change under review — a finding about a diff shows
+	// the diff. CodeExcerpt is the fallback for findings about lines the
+	// change did not touch: the current source, ±2 lines of context, with
+	// CodeExcerptStart as the 1-based file line of its first line. Populated
+	// by the constraints engine; review findings leave all three empty.
+	DiffHunk         string `json:"diff_hunk,omitempty"`
+	CodeExcerpt      string `json:"code_excerpt,omitempty"`
+	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
+
 	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
 	Recommendation  string           `json:"recommendation,omitempty"`
 	// Strength is the severity vocabulary gates read: "Blocking", "Strong",
