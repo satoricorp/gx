@@ -20,7 +20,7 @@ GitHub on `git push`.
 
 You work in plain Git — `git add`, `git commit`, `git push`, `git checkout -b`. There is
 no gx save verb; the hooks do the recording and publishing automatically. gx MCP exposes
-`gx_enhance` and `gx_constraints` only — save and publish with Git, and use `gx enhance`
+`gx_enhance` and `gx_review` only — save and publish with Git, and use `gx enhance`
 for AI issues and tips on the current change.
 
 ## First: make sure the repo is initialized
@@ -129,20 +129,20 @@ what you just edited, and static checks run over the repository when there is no
 The `gxe` alias runs `gx enhance`. The `gx_enhance` MCP tool is the same pass from an
 agent client.
 
-## Constraints: gx constraints
+## Review: gx review
 
 Before shipping a PR, run the pre-ship exit gate the same way:
 
 ```bash
-GX_CLIENT=skill gx constraints                       # six gates, ship/no-ship verdict
-GX_CLIENT=skill gx constraints "fix auth timeout"    # state the intent for the back-pressure gate
-GX_CLIENT=skill gx constraints --verbose             # list the files behind each gate
+GX_CLIENT=skill gx review                       # six gates, ship/no-ship verdict
+GX_CLIENT=skill gx review "fix auth timeout"    # state the intent for the back-pressure gate
+GX_CLIENT=skill gx review --verbose             # list the files behind each gate
 ```
 
 It checks correctness, security, code health, back-pressure, accessibility, and
 performance — deterministic checks first, one AI judgment call for the rest —
-and exits 0 ship / 3 no-ship / 4 nothing-to-check / 5 degraded. The `gxc` alias
-runs it; the `gx_constraints` MCP tool is the same gate from an agent client.
+and exits 0 ship / 3 no-ship / 4 nothing-to-check / 5 degraded. The `gxr` alias
+runs it; the `gx_review` MCP tool is the same gate from an agent client.
 
 ## Do not
 

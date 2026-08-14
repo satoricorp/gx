@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// gx constraints is the pre-ship exit gate: six fixed constraint checks over
+// gx review is the pre-ship exit gate: six fixed gate checks over
 // the current change, each answering with PASS, FAIL, or SKIPPED, rolled into
 // one ship / no-ship verdict. It is deliberately not a review. A review looks
 // for whatever matters; the gate asks the same six questions every time, runs
@@ -23,7 +23,7 @@ import (
 // resolution, diff collection, the static-tool registry, the read-only git
 // guarantee, and the Bedrock plumbing are all reused rather than rebuilt.
 
-// GateID names one constraint gate. The set is fixed: the gate asks the same
+// GateID names one gate. The set is fixed: the gate asks the same
 // questions of every change, which is what makes its verdict comparable from
 // run to run.
 type GateID string
@@ -86,7 +86,7 @@ func ParseGateIDs(value string) ([]GateID, error) {
 			continue
 		}
 		if _, ok := known[id]; !ok {
-			return nil, fmt.Errorf("unknown constraints gate %q (want one of: %s)", part, joinGateIDs(AllGateIDs()))
+			return nil, fmt.Errorf("unknown gate %q (want one of: %s)", part, joinGateIDs(AllGateIDs()))
 		}
 		out = append(out, id)
 	}
@@ -128,7 +128,7 @@ type GateResult struct {
 	Files      []string           `json:"files,omitempty"`
 }
 
-// Constraints verdicts. "degraded" is its own outcome rather than a flavor of
+// Reviews verdicts. "degraded" is its own outcome rather than a flavor of
 // ship: every resolved gate passed, but gates that needed the model never got
 // one, so the run is not entitled to say ship — the same honesty rule the
 // review gate applies.
@@ -139,21 +139,21 @@ const (
 	VerdictNothingToCheck = "nothing-to-check"
 )
 
-type ConstraintsDiffStats struct {
+type ReviewDiffStats struct {
 	Files          int `json:"files"`
 	AddedLines     int `json:"added_lines"`
 	RemovedLines   int `json:"removed_lines"`
 	GeneratedFiles int `json:"generated_files,omitempty"`
 }
 
-type ConstraintsReport struct {
-	RepoRoot     string               `json:"repo_root"`
-	Intent       string               `json:"intent,omitempty"`
-	IntentSource string               `json:"intent_source,omitempty"`
-	ChangedFiles []string             `json:"changed_files,omitempty"`
-	DiffStats    ConstraintsDiffStats `json:"diff_stats"`
-	Gates        []GateResult         `json:"gates"`
-	Verdict      string               `json:"verdict"`
+type ReviewReport struct {
+	RepoRoot     string          `json:"repo_root"`
+	Intent       string          `json:"intent,omitempty"`
+	IntentSource string          `json:"intent_source,omitempty"`
+	ChangedFiles []string        `json:"changed_files,omitempty"`
+	DiffStats    ReviewDiffStats `json:"diff_stats"`
+	Gates        []GateResult    `json:"gates"`
+	Verdict      string          `json:"verdict"`
 	// DegradedReasons say why the verdict is worth less than it looks: an AI
 	// gate that could not run, a truncated diff. They never appear on a
 	// deliberate opt-out (GX_REVIEW_AI=0), only on a configured capability that
@@ -175,7 +175,7 @@ type ConstraintsReport struct {
 }
 
 // FailedGates lists the gates that failed, in evaluation order.
-func (r ConstraintsReport) FailedGates() []GateID {
+func (r ReviewReport) FailedGates() []GateID {
 	var out []GateID
 	for _, gate := range r.Gates {
 		if gate.Status == GateFail {
@@ -185,7 +185,7 @@ func (r ConstraintsReport) FailedGates() []GateID {
 	return out
 }
 
-type ConstraintsOptions struct {
+type ReviewOptions struct {
 	// Intent is the stated purpose of the change, usually the positional CLI
 	// argument. Empty means it is derived from the branch and commit subjects.
 	Intent string
@@ -193,7 +193,7 @@ type ConstraintsOptions struct {
 	// exactly like review's --base.
 	Base      string
 	SkipGates []GateID
-	// Timeout bounds the whole run. Zero means defaultConstraintsTimeout.
+	// Timeout bounds the whole run. Zero means defaultReviewTimeout.
 	Timeout        time.Duration
 	Verbose        bool
 	ProgressWriter io.Writer
@@ -201,27 +201,27 @@ type ConstraintsOptions struct {
 }
 
 const (
-	defaultConstraintsTimeout = 5 * time.Minute
-	// constraintsRetrievalTimeout bounds the context-retrieval leg on its own:
+	defaultReviewTimeout = 5 * time.Minute
+	// reviewRetrievalTimeout bounds the context-retrieval leg on its own:
 	// grounding is a bonus, and a hung index must not stall a gate whose
 	// deterministic half already finished.
-	constraintsRetrievalTimeout = 20 * time.Second
+	reviewRetrievalTimeout = 20 * time.Second
 	// Code-health thresholds. A change past either of these is one a human
-	// cannot meaningfully review in a sitting, which is a constraint violation
+	// cannot meaningfully review in a sitting, which is a code-health violation
 	// on its own — no model needed to argue it.
-	constraintsMaxReviewableLines = 1500
-	constraintsMaxReviewableFiles = 60
+	reviewMaxReviewableLines = 1500
+	reviewMaxReviewableFiles = 60
 )
 
-// CheckConstraints runs the exit gate against repoRoot's current change.
-func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOptions) (ConstraintsReport, error) {
+// CheckReview runs the exit gate against repoRoot's current change.
+func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (ReviewReport, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	if repoRoot == "" {
-		return ConstraintsReport{}, fmt.Errorf("repo root is required")
+		return ReviewReport{}, fmt.Errorf("repo root is required")
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
-		timeout = defaultConstraintsTimeout
+		timeout = defaultReviewTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -229,14 +229,14 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 	ctx, releaseIndex := withScratchGitIndex(ctx, repoRoot)
 	defer releaseIndex()
 
-	constraintsProgress(opts, "Resolving the current change")
+	gateProgress(opts, "Resolving the current change")
 	facts, err := scanRepo(ctx, repoRoot, "")
 	if err != nil {
-		return ConstraintsReport{}, err
+		return ReviewReport{}, err
 	}
 	policy := LoadReviewPolicy(repoRoot)
 	changes := resolveChangeSet(ctx, repoRoot, opts.Base)
-	report := ConstraintsReport{
+	report := ReviewReport{
 		RepoRoot:     repoRoot,
 		Reviewed:     changes.Reviewed(),
 		ReviewMode:   changes.Mode,
@@ -256,9 +256,9 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 
 	reviewOpts := Options{ReviewPolicy: &policy, Color: opts.Color}
 	diffs := collectDiffSnippets(ctx, repoRoot, changes.Files, reviewOpts, changes.Range)
-	signals := collectConstraintSignals(changes.Files, diffs, policy, constraintsNumstat(ctx, repoRoot, changes.Range))
+	signals := collectReviewSignals(changes.Files, diffs, policy, reviewNumstat(ctx, repoRoot, changes.Range))
 	report.DiffStats = signals.DiffStats
-	report.Intent, report.IntentSource = resolveConstraintsIntent(ctx, repoRoot, opts.Intent, changes)
+	report.Intent, report.IntentSource = resolveReviewIntent(ctx, repoRoot, opts.Intent, changes)
 
 	skipped := map[GateID]struct{}{}
 	for _, id := range opts.SkipGates {
@@ -275,7 +275,7 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 		retrieved    []ContextSnippet
 	)
 	needTools := !bothGatesSkipped(skipped, GateCorrectness, GateCodeHealth)
-	judge, judgeModel, judgeTransport, judgeUnavailable := constraintsJudgeFactory()
+	judge, judgeModel, judgeTransport, judgeUnavailable := reviewJudgeFactory()
 	report.AIModel = judgeModel
 	report.AITransport = judgeTransport
 	var wg sync.WaitGroup
@@ -283,23 +283,23 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			constraintsProgress(opts, "Running project checks")
-			toolResults = collectConstraintsToolResults(ctx, repoRoot, facts, reviewOpts, changes.Files)
+			gateProgress(opts, "Running project checks")
+			toolResults = collectReviewToolResults(ctx, repoRoot, facts, reviewOpts, changes.Files)
 		}()
 	}
 	if _, skip := skipped[GateSecurity]; !skip {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			constraintsProgress(opts, "Auditing dependencies")
-			auditResults = collectConstraintsAuditResults(ctx, repoRoot, changes.Files)
+			gateProgress(opts, "Auditing dependencies")
+			auditResults = collectReviewAuditResults(ctx, repoRoot, changes.Files)
 		}()
 	}
 	if judge != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			retrieved = collectConstraintsContext(ctx, repoRoot, facts, reviewOpts, changes, diffs)
+			retrieved = collectReviewContext(ctx, repoRoot, facts, reviewOpts, changes, diffs)
 		}()
 	}
 	wg.Wait()
@@ -308,29 +308,29 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 	}
 
 	gates := map[GateID]GateResult{
-		GateCorrectness: constraintsCorrectnessGate(toolResults, changes.Files),
-		GateSecurity:    constraintsSecurityGate(repoRoot, changes.Files, diffs, auditResults),
+		GateCorrectness: reviewCorrectnessGate(toolResults, changes.Files),
+		GateSecurity:    reviewSecurityGate(repoRoot, changes.Files, diffs, auditResults),
 	}
-	gates[GateCodeHealth] = constraintsCodeHealthGate(toolResults, signals, changes.Files)
+	gates[GateCodeHealth] = reviewCodeHealthGate(toolResults, signals, changes.Files)
 	gates[GateBackPressure] = GateResult{Gate: GateBackPressure, Title: gateTitle(GateBackPressure), Status: GatePass}
-	gates[GateAccessibility] = constraintsAccessibilityGate(signals)
-	gates[GatePerformance] = constraintsPerformanceGate(signals)
+	gates[GateAccessibility] = reviewAccessibilityGate(signals)
+	gates[GatePerformance] = reviewPerformanceGate(signals)
 
 	// The judgment gates: one model call over the diff, grounded in the
 	// deterministic results above and whatever retrieval found.
-	aiGates := constraintsAIGates(gates, skipped)
+	aiGates := reviewAIGates(gates, skipped)
 	if len(aiGates) > 0 {
 		switch {
 		case judge == nil && judgeUnavailable == "":
 			// Deliberate opt-out (GX_REVIEW_AI=0): the AI gates are skipped and
 			// the run is not degraded — the operator asked for exactly this.
-			markConstraintsAIGatesSkipped(gates, aiGates, "AI judgment disabled (GX_REVIEW_AI=0)")
+			markReviewAIGatesSkipped(gates, aiGates, "AI judgment disabled (GX_REVIEW_AI=0)")
 		case judge == nil:
-			markConstraintsAIGatesSkipped(gates, aiGates, "AI judgment unavailable: "+judgeUnavailable)
+			markReviewAIGatesSkipped(gates, aiGates, "AI judgment unavailable: "+judgeUnavailable)
 			report.DegradedReasons = append(report.DegradedReasons, judgeUnavailable)
 		default:
-			constraintsProgress(opts, "Asking the AI judge")
-			degraded := runConstraintsAIPass(ctx, judge, constraintsAIPassInput{
+			gateProgress(opts, "Asking the AI judge")
+			degraded := runReviewAIPass(ctx, judge, reviewAIPassInput{
 				report:    &report,
 				gates:     gates,
 				aiGates:   aiGates,
@@ -372,26 +372,26 @@ func CheckConstraints(ctx context.Context, repoRoot string, opts ConstraintsOpti
 		}
 		// A finding about the change shows its diff hunk; only findings about
 		// lines the change did not touch fall back to the current source.
-		attachConstraintsDiffHunks(diffsByFile, result.Findings)
-		attachConstraintsCodeExcerpts(repoRoot, result.Findings)
+		attachReviewDiffHunks(diffsByFile, result.Findings)
+		attachReviewCodeExcerpts(repoRoot, result.Findings)
 		report.Gates = append(report.Gates, result)
 	}
-	report.Verdict = constraintsVerdict(report)
+	report.Verdict = reviewVerdict(report)
 	return report, nil
 }
 
 const (
-	// constraintsExcerptContext is how many lines surround a finding's line in
-	// its code excerpt; constraintsExcerptMaxLineBytes keeps a minified or
+	// reviewExcerptContext is how many lines surround a finding's line in
+	// its code excerpt; reviewExcerptMaxLineBytes keeps a minified or
 	// generated line from turning the excerpt into a wall.
-	constraintsExcerptContext      = 2
-	constraintsExcerptMaxLineBytes = 200
+	reviewExcerptContext      = 2
+	reviewExcerptMaxLineBytes = 200
 )
 
-// attachConstraintsDiffHunks gives each finding whose line is part of the
+// attachReviewDiffHunks gives each finding whose line is part of the
 // change its unified-diff window, extracted from the same snippets the gates
 // read.
-func attachConstraintsDiffHunks(diffsByFile map[string]string, findings []Finding) {
+func attachReviewDiffHunks(diffsByFile map[string]string, findings []Finding) {
 	for i := range findings {
 		finding := &findings[i]
 		if finding.DiffHunk != "" || finding.File == "" || finding.Line <= 0 {
@@ -401,16 +401,16 @@ func attachConstraintsDiffHunks(diffsByFile map[string]string, findings []Findin
 		if !ok {
 			continue
 		}
-		finding.DiffHunk = constraintsDiffHunkForLine(diff, finding.Line)
+		finding.DiffHunk = reviewDiffHunkForLine(diff, finding.Line)
 	}
 }
 
-// attachConstraintsCodeExcerpts reads the source lines each finding points at,
+// attachReviewCodeExcerpts reads the source lines each finding points at,
 // so the report shows the code being discussed rather than only naming it.
 // Findings that already carry a diff hunk are left alone — the hunk is the
 // better evidence. Best-effort by design: an unreadable file or a stale line
 // number just leaves the excerpt empty.
-func attachConstraintsCodeExcerpts(repoRoot string, findings []Finding) {
+func attachReviewCodeExcerpts(repoRoot string, findings []Finding) {
 	for i := range findings {
 		finding := &findings[i]
 		if finding.DiffHunk != "" || finding.CodeExcerpt != "" || finding.File == "" || finding.Line <= 0 {
@@ -428,18 +428,18 @@ func attachConstraintsCodeExcerpts(repoRoot string, findings []Finding) {
 		if finding.Line > len(lines) {
 			continue
 		}
-		start := finding.Line - constraintsExcerptContext
+		start := finding.Line - reviewExcerptContext
 		if start < 1 {
 			start = 1
 		}
-		end := finding.Line + constraintsExcerptContext
+		end := finding.Line + reviewExcerptContext
 		if end > len(lines) {
 			end = len(lines)
 		}
 		excerpt := make([]string, 0, end-start+1)
 		for _, line := range lines[start-1 : end] {
-			if len(line) > constraintsExcerptMaxLineBytes {
-				line = line[:constraintsExcerptMaxLineBytes] + "…"
+			if len(line) > reviewExcerptMaxLineBytes {
+				line = line[:reviewExcerptMaxLineBytes] + "…"
 			}
 			excerpt = append(excerpt, line)
 		}
@@ -448,9 +448,9 @@ func attachConstraintsCodeExcerpts(repoRoot string, findings []Finding) {
 	}
 }
 
-// constraintsVerdict rolls the gates up. Real failures outrank everything;
+// reviewVerdict rolls the gates up. Real failures outrank everything;
 // a degraded run with no failures must not claim ship.
-func constraintsVerdict(report ConstraintsReport) string {
+func reviewVerdict(report ReviewReport) string {
 	if len(report.FailedGates()) > 0 {
 		return VerdictNoShip
 	}
@@ -460,12 +460,12 @@ func constraintsVerdict(report ConstraintsReport) string {
 	return VerdictShip
 }
 
-// constraintsAIGates lists the gates the model call must judge this run: the
+// reviewAIGates lists the gates the model call must judge this run: the
 // judgment gates that apply to this change and were not skipped by flag or
 // already decided deterministically as FAIL. A gate the deterministic half
 // already failed keeps its failure; the model can add findings to a passing
 // gate but never overturn a command's exit code.
-func constraintsAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}) []GateID {
+func reviewAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}) []GateID {
 	var out []GateID
 	for _, id := range []GateID{GateCodeHealth, GateBackPressure, GateAccessibility, GatePerformance} {
 		if _, skip := skipped[id]; skip {
@@ -479,7 +479,7 @@ func constraintsAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}
 	return out
 }
 
-func markConstraintsAIGatesSkipped(gates map[GateID]GateResult, ids []GateID, reason string) {
+func markReviewAIGatesSkipped(gates map[GateID]GateResult, ids []GateID, reason string) {
 	for _, id := range ids {
 		result := gates[id]
 		if result.Status == GateFail {
@@ -509,21 +509,21 @@ func bothGatesSkipped(skipped map[GateID]struct{}, ids ...GateID) bool {
 	return true
 }
 
-// resolveConstraintsIntent picks what the change is supposed to be, most
+// resolveReviewIntent picks what the change is supposed to be, most
 // explicit source first: the caller's argument, then the branch name plus the
 // range's commit subjects. Session context reaches the model through the
 // retrieval pass instead of through this field, so a missing session can never
 // block the gate.
-func resolveConstraintsIntent(ctx context.Context, repoRoot, stated string, changes ChangeSet) (string, string) {
+func resolveReviewIntent(ctx context.Context, repoRoot, stated string, changes ChangeSet) (string, string) {
 	stated = strings.TrimSpace(stated)
 	if stated != "" {
 		return stated, "stated"
 	}
 	var parts []string
-	if branch := currentConstraintsBranch(ctx, repoRoot); branch != "" && branch != "HEAD" {
+	if branch := currentReviewBranch(ctx, repoRoot); branch != "" && branch != "HEAD" {
 		parts = append(parts, "branch "+branch)
 	}
-	if subjects := constraintsCommitSubjects(ctx, repoRoot, changes.Range); len(subjects) > 0 {
+	if subjects := reviewCommitSubjects(ctx, repoRoot, changes.Range); len(subjects) > 0 {
 		parts = append(parts, "commits: "+strings.Join(subjects, "; "))
 	}
 	if changes.Mode == ReviewModeWorkingTree {
@@ -535,7 +535,7 @@ func resolveConstraintsIntent(ctx context.Context, repoRoot, stated string, chan
 	return strings.Join(parts, " — "), "derived"
 }
 
-func currentConstraintsBranch(ctx context.Context, repoRoot string) string {
+func currentReviewBranch(ctx context.Context, repoRoot string) string {
 	cmd := gitCommand(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
@@ -544,7 +544,7 @@ func currentConstraintsBranch(ctx context.Context, repoRoot string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func constraintsCommitSubjects(ctx context.Context, repoRoot, refRange string) []string {
+func reviewCommitSubjects(ctx context.Context, repoRoot, refRange string) []string {
 	refRange = strings.TrimSpace(refRange)
 	if refRange == "" {
 		return nil
@@ -564,13 +564,13 @@ func constraintsCommitSubjects(ctx context.Context, repoRoot, refRange string) [
 	return subjects
 }
 
-func constraintsProgress(opts ConstraintsOptions, message string) {
+func gateProgress(opts ReviewOptions, message string) {
 	if opts.ProgressWriter == nil || strings.TrimSpace(message) == "" {
 		return
 	}
 	_, _ = io.WriteString(opts.ProgressWriter, strings.TrimSpace(message)+"\n")
 }
 
-func constraintsStaticToolsDisabled() bool {
+func reviewStaticToolsDisabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0")
 }

@@ -21,7 +21,7 @@ curl -fsSL https://download.gx.run/install.sh | sh
 
 Re-run the same command to upgrade or repair an existing installation. The
 installer replaces only the gx-managed `gx` and `gx-mcp` binaries and refreshes
-the `gxe` alias. It does not remove `~/.gx`, repository metadata, or
+the `gxe` and `gxr` aliases. It does not remove `~/.gx`, repository metadata, or
 hooks.
 
 ```bash
@@ -37,7 +37,7 @@ gx init
 
 This configures your gx identity, installs Git lifecycle hooks to identify and
 record revisions plus a pre-push hook to publish session data, registers the gx
-MCP server, installs `/enhance` and `/constraints` commands for Claude Code, Codex,
+MCP server, installs `/enhance` and `/review` commands for Claude Code, Codex,
 and Cursor, and offers to add gx workflow instructions to `AGENTS.md`.
 
 Most gx commands initialize the repository on first use, so `gx init` is the way
@@ -104,7 +104,7 @@ Default flow:
 - To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
 
 To enhance the current change — AI-reported issues and tips to improve it — run the `gx_enhance` MCP tool (or the `gx enhance` CLI).
-Before shipping, run the `gx_constraints` MCP tool (or `gx constraints`) to check the change against the pre-ship constraint gates.
+Before shipping, run the `gx_review` MCP tool (or `gx review`) to check the change against the pre-ship gates.
 ```
 
 gx PR summaries are posted for PRs whose branch was pushed through gx with `git
@@ -176,7 +176,7 @@ Claude Code:
 claude mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
 ```
 
-MCP exposes `gx_enhance` and `gx_constraints`. There is still no save or publish
+MCP exposes `gx_enhance` and `gx_review`. There is still no save or publish
 tool and no gx-specific verb to ask for: the server tells your agent to use
 plain Git, and the hooks do the rest.
 
@@ -186,17 +186,16 @@ Expected flow:
 git add -> git commit -> git push -> gh pr create
 ```
 
-`gx init` also installs `/enhance` and `/constraints` slash commands for Claude
+`gx init` also installs `/enhance` and `/review` slash commands for Claude
 Code, Codex, and Cursor: `/enhance` runs a fast pass over the current change —
-issues and tips to improve it — and `/constraints` runs the pre-ship
-constraints exit gate.
+issues and tips to improve it — and `/review` runs the pre-ship exit gate.
 
 Publish with plain `git push` only. Do not run `gx push` or `gx capture push`.
 
-## Constraints
+## Review
 
-`gx constraints` (shortcut `gxc`) is the pre-ship exit gate: it checks the
-current change against six constraints — correctness, security, code health,
+`gx review` (shortcut `gxr`) is the pre-ship exit gate: it checks the
+current change against six gates — correctness, security, code health,
 back-pressure, accessibility, performance — and reports PASS, FAIL, or SKIPPED
 for each plus a ship / no-ship verdict. Deterministic checks decide what they
 can (the project's tests and linters, a secrets scan over added lines,
@@ -205,7 +204,7 @@ the rest, grounded in the same code-index, session, prior-finding, and
 knowledge-corpus context `gx enhance` uses. Run it before opening a PR:
 
 ```bash
-gx constraints "fix auth timeout"
+gx review "fix auth timeout"
 ```
 
 The optional argument states the change's intent, which the back-pressure gate

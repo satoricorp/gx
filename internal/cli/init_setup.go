@@ -28,7 +28,7 @@ Default flow:
 - To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
 To enhance the current change — AI-reported issues and tips to improve it — run the ` + "`gx_enhance`" + ` MCP tool (or the ` + "`gx enhance`" + ` CLI).
-Before shipping, run the ` + "`gx_constraints`" + ` MCP tool (or ` + "`gx constraints`" + `) to check the change against the pre-ship constraint gates.
+Before shipping, run the ` + "`gx_review`" + ` MCP tool (or ` + "`gx review`" + `) to check the change against the pre-ship gates.
 `
 
 type initSetupOptions struct {

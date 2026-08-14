@@ -289,7 +289,7 @@ func TestLoadReviewPolicyNeverFetchesURLsItFinds(t *testing.T) {
 // Which model reviews is the operator's decision. A REVIEW.md line naming one
 // used to win over the operator's own environment variables, so a repository
 // could pick the reviewer that judged it — including a weaker one.
-func TestReviewMdCannotChooseTheReviewerOrJudgeModel(t *testing.T) {
+func TestEnhanceMdCannotChooseTheReviewerOrJudgeModel(t *testing.T) {
 	t.Setenv("GX_REVIEW_BEDROCK_MODEL_A", "us.anthropic.claude-from-env-a")
 	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "us.anthropic.claude-from-env-b")
 	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
@@ -314,7 +314,7 @@ func TestReviewMdCannotChooseTheReviewerOrJudgeModel(t *testing.T) {
 	}
 }
 
-func TestReviewPolicySummarizesOversizedMarkdown(t *testing.T) {
+func TestEnhancePolicySummarizesOversizedMarkdown(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "REVIEW.md", strings.Repeat("Review this carefully. ", 1000))
 
@@ -363,7 +363,7 @@ func TestBuildReviewBriefUsesPolicyContextWithoutRenderingPolicyText(t *testing.
 	}
 }
 
-func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
+func TestEnhancePolicyInfluencesReviewResourceQuery(t *testing.T) {
 	policy := &ReviewPolicy{
 		Present: true,
 		Path:    "REVIEW.md",
@@ -399,7 +399,7 @@ func TestReviewPolicyInfluencesReviewResourceQuery(t *testing.T) {
 // The panel is two Bedrock legs configured from the environment, and the legs
 // stay independent: pinning one must not collapse the panel into one model
 // reviewed twice.
-func TestReviewerFromEnvBuildsTwoIndependentBedrockLegs(t *testing.T) {
+func TestEnhanceerFromEnvBuildsTwoIndependentBedrockLegs(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	// This test is about panel construction, not wire selection. Cloud is the
 	// default wire now, so reaching the direct-to-AWS legs takes an explicit

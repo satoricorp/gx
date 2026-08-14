@@ -302,7 +302,7 @@ func TestPRAliasIsRemoved(t *testing.T) {
 	}
 }
 
-func TestReviewCommandUsesDefaults(t *testing.T) {
+func TestEnhanceCommandUsesDefaults(t *testing.T) {
 	root := initGitRepo(t)
 	writeTestFile(t, root, "README.md", "# repo\n")
 	writeTestFile(t, root, "AGENTS.md", "# agents\n")
@@ -409,7 +409,7 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	}
 }
 
-func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
+func TestEnhanceCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
 	t.Setenv("GX_HOME", t.TempDir())
@@ -629,7 +629,7 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 	}
 }
 
-func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
+func TestEnhanceCommandRejectsMultiplePrompts(t *testing.T) {
 	cmd := NewRoot(context.Background())
 	cmd.SetArgs([]string{"enhance", "one prompt", "second prompt"})
 
