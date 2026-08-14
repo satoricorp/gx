@@ -11,6 +11,24 @@ Default flow:
 
 To enhance the current change — AI-reported issues and tips to improve it — run the `gx_enhance` MCP tool (or the `gx enhance` CLI).
 
+## Installing: `just install`, never a bare `go build`
+
+Install with `just install`. Never write to `~/.local/bin/gx` (or anywhere on PATH)
+with `go build -o` or `go install`.
+
+`just install` bakes the API endpoints into the binary through ldflags from `.env`
+— `CloudURL`, `GitHubClientID`, `ConvexSiteURL`, the PostHog pair — and then runs
+`just verify-bake` against both the built and the installed binary so a missing one
+fails loudly. A bare build skips all of it and leaves `buildconfig.CloudURL` empty.
+
+That failure is silent and total. `cloud.NewClient()` returns nil, the publish
+outbox worker exits before its first request, and because the pre-push hook spawns
+it detached with stderr to `/dev/null` and discards the error, nothing is printed,
+logged, or recorded anywhere. Pushes look completely normal; PR summaries simply
+stop appearing, and the queue fills up until items pass their retry ceiling and are
+dropped for good. This cost a week of summaries in August 2026 before anyone
+noticed. `gx version` printing `dev` instead of a commit sha is the tell.
+
 ## Tests: seed through the writer production uses, or do not seed
 
 Two production defects shipped past a fully green suite because every test built
