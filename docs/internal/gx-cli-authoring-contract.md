@@ -206,7 +206,7 @@ The ideal agent loop is:
 6. `git commit --amend` when updating the latest revision, preserving its gx trailer
 7. `gx_enhance` when issues and tips on the current change are needed
 
-MCP exposes `gx_enhance` and `gx_constraints` only — there is no `gx_commit` / `gx_status` / `gx_publish` /
+MCP exposes `gx_enhance` and `gx_review` only — there is no `gx_commit` / `gx_status` / `gx_publish` /
 `gx_push` MCP tool. Saving uses the CLI; agents must publish with plain `git push` only
 (never `gx push` or `gx capture push`).
 

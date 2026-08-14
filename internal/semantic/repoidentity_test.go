@@ -35,7 +35,7 @@ func namespaceIndexWrites(ctx context.Context, t *testing.T, repoRoot, orgID str
 // internal/codereview builds its targets from RepoIdentity.Candidates(), so
 // this is the review's derivation. The end-to-end pairing — the real
 // codeIndexTargets against this — is
-// TestReviewReadsTheNamespaceIndexWrites in internal/codereview.
+// TestEnhanceReadsTheNamespaceIndexWrites in internal/codereview.
 func namespaceReviewReads(ctx context.Context, t *testing.T, repoRoot, orgID string) string {
 	t.Helper()
 	absRoot, err := filepath.Abs(repoRoot)
@@ -128,11 +128,11 @@ func TestIndexAndReviewResolveTheSameNamespace(t *testing.T) {
 	}
 }
 
-// TestReviewProbesThePreRemoteNamespace covers the case the shared resolver
+// TestEnhanceProbesThePreRemoteNamespace covers the case the shared resolver
 // cannot make go away: identity is derived from mutable git config, so a
 // repository indexed before it had a remote is indexed under a different name
 // than it now answers to. The read side has to look in both.
-func TestReviewProbesThePreRemoteNamespace(t *testing.T) {
+func TestEnhanceProbesThePreRemoteNamespace(t *testing.T) {
 	ctx := context.Background()
 	root := initTestRepo(t)
 

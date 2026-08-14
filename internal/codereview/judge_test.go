@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestReviewerAvailable(t *testing.T) {
+func TestEnhanceerAvailable(t *testing.T) {
 	if reviewerAvailable(nil) {
 		t.Fatal("reviewerAvailable(nil) = true, want false")
 	}

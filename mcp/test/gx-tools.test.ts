@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import gxConstraints, { metadata as constraintsMetadata, schema as constraintsSchema } from "../src/tools/gx-constraints";
+import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 import gxEnhance, { metadata as enhanceMetadata, schema as enhanceSchema } from "../src/tools/gx-enhance";
 
 describe("gx_enhance metadata and schema", () => {
@@ -18,22 +18,21 @@ describe("gx_enhance metadata and schema", () => {
   });
 });
 
-describe("gx_constraints metadata and schema", () => {
+describe("gx_review metadata and schema", () => {
   test("describes the exit gate", () => {
-    expect(constraintsMetadata.name).toBe("gx_constraints");
-    expect(constraintsMetadata.description).toMatch(/ship\/no-ship verdict/i);
-    expect(constraintsMetadata.description).toMatch(/no-ship verdict is a successful run/i);
-    expect(constraintsMetadata.annotations?.readOnlyHint).toBe(true);
-    expect(constraintsSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
-    expect(constraintsSchema.verbose.parse(true)).toBe(true);
+    expect(reviewMetadata.name).toBe("gx_review");
+    expect(reviewMetadata.description).toMatch(/ship\/no-ship verdict/i);
+    expect(reviewMetadata.description).toMatch(/no-ship verdict is a successful run/i);
+    expect(reviewMetadata.annotations?.readOnlyHint).toBe(true);
+    expect(reviewSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
+    expect(reviewSchema.verbose.parse(true)).toBe(true);
   });
 });
 
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_enhance and gx_constraints", () => {
-    const registered = [enhanceMetadata.name, constraintsMetadata.name].sort();
-    expect(registered).toEqual(["gx_constraints", "gx_enhance"]);
-    expect(registered).not.toContain("gx_review");
+  test("exposes exactly gx_enhance and gx_review", () => {
+    const registered = [enhanceMetadata.name, reviewMetadata.name].sort();
+    expect(registered).toEqual(["gx_enhance", "gx_review"]);
     expect(registered).not.toContain("gx_commit");
     expect(registered).not.toContain("gx_status");
     expect(registered).not.toContain("gx_push");
@@ -76,12 +75,12 @@ if [ "$1" = enhance ]; then
   echo "enhance ok"
   exit 0
 fi
-if [ "$1" = constraints ]; then
+if [ "$1" = review ]; then
   if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
     echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
     exit 1
   fi
-  echo "constraints ok"
+  echo "review ok"
   exit 0
 fi
 if [ "$1" = doctor ]; then
@@ -211,16 +210,16 @@ exit 1
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });
 
-  test("gx_constraints always runs report-only markdown and passes the hint", async () => {
-    // --report-only is load-bearing: `gx constraints` exits non-zero on a
+  test("gx_review always runs report-only markdown and passes the hint", async () => {
+    // --report-only is load-bearing: `gx review` exits non-zero on a
     // no-ship verdict, and runTt reads any non-zero exit as a tool failure.
-    const output = await gxConstraints({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
+    const output = await gxReview({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
     const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("constraints");
-    expect(parsed.display).toBe("constraints ok");
+    expect(parsed.action).toBe("review");
+    expect(parsed.display).toBe("review ok");
     expect(parsed.command).toEqual([
       process.env.GX_BINARY,
-      "constraints",
+      "review",
       "--report-only",
       "--md",
       "--client",
@@ -229,27 +228,27 @@ exit 1
       "fix auth timeout",
     ]);
 
-    const bare = JSON.parse(await gxConstraints({ cwd: repoRoot }));
-    expect(bare.command).toEqual([process.env.GX_BINARY, "constraints", "--report-only", "--md", "--client", "mcp"]);
+    const bare = JSON.parse(await gxReview({ cwd: repoRoot }));
+    expect(bare.command).toEqual([process.env.GX_BINARY, "review", "--report-only", "--md", "--client", "mcp"]);
   });
 
-  test("gx_constraints never initializes the repo it checks", async () => {
-    const output = await gxConstraints({ cwd: repoRoot });
+  test("gx_review never initializes the repo it checks", async () => {
+    const output = await gxReview({ cwd: repoRoot });
     expect(JSON.parse(output).ok).toBe(true);
 
     const calls = (await readFile(callLog, "utf8")).trim().split("\n");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("|constraints");
+    expect(calls[0]).toContain("|review");
     expect(calls.some((line) => line.includes("|init"))).toBe(false);
     expect(existsSync(join(repoRoot, ".gx-initialized"))).toBe(false);
   });
 
-  test("gx_constraints surfaces MCP auth login guidance", async () => {
+  test("gx_review surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const parsed = JSON.parse(await gxConstraints({ cwd: repoRoot }));
+    const parsed = JSON.parse(await gxReview({ cwd: repoRoot }));
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("constraints");
+    expect(parsed.action).toBe("review");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });

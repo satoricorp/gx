@@ -8,44 +8,44 @@ import (
 	"testing"
 )
 
-// setConstraintsTestEnv makes an engine test hermetic: no model, no tools, no
+// setReviewTestEnv makes an engine test hermetic: no model, no tools, no
 // retrieval, no network.
-func setConstraintsTestEnv(t *testing.T) {
+func setReviewTestEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("GX_REVIEW_AI", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
-	t.Setenv("GX_CONSTRAINTS_RETRIEVAL", "0")
+	t.Setenv("GX_GATE_RETRIEVAL", "0")
 }
 
-// stubConstraintsJudge answers with a canned response (or error) and records
+// stubReviewJudge answers with a canned response (or error) and records
 // the request it saw.
-type stubConstraintsJudge struct {
-	response constraintsJudgeResponse
+type stubReviewJudge struct {
+	response reviewJudgeResponse
 	err      error
-	request  *constraintsJudgeRequest
+	request  *reviewJudgeRequest
 }
 
-func (s *stubConstraintsJudge) JudgeConstraints(_ context.Context, req constraintsJudgeRequest) (constraintsJudgeResponse, error) {
+func (s *stubReviewJudge) JudgeReview(_ context.Context, req reviewJudgeRequest) (reviewJudgeResponse, error) {
 	s.request = &req
 	if s.err != nil {
-		return constraintsJudgeResponse{}, s.err
+		return reviewJudgeResponse{}, s.err
 	}
 	return s.response, nil
 }
 
-func swapConstraintsJudgeFactory(t *testing.T, judge constraintsJudge, unavailable string) {
+func swapReviewJudgeFactory(t *testing.T, judge reviewJudge, unavailable string) {
 	t.Helper()
-	previous := constraintsJudgeFactory
-	constraintsJudgeFactory = func() (constraintsJudge, string, string, string) {
+	previous := reviewJudgeFactory
+	reviewJudgeFactory = func() (reviewJudge, string, string, string) {
 		if judge == nil {
 			return nil, "", "", unavailable
 		}
 		return judge, "stub-model", "stub", ""
 	}
-	t.Cleanup(func() { constraintsJudgeFactory = previous })
+	t.Cleanup(func() { reviewJudgeFactory = previous })
 }
 
-func newConstraintsRepo(t *testing.T) string {
+func newReviewRepo(t *testing.T) string {
 	t.Helper()
 	root := initRepo(t)
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -55,7 +55,7 @@ func newConstraintsRepo(t *testing.T) string {
 	return root
 }
 
-func commitConstraintsBranchFile(t *testing.T, root, rel, content string) {
+func commitReviewBranchFile(t *testing.T, root, rel, content string) {
 	t.Helper()
 	runGit(t, root, "checkout", "-b", "feature")
 	writeFile(t, root, rel, content)
@@ -63,7 +63,7 @@ func commitConstraintsBranchFile(t *testing.T, root, rel, content string) {
 	runGit(t, root, "commit", "-m", "feature change")
 }
 
-func gateByID(t *testing.T, report ConstraintsReport, id GateID) GateResult {
+func gateByID(t *testing.T, report ReviewReport, id GateID) GateResult {
 	t.Helper()
 	for _, gate := range report.Gates {
 		if gate.Gate == id {
@@ -74,13 +74,13 @@ func gateByID(t *testing.T, report ConstraintsReport, id GateID) GateResult {
 	return GateResult{}
 }
 
-func TestCheckConstraintsNothingToCheck(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
+func TestCheckReviewNothingToCheck(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if report.Reviewed {
 		t.Fatalf("Reviewed = true, want false for a clean base checkout")
@@ -93,17 +93,17 @@ func TestCheckConstraintsNothingToCheck(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsShipOnOrdinaryChange(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() error { return nil }\n")
+func TestCheckReviewShipOnOrdinaryChange(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() error { return nil }\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if report.Verdict != VerdictShip {
-		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictShip, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictShip, RenderReviewText(report))
 	}
 	if len(report.Gates) != len(AllGateIDs()) {
 		t.Fatalf("got %d gates, want %d", len(report.Gates), len(AllGateIDs()))
@@ -124,18 +124,18 @@ func TestCheckConstraintsShipOnOrdinaryChange(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsSecretFailsTheSecurityGate(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/creds.go",
+func TestCheckReviewSecretFailsTheSecurityGate(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/creds.go",
 		"package app\n\nconst awsKey = \""+fixtureAWSKey+"\"\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if report.Verdict != VerdictNoShip {
-		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictNoShip, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictNoShip, RenderReviewText(report))
 	}
 	gate := gateByID(t, report, GateSecurity)
 	if gate.Status != GateFail {
@@ -154,15 +154,15 @@ func TestCheckConstraintsSecretFailsTheSecurityGate(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsSkipGatesByFlag(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/creds.go",
+func TestCheckReviewSkipGatesByFlag(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/creds.go",
 		"package app\n\nconst awsKey = \""+fixtureAWSKey+"\"\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{SkipGates: []GateID{GateSecurity}})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{SkipGates: []GateID{GateSecurity}})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	gate := gateByID(t, report, GateSecurity)
 	if gate.Status != GateSkipped || gate.SkipReason != "skipped by flag" {
@@ -173,12 +173,12 @@ func TestCheckConstraintsSkipGatesByFlag(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsFailingTestSuiteFailsCorrectness(t *testing.T) {
+func TestCheckReviewFailingTestSuiteFailsCorrectness(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "0")
-	t.Setenv("GX_CONSTRAINTS_RETRIEVAL", "0")
+	t.Setenv("GX_GATE_RETRIEVAL", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
 	// A fake `go` that fails every subcommand: `go test` fails correctness and
 	// `go vet` fails code health, both from one shared run. A fake govulncheck
 	// shadows any real one so the audit leg cannot reach a network.
@@ -187,12 +187,12 @@ func TestCheckConstraintsFailingTestSuiteFailsCorrectness(t *testing.T) {
 	writeExecutable(t, filepath.Join(tools, "govulncheck"), "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if report.Verdict != VerdictNoShip {
-		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictNoShip, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictNoShip, RenderReviewText(report))
 	}
 	correctness := gateByID(t, report, GateCorrectness)
 	if correctness.Status != GateFail {
@@ -206,19 +206,19 @@ func TestCheckConstraintsFailingTestSuiteFailsCorrectness(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsAccessibilityGateOnUIChange(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "web/Banner.tsx",
+func TestCheckReviewAccessibilityGateOnUIChange(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "web/Banner.tsx",
 		"export const Banner = () => (\n  <div>\n    <img src=\"/banner.png\">\n  </div>\n)\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	gate := gateByID(t, report, GateAccessibility)
 	if gate.Status != GateFail {
-		t.Fatalf("accessibility = %q, want FAIL for an img without alt\n%s", gate.Status, RenderConstraintsText(report))
+		t.Fatalf("accessibility = %q, want FAIL for an img without alt\n%s", gate.Status, RenderReviewText(report))
 	}
 	if len(gate.Files) != 1 || gate.Files[0] != "web/Banner.tsx" {
 		t.Fatalf("accessibility files = %#v, want the changed UI file", gate.Files)
@@ -228,18 +228,18 @@ func TestCheckConstraintsAccessibilityGateOnUIChange(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsDegradedWhenJudgeUnavailable(t *testing.T) {
-	setConstraintsTestEnv(t)
-	swapConstraintsJudgeFactory(t, nil, "not signed in to gx Cloud: run `gx auth login`")
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
+func TestCheckReviewDegradedWhenJudgeUnavailable(t *testing.T) {
+	setReviewTestEnv(t)
+	swapReviewJudgeFactory(t, nil, "not signed in to gx Cloud: run `gx auth login`")
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if report.Verdict != VerdictDegraded {
-		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictDegraded, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictDegraded, RenderReviewText(report))
 	}
 	if len(report.DegradedReasons) == 0 || !strings.Contains(report.DegradedReasons[0], "gx auth login") {
 		t.Fatalf("DegradedReasons = %#v, want the judge's unavailability reason", report.DegradedReasons)
@@ -250,11 +250,11 @@ func TestCheckConstraintsDegradedWhenJudgeUnavailable(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsAppliesAIVerdicts(t *testing.T) {
-	setConstraintsTestEnv(t)
-	stub := &stubConstraintsJudge{response: constraintsJudgeResponse{Gates: []constraintsGateVerdict{
+func TestCheckReviewAppliesAIVerdicts(t *testing.T) {
+	setReviewTestEnv(t)
+	stub := &stubReviewJudge{response: reviewJudgeResponse{Gates: []reviewGateVerdict{
 		{Gate: "code-health", Status: "pass", Justification: "coherent, tested change"},
-		{Gate: "back-pressure", Status: "fail", Justification: "regenerated output rides along", Findings: []constraintsAIFinding{{
+		{Gate: "back-pressure", Status: "fail", Justification: "regenerated output rides along", Findings: []reviewAIFinding{{
 			Title:          "Regenerated output unrelated to intent",
 			Summary:        "scripts/gen.js changed with no relation to the stated intent.",
 			Recommendation: "Revert scripts/gen.js or split it into its own change.",
@@ -262,13 +262,13 @@ func TestCheckConstraintsAppliesAIVerdicts(t *testing.T) {
 		}}},
 		{Gate: "performance", Status: "pass", Justification: "handler change adds no IO or loops"},
 	}}}
-	swapConstraintsJudgeFactory(t, stub, "")
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/handler.go", "package app\n\nfunc Handle() {}\n")
+	swapReviewJudgeFactory(t, stub, "")
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/handler.go", "package app\n\nfunc Handle() {}\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{Intent: "fix auth timeout"})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{Intent: "fix auth timeout"})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	if stub.request == nil {
 		t.Fatalf("the judge was never called")
@@ -295,48 +295,48 @@ func TestCheckConstraintsAppliesAIVerdicts(t *testing.T) {
 	}
 }
 
-func TestCheckConstraintsDegradesWhenReplyOmitsAGate(t *testing.T) {
-	setConstraintsTestEnv(t)
-	stub := &stubConstraintsJudge{response: constraintsJudgeResponse{Gates: []constraintsGateVerdict{
+func TestCheckReviewDegradesWhenReplyOmitsAGate(t *testing.T) {
+	setReviewTestEnv(t)
+	stub := &stubReviewJudge{response: reviewJudgeResponse{Gates: []reviewGateVerdict{
 		{Gate: "code-health", Status: "pass"},
 		// back-pressure omitted; performance not applicable in this change.
 	}}}
-	swapConstraintsJudgeFactory(t, stub, "")
-	root := newConstraintsRepo(t)
-	commitConstraintsBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
+	swapReviewJudgeFactory(t, stub, "")
+	root := newReviewRepo(t)
+	commitReviewBranchFile(t, root, "internal/app/feature.go", "package app\n\nfunc Feature() {}\n")
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	gate := gateByID(t, report, GateBackPressure)
 	if gate.Status != GateSkipped {
 		t.Fatalf("back-pressure = %q, want SKIPPED when the reply omitted it", gate.Status)
 	}
 	if report.Verdict != VerdictDegraded {
-		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictDegraded, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q\n%s", report.Verdict, VerdictDegraded, RenderReviewText(report))
 	}
 }
 
-func TestCheckConstraintsLargeChangeWarnsWithoutBlocking(t *testing.T) {
-	setConstraintsTestEnv(t)
-	root := newConstraintsRepo(t)
+func TestCheckReviewLargeChangeWarnsWithoutBlocking(t *testing.T) {
+	setReviewTestEnv(t)
+	root := newReviewRepo(t)
 	big := "package app\n\n" + strings.Repeat("// filler line for the size threshold\n", 1600)
-	commitConstraintsBranchFile(t, root, "internal/app/big.go", big)
+	commitReviewBranchFile(t, root, "internal/app/big.go", big)
 
-	report, err := CheckConstraints(context.Background(), root, ConstraintsOptions{})
+	report, err := CheckReview(context.Background(), root, ReviewOptions{})
 	if err != nil {
-		t.Fatalf("CheckConstraints() error = %v", err)
+		t.Fatalf("CheckReview() error = %v", err)
 	}
 	gate := gateByID(t, report, GateCodeHealth)
 	if gate.Status != GatePass {
 		t.Fatalf("code-health = %q, want PASS: size warns, it does not block", gate.Status)
 	}
-	if len(gate.Findings) == 0 || gate.Findings[0].ID != "constraints.change-size" {
+	if len(gate.Findings) == 0 || gate.Findings[0].ID != "review.change-size" {
 		t.Fatalf("findings = %#v, want the change-size warning", gate.Findings)
 	}
 	if report.Verdict != VerdictShip {
-		t.Fatalf("Verdict = %q, want %q: a large change still ships on its merits\n%s", report.Verdict, VerdictShip, RenderConstraintsText(report))
+		t.Fatalf("Verdict = %q, want %q: a large change still ships on its merits\n%s", report.Verdict, VerdictShip, RenderReviewText(report))
 	}
 }
 

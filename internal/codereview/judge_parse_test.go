@@ -253,10 +253,10 @@ func TestUnparseableJudgeBatchKeepsItsFindings(t *testing.T) {
 	}
 }
 
-// TestReviewReportsTruncatedVerificationAsDegraded closes the loop: the reason a
+// TestEnhanceReportsTruncatedVerificationAsDegraded closes the loop: the reason a
 // batch failed has to reach the human reading the review, or the review reads as
 // a clean one that simply found nothing.
-func TestReviewReportsTruncatedVerificationAsDegraded(t *testing.T) {
+func TestEnhanceReportsTruncatedVerificationAsDegraded(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")

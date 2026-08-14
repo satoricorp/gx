@@ -12,27 +12,27 @@ import (
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
-// Renders for the constraints report. The last two lines are a contract: a
+// Renders for the review report. The last two lines are a contract: a
 // single "Verdict: ..." line and a "Next: ..." line, which is what the MCP
-// tool and the /constraints slash command tell the host agent to relay.
+// tool and the /review slash command tell the host agent to relay.
 
-const constraintsMaxRenderedFiles = 8
+const reviewMaxRenderedFiles = 8
 
-func constraintsColorize(report ConstraintsReport, paint func(string) string, text string) string {
+func reviewColorize(report ReviewReport, paint func(string) string, text string) string {
 	if !report.Color || text == "" || !termstyle.Enabled() {
 		return text
 	}
 	return paint(text)
 }
 
-func constraintsAccent(report ConstraintsReport, text string) string {
+func reviewAccent(report ReviewReport, text string) string {
 	if !report.Color || text == "" || !termstyle.Enabled() {
 		return text
 	}
 	return reviewMintANSI + text + reviewResetANSI
 }
 
-func constraintsStatusPaint(status GateStatus) func(string) string {
+func reviewStatusPaint(status GateStatus) func(string) string {
 	switch status {
 	case GatePass:
 		return termstyle.Success
@@ -43,7 +43,7 @@ func constraintsStatusPaint(status GateStatus) func(string) string {
 	}
 }
 
-func constraintsHeaderLine(report ConstraintsReport) string {
+func reviewHeaderLine(report ReviewReport) string {
 	target := strings.TrimSpace(report.ReviewRange)
 	if target == "" {
 		target = strings.TrimSpace(report.ReviewTarget)
@@ -51,11 +51,11 @@ func constraintsHeaderLine(report ConstraintsReport) string {
 	if target == "" {
 		target = "the current change"
 	}
-	return fmt.Sprintf("Constraints check — %s (%d files, +%d/−%d)",
+	return fmt.Sprintf("Review check — %s (%d files, +%d/−%d)",
 		target, report.DiffStats.Files, report.DiffStats.AddedLines, report.DiffStats.RemovedLines)
 }
 
-func constraintsGateStatusCounts(report ConstraintsReport) (passed, failed, skipped int) {
+func reviewGateStatusCounts(report ReviewReport) (passed, failed, skipped int) {
 	for _, gate := range report.Gates {
 		switch gate.Status {
 		case GatePass:
@@ -69,9 +69,9 @@ func constraintsGateStatusCounts(report ConstraintsReport) (passed, failed, skip
 	return passed, failed, skipped
 }
 
-// constraintsVerdictLines is the shared two-line seam, unstyled.
-func constraintsVerdictLines(report ConstraintsReport) (verdict, next string) {
-	passed, failed, skipped := constraintsGateStatusCounts(report)
+// reviewVerdictLines is the shared two-line seam, unstyled.
+func reviewVerdictLines(report ReviewReport) (verdict, next string) {
+	passed, failed, skipped := reviewGateStatusCounts(report)
 	switch report.Verdict {
 	case VerdictNothingToCheck:
 		target := strings.TrimSpace(report.ReviewTarget)
@@ -79,31 +79,31 @@ func constraintsVerdictLines(report ConstraintsReport) (verdict, next string) {
 			target = "the working tree"
 		}
 		return "Verdict: NOTHING-TO-CHECK — no change found (looked at " + target + ")",
-			"Next: make a change, then rerun `gx constraints`."
+			"Next: make a change, then rerun `gx review`."
 	case VerdictNoShip:
 		names := make([]string, 0, failed)
 		for _, id := range report.FailedGates() {
 			names = append(names, string(id))
 		}
 		return fmt.Sprintf("Verdict: NO-SHIP — %d gate(s) failed (%s)", failed, strings.Join(names, ", ")),
-			"Next: address the findings above, then rerun `gx constraints`."
+			"Next: address the findings above, then rerun `gx review`."
 	case VerdictDegraded:
 		reason := strings.Join(report.DegradedReasons, "; ")
 		return "Verdict: DEGRADED — no gate failed, but the run saw less than a healthy one would (" + reason + ")",
-			"Next: fix the degradation above, then rerun `gx constraints` for a verdict worth shipping on."
+			"Next: fix the degradation above, then rerun `gx review` for a verdict worth shipping on."
 	default:
 		return fmt.Sprintf("Verdict: SHIP — all gates clear (%d passed, %d skipped)", passed, skipped),
 			"Next: ship it — open the PR."
 	}
 }
 
-// constraintsFindingLine is the compact one-liner under a gate: location and
+// reviewFindingLine is the compact one-liner under a gate: location and
 // claim only. The fix lives in the How to resolve section, once.
-func constraintsFindingLine(finding Finding) string {
-	return constraintsFindingLocation(finding) + strings.TrimSpace(finding.Title)
+func reviewFindingLine(finding Finding) string {
+	return reviewFindingLocation(finding) + strings.TrimSpace(finding.Title)
 }
 
-func constraintsFindingLocation(finding Finding) string {
+func reviewFindingLocation(finding Finding) string {
 	switch {
 	case finding.File != "" && finding.Line > 0:
 		return fmt.Sprintf("%s:%d — ", finding.File, finding.Line)
@@ -114,15 +114,15 @@ func constraintsFindingLocation(finding Finding) string {
 	}
 }
 
-// constraintsResolveStep is one entry of the How to resolve section: a finding
+// reviewResolveStep is one entry of the How to resolve section: a finding
 // with the gate it came from, or a degradation to repair.
-type constraintsResolveStep struct {
+type reviewResolveStep struct {
 	gateTitle string
 	finding   Finding
 }
 
-func constraintsResolveSteps(report ConstraintsReport) []constraintsResolveStep {
-	var steps []constraintsResolveStep
+func reviewResolveSteps(report ReviewReport) []reviewResolveStep {
+	var steps []reviewResolveStep
 	// Failed gates first: the steps that flip the verdict outrank the warnings.
 	for _, failing := range []bool{true, false} {
 		for _, gate := range report.Gates {
@@ -130,26 +130,26 @@ func constraintsResolveSteps(report ConstraintsReport) []constraintsResolveStep 
 				continue
 			}
 			for _, finding := range gate.Findings {
-				steps = append(steps, constraintsResolveStep{gateTitle: gate.Title, finding: finding})
+				steps = append(steps, reviewResolveStep{gateTitle: gate.Title, finding: finding})
 			}
 		}
 	}
 	for _, reason := range report.DegradedReasons {
-		steps = append(steps, constraintsResolveStep{
+		steps = append(steps, reviewResolveStep{
 			gateTitle: "Degraded run",
 			finding: Finding{
 				Title:          reason,
-				Recommendation: "Restore this, then rerun `gx constraints` for a verdict worth shipping on.",
+				Recommendation: "Restore this, then rerun `gx review` for a verdict worth shipping on.",
 			},
 		})
 	}
 	return steps
 }
 
-// constraintsHighlightCode syntax-highlights an excerpt for the terminal.
+// reviewHighlightCode syntax-highlights an excerpt for the terminal.
 // Plain text comes back on any failure — highlighting is presentation, never a
 // reason to lose the code.
-func constraintsHighlightCode(file, code string) string {
+func reviewHighlightCode(file, code string) string {
 	lexer := lexers.Match(filepath.Base(file))
 	if lexer == nil {
 		lexer = lexers.Fallback
@@ -174,83 +174,83 @@ func constraintsHighlightCode(file, code string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// constraintsCodeLines renders whatever code a finding carries for the
+// reviewCodeLines renders whatever code a finding carries for the
 // terminal: the diff hunk when the finding is about the change, otherwise the
 // source excerpt.
-func constraintsCodeLines(report ConstraintsReport, finding Finding, indent string) []string {
+func reviewCodeLines(report ReviewReport, finding Finding, indent string) []string {
 	if strings.TrimSpace(finding.DiffHunk) != "" {
-		return constraintsHunkLines(report, finding.DiffHunk, indent)
+		return reviewHunkLines(report, finding.DiffHunk, indent)
 	}
-	return constraintsExcerptLines(report, finding, indent)
+	return reviewExcerptLines(report, finding, indent)
 }
 
-// constraintsHunkLines renders a unified-diff window with the coloring a
+// reviewHunkLines renders a unified-diff window with the coloring a
 // terminal reader expects: additions green, removals red, the hunk header and
 // trims muted.
-func constraintsHunkLines(report ConstraintsReport, hunk, indent string) []string {
+func reviewHunkLines(report ReviewReport, hunk, indent string) []string {
 	var out []string
 	for _, line := range strings.Split(hunk, "\n") {
 		painted := line
 		switch {
 		case strings.HasPrefix(line, "@@"), line == "…":
-			painted = constraintsColorize(report, termstyle.Muted, line)
+			painted = reviewColorize(report, termstyle.Muted, line)
 		case strings.HasPrefix(line, "+"):
-			painted = constraintsColorize(report, termstyle.Success, line)
+			painted = reviewColorize(report, termstyle.Success, line)
 		case strings.HasPrefix(line, "-"):
-			painted = constraintsColorize(report, termstyle.Danger, line)
+			painted = reviewColorize(report, termstyle.Danger, line)
 		}
 		out = append(out, indent+painted)
 	}
 	return out
 }
 
-// constraintsExcerptLines renders a finding's excerpt with a line-number
+// reviewExcerptLines renders a finding's excerpt with a line-number
 // gutter and a marker on the discussed line, syntax-highlighted when the
 // report is in color.
-func constraintsExcerptLines(report ConstraintsReport, finding Finding, indent string) []string {
+func reviewExcerptLines(report ReviewReport, finding Finding, indent string) []string {
 	if strings.TrimSpace(finding.CodeExcerpt) == "" {
 		return nil
 	}
 	code := finding.CodeExcerpt
 	if report.Color && termstyle.Enabled() {
-		code = constraintsHighlightCode(finding.File, code)
+		code = reviewHighlightCode(finding.File, code)
 	}
 	var out []string
 	for i, line := range strings.Split(code, "\n") {
 		number := finding.CodeExcerptStart + i
-		gutter := constraintsColorize(report, termstyle.Muted, fmt.Sprintf("  %4d | ", number))
+		gutter := reviewColorize(report, termstyle.Muted, fmt.Sprintf("  %4d | ", number))
 		if number == finding.Line {
-			gutter = constraintsColorize(report, termstyle.Danger, "→ ") +
-				constraintsColorize(report, termstyle.Muted, fmt.Sprintf("%4d | ", number))
+			gutter = reviewColorize(report, termstyle.Danger, "→ ") +
+				reviewColorize(report, termstyle.Muted, fmt.Sprintf("%4d | ", number))
 		}
 		out = append(out, indent+gutter+line)
 	}
 	return out
 }
 
-func constraintsFilesLine(files []string) string {
+func reviewFilesLine(files []string) string {
 	if len(files) == 0 {
 		return ""
 	}
 	shown := files
 	extra := ""
-	if len(shown) > constraintsMaxRenderedFiles {
-		extra = fmt.Sprintf(" (+%d more)", len(shown)-constraintsMaxRenderedFiles)
-		shown = shown[:constraintsMaxRenderedFiles]
+	if len(shown) > reviewMaxRenderedFiles {
+		extra = fmt.Sprintf(" (+%d more)", len(shown)-reviewMaxRenderedFiles)
+		shown = shown[:reviewMaxRenderedFiles]
 	}
 	return "files: " + strings.Join(shown, ", ") + extra
 }
 
-// RenderConstraintsText is the terminal render: one line per gate, findings
+// RenderReviewText is the terminal render: one line per gate, findings
 // indented beneath, the Verdict/Next seam at the end. Colors ride on
 // report.Color and termstyle.Enabled, so --json and piped output stay plain.
-func RenderConstraintsText(report ConstraintsReport) string {
+func RenderReviewText(report ReviewReport) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, constraintsAccent(report, constraintsHeaderLine(report)))
+	fmt.Fprintln(&b, reviewAccent(report, reviewHeaderLine(report)))
 	fmt.Fprintln(&b)
 	if report.Verdict == VerdictNothingToCheck {
-		verdict, next := constraintsVerdictLines(report)
-		fmt.Fprintln(&b, constraintsColorize(report, termstyle.Muted, verdict))
+		verdict, next := reviewVerdictLines(report)
+		fmt.Fprintln(&b, reviewColorize(report, termstyle.Muted, verdict))
 		fmt.Fprintln(&b, next)
 		return b.String()
 	}
@@ -263,49 +263,49 @@ func RenderConstraintsText(report ConstraintsReport) string {
 		}
 		fmt.Fprintf(&b, "  %d. %s %s %s\n",
 			index+1,
-			constraintsAccent(report, title),
-			constraintsColorize(report, constraintsStatusPaint(gate.Status), status),
+			reviewAccent(report, title),
+			reviewColorize(report, reviewStatusPaint(gate.Status), status),
 			detail)
 		for _, finding := range gate.Findings {
-			fmt.Fprintf(&b, "%s- %s\n", strings.Repeat(" ", 26), constraintsFindingLine(finding))
+			fmt.Fprintf(&b, "%s- %s\n", strings.Repeat(" ", 26), reviewFindingLine(finding))
 		}
 		if report.Verbose {
-			if line := constraintsFilesLine(gate.Files); line != "" {
-				fmt.Fprintf(&b, "%s%s\n", strings.Repeat(" ", 26), constraintsColorize(report, termstyle.Muted, line))
+			if line := reviewFilesLine(gate.Files); line != "" {
+				fmt.Fprintf(&b, "%s%s\n", strings.Repeat(" ", 26), reviewColorize(report, termstyle.Muted, line))
 			}
 		}
 	}
 	if len(report.DegradedReasons) > 0 {
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, constraintsColorize(report, termstyle.Danger, "Warning: "+strings.Join(report.DegradedReasons, "; ")))
+		fmt.Fprintln(&b, reviewColorize(report, termstyle.Danger, "Warning: "+strings.Join(report.DegradedReasons, "; ")))
 	}
-	if steps := constraintsResolveSteps(report); len(steps) > 0 {
+	if steps := reviewResolveSteps(report); len(steps) > 0 {
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, constraintsAccent(report, "How to resolve"))
+		fmt.Fprintln(&b, reviewAccent(report, "How to resolve"))
 		fmt.Fprintln(&b)
 		for index, step := range steps {
-			header := fmt.Sprintf("%d. %s — %s", index+1, step.gateTitle, constraintsFindingLine(step.finding))
+			header := fmt.Sprintf("%d. %s — %s", index+1, step.gateTitle, reviewFindingLine(step.finding))
 			fmt.Fprintf(&b, "  %s\n", header)
-			for _, line := range constraintsCodeLines(report, step.finding, "     ") {
+			for _, line := range reviewCodeLines(report, step.finding, "     ") {
 				fmt.Fprintln(&b, line)
 			}
 			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
-				fmt.Fprintf(&b, "     %s %s\n", constraintsColorize(report, termstyle.Success, "Fix:"), fix)
+				fmt.Fprintf(&b, "     %s %s\n", reviewColorize(report, termstyle.Success, "Fix:"), fix)
 			}
 		}
 	}
 	fmt.Fprintln(&b)
-	verdict, next := constraintsVerdictLines(report)
+	verdict, next := reviewVerdictLines(report)
 	paint := termstyle.Success
 	if report.Verdict != VerdictShip {
 		paint = termstyle.Danger
 	}
-	fmt.Fprintln(&b, constraintsColorize(report, paint, verdict))
+	fmt.Fprintln(&b, reviewColorize(report, paint, verdict))
 	fmt.Fprintln(&b, next)
 	return b.String()
 }
 
-func constraintsStatusEmoji(status GateStatus) string {
+func reviewStatusEmoji(status GateStatus) string {
 	switch status {
 	case GatePass:
 		return "✅ PASS"
@@ -316,13 +316,13 @@ func constraintsStatusEmoji(status GateStatus) string {
 	}
 }
 
-// RenderConstraintsMarkdown is what agents relay and what a PR body can carry:
+// RenderReviewMarkdown is what agents relay and what a PR body can carry:
 // a status table, findings as bullets, and the same Verdict/Next seam in bold.
-func RenderConstraintsMarkdown(report ConstraintsReport) string {
+func RenderReviewMarkdown(report ReviewReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## %s\n\n", constraintsHeaderLine(report))
+	fmt.Fprintf(&b, "## %s\n\n", reviewHeaderLine(report))
 	if report.Verdict == VerdictNothingToCheck {
-		verdict, next := constraintsVerdictLines(report)
+		verdict, next := reviewVerdictLines(report)
 		fmt.Fprintf(&b, "**%s**\n%s\n", verdict, next)
 		return b.String()
 	}
@@ -334,14 +334,14 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 			detail = gate.SkipReason
 		}
 		fmt.Fprintf(&b, "| %d | %s | %s | %s |\n",
-			index+1, gate.Title, constraintsStatusEmoji(gate.Status), markdownTableCell(detail))
+			index+1, gate.Title, reviewStatusEmoji(gate.Status), markdownTableCell(detail))
 	}
-	if steps := constraintsResolveSteps(report); len(steps) > 0 {
+	if steps := reviewResolveSteps(report); len(steps) > 0 {
 		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "### How to resolve")
 		for index, step := range steps {
 			fmt.Fprintln(&b)
-			fmt.Fprintf(&b, "**%d. %s — %s**\n", index+1, step.gateTitle, constraintsFindingLine(step.finding))
+			fmt.Fprintf(&b, "**%d. %s — %s**\n", index+1, step.gateTitle, reviewFindingLine(step.finding))
 			switch {
 			case strings.TrimSpace(step.finding.DiffHunk) != "":
 				// Raw hunk text in a diff fence: agents and GitHub render the
@@ -350,7 +350,7 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 				fmt.Fprintf(&b, "```diff\n%s\n```\n", step.finding.DiffHunk)
 			case strings.TrimSpace(step.finding.CodeExcerpt) != "":
 				fmt.Fprintln(&b)
-				fmt.Fprintf(&b, "```%s\n%s\n```\n", constraintsFenceLanguage(step.finding.File), step.finding.CodeExcerpt)
+				fmt.Fprintf(&b, "```%s\n%s\n```\n", reviewFenceLanguage(step.finding.File), step.finding.CodeExcerpt)
 			}
 			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
 				fmt.Fprintln(&b)
@@ -361,7 +361,7 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 	if report.Verbose {
 		var fileLines []string
 		for _, gate := range report.Gates {
-			if line := constraintsFilesLine(gate.Files); line != "" {
+			if line := reviewFilesLine(gate.Files); line != "" {
 				fileLines = append(fileLines, fmt.Sprintf("- %s — %s", gate.Title, line))
 			}
 		}
@@ -377,7 +377,7 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 		fmt.Fprintln(&b)
 		fmt.Fprintf(&b, "> Warning: %s\n", strings.Join(report.DegradedReasons, "; "))
 	}
-	verdict, next := constraintsVerdictLines(report)
+	verdict, next := reviewVerdictLines(report)
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "**%s**\n%s\n", verdict, next)
 	return b.String()
@@ -388,9 +388,9 @@ func markdownTableCell(text string) string {
 	return strings.ReplaceAll(text, "\n", " ")
 }
 
-// constraintsFenceLanguage tags a markdown code fence so renderers highlight
+// reviewFenceLanguage tags a markdown code fence so renderers highlight
 // the excerpt. Empty is fine: an untagged fence still renders as code.
-func constraintsFenceLanguage(file string) string {
+func reviewFenceLanguage(file string) string {
 	if language := qualityLanguage(file); language != "" {
 		return language
 	}

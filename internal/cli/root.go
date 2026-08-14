@@ -63,8 +63,8 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
 		newReportCommand(ctx),
+		newEnhanceCommand(ctx),
 		newReviewCommand(ctx),
-		newConstraintsCommand(ctx),
 		newIndexCommand(ctx),
 	)
 	assignCommandGroups(root)
@@ -90,7 +90,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth":
 			cmd.GroupID = groupSetup
-		case "enhance", "constraints":
+		case "enhance", "review":
 			cmd.GroupID = groupWork
 		case "doctor", "version":
 			cmd.GroupID = groupHelp
@@ -273,8 +273,8 @@ func Execute(ctx context.Context) error {
 	switch filepath.Base(os.Args[0]) {
 	case "gxe":
 		args = append([]string{"enhance"}, args...)
-	case "gxc":
-		args = append([]string{"constraints"}, args...)
+	case "gxr":
+		args = append([]string{"review"}, args...)
 	}
 	root := NewRoot(ctx)
 	root.SetArgs(args)
