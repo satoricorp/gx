@@ -1,6 +1,6 @@
 # Review Knowledge Index
 
-This directory builds the versioned TurboPuffer corpora used by `gx review
+This directory builds the versioned TurboPuffer corpora used by `gx enhance
 --deep` and GitHub PR review generation.
 
 The corpus is retrieval context, not a replacement for gx heuristics. Keep the
@@ -140,11 +140,11 @@ The default namespace is intentionally separate from `GX_TPUF_NAMESPACE`
 (`gx-sessions`) so review knowledge does not mix with session transcripts and
 repository code chunks.
 
-`gx review` queries this namespace when both `OPENAI_API_KEY` and
+`gx enhance` queries this namespace when both `OPENAI_API_KEY` and
 `TURBOPUFFER_API_KEY` are available. Set `GX_REVIEW_RESOURCES=0` to disable
 review-resource retrieval for a run. `GX_REVIEW_RESOURCES_TOP_K` controls the
 shallow retrieval limit; the default is 8 so repo-local policy files can remain
-in the model context alongside review resources. `gx review --deep` raises the
+in the model context alongside review resources. `gx enhance --deep` raises the
 minimum resource limit to 24.
 
 The v2 index stores filterable metadata including `tier`, `languages`,

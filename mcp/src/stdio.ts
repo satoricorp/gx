@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import gxConstraints, { metadata as constraintsMetadata, schema as constraintsSchema } from "./tools/gx-constraints";
-import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "./tools/gx-review";
+import gxEnhance, { metadata as enhanceMetadata, schema as enhanceSchema } from "./tools/gx-enhance";
 import { withUpdateNotice } from "./update";
 
 type ToolModule = {
@@ -17,18 +17,18 @@ type ToolModule = {
 };
 
 const instructions = [
-  "gx MCP exposes gx_review and gx_constraints, both read-only tools.",
+  "gx MCP exposes gx_enhance and gx_constraints, both read-only tools.",
   "It never initializes a repository; if the repo is not set up for gx yet, run gx init there first.",
   "Save work with plain Git: git add, then git commit. gx installs Git hooks that stamp each commit with its gx revision trailer and record it, so no gx-specific commit verb is needed.",
   "To amend the latest commit message or restage work, use git commit --amend and preserve the gx revision trailer.",
   "Publish with plain git push, then open the PR with gh pr create. The gx pre-push hook captures the agent session, links edits to the changed hunks, and publishes the gx metadata that becomes the PR summary. Do not run gx push or gx capture push; they bypass or suppress that hook.",
-  "Run gx_review for better codegen context from local facts, previous sessions, PRs, and current code changes.",
+  "Run gx_enhance while coding for issues and tips on how to improve the code you are dealing with — it enhances your changes with context from local facts, previous sessions, PRs, and current code changes.",
   "Run gx_constraints before shipping to check the change against the pre-ship constraint gates and relay its ship/no-ship verdict.",
   "Use git status for inspection.",
 ].join(" ");
 
 const tools: ToolModule[] = [
-  defineTool(reviewMetadata, reviewSchema, gxReview),
+  defineTool(enhanceMetadata, enhanceSchema, gxEnhance),
   defineTool(constraintsMetadata, constraintsSchema, gxConstraints),
 ];
 

@@ -91,8 +91,8 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	if !strings.Contains(text, "Not signed in  gx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	if !strings.Contains(text, "review (gxr)") {
-		t.Fatalf("root help missing alias %q:\n%s", "review (gxr)", text)
+	if !strings.Contains(text, "enhance (gxe)") {
+		t.Fatalf("root help missing alias %q:\n%s", "enhance (gxe)", text)
 	}
 	if strings.Contains(text, "status") {
 		t.Fatalf("root help should not offer a status command:\n%s", text)
@@ -105,11 +105,13 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	}
 }
 
-func TestReviewAliasResolves(t *testing.T) {
+func TestEnhanceAliasesResolve(t *testing.T) {
 	root := NewRoot(context.Background())
-	cmd, _, err := root.Find([]string{"gxr"})
-	if err != nil || cmd == nil || cmd.Name() != "review" {
-		t.Fatalf("Find(gxr) = cmd=%v err=%v, want review command", cmd, err)
+	for _, alias := range []string{"gxe", "enhance"} {
+		cmd, _, err := root.Find([]string{alias})
+		if err != nil || cmd == nil || cmd.Name() != "enhance" {
+			t.Fatalf("Find(%s) = cmd=%v err=%v, want enhance command", alias, cmd, err)
+		}
 	}
 }
 
@@ -321,7 +323,7 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"review"})
+	cmd.SetArgs([]string{"enhance"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx review error = %v\n%s", err, out.String())
@@ -419,7 +421,7 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"review", "--scope", "architecture"})
+	cmd.SetArgs([]string{"enhance", "--scope", "architecture"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx review --scope error = %v\n%s", err, out.String())
 	}
@@ -486,7 +488,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 	if gotCommentBody == "" {
 		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
+	for _, want := range []string{"<!-- gx summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
 		}
@@ -626,7 +628,7 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 
 func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 	cmd := NewRoot(context.Background())
-	cmd.SetArgs([]string{"review", "one prompt", "second prompt"})
+	cmd.SetArgs([]string{"enhance", "one prompt", "second prompt"})
 
 	err := cmd.Execute()
 	if err == nil {

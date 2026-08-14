@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Exit codes for `gx review` as an automated gate. Both are distinct from the
+// Exit codes for `gx enhance` as an automated gate. Both are distinct from the
 // generic failure exit so a CI step can tell a policy failure from a crash.
 const (
 	// reviewFindingsExitCode means findings at or above --fail-on survived.
@@ -51,9 +51,9 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var maxFindings int
 	var clientOverride string
 	cmd := &cobra.Command{
-		Use:     "review [prompt]",
-		Aliases: []string{"gxr"},
-		Short:   "Review changes based on codebase & session context, along with independent resources",
+		Use:     "enhance [prompt]",
+		Aliases: []string{"gxe"},
+		Short:   "Issues and tips to improve the current change, based on codebase & session context, along with independent resources",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below runs under a context that forbids writing gx
@@ -140,17 +140,17 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			return reviewGateError(report, failOnLevel)
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
-	cmd.Flags().StringVar(&focus, "focus", "", "limit review to files under this path prefix")
-	cmd.Flags().StringVar(&base, "base", "", "review the commit range <ref>...HEAD instead of the working tree, e.g. --base origin/main")
-	cmd.Flags().BoolVar(&wholeRepo, "repo", false, "review the whole repository rather than just the current change; uncommitted work stays in focus, and this wins over --base")
-	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
+	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "focused scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
+	cmd.Flags().StringVar(&focus, "focus", "", "limit the run to files under this path prefix")
+	cmd.Flags().StringVar(&base, "base", "", "run against the commit range <ref>...HEAD instead of the working tree, e.g. --base origin/main")
+	cmd.Flags().BoolVar(&wholeRepo, "repo", false, "assess the whole repository rather than just the current change; uncommitted work stays in focus, and this wins over --base")
+	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum analysis with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the report as JSON instead of markdown")
 	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
 	cmd.Flags().BoolVar(&noComment, "no-comment", false, "skip posting the PR review comment but still record review history; use --no-publish to suppress both")
-	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this review, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-constraints")
+	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT: cli, mcp, skill, slash-enhance, slash-constraints")
 	cmd.Flags().IntVar(&maxFindings, "max-findings", 0, "cap how many recommendations the review reports (0 uses the default); applies to both what the model is asked for and what is reported")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd
@@ -276,7 +276,7 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 		if target == "" {
 			target = "the working tree"
 		}
-		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx review: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx enhance: nothing was reviewed (looked at %s); refusing to pass a gate without inspecting any code", target))
 	}
 	// A degraded run is not a clean run with fewer findings. When no model ran,
 	// `findings` is whatever the deterministic checks produced — usually nothing
@@ -284,13 +284,13 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	// request merged reporting a review that never happened. The rendered report
 	// says so in a banner, but an exit code is the only thing a CI step reads.
 	if reason := gateDegradedReason(report); reason != "" {
-		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx review: %s; refusing to pass a gate on an incomplete review", reason))
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx enhance: %s; refusing to pass a gate on an incomplete review", reason))
 	}
 	failures := report.GateFailures(level)
 	if len(failures) == 0 {
 		return nil
 	}
-	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx review: %d finding(s) at or above %q", len(failures), string(level)))
+	return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx enhance: %d finding(s) at or above %q", len(failures), string(level)))
 }
 
 // gateDegradedReason states why this review cannot answer the gate's question,

@@ -458,7 +458,7 @@ func staticToolFailureFindings(ctx ReviewContext) []Finding {
 		Summary:        fmt.Sprintf("`%s` failed, so the review found concrete correctness or best-practice diagnostics before speculative structure work.", first.Command),
 		Benefit:        "Restores a clean correctness baseline so later architecture recommendations are judged against working code instead of compile, vet, or test failures.",
 		Evidence:       evidence,
-		Recommendation: "Start by fixing the failing tool output, then rerun `gx review` so the reviewer can judge structure on a clean baseline.",
+		Recommendation: "Start by fixing the failing tool output, then rerun `gx enhance` so the reviewer can judge structure on a clean baseline.",
 		Strength:       "Blocking",
 		SourceIDs:      []string{"google-eng-practices"},
 	}}
