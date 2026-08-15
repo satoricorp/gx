@@ -132,7 +132,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 				// stdout but the report.
 				report, err = runReview(nil)
 			} else {
-				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
+				report, err = runEnhanceWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
 			emitReviewRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
@@ -171,7 +171,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 			// no trace in gx Cloud.
 			if !noPublish && report.Reviewed {
 				if !noComment {
-					postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
+					postEnhanceSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
 				}
 				recordReviewHistory(ctx, repo, report, client, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}

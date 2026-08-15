@@ -113,7 +113,7 @@ type judgeAvailabilityReporter interface {
 	Available() bool
 }
 
-type bedrockReviewJudge struct {
+type bedrockEnhanceJudge struct {
 	client *bedrockAnthropicReviewer
 }
 
@@ -258,7 +258,7 @@ func judgeFromEnv() FindingJudge {
 	if err != nil {
 		return unavailableReviewJudge{reason: err.Error()}
 	}
-	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel())}
+	return bedrockEnhanceJudge{client: newBedrockReviewer(plan.newTransport(), resolveBedrockJudgeModel())}
 }
 
 // resolveBedrockJudgeModel applies env > default. The reviewed repository does
@@ -274,11 +274,11 @@ func judgeDisabledFromEnv() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_JUDGE")), "0")
 }
 
-func (j bedrockReviewJudge) Available() bool {
+func (j bedrockEnhanceJudge) Available() bool {
 	return j.client != nil
 }
 
-func (j bedrockReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error) {
+func (j bedrockEnhanceJudge) Judge(ctx context.Context, req judgeRequest) ([]judgeResult, error) {
 	if j.client == nil {
 		return nil, fmt.Errorf("review judge is not configured")
 	}

@@ -32,8 +32,8 @@ func judgeFixture(t *testing.T, name string) string {
 	return string(data)
 }
 
-func stubJudge(completion bedrockCompletion) bedrockReviewJudge {
-	return bedrockReviewJudge{client: newBedrockReviewer(stubBedrockTransport{completion: completion}, "stub-model")}
+func stubJudge(completion bedrockCompletion) bedrockEnhanceJudge {
+	return bedrockEnhanceJudge{client: newBedrockReviewer(stubBedrockTransport{completion: completion}, "stub-model")}
 }
 
 // prosePreambleCandidateIDs is the candidate set the captured reply was actually

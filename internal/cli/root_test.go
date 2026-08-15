@@ -483,13 +483,13 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 
 	if gotCommentBody == "" {
-		t.Fatal("postReviewSummaryComment() did not send a comment")
+		t.Fatal("postEnhanceSummaryComment() did not send a comment")
 	}
 	for _, want := range []string{"<!-- gx summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
@@ -497,7 +497,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 		}
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -555,19 +555,19 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !inlineAttempted {
-		t.Fatal("postReviewSummaryComment() did not attempt inline comment")
+		t.Fatal("postEnhanceSummaryComment() did not attempt inline comment")
 	}
 	if !summaryAttempted {
-		t.Fatal("postReviewSummaryComment() did not post summary fallback")
+		t.Fatal("postEnhanceSummaryComment() did not post summary fallback")
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -616,16 +616,16 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !summaryAttempted {
-		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
+		t.Fatal("postEnhanceSummaryComment() did not post summary after inline failure")
 	}
 	if !strings.Contains(stderr.String(), "Could not post gx inline review comment") {
-		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() warning = %q, want inline failure warning", stderr.String())
 	}
 }
 
