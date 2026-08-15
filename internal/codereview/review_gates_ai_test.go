@@ -53,7 +53,7 @@ func TestReviewGateScopes(t *testing.T) {
 }
 
 func TestReviewDeveloperPromptNamesEveryAIGate(t *testing.T) {
-	prompt := gateDeveloperPrompt()
+	prompt := reviewDeveloperPrompt()
 	for _, gate := range []string{"code-health", "back-pressure", "accessibility", "performance"} {
 		if !strings.Contains(prompt, gate) {
 			t.Fatalf("developer prompt does not define the %s gate", gate)

@@ -171,7 +171,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	completion, err := r.completeJSON(ctx, reviewDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
+	completion, err := r.completeJSON(ctx, enhanceDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
 	if err != nil {
 		return PRSummaryReview{}, err
 	}

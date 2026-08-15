@@ -163,7 +163,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		plan := plannedStaticTool{runner: runner, command: command}
 		if runner.unready != nil {
 			if reason := runner.unready(env); reason != "" {
-				reviewProgress(opts, "Skipping "+runner.name+" ("+reason+")")
+				enhanceProgress(opts, "Skipping "+runner.name+" ("+reason+")")
 				plan.skip = &StaticToolResult{
 					Name:    runner.name,
 					Command: strings.Join(command.argv, " "),
@@ -177,7 +177,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	// Say what was not run. A review missing its test results must not read
 	// like a review whose tests passed.
 	if len(skippedForSpeed) > 0 {
-		reviewProgress(opts, "Skipping "+strings.Join(skippedForSpeed, ", ")+" (fast review)")
+		enhanceProgress(opts, "Skipping "+strings.Join(skippedForSpeed, ", ")+" (fast review)")
 	}
 	if len(planned) == 0 {
 		return nil
@@ -193,7 +193,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 				out[i] = *tool.skip
 				continue
 			}
-			reviewProgress(opts, tool.runner.progress)
+			enhanceProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}
 		return out
@@ -209,7 +209,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reviewProgress(opts, tool.runner.progress)
+			enhanceProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}()
 	}

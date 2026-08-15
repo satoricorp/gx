@@ -229,7 +229,7 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 	ctx, releaseIndex := withScratchGitIndex(ctx, repoRoot)
 	defer releaseIndex()
 
-	gateProgress(opts, "Resolving the current change")
+	reviewProgress(opts, "Resolving the current change")
 	facts, err := scanRepo(ctx, repoRoot, "")
 	if err != nil {
 		return ReviewReport{}, err
@@ -283,7 +283,7 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			gateProgress(opts, "Running project checks")
+			reviewProgress(opts, "Running project checks")
 			toolResults = collectReviewToolResults(ctx, repoRoot, facts, reviewOpts, changes.Files)
 		}()
 	}
@@ -291,7 +291,7 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			gateProgress(opts, "Auditing dependencies")
+			reviewProgress(opts, "Auditing dependencies")
 			auditResults = collectReviewAuditResults(ctx, repoRoot, changes.Files)
 		}()
 	}
@@ -329,7 +329,7 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 			markReviewAIGatesSkipped(gates, aiGates, "AI judgment unavailable: "+judgeUnavailable)
 			report.DegradedReasons = append(report.DegradedReasons, judgeUnavailable)
 		default:
-			gateProgress(opts, "Asking the AI judge")
+			reviewProgress(opts, "Asking the AI judge")
 			degraded := runReviewAIPass(ctx, judge, reviewAIPassInput{
 				report:    &report,
 				gates:     gates,
@@ -564,7 +564,7 @@ func reviewCommitSubjects(ctx context.Context, repoRoot, refRange string) []stri
 	return subjects
 }
 
-func gateProgress(opts ReviewOptions, message string) {
+func reviewProgress(opts ReviewOptions, message string) {
 	if opts.ProgressWriter == nil || strings.TrimSpace(message) == "" {
 		return
 	}

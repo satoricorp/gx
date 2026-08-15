@@ -77,7 +77,7 @@ type reviewAIFinding struct {
 	Strength       string `json:"strength,omitempty"`
 }
 
-type bedrockGateJudge struct {
+type bedrockReviewJudge struct {
 	client *bedrockAnthropicReviewer
 }
 
@@ -101,19 +101,19 @@ func reviewJudgeFromEnv() (judge reviewJudge, model, transport, unavailableReaso
 		os.Getenv("GX_GATE_MODEL"),
 		defaultBedrockReviewModelA,
 	))
-	return bedrockGateJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
+	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
 }
 
-func (j bedrockGateJudge) JudgeReview(ctx context.Context, req reviewJudgeRequest) (reviewJudgeResponse, error) {
+func (j bedrockReviewJudge) JudgeReview(ctx context.Context, req reviewJudgeRequest) (reviewJudgeResponse, error) {
 	if j.client == nil {
 		return reviewJudgeResponse{}, fmt.Errorf("review judge is not configured")
 	}
 	input := mustJSON(req)
 	// One retry, for malformed replies only — the same contract the finding
-	// judge runs under (see bedrockGateJudge.Judge for the measurements).
+	// judge runs under (see bedrockReviewJudge.Judge for the measurements).
 	var lastParseErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		completion, err := j.client.completeJSON(ctx, gateDeveloperPrompt(), input, defaultReviewJudgeMaxOutputTokens)
+		completion, err := j.client.completeJSON(ctx, reviewDeveloperPrompt(), input, defaultReviewJudgeMaxOutputTokens)
 		if err != nil {
 			return reviewJudgeResponse{}, err
 		}
@@ -144,7 +144,7 @@ func parseReviewJudgeResponse(content string) (reviewJudgeResponse, error) {
 	return response, nil
 }
 
-func gateDeveloperPrompt() string {
+func reviewDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You are the gx review judge: the pre-ship exit gate's judgment pass. You answer ONLY the gates listed in `gates`, each with pass or fail.",
 		"The deterministic results are settled facts. static_tool_results, the per-gate evidence lines, diff_stats, generated_files, and new_dependencies were measured by real commands and parsers; never dispute them, never re-litigate a gate that is not in your list.",

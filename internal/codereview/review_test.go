@@ -787,7 +787,7 @@ func TestRenderMarkdownDoesNotRenderOverview(t *testing.T) {
 }
 
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
-	prompt := reviewDeveloperPrompt(ReviewBrief{})
+	prompt := enhanceDeveloperPrompt(ReviewBrief{})
 	for _, want := range []string{
 		"patch_focused",
 		"pr_summary",

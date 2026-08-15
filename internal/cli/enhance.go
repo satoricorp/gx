@@ -105,7 +105,7 @@ func newEnhanceCommand(ctx context.Context) *cobra.Command {
 				// stdout but the report.
 				report, err = runReview(nil)
 			} else {
-				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
+				report, err = runEnhanceWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
 			emitEnhanceRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
@@ -133,7 +133,7 @@ func newEnhanceCommand(ctx context.Context) *cobra.Command {
 			// no trace in gx Cloud.
 			if !noPublish && report.Reviewed {
 				if !noComment {
-					postReviewSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
+					postEnhanceSummaryComment(ctx, repo, report, cmd.ErrOrStderr())
 				}
 				recordReviewHistory(ctx, repo, report, client, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}

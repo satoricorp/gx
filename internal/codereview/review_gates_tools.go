@@ -81,7 +81,7 @@ func collectReviewToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		if !ok {
 			continue
 		}
-		reviewProgress(opts, runner.progress)
+		enhanceProgress(opts, runner.progress)
 		results = append(results, runStaticTool(ctx, repoRoot, 90*time.Second, runner.name, command))
 	}
 	return results

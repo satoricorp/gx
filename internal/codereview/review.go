@@ -545,7 +545,7 @@ func depthLabel(deep bool) string {
 
 // reviewProfileWholeRepo is the profile token for a whole-repo review. Every
 // profile token the brief can carry must be defined in the instructions sent
-// with it (see reviewDeveloperPrompt), so this name is shared rather than
+// with it (see enhanceDeveloperPrompt), so this name is shared rather than
 // spelled twice.
 const reviewProfileWholeRepo = "whole_repo"
 

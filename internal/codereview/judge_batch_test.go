@@ -180,7 +180,7 @@ func TestJudgeRetriesOnceWhenTheReplyCarriesNoVerdicts(t *testing.T) {
 		{Text: "I will look at the candidates now.", StopReason: "end_turn"},
 		{Text: valid, StopReason: "end_turn"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	results, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
@@ -203,7 +203,7 @@ func TestJudgeGivesUpAfterOneRetry(t *testing.T) {
 		{Text: "prose, no object", StopReason: "end_turn"},
 		{Text: "still prose", StopReason: "end_turn"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	_, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
@@ -222,7 +222,7 @@ func TestJudgeDoesNotRetryTruncation(t *testing.T) {
 	transport := &scriptedJudgeTransport{completions: []bedrockCompletion{
 		{Text: `{"results":[{"candidate_id":"f1","ana`, StopReason: "max_tokens"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	_, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},

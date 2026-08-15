@@ -808,7 +808,7 @@ func truncateAtHunkBoundary(text string, limit int) string {
 	return strings.TrimSpace(text[:cut]) + "\n[truncated]\n"
 }
 
-// reviewDeveloperPrompt is the instruction string sent alongside the brief.
+// enhanceDeveloperPrompt is the instruction string sent alongside the brief.
 //
 // It takes the brief because a profile the prompt never defines is worse than
 // no profile at all: the model is told "use review_profile to choose behavior",
@@ -828,7 +828,7 @@ func resolveMaxFindings(requested int) int {
 	return defaultMaxFindings
 }
 
-func reviewDeveloperPrompt(brief ReviewBrief) string {
+func enhanceDeveloperPrompt(brief ReviewBrief) string {
 	lines := baseReviewDeveloperPromptLines(brief)
 	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo {
 		lines = append(lines, wholeRepoPromptLines()...)
