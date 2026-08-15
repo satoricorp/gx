@@ -30,33 +30,33 @@ func useInteractiveTerminal(in io.Reader, out io.Writer) bool {
 	return term.IsTerminal(output.Fd())
 }
 
-type reviewLoaderRunFunc func(io.Writer) (codereview.Report, error)
+type enhanceLoaderRunFunc func(io.Writer) (codereview.Report, error)
 
-type reviewLoaderModel struct {
+type enhanceLoaderModel struct {
 	spinner spinner.Model
 	phase   string
 	phases  chan string
-	run     reviewLoaderRunFunc
+	run     enhanceLoaderRunFunc
 	report  codereview.Report
 	err     error
 	done    bool
 }
 
-type reviewLoaderPhaseMsg string
+type enhanceLoaderPhaseMsg string
 
-type reviewLoaderNoopMsg struct{}
+type enhanceLoaderNoopMsg struct{}
 
-type reviewLoaderResultMsg struct {
+type enhanceLoaderResultMsg struct {
 	report codereview.Report
 	err    error
 }
 
-func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
+func runEnhanceWithLoader(in io.Reader, out io.Writer, run enhanceLoaderRunFunc) (codereview.Report, error) {
 	if !useInteractiveTerminal(in, out) {
 		return run(nil)
 	}
 	phases := make(chan string, 6)
-	model := reviewLoaderModel{
+	model := enhanceLoaderModel{
 		spinner: spinner.New(
 			spinner.WithSpinner(spinner.Line),
 			spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1"))),
@@ -70,67 +70,67 @@ func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (
 	if err != nil {
 		return codereview.Report{}, err
 	}
-	if result, ok := finalModel.(reviewLoaderModel); ok {
+	if result, ok := finalModel.(enhanceLoaderModel); ok {
 		return result.report, result.err
 	}
 	return codereview.Report{}, nil
 }
 
-func (m reviewLoaderModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, waitReviewLoaderPhase(m.phases), runReviewLoader(m.run, m.phases))
+func (m enhanceLoaderModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, waitEnhanceLoaderPhase(m.phases), runEnhanceLoader(m.run, m.phases))
 }
 
-func (m reviewLoaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m enhanceLoaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
-	case reviewLoaderPhaseMsg:
+	case enhanceLoaderPhaseMsg:
 		m.phase = string(msg)
-		return m, waitReviewLoaderPhase(m.phases)
-	case reviewLoaderResultMsg:
+		return m, waitEnhanceLoaderPhase(m.phases)
+	case enhanceLoaderResultMsg:
 		m.done = true
 		m.phase = ""
 		m.report = msg.report
 		m.err = msg.err
 		return m, tea.Quit
-	case reviewLoaderNoopMsg:
+	case enhanceLoaderNoopMsg:
 		return m, nil
 	}
 	return m, nil
 }
 
-func (m reviewLoaderModel) View() tea.View {
+func (m enhanceLoaderModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
 	return tea.NewView(m.spinner.View() + " " + muted(m.phase))
 }
 
-func waitReviewLoaderPhase(phases <-chan string) tea.Cmd {
+func waitEnhanceLoaderPhase(phases <-chan string) tea.Cmd {
 	return func() tea.Msg {
 		phase, ok := <-phases
 		if !ok {
-			return reviewLoaderNoopMsg{}
+			return enhanceLoaderNoopMsg{}
 		}
-		return reviewLoaderPhaseMsg(phase)
+		return enhanceLoaderPhaseMsg(phase)
 	}
 }
 
-func runReviewLoader(run reviewLoaderRunFunc, phases chan<- string) tea.Cmd {
+func runEnhanceLoader(run enhanceLoaderRunFunc, phases chan<- string) tea.Cmd {
 	return func() tea.Msg {
-		report, err := run(reviewLoaderProgressWriter{phases: phases})
+		report, err := run(enhanceLoaderProgressWriter{phases: phases})
 		close(phases)
-		return reviewLoaderResultMsg{report: report, err: err}
+		return enhanceLoaderResultMsg{report: report, err: err}
 	}
 }
 
-type reviewLoaderProgressWriter struct {
+type enhanceLoaderProgressWriter struct {
 	phases chan<- string
 }
 
-func (w reviewLoaderProgressWriter) Write(p []byte) (int, error) {
+func (w enhanceLoaderProgressWriter) Write(p []byte) (int, error) {
 	for _, line := range strings.Split(string(p), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {

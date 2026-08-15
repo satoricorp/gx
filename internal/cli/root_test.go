@@ -302,7 +302,7 @@ func TestPRAliasIsRemoved(t *testing.T) {
 	}
 }
 
-func TestReviewCommandUsesDefaults(t *testing.T) {
+func TestEnhanceCommandUsesDefaults(t *testing.T) {
 	root := initGitRepo(t)
 	writeTestFile(t, root, "README.md", "# repo\n")
 	writeTestFile(t, root, "AGENTS.md", "# agents\n")
@@ -406,7 +406,7 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	}
 }
 
-func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
+func TestEnhanceCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
 	t.Setenv("GX_HOME", t.TempDir())
@@ -480,13 +480,13 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 
 	if gotCommentBody == "" {
-		t.Fatal("postReviewSummaryComment() did not send a comment")
+		t.Fatal("postEnhanceSummaryComment() did not send a comment")
 	}
 	for _, want := range []string{"<!-- gx summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
@@ -494,7 +494,7 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 		}
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -552,19 +552,19 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !inlineAttempted {
-		t.Fatal("postReviewSummaryComment() did not attempt inline comment")
+		t.Fatal("postEnhanceSummaryComment() did not attempt inline comment")
 	}
 	if !summaryAttempted {
-		t.Fatal("postReviewSummaryComment() did not post summary fallback")
+		t.Fatal("postEnhanceSummaryComment() did not post summary fallback")
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -613,20 +613,20 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
+	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !summaryAttempted {
-		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
+		t.Fatal("postEnhanceSummaryComment() did not post summary after inline failure")
 	}
 	if !strings.Contains(stderr.String(), "Could not post gx inline review comment") {
-		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
+		t.Fatalf("postEnhanceSummaryComment() warning = %q, want inline failure warning", stderr.String())
 	}
 }
 
-func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
+func TestEnhanceCommandRejectsMultiplePrompts(t *testing.T) {
 	cmd := NewRoot(context.Background())
 	cmd.SetArgs([]string{"enhance", "one prompt", "second prompt"})
 

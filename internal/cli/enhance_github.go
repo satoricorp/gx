@@ -19,7 +19,7 @@ const summaryCommentMarker = "<!-- gx summary -->"
 // instead of forking a second one on PRs that already have it.
 const legacySummaryCommentMarker = "<!-- gx review summary -->"
 
-func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
+func postEnhanceSummaryComment(ctx context.Context, repo vcs.RepoInfo, report codereview.Report, stderr io.Writer) {
 	remoteURL := pointerString(repo.RemoteURL)
 	branchName := pointerString(repo.BranchName)
 	if strings.TrimSpace(remoteURL) == "" || strings.TrimSpace(branchName) == "" {
@@ -49,7 +49,7 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	if pr == nil || pr.Number == 0 {
 		return
 	}
-	if err := postReviewInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
+	if err := postEnhanceInlineComments(ctx, client, repo, owner, repoName, pr.Number, report); err != nil {
 		fmt.Fprintln(stderr, labelWarningValue("Warning", fmt.Sprintf("Could not post gx inline review comment: %v", err)))
 	}
 	commentBody := summaryCommentMarker + "\n" + codereview.RenderMarkdown(report)
@@ -66,7 +66,7 @@ func postReviewSummaryComment(ctx context.Context, repo vcs.RepoInfo, report cod
 	}
 }
 
-func postReviewInlineComments(ctx context.Context, client *github.Client, repo vcs.RepoInfo, owner string, repoName string, prNumber int, report codereview.Report) error {
+func postEnhanceInlineComments(ctx context.Context, client *github.Client, repo vcs.RepoInfo, owner string, repoName string, prNumber int, report codereview.Report) error {
 	if client == nil || prNumber <= 0 || len(report.Findings) == 0 {
 		return nil
 	}
@@ -94,7 +94,7 @@ func postReviewInlineComments(ctx context.Context, client *github.Client, repo v
 				Owner:    owner,
 				Repo:     repoName,
 				Number:   prNumber,
-				Body:     renderInlineReviewComment(finding),
+				Body:     renderInlineEnhanceComment(finding),
 				CommitID: commitID,
 				Path:     anchor.File,
 				Line:     anchor.Line,
@@ -107,7 +107,7 @@ func postReviewInlineComments(ctx context.Context, client *github.Client, repo v
 	return firstErr
 }
 
-func renderInlineReviewComment(finding codereview.Finding) string {
+func renderInlineEnhanceComment(finding codereview.Finding) string {
 	var b strings.Builder
 	title := strings.TrimSpace(finding.Title)
 	if title == "" {

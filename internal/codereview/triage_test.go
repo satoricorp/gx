@@ -129,7 +129,7 @@ func TestExplicitScopeDocsOnlyReviewBypassesShortCircuit(t *testing.T) {
 	assertDocsOnlyBypass(t, Options{Scope: "architecture"})
 }
 
-func TestReviewResourceSignalsUseRetrieveInputChangedFilesAndPlanRiskTags(t *testing.T) {
+func TestEnhanceResourceSignalsUseRetrieveInputChangedFilesAndPlanRiskTags(t *testing.T) {
 	signals := reviewResourceSignals(RetrieveInput{
 		RepoRoot:     "/missing-repo",
 		Options:      normalizeOptions(Options{}),

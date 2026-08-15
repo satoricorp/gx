@@ -180,7 +180,7 @@ func TestJudgeRetriesOnceWhenTheReplyCarriesNoVerdicts(t *testing.T) {
 		{Text: "I will look at the candidates now.", StopReason: "end_turn"},
 		{Text: valid, StopReason: "end_turn"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	results, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
@@ -203,7 +203,7 @@ func TestJudgeGivesUpAfterOneRetry(t *testing.T) {
 		{Text: "prose, no object", StopReason: "end_turn"},
 		{Text: "still prose", StopReason: "end_turn"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	_, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
@@ -222,7 +222,7 @@ func TestJudgeDoesNotRetryTruncation(t *testing.T) {
 	transport := &scriptedJudgeTransport{completions: []bedrockCompletion{
 		{Text: `{"results":[{"candidate_id":"f1","ana`, StopReason: "max_tokens"},
 	}}
-	judge := bedrockReviewJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
+	judge := bedrockEnhanceJudge{client: newBedrockReviewer(transport, "us.anthropic.claude-test")}
 
 	_, err := judge.Judge(context.Background(), judgeRequest{
 		Candidates: []judgeCandidate{{ID: "f1", Title: "One"}},
@@ -434,10 +434,10 @@ func TestRunJudgeKeepsCandidatesTheJudgeNeverAnsweredFor(t *testing.T) {
 	}
 }
 
-// TestReviewReportsUnansweredCandidatesAsDegraded closes that loop at the report
+// TestEnhanceReportsUnansweredCandidatesAsDegraded closes that loop at the report
 // boundary: a finding shipped without a verdict must say it was shipped without
 // a verdict.
-func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
+func TestEnhanceReportsUnansweredCandidatesAsDegraded(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")
@@ -469,10 +469,10 @@ func TestReviewReportsUnansweredCandidatesAsDegraded(t *testing.T) {
 	}
 }
 
-// TestReviewReportsFailedVerificationAsDegraded pins that a failed verification
+// TestEnhanceReportsFailedVerificationAsDegraded pins that a failed verification
 // is visible in the report. It used to collapse the findings to at most
 // the findings cap while the report still read as a completed review.
-func TestReviewReportsFailedVerificationAsDegraded(t *testing.T) {
+func TestEnhanceReportsFailedVerificationAsDegraded(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE", "1")
 	root := t.TempDir()
 	writeFile(t, root, "internal/app/app.go", "package app\nfunc Run() {}\n")

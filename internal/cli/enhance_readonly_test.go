@@ -115,7 +115,7 @@ func gitIndexDigest(t *testing.T, root string) string {
 // does not own, so it must not auto-initialize anything: no git hooks, no gx
 // home, no repo state. This test reviews a repo that has never run `gx init`
 // and asserts the repo and the machine come out untouched.
-func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
+func TestEnhanceNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	root := newReviewGateRepo(t)
 	commitOnBranch(t, root)
 	t.Chdir(root)
@@ -150,7 +150,7 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 	// rewrite .git/index unless review keeps them off it.
 	indexBefore := gitIndexDigest(t, root)
 
-	out, err := runReviewCommand(t, "--base", "main")
+	out, err := runEnhanceCommand(t, "--base", "main")
 	if err != nil {
 		t.Fatalf("gx enhance error = %v\n%s", err, out)
 	}
@@ -194,7 +194,7 @@ func TestReviewNeverInitializesTheRepoOrTheMachine(t *testing.T) {
 // returning findings must not ship log tails and repo identity to gx Cloud,
 // and must not mint a machine ID — a CI job that fails the gate on every run
 // would otherwise upload on every run, from a machine that never ran gx.
-func TestReviewGateFailureNeverAutoReportsOrWritesGxHome(t *testing.T) {
+func TestEnhanceGateFailureNeverAutoReportsOrWritesGxHome(t *testing.T) {
 	root := newReviewGateRepo(t)
 	writeTestFile(t, root, "package.json", "{\n  \"name\": \"example\"\n}\n")
 	gitAddTestFiles(t, root, "package.json")
@@ -213,7 +213,7 @@ func TestReviewGateFailureNeverAutoReportsOrWritesGxHome(t *testing.T) {
 	staleGitStatCache(t, root)
 	indexBefore := gitIndexDigest(t, root)
 
-	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
+	out, err := runEnhanceCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
 		t.Fatalf("gx enhance --fail-on strong exited 0 with findings:\n%s", out)
 	}
@@ -275,7 +275,7 @@ func signIn(t *testing.T, gxHome string) {
 // The same gate on a machine that *is* signed in, where the upload would
 // actually go through. This is the configuration the auto-report was written
 // for, so it is the one that proves the gate stays quiet.
-func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
+func TestEnhanceGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 	root := newReviewGateRepo(t)
 	writeTestFile(t, root, "package.json", "{\n  \"name\": \"example\"\n}\n")
 	gitAddTestFiles(t, root, "package.json")
@@ -289,7 +289,7 @@ func TestReviewGateFailureNeverAutoReportsWhenSignedIn(t *testing.T) {
 	t.Setenv("GX_HOME", gxHome)
 	signIn(t, gxHome)
 
-	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
+	out, err := runEnhanceCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
 		t.Fatalf("gx enhance --fail-on strong exited 0 with findings:\n%s", out)
 	}
@@ -340,7 +340,7 @@ func TestVersionNeverWritesGxState(t *testing.T) {
 // Reviewing outside a git repo is a real error on a real code path — the kind
 // the old auto-report existed to catch — so it is the case that proves the
 // upload is gone rather than merely narrowed to exclude gates.
-func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
+func TestEnhanceGenuineFailureNeverUploadsLogs(t *testing.T) {
 	setReviewGateEnv(t)
 	recorder := newRecordingEndpoint(t)
 	setReviewCloudEnv(t, recorder)
@@ -353,7 +353,7 @@ func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
 	notARepo := t.TempDir()
 	t.Chdir(notARepo)
 
-	if _, err := runReviewCommand(t, "--no-publish"); err == nil {
+	if _, err := runEnhanceCommand(t, "--no-publish"); err == nil {
 		t.Fatalf("gx enhance succeeded outside a git repository")
 	}
 	if recorder.requested("/v1/reported-logs") {
@@ -363,7 +363,7 @@ func TestReviewGenuineFailureNeverUploadsLogs(t *testing.T) {
 
 // The other gate outcome: nothing was reviewed. Same rule — a verdict, not a
 // crash, so nothing gets uploaded.
-func TestReviewNothingToReviewGateNeverAutoReports(t *testing.T) {
+func TestEnhanceNothingToReviewGateNeverAutoReports(t *testing.T) {
 	root := newReviewGateRepo(t)
 	t.Chdir(root)
 	setReviewGateEnv(t)
@@ -374,7 +374,7 @@ func TestReviewNothingToReviewGateNeverAutoReports(t *testing.T) {
 	t.Setenv("GX_HOME", filepath.Join(sandbox, "gx-home"))
 	t.Setenv("HOME", filepath.Join(sandbox, "home"))
 
-	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
+	out, err := runEnhanceCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
 		t.Fatalf("gx enhance --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}

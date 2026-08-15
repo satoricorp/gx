@@ -20,7 +20,7 @@ import (
 // Pinning the caller set keeps that true by construction: wiring the engine
 // into another pipeline becomes a deliberate act with a failing test attached,
 // rather than a silent change to every PR summary.
-func TestReviewEngineIsReachedOnlyFromTheReviewCommand(t *testing.T) {
+func TestEnhanceEngineIsReachedOnlyFromTheReviewCommand(t *testing.T) {
 	root := filepath.Join("..", "..")
 	// "codereview.NewEngine" with no open paren on purpose: it also covers
 	// NewEngineWith and NewEngineWithReviewer, which return the same *Engine

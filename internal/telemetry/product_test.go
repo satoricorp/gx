@@ -19,7 +19,7 @@ func TestClientSurface(t *testing.T) {
 		{name: "override wins over env", override: "mcp", envVar: "skill", want: "mcp"},
 		{name: "slash surface", envVar: "slash-enhance", want: "slash-enhance"},
 		{name: "legacy slash surface", envVar: "slash-gx", want: "slash-gx"},
-		{name: "slash constraints surface", envVar: "slash-constraints", want: "slash-constraints"},
+		{name: "review slash surface", envVar: "slash-review", want: "slash-review"},
 		{name: "whitespace trimmed", envVar: "  mcp  ", want: "mcp"},
 		// Unknown values fall through the chain instead of minting a new
 		// analytics category.

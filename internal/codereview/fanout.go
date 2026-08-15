@@ -410,7 +410,7 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 		return shardedReviewResult{Findings: findings, Coverage: coverage}
 	}
 
-	reviewProgress(opts, fmt.Sprintf("Asking AI reviewer (%d parallel reviews)", len(shards)))
+	enhanceProgress(opts, fmt.Sprintf("Asking AI reviewer (%d parallel reviews)", len(shards)))
 	type result struct {
 		index    int
 		findings []Finding
@@ -437,7 +437,7 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 			if err != nil {
 				state = "failed"
 			}
-			reviewProgress(opts, fmt.Sprintf("  %s %s (%d/%d)", shard.Label(), state, done, len(shards)))
+			enhanceProgress(opts, fmt.Sprintf("  %s %s (%d/%d)", shard.Label(), state, done, len(shards)))
 			progressMu.Unlock()
 		}(i, shard)
 	}

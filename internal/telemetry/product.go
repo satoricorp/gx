@@ -139,7 +139,7 @@ func Entrypoint() string {
 	return "cli"
 }
 
-// clientSurfaces are the surfaces a review or constraints run can be invoked
+// clientSurfaces are the surfaces an enhance or review run can be invoked
 // from. The set is closed on purpose: this value becomes a low-cardinality
 // analytics dimension, and an arbitrary environment string would let one
 // misconfigured machine mint unbounded new categories.
@@ -148,10 +148,10 @@ var clientSurfaces = map[string]bool{
 	"mcp":           true,
 	"skill":         true,
 	"slash-enhance": true,
+	"slash-review":  true,
 	// Pre-rename label for /enhance (then /gx); command files installed by
 	// older gx builds still send it.
-	"slash-gx":          true,
-	"slash-constraints": true,
+	"slash-gx": true,
 }
 
 // ClientSurface resolves which surface invoked this run: an explicit override
