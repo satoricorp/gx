@@ -28,6 +28,11 @@ const (
 	reviewRenderIndent     = "  "
 	reviewRenderCodeIndent = "      "
 	reviewRenderRuleWidth  = 74
+	// reviewRenderWidth is the column the report wraps prose at and clips code
+	// at. 100 fits the common wide terminal with room for the indent; prose
+	// wraps at word boundaries, code is clipped with an ellipsis rather than
+	// wrapped, because a wrapped code line reads as two lines of code.
+	reviewRenderWidth = 100
 )
 
 // RenderReviewText is the terminal render. Sections appear in a fixed order
@@ -142,8 +147,19 @@ func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" — %s · %d file(s)", target, len(report.ChangedFiles))))
 	b.WriteString("\n")
 	if prompt := strings.TrimSpace(report.Prompt); prompt != "" {
-		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("intent: %q", prompt)))
-		b.WriteString("\n")
+		lines := wrapText(prompt, reviewRenderWidth-len("intent: \"\""))
+		for i, line := range lines {
+			if i == 0 {
+				line = "intent: \"" + line
+			} else {
+				line = "        " + line
+			}
+			if i == len(lines)-1 {
+				line += "\""
+			}
+			b.WriteString(colorize(color, termstyle.Muted, line))
+			b.WriteString("\n")
+		}
 	}
 	b.WriteString("\n")
 }
@@ -322,9 +338,11 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 	b.WriteString("\n")
 	if f.RuleID != "" {
 		if title := strings.TrimSpace(f.Title); title != "" {
-			b.WriteString(reviewRenderIndent)
-			b.WriteString(colorize(color, termstyle.Value, title))
-			b.WriteString("\n")
+			for _, line := range wrapText(title, reviewRenderWidth-len(reviewRenderIndent)) {
+				b.WriteString(reviewRenderIndent)
+				b.WriteString(colorize(color, termstyle.Value, line))
+				b.WriteString("\n")
+			}
 		}
 	}
 
@@ -338,14 +356,14 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 
 	if why := strings.TrimSpace(f.Summary); why != "" {
 		b.WriteString("\n")
-		writeReviewLabeled(b, color, termstyle.Warning, "Why", why)
+		writeReviewLabeled(b, color, termstyle.Warning, "Why", firstSentences(why, 3))
 	}
 	if fix := strings.TrimSpace(f.Recommendation); fix != "" {
-		writeReviewLabeled(b, color, termstyle.Success, "Fix", fix)
+		writeReviewLabeled(b, color, termstyle.Success, "Fix", firstSentences(fix, 2))
 	}
 	if ex := strings.TrimSpace(f.Example); ex != "" {
 		b.WriteString("\n")
-		for _, line := range renderHunkLines(color, ex, reviewRenderCodeIndent) {
+		for _, line := range renderHunkLinesFor(color, f.File, ex, reviewRenderCodeIndent) {
 			b.WriteString(line)
 			b.WriteString("\n")
 		}
@@ -535,7 +553,7 @@ func writeReviewStoryBody(b *strings.Builder, report Report, color bool, items [
 		}
 		if hunk := strings.TrimSpace(item.DiffHunk); hunk != "" {
 			b.WriteString("\n")
-			for _, line := range renderHunkLines(color, hunk, reviewRenderCodeIndent) {
+			for _, line := range renderHunkLinesFor(color, item.File, hunk, reviewRenderCodeIndent) {
 				b.WriteString(line)
 				b.WriteString("\n")
 			}
@@ -825,4 +843,43 @@ func ruleNamespacePainter(ns string) func(string) string {
 	default:
 		return termstyle.Section
 	}
+}
+
+// firstSentences clamps prose to its first n sentences for the terminal — the
+// prompt asks for two-sentence Whys and one-action Fixes, and the render holds
+// the line when a model does not. The full text is untouched in the Finding
+// and the JSON; only the terminal shows the head. Sentence ends are ". ", "! ",
+// "? " followed by an uppercase letter or a backtick, which keeps "e.g. foo"
+// and "internal/cli.go" from splitting. A clamp is marked with " …".
+func firstSentences(text string, n int) string {
+	text = strings.TrimSpace(text)
+	if n <= 0 || text == "" {
+		return text
+	}
+	count := 0
+	for i := 0; i+1 < len(text); i++ {
+		if text[i] != '.' && text[i] != '!' && text[i] != '?' {
+			continue
+		}
+		if text[i+1] != ' ' {
+			continue
+		}
+		// Look at the first non-space rune after the terminator.
+		j := i + 1
+		for j < len(text) && text[j] == ' ' {
+			j++
+		}
+		if j >= len(text) {
+			break
+		}
+		next := text[j]
+		if !(next >= 'A' && next <= 'Z') && next != '`' && next != '"' {
+			continue
+		}
+		count++
+		if count == n {
+			return strings.TrimSpace(text[:i+1]) + " …"
+		}
+	}
+	return text
 }

@@ -214,3 +214,43 @@ func TestNormalizeExampleDiffKeepsSmallDiffsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstSentencesClampsProse(t *testing.T) {
+	long := "The value is nil here. It is dereferenced on line 9. Callers never guard it. A fourth sentence."
+	if got := firstSentences(long, 2); got != "The value is nil here. It is dereferenced on line 9. …" {
+		t.Fatalf("firstSentences(2) = %q", got)
+	}
+	if got := firstSentences(long, 10); got != long {
+		t.Fatalf("under the cap must be untouched, got %q", got)
+	}
+	// Abbreviations and paths do not end a sentence.
+	tricky := "See e.g. internal/cli.go for the pattern. Then fix it."
+	if got := firstSentences(tricky, 1); got != "See e.g. internal/cli.go for the pattern. …" {
+		t.Fatalf("abbreviation split wrongly: %q", got)
+	}
+	// A backtick or quote can start the next sentence.
+	code := "Guard the input. `req.ID` is the key. Done."
+	if got := firstSentences(code, 1); got != "Guard the input. …" {
+		t.Fatalf("backtick sentence start not recognized: %q", got)
+	}
+}
+
+func TestRenderCodeLinesClipAndDropHunkHeaders(t *testing.T) {
+	long := strings.Repeat("x", 300)
+	f := Finding{File: "a.go", DiffHunk: "@@ -1,2 +1,2 @@\n-\tshort\n+" + long}
+	lines := renderCodeLines(false, f, "      ")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 body lines (header dropped), got %d: %q", len(lines), lines)
+	}
+	if !strings.HasPrefix(lines[0], "      -    short") {
+		t.Fatalf("tab should expand to spaces after the sign: %q", lines[0])
+	}
+	if !strings.HasSuffix(lines[1], "…") || len([]rune(lines[1])) > renderCodeWidth+2 {
+		t.Fatalf("long code line should be clipped with an ellipsis: len=%d", len([]rune(lines[1])))
+	}
+	ex := Finding{File: "a.go", CodeExcerpt: "\tone\n" + long, CodeExcerptStart: 4, Line: 5}
+	el := renderExcerptLines(false, ex, "      ")
+	if !strings.Contains(el[0], "|     one") || !strings.HasSuffix(el[1], "…") {
+		t.Fatalf("excerpt should expand tabs and clip: %q", el)
+	}
+}

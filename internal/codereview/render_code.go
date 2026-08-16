@@ -58,7 +58,7 @@ func highlightCodeForTerminal(file, code string) string {
 // excerpt.
 func renderCodeLines(color bool, finding Finding, indent string) []string {
 	if strings.TrimSpace(finding.DiffHunk) != "" {
-		return renderHunkLines(color, finding.DiffHunk, indent)
+		return renderHunkLinesFor(color, finding.File, finding.DiffHunk, indent)
 	}
 	return renderExcerptLines(color, finding, indent)
 }
@@ -67,16 +67,42 @@ func renderCodeLines(color bool, finding Finding, indent string) []string {
 // reader expects: additions green, removals red, the hunk header and trims
 // muted.
 func renderHunkLines(color bool, hunk, indent string) []string {
+	return renderHunkLinesFor(color, "", hunk, indent)
+}
+
+// renderHunkLinesFor is renderHunkLines with a file name for syntax
+// highlighting. The sign column (+, -, or space) is painted green, red, or
+// muted; the code after it is highlighted with the file's lexer when color is
+// on, exactly as an excerpt would be, so a diff and an excerpt of the same
+// code look the same. Hunk headers (@@ … @@) are dropped: they are addressing
+// for tools, and the finding already carries file:line. Tabs are expanded so
+// a terminal never shows a raw control character in place of indentation.
+func renderHunkLinesFor(color bool, file, hunk, indent string) []string {
 	var out []string
 	for _, line := range strings.Split(hunk, "\n") {
-		painted := line
-		switch {
-		case strings.HasPrefix(line, "@@"), line == "…":
-			painted = colorize(color, termstyle.Muted, line)
-		case strings.HasPrefix(line, "+"):
-			painted = colorize(color, termstyle.Success, line)
-		case strings.HasPrefix(line, "-"):
-			painted = colorize(color, termstyle.Danger, line)
+		if strings.HasPrefix(line, "@@") {
+			continue
+		}
+		if line == "…" {
+			out = append(out, indent+colorize(color, termstyle.Muted, line))
+			continue
+		}
+		if line == "" {
+			out = append(out, indent)
+			continue
+		}
+		sign, body := line[:1], clipCodeLine(strings.ReplaceAll(line[1:], "\t", "    "), renderCodeWidth-len(indent)-1)
+		if color && file != "" {
+			body = highlightCodeForTerminal(file, body)
+		}
+		var painted string
+		switch sign {
+		case "+":
+			painted = colorize(color, termstyle.Success, "+") + body
+		case "-":
+			painted = colorize(color, termstyle.Danger, "-") + body
+		default:
+			painted = " " + body
 		}
 		out = append(out, indent+painted)
 	}
@@ -90,7 +116,14 @@ func renderExcerptLines(color bool, finding Finding, indent string) []string {
 	if strings.TrimSpace(finding.CodeExcerpt) == "" {
 		return nil
 	}
-	code := finding.CodeExcerpt
+	// Clip and expand tabs per line BEFORE highlighting, so a cut never lands
+	// inside an escape sequence and the lexer sees plain text.
+	gutterWidth := len(indent) + len("  0000 | ")
+	var clean []string
+	for _, line := range strings.Split(finding.CodeExcerpt, "\n") {
+		clean = append(clean, clipCodeLine(strings.ReplaceAll(line, "\t", "    "), renderCodeWidth-gutterWidth))
+	}
+	code := strings.Join(clean, "\n")
 	if color && termstyle.Enabled() {
 		code = highlightCodeForTerminal(finding.File, code)
 	}
@@ -133,4 +166,23 @@ func fenceLanguage(file string) string {
 	default:
 		return ""
 	}
+}
+
+// renderCodeWidth is the column code lines are clipped at. A code line is
+// never wrapped — a wrapped line of code reads as two lines of code — so a
+// long one is cut and marked with an ellipsis. Prose has its own wrapping in
+// the review renderer.
+const renderCodeWidth = 100
+
+// clipCodeLine truncates a code line to width runes with a trailing ellipsis.
+// It runs before highlighting so the cut never lands inside an escape code.
+func clipCodeLine(line string, width int) string {
+	if width < 8 {
+		width = 8
+	}
+	runes := []rune(line)
+	if len(runes) <= width {
+		return line
+	}
+	return string(runes[:width-1]) + "…"
 }

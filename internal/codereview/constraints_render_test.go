@@ -117,10 +117,19 @@ func TestRenderConstraintsShowsDiffHunks(t *testing.T) {
 	report.Gates[1].Findings[0].CodeExcerpt = ""
 
 	text := RenderConstraintsText(report)
-	for _, want := range []string{"@@ -0,0 +1,3 @@", "+const key = \"XXXX\""} {
+	// The hunk body renders; the @@ header does not — it is addressing for
+	// tools, and the finding already names file:line. The markdown render
+	// still carries the raw hunk (header included) inside its diff fence.
+	for _, want := range []string{"+package app", "+const key = \"XXXX\""} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("text render missing hunk line %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "@@ -0,0 +1,3 @@") {
+		t.Fatalf("text render should drop the @@ hunk header:\n%s", text)
+	}
+	if md := RenderConstraintsMarkdown(report); !strings.Contains(md, "@@ -0,0 +1,3 @@") {
+		t.Fatalf("markdown render should keep the raw hunk header inside its diff fence:\n%s", md)
 	}
 	if strings.Contains(text, "   1 | package app") {
 		t.Fatalf("text render fell back to the file excerpt despite a hunk:\n%s", text)
