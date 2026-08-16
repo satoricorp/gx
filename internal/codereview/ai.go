@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultReviewMaxOutputTokens = 6000
+	defaultReviewMaxOutputTokens = 8000
 	// defaultMaxFindings is the reported-recommendation ceiling when a caller
 	// does not set one. Raised from the old hidden 5 (and the unjudged path's
 	// hidden 3): a ceiling below the number of real defects is indistinguishable
@@ -137,6 +137,11 @@ type PRSummaryReview struct {
 	// still feeds the PR body.
 	Story    []StoryItem
 	Findings []Finding
+	// Truncated is set when the reply hit the output cap and only the
+	// findings that closed before the cut were kept. Non-empty means the
+	// leg answered, partially; the panel reports it as a degradation
+	// without discarding what it did say.
+	Truncated string
 }
 
 type AIReviewerWithSummary interface {
@@ -513,6 +518,13 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 			continue
 		}
 		parsed = true
+		if t := strings.TrimSpace(result.summary.Truncated); t != "" {
+			// The leg answered, but the cap cut it: its complete findings are
+			// kept below, and the truncation is recorded as a degradation so
+			// the report says this leg was cut short rather than either
+			// pretending it answered in full or dropping what it did say.
+			m.legFailures.record(item.label, fmt.Errorf("answered partially — %s", t))
+		}
 		if overview == "" && strings.TrimSpace(result.summary.Overview) != "" {
 			overview = strings.TrimSpace(result.summary.Overview)
 		}

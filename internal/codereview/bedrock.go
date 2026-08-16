@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -241,6 +242,15 @@ func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief R
 		output, parseErr := parseAIReviewOutput(completion.Text, brief)
 		if parseErr == nil {
 			return aiReviewOutputToPRSummaryReview(output), nil
+		}
+		if errors.Is(parseErr, errTruncatedButSalvaged) {
+			// The cap cut the reply, but complete findings were recovered.
+			// Return them; the truncation is reported through the summary's
+			// Truncated field so the report can say the leg was cut short
+			// rather than pretending it answered in full.
+			review := aiReviewOutputToPRSummaryReview(output)
+			review.Truncated = describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, parseErr).Error()
+			return review, nil
 		}
 		if completion.truncated() {
 			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, parseErr)

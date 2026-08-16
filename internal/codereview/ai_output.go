@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -107,6 +108,20 @@ func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, err
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		trimmed := extractJSONObject(content, "recommendations", "overview", "notable_changes", "downstream_impact", "story")
 		if trimmed == "" {
+			// No complete object anywhere. Before giving up, salvage: a reply
+			// cut off at the output cap is a well-formed prefix of a JSON
+			// object, and every recommendation element that closed before
+			// the cut is intact. Measured on a whole-repo review: a Sonnet
+			// shard reply of 21 KB stopped at max_tokens with 13 complete
+			// findings before the 14th was cut mid-sentence, and all 13 were
+			// discarded. Keeping them is strictly better than losing the
+			// shard; the caller still reports the truncation as degradation.
+			if recs := salvageTruncatedRecommendations(content); len(recs) > 0 {
+				parsed.Recommendations = recs
+				return aiReviewOutput{
+					Findings: aiRecommendationsToFindings(parsed.Recommendations, brief),
+				}, errTruncatedButSalvaged
+			}
 			return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
 		}
 		if fallbackErr := json.Unmarshal([]byte(trimmed), &parsed); fallbackErr != nil {
@@ -307,4 +322,39 @@ func parseRecommendationLine(raw json.RawMessage) int {
 		return parsed
 	}
 	return 0
+}
+
+// errTruncatedButSalvaged is returned alongside a non-empty output when the
+// reply was cut off but complete findings were recovered from its prefix. The
+// caller keeps the findings and records the truncation as a degradation
+// rather than treating the shard as lost.
+var errTruncatedButSalvaged = errors.New("AI review reply was truncated; complete findings before the cut were kept")
+
+// salvageTruncatedRecommendations pulls every complete element out of a
+// truncated "recommendations": [ ... array. It walks the array with
+// json.Decoder, which tracks strings and escapes, so a "}" inside a summary
+// ends nothing, and stops at the first element that does not decode — that is
+// the one the cap cut. Anything before it is intact.
+func salvageTruncatedRecommendations(content string) []aiRecommendation {
+	key := strings.Index(content, "\"recommendations\"")
+	if key < 0 {
+		return nil
+	}
+	open := strings.IndexByte(content[key:], '[')
+	if open < 0 {
+		return nil
+	}
+	dec := json.NewDecoder(strings.NewReader(content[key+open:]))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('[') {
+		return nil
+	}
+	var out []aiRecommendation
+	for dec.More() {
+		var rec aiRecommendation
+		if err := dec.Decode(&rec); err != nil {
+			break // the cut element; everything before it is complete
+		}
+		out = append(out, rec)
+	}
+	return out
 }
