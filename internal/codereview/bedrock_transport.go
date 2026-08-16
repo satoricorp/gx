@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -597,6 +598,11 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 		Messages:         []cloud.BedrockMessage{{Role: "user", Content: input}},
 	})
 	if err != nil {
+		var notAllowed *cloud.ModelNotAllowedError
+		if errors.As(err, &notAllowed) {
+			// Already a complete sentence naming the model and the list.
+			return bedrockCompletion{}, err
+		}
 		return bedrockCompletion{}, fmt.Errorf("gx Cloud Bedrock call for %s failed: %w", model, err)
 	}
 	text := strings.TrimSpace(resp.Text())
