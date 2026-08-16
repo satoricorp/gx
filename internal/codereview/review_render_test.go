@@ -143,7 +143,7 @@ func TestRenderReviewTextVerdictShapes(t *testing.T) {
 			r.Findings = nil
 			r.Story = nil
 			r.DegradedReasons = []string{"reviewer B did not answer"}
-		}, "Verdict: DEGRADED — no blocking finding, but the review saw less than a healthy one would (reviewer B did not answer)"},
+		}, "Verdict: DEGRADED — no blocking finding, but reviewer B did not answer (0 advisory)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

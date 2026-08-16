@@ -288,6 +288,9 @@ func (m accordionModel) sectionLabel(s accordionSection) (string, func(string) s
 	case sectionStory:
 		return "WORTH KNOWING", termstyle.Command
 	case sectionRunDetails:
+		if len(m.report.DegradedReasons) > 0 {
+			return "RUN DETAILS", termstyle.Warning
+		}
 		return "RUN DETAILS", termstyle.Muted
 	default:
 		return "Done", termstyle.Value
@@ -344,6 +347,9 @@ func (m accordionModel) sectionHint(s accordionSection) string {
 		}
 		return "passed, and yours now"
 	case sectionRunDetails:
+		if n := len(m.report.DegradedReasons); n > 0 {
+			return fmt.Sprintf("⚠ degraded run — %s", codereview.SummarizeDegradedReasons(m.report.DegradedReasons))
+		}
 		return "reviewers · evidence · coverage"
 	default:
 		verdict, _ := codereview.ReviewVerdictLines(m.report)

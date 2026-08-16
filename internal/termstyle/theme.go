@@ -43,7 +43,7 @@ func initTheme() {
 		styleDanger = lipgloss.NewStyle().Foreground(lipgloss.Color(colorDanger))
 		styleSuccess = lipgloss.NewStyle().Foreground(lipgloss.Color(colorSuccess))
 		styleWarning = lipgloss.NewStyle().Foreground(lipgloss.Color(colorWarning))
-		styleSection = lipgloss.NewStyle().Foreground(lipgloss.Color(colorText))
+		styleSection = lipgloss.NewStyle().Foreground(lipgloss.Color(colorText)).Bold(true)
 		styleCommand = lipgloss.NewStyle().Foreground(lipgloss.Color(colorCommand))
 		styleMuted = lipgloss.NewStyle().Foreground(lipgloss.Color(colorMuted))
 		styleValue = lipgloss.NewStyle().Foreground(lipgloss.Color(colorValue))
@@ -92,10 +92,19 @@ func paint(style lipgloss.Style, text string) string {
 	if text == "" || !Enabled() {
 		return text
 	}
-	return Render(style.Render(text))
+	// Enabled() has already decided — NO_COLOR, TERM=dumb, FORCE_COLOR, or
+	// an isatty check on stdout. Rendering the style directly honors that
+	// decision. Routing through lipgloss.Sprint would re-detect a color
+	// profile from the process's real stdout and downsample to no color
+	// whenever that is a pipe, which silently stripped every painter under
+	// FORCE_COLOR and in tests: only the raw-ANSI accents survived, and the
+	// report came out mostly monochrome.
+	return style.Render(text)
 }
 
 // Render applies lipgloss downsampling when writing styled strings to variables.
+// It is kept for callers that assemble lipgloss layouts (JoinHorizontal and
+// friends) and want the profile-aware output; the plain painters do not use it.
 func Render(s string) string {
 	initTheme()
 	if !Enabled() || s == "" {

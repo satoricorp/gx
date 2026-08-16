@@ -107,8 +107,12 @@ func ReviewVerdictLines(report Report) (verdict, next string) {
 			"Next: work the fix plan, then rerun `gx review`."
 	}
 	if len(report.DegradedReasons) > 0 {
-		return "Verdict: DEGRADED — no blocking finding, but the review saw less than a healthy one would (" + strings.Join(report.DegradedReasons, "; ") + ")",
-			"Next: fix the degradation above, then rerun `gx review` for a verdict worth shipping on."
+		// One phrase, not the wrapped error: the verdict states the outcome,
+		// run details carries the reason. A parse failure on one leg is not
+		// worth a paragraph on the line agents relay.
+		return fmt.Sprintf("Verdict: DEGRADED — no blocking finding, but %s (%d advisory)",
+				summarizeDegradedReasons(report.DegradedReasons), len(advisory)),
+			"Next: ship if you're comfortable, or rerun `gx review` for a full panel; see run details."
 	}
 	if len(advisory) > 0 {
 		return fmt.Sprintf("Verdict: SHIP — no blocking finding (%d advisory)", len(advisory)),
@@ -133,7 +137,7 @@ func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 	if target == "" {
 		target = "the current change"
 	}
-	head := colorize(color, reviewMint, "gx review")
+	head := colorize(color, boldPainter(reviewMint), "gx review")
 	b.WriteString(head)
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" — %s · %d file(s)", target, len(report.ChangedFiles))))
 	b.WriteString("\n")
@@ -170,14 +174,14 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 	}
 	row("scope", scope)
 
-	models := "no model ran"
+	models := colorize(color, termstyle.Muted, "no model ran")
 	if report.aiReviewRan() {
-		models = strings.Join(report.ReviewModels, " · ")
+		models = strings.Join(friendlyModelNames(report.ReviewModels), " · ")
 		if models == "" {
 			models = "AI panel"
 		}
-		if report.ReviewTransport != "" {
-			models += colorize(color, termstyle.Muted, " via "+report.ReviewTransport)
+		if t := shortTransportName(report.ReviewTransport); t != "" {
+			models += colorize(color, termstyle.Muted, " via "+t)
 		}
 	}
 	row("reviewers", models)
@@ -232,12 +236,36 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 			row("coverage", colorize(color, termstyle.Warning, s))
 		}
 	}
-	if len(report.DegradedReasons) > 0 {
-		b.WriteString("\n")
-		b.WriteString(reviewRenderIndent)
-		b.WriteString(colorize(color, termstyle.Warning, "Warning: "+strings.Join(report.DegradedReasons, "; ")))
-		b.WriteString("\n")
+	// A degraded run is stated once, quietly, as a ledger row — not shouted
+	// as a banner. The verdict line already says DEGRADED, and RUN DETAILS
+	// carries the full reason for anyone who wants it. A reviewer leg that
+	// answered in prose is a fact about this run, not an emergency.
+	if n := len(report.DegradedReasons); n > 0 {
+		row("note", colorize(color, termstyle.Warning, fmt.Sprintf("degraded — %s", summarizeDegradedReasons(report.DegradedReasons)))+
+			colorize(color, termstyle.Muted, "  (see run details)"))
 	}
+}
+
+// summarizeDegradedReasons folds the degradation into one short phrase for the
+// ledger: "one reviewer did not run" rather than the wrapped decode error.
+// The full text stays in RenderReviewDetails and the JSON.
+func summarizeDegradedReasons(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	first := strings.TrimSpace(reasons[0])
+	// Most reasons read "<what happened> — <detail>" or "<what>: <detail>";
+	// keep the what.
+	for _, sep := range []string{" — ", ": "} {
+		if i := strings.Index(first, sep); i > 0 {
+			first = first[:i]
+			break
+		}
+	}
+	if len(reasons) > 1 {
+		return fmt.Sprintf("%s (+%d more)", first, len(reasons)-1)
+	}
+	return first
 }
 
 // ---- lanes ----------------------------------------------------------------
@@ -267,7 +295,7 @@ func reviewDivider(color bool, label string, paint func(string) string, right st
 	if fill < 4 {
 		fill = 4
 	}
-	return colorize(color, paint, label) + " " +
+	return colorize(color, boldPainter(paint), label) + " " +
 		colorize(color, termstyle.Muted, strings.Repeat("─", fill)+" "+right+" ──")
 }
 
@@ -283,7 +311,7 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 	b.WriteString(reviewRenderIndent)
 	if f.RuleID != "" {
 		ns, name, _ := strings.Cut(f.RuleID, "/")
-		b.WriteString(colorize(color, reviewMint, ns))
+		b.WriteString(colorize(color, boldPainter(reviewMint), ns))
 		b.WriteString(colorize(color, termstyle.Muted, "/"))
 		b.WriteString(colorize(color, termstyle.Section, name))
 	} else {
@@ -426,7 +454,7 @@ func writeReviewFixPlan(b *strings.Builder, report Report, color bool, plan []Fi
 			advisory++
 		}
 	}
-	b.WriteString(colorize(color, reviewMint, "FIX PLAN"))
+	b.WriteString(colorize(color, boldPainter(reviewMint), "FIX PLAN"))
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" ──── %d blocking · %d advisory ── fix, then rerun ", blocking, advisory)))
 	b.WriteString(colorize(color, termstyle.Command, "gx review"))
 	b.WriteString(colorize(color, termstyle.Muted, " ────"))
@@ -471,7 +499,7 @@ func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan 
 // ---- story ----------------------------------------------------------------
 
 func writeReviewStory(b *strings.Builder, report Report, color bool, items []StoryItem) {
-	b.WriteString(colorize(color, termstyle.Command, "WORTH KNOWING"))
+	b.WriteString(colorize(color, boldPainter(termstyle.Command), "WORTH KNOWING"))
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" ────── %d change(s) that passed, and that you now own ──", len(items))))
 	b.WriteString("\n")
 	writeReviewStoryBody(b, report, color, items)
@@ -683,7 +711,10 @@ func RenderReviewDetails(report Report, color bool) string {
 		b.WriteString("\n")
 	}
 	if report.aiReviewRan() {
-		kv("reviewers", strings.Join(report.ReviewModels, " · "))
+		kv("reviewers", strings.Join(friendlyModelNames(report.ReviewModels), " · "))
+		if len(report.ReviewModels) > 0 {
+			kv("model ids", colorize(color, termstyle.Muted, strings.Join(report.ReviewModels, " · ")))
+		}
 		if report.ReviewTransport != "" {
 			kv("transport", report.ReviewTransport)
 		}
@@ -726,4 +757,44 @@ func RenderReviewDetails(report Report, color bool) string {
 		return reviewRenderIndent + colorize(color, termstyle.Muted, "no run details recorded") + "\n"
 	}
 	return b.String()
+}
+
+// friendlyModelNames maps model IDs to the names a person uses. See
+// friendlyModelName.
+func friendlyModelNames(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if name := friendlyModelName(id); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// shortTransportName trims a transport description to the phrase that fits a
+// ledger row: "gx Cloud (https://api.gx.run)" → "gx Cloud". The full form stays
+// in run details and JSON.
+func shortTransportName(transport string) string {
+	transport = strings.TrimSpace(transport)
+	if i := strings.Index(transport, " ("); i > 0 {
+		return transport[:i]
+	}
+	return transport
+}
+
+// boldPainter wraps a painter so its output is also bold — the SGR 1 code
+// composes with the color code, and reset clears both.
+func boldPainter(paint func(string) string) func(string) string {
+	return func(text string) string {
+		if text == "" {
+			return text
+		}
+		return "\x1b[1m" + paint(text)
+	}
+}
+
+// SummarizeDegradedReasons is the one-phrase form of a degraded run, for the
+// accordion's RUN DETAILS row and anywhere else the full reason is too long.
+func SummarizeDegradedReasons(reasons []string) string {
+	return summarizeDegradedReasons(reasons)
 }
