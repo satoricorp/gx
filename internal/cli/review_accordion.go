@@ -54,10 +54,13 @@ type accordionModel struct {
 	quit     bool
 	width    int
 
-	// Precomputed once: the lanes and the plan, so View() never re-derives.
+	// Precomputed once: the lanes, the plan, and the footer, so View() never
+	// re-derives — View() runs on every keypress, and the footer reads
+	// REVIEW.md from disk. (gx review flagged this itself, on this branch.)
 	blocking []codereview.Finding
 	advisory []codereview.Finding
 	plan     []codereview.FixStep
+	footer   string
 }
 
 func newAccordionModel(report codereview.Report, color bool) accordionModel {
@@ -69,6 +72,7 @@ func newAccordionModel(report codereview.Report, color bool) accordionModel {
 		blocking: blocking,
 		advisory: advisory,
 		plan:     codereview.BuildFixPlan(report.Findings),
+		footer:   accordionFooter(report),
 		width:    100,
 	}
 	// Start on the first section that has content, so enter does something.
@@ -273,7 +277,7 @@ func (m accordionModel) View() tea.View {
 		b.WriteString(rail(row) + "\n")
 	}
 	b.WriteString(rail("") + "\n")
-	b.WriteString(mint("└") + "  " + mute(accordionFooter(m.report)) + "\n")
+	b.WriteString(mint("└") + "  " + mute(m.footer) + "\n")
 	return tea.NewView(b.String())
 }
 

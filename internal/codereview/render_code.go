@@ -58,7 +58,7 @@ func highlightCodeForTerminal(file, code string) string {
 // excerpt.
 func renderCodeLines(color bool, finding Finding, indent string) []string {
 	if strings.TrimSpace(finding.DiffHunk) != "" {
-		return renderHunkLinesFor(color, finding.File, finding.DiffHunk, indent)
+		return renderHunkWindow(color, finding.File, finding.DiffHunk, finding.Line, indent)
 	}
 	return renderExcerptLines(color, finding, indent)
 }
@@ -91,6 +91,12 @@ func renderHunkLinesFor(color bool, file, hunk, indent string) []string {
 			out = append(out, indent)
 			continue
 		}
+		// A leading NUL is renderHunkWindow's "this is the discussed line"
+		// sentinel; it is not part of the diff. Strip it, remember it, and
+		// swap the last two indent columns for the → gutter, so the code
+		// column stays aligned with the unmarked lines around it.
+		marked := strings.HasPrefix(line, "\x00")
+		line = strings.TrimPrefix(line, "\x00")
 		sign, body := line[:1], clipCodeLine(strings.ReplaceAll(line[1:], "\t", "    "), renderCodeWidth-len(indent)-1)
 		if color && file != "" {
 			body = highlightCodeForTerminal(file, body)
@@ -104,7 +110,11 @@ func renderHunkLinesFor(color bool, file, hunk, indent string) []string {
 		default:
 			painted = " " + body
 		}
-		out = append(out, indent+painted)
+		lead := indent
+		if marked && len(indent) >= 2 {
+			lead = indent[:len(indent)-2] + colorize(color, termstyle.Danger, "→ ")
+		}
+		out = append(out, lead+painted)
 	}
 	return out
 }
@@ -185,4 +195,44 @@ func clipCodeLine(line string, width int) string {
 		return line
 	}
 	return string(runes[:width-1]) + "…"
+}
+
+// renderHunkWindow is renderHunkLinesFor with the discussed line marked. A
+// hunk window from constraintsDiffHunkForLine carries its @@ header, which
+// names the post-change start line; from that and the +/space lines the
+// post-change number of every line is known, so the one the finding is about
+// gets the same → an excerpt gives it. Without the marker a ten-line window
+// of closing braces gave the eye nowhere to land. When the header is absent
+// (a model's example diff) no line is marked.
+func renderHunkWindow(color bool, file, hunk string, target int, indent string) []string {
+	lines := strings.Split(hunk, "\n")
+	newLine := 0
+	haveNumbers := false
+	for _, raw := range lines {
+		if strings.HasPrefix(raw, "@@") {
+			if n := parseHunkNewStart(raw); n > 0 {
+				newLine, haveNumbers = n, true
+			}
+			break
+		}
+	}
+	// Recompute the post-change number as we walk, marking the target.
+	var marked []string
+	num := newLine
+	for _, raw := range lines {
+		switch {
+		case strings.HasPrefix(raw, "@@"), raw == "…", raw == "":
+			marked = append(marked, raw)
+		case strings.HasPrefix(raw, "-"):
+			marked = append(marked, raw)
+		default:
+			if haveNumbers && target > 0 && num == target {
+				marked = append(marked, "\x00"+raw) // sentinel: mark this line
+			} else {
+				marked = append(marked, raw)
+			}
+			num++
+		}
+	}
+	return renderHunkLinesFor(color, file, strings.Join(marked, "\n"), indent)
 }

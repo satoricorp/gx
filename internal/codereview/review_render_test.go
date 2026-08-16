@@ -254,3 +254,29 @@ func TestRenderCodeLinesClipAndDropHunkHeaders(t *testing.T) {
 		t.Fatalf("excerpt should expand tabs and clip: %q", el)
 	}
 }
+
+func TestRenderHunkWindowMarksTheDiscussedLine(t *testing.T) {
+	// @@ says the post-change side starts at 86. Lines: 86 ctx, 87 ctx, 88 add.
+	hunk := "@@ -80,3 +86,3 @@\n     for attempt := 0; attempt < 3; attempt++ {\n         resp, err := charge()\n+        log.Printf(\"%+v\", req)"
+	lines := renderHunkWindow(false, "a.go", hunk, 88, "      ")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 body lines, got %d: %q", len(lines), lines)
+	}
+	if strings.Contains(lines[0], "→") || strings.Contains(lines[1], "→") {
+		t.Fatalf("only the target line is marked: %q", lines)
+	}
+	if !strings.HasPrefix(lines[2], "    → +") {
+		t.Fatalf("target line should carry the arrow in the indent and keep its sign: %q", lines[2])
+	}
+	// Column alignment: unmarked lines are indent(6) + " " + body, so the
+	// sign column is 6; the marked line is indent[:4] + "→ " + "+" + body,
+	// which puts its "+" at rune 6 too — the code columns line up.
+	// Count runes, not bytes: → is one column and three bytes.
+	if idx := strings.IndexRune(string([]rune(lines[2])), '+'); len([]rune(lines[2][:strings.IndexRune(lines[2], '+')])) != 6 {
+		t.Fatalf("marked line's sign should sit at column 6, got %d: %q", idx, lines[2])
+	}
+	// No header, no line numbers → nothing marked, nothing broken.
+	if got := renderHunkWindow(false, "a.go", "-a\n+b", 1, "  "); strings.Contains(strings.Join(got, ""), "→") {
+		t.Fatalf("headerless hunk must not mark: %q", got)
+	}
+}

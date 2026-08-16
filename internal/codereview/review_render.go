@@ -203,18 +203,34 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 	row("reviewers", models)
 
 	if len(report.Evidence) > 0 {
-		var have, missing []string
+		// One entry per source. A source is recorded once per retriever call
+		// and a review makes several — two query legs, per-shard reads — so
+		// the raw log lists "code index" as many times as it was asked. The
+		// ledger collapses that: a source that answered OK anywhere is have;
+		// one that only ever failed is missing; states that mean "nothing to
+		// chase" are neither.
+		best := map[string]string{}
+		var order []string
 		for _, e := range report.Evidence {
 			label := strings.TrimSpace(e.Source)
 			if label == "" {
 				continue
 			}
-			switch e.State {
+			if _, seen := best[label]; !seen {
+				order = append(order, label)
+				best[label] = e.State
+				continue
+			}
+			if e.State == EvidenceOK {
+				best[label] = EvidenceOK
+			}
+		}
+		var have, missing []string
+		for _, label := range order {
+			switch best[label] {
 			case EvidenceOK:
 				have = append(have, label)
 			case EvidenceEmpty, EvidenceDisabled, EvidenceSkipped:
-				// Configured and answered, or deliberately not asked: not a
-				// gap the reader needs to chase.
 			default:
 				missing = append(missing, label)
 			}
