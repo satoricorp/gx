@@ -91,8 +91,8 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	if !strings.Contains(text, "Not signed in  gx auth login") {
 		t.Fatalf("root help missing signed-out auth line:\n%s", text)
 	}
-	if !strings.Contains(text, "enhance (gxe)") {
-		t.Fatalf("root help missing alias %q:\n%s", "enhance (gxe)", text)
+	if !strings.Contains(text, "review (gxr)") {
+		t.Fatalf("root help missing alias %q:\n%s", "review (gxr)", text)
 	}
 	if strings.Contains(text, "status") {
 		t.Fatalf("root help should not offer a status command:\n%s", text)
@@ -105,13 +105,11 @@ func TestRootHelpPrintsAsciiLogoAtTop(t *testing.T) {
 	}
 }
 
-func TestEnhanceAliasesResolve(t *testing.T) {
+func TestReviewAliasResolves(t *testing.T) {
 	root := NewRoot(context.Background())
-	for _, alias := range []string{"gxe", "enhance"} {
-		cmd, _, err := root.Find([]string{alias})
-		if err != nil || cmd == nil || cmd.Name() != "enhance" {
-			t.Fatalf("Find(%s) = cmd=%v err=%v, want enhance command", alias, cmd, err)
-		}
+	cmd, _, err := root.Find([]string{"gxr"})
+	if err != nil || cmd == nil || cmd.Name() != "review" {
+		t.Fatalf("Find(gxr) = cmd=%v err=%v, want review command", cmd, err)
 	}
 }
 
@@ -302,7 +300,7 @@ func TestPRAliasIsRemoved(t *testing.T) {
 	}
 }
 
-func TestEnhanceCommandUsesDefaults(t *testing.T) {
+func TestReviewCommandUsesDefaults(t *testing.T) {
 	root := initGitRepo(t)
 	writeTestFile(t, root, "README.md", "# repo\n")
 	writeTestFile(t, root, "AGENTS.md", "# agents\n")
@@ -323,15 +321,18 @@ func TestEnhanceCommandUsesDefaults(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"enhance"})
+	cmd.SetArgs([]string{"review"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx review error = %v\n%s", err, out.String())
 	}
 	text := out.String()
+	// The default path is the terminal render now: the run ledger and the
+	// Verdict/Next seam are its contract, not the markdown headings.
 	for _, want := range []string{
-		"## Recommendations",
-		"- No material issues found in this change.",
+		"gx review",
+		"Verdict: ",
+		"Next: ",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("gx review output missing %q in:\n%s", want, text)
@@ -406,7 +407,7 @@ func TestInitYesAcceptsDefaultsAndSuppressesOutput(t *testing.T) {
 	}
 }
 
-func TestEnhanceCommandAcceptsScopeFlag(t *testing.T) {
+func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	root := initGitRepo(t)
 	t.Chdir(root)
 	t.Setenv("GX_HOME", t.TempDir())
@@ -421,12 +422,12 @@ func TestEnhanceCommandAcceptsScopeFlag(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"enhance", "--scope", "architecture"})
+	cmd.SetArgs([]string{"review", "--scope", "architecture"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx review --scope error = %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "## Recommendations") {
-		t.Fatalf("gx review --scope output missing recommendations:\n%s", out.String())
+	if !strings.Contains(out.String(), "Verdict: ") {
+		t.Fatalf("gx review --scope output missing the verdict seam:\n%s", out.String())
 	}
 }
 
@@ -480,21 +481,21 @@ func TestPostReviewSummaryCommentUpsertsGitHubPRComment(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 
 	if gotCommentBody == "" {
-		t.Fatal("postEnhanceSummaryComment() did not send a comment")
+		t.Fatal("postReviewSummaryComment() did not send a comment")
 	}
-	for _, want := range []string{"<!-- gx summary -->", "## Recommendations", "**Informed by:** Go project"} {
+	for _, want := range []string{"<!-- gx review summary -->", "## Recommendations", "**Informed by:** Go project"} {
 		if !strings.Contains(gotCommentBody, want) {
 			t.Fatalf("comment body missing %q:\n%s", want, gotCommentBody)
 		}
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -552,19 +553,19 @@ func TestPostReviewSummaryCommentAttemptsInlineCommentForValidAnchor(t *testing.
 		}},
 	}
 	var stderr bytes.Buffer
-	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !inlineAttempted {
-		t.Fatal("postEnhanceSummaryComment() did not attempt inline comment")
+		t.Fatal("postReviewSummaryComment() did not attempt inline comment")
 	}
 	if !summaryAttempted {
-		t.Fatal("postEnhanceSummaryComment() did not post summary fallback")
+		t.Fatal("postReviewSummaryComment() did not post summary fallback")
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("postEnhanceSummaryComment() wrote warnings:\n%s", stderr.String())
+		t.Fatalf("postReviewSummaryComment() wrote warnings:\n%s", stderr.String())
 	}
 }
 
@@ -613,22 +614,22 @@ func TestPostReviewSummaryCommentFallsBackWhenInlineCommentFails(t *testing.T) {
 		}},
 	}
 	var stderr bytes.Buffer
-	postEnhanceSummaryComment(context.Background(), vcs.RepoInfo{
+	postReviewSummaryComment(context.Background(), vcs.RepoInfo{
 		RootPath:   root,
 		RemoteURL:  &remote,
 		BranchName: &branch,
 	}, report, &stderr)
 	if !summaryAttempted {
-		t.Fatal("postEnhanceSummaryComment() did not post summary after inline failure")
+		t.Fatal("postReviewSummaryComment() did not post summary after inline failure")
 	}
 	if !strings.Contains(stderr.String(), "Could not post gx inline review comment") {
-		t.Fatalf("postEnhanceSummaryComment() warning = %q, want inline failure warning", stderr.String())
+		t.Fatalf("postReviewSummaryComment() warning = %q, want inline failure warning", stderr.String())
 	}
 }
 
-func TestEnhanceCommandRejectsMultiplePrompts(t *testing.T) {
+func TestReviewCommandRejectsMultiplePrompts(t *testing.T) {
 	cmd := NewRoot(context.Background())
-	cmd.SetArgs([]string{"enhance", "one prompt", "second prompt"})
+	cmd.SetArgs([]string{"review", "one prompt", "second prompt"})
 
 	err := cmd.Execute()
 	if err == nil {

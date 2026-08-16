@@ -4,7 +4,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-const gxTagline = "automating version control and enhancing your code"
+const gxTagline = "automating version control and simplifying code review"
 const gxLogoColor = "6"
 
 const gxLogoRaw = ` ██████╗ ██╗  ██╗

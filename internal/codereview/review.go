@@ -93,6 +93,7 @@ type Report struct {
 	ChangedFiles      []string       `json:"changed_files,omitempty"`
 	ObservationLabels []string       `json:"observation_labels,omitempty"`
 	Findings          []Finding      `json:"findings"`
+	Story             []StoryItem    `json:"story,omitempty"` // "what you now own"; see story.go
 	Sources           []Source       `json:"sources,omitempty"`
 	SourceRefs        []SourceRef    `json:"source_refs,omitempty"`
 	Reviewer          string         `json:"reviewer,omitempty"`
@@ -545,7 +546,7 @@ func depthLabel(deep bool) string {
 
 // reviewProfileWholeRepo is the profile token for a whole-repo review. Every
 // profile token the brief can carry must be defined in the instructions sent
-// with it (see enhanceDeveloperPrompt), so this name is shared rather than
+// with it (see reviewDeveloperPrompt), so this name is shared rather than
 // spelled twice.
 const reviewProfileWholeRepo = "whole_repo"
 

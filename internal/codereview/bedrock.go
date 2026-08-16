@@ -2,6 +2,7 @@ package codereview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -53,6 +54,74 @@ func bedrockLegLabel(slot, model, transportKind string) string {
 	}
 }
 
+// friendlyModelName turns a Bedrock model ID into the name a person uses:
+// us.anthropic.claude-haiku-4-5-20251001-v1:0 → "Claude Haiku 4.5",
+// us.anthropic.claude-sonnet-4-6 → "Claude Sonnet 4.6". The report ledger and
+// run details show this; the JSON keeps the exact ID, because "which snapshot"
+// is a question that comes up the moment a review is slow or wrong.
+func friendlyModelName(model string) string {
+	short := shortBedrockModelName(model)
+	if short == "" || strings.HasPrefix(short, "arn:") {
+		return short
+	}
+	// Non-Anthropic Bedrock IDs are "vendor.model-name": zai.glm-5,
+	// nvidia.nemotron-super-3-120b. Name the ones the presets use; anything
+	// else falls through to the trimmed ID.
+	switch {
+	case strings.HasPrefix(short, "openai.gpt-"):
+		// openai.gpt-5.6-luna → "GPT-5.6 Luna"; openai.gpt-oss-120b-1 → "GPT-oss-120b-1"
+		rest := strings.TrimPrefix(short, "openai.gpt-")
+		if i := strings.LastIndexByte(rest, '-'); i > 0 && strings.Count(rest, "-") == 1 && !isAllDigits(rest[i+1:]) {
+			// version-name form: 5.6-luna
+			return "GPT-" + rest[:i] + " " + strings.ToUpper(rest[i+1:i+2]) + rest[i+2:]
+		}
+		return "GPT-" + rest
+	case strings.HasPrefix(short, "zai.glm-"):
+		return "GLM " + strings.TrimPrefix(short, "zai.glm-")
+	case strings.HasPrefix(short, "nvidia.nemotron-super-3"):
+		return "Nemotron 3 Super"
+	case strings.HasPrefix(short, "nvidia.nemotron-nano-3"):
+		return "Nemotron 3 Nano"
+	case strings.HasPrefix(short, "nvidia.nemotron-"):
+		return "Nemotron " + strings.TrimPrefix(short, "nvidia.nemotron-")
+	}
+	parts := strings.Split(short, "-")
+	if len(parts) < 2 || parts[0] != "claude" {
+		return short
+	}
+	family := strings.ToUpper(parts[1][:1]) + parts[1][1:]
+	// Version is the run of numeric segments after the family, joined with a
+	// dot; a trailing 8-digit date is a snapshot stamp, not part of the version.
+	var version []string
+	for _, seg := range parts[2:] {
+		if len(seg) == 8 && isAllDigits(seg) {
+			break
+		}
+		if isAllDigits(seg) {
+			version = append(version, seg)
+			continue
+		}
+		break
+	}
+	name := "Claude " + family
+	if len(version) > 0 {
+		name += " " + strings.Join(version, ".")
+	}
+	return name
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func shortBedrockModelName(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" || strings.HasPrefix(model, "arn:") {
@@ -61,7 +130,20 @@ func shortBedrockModelName(model string) string {
 	if index := strings.LastIndex(model, "anthropic."); index >= 0 {
 		model = model[index+len("anthropic."):]
 	}
+	// Other vendors keep their vendor prefix (it is part of the name a person
+	// recognizes) but lose a leading regional profile prefix.
+	for _, region := range []string{"us.", "eu.", "apac.", "global.", "us-gov."} {
+		if strings.HasPrefix(model, region) && !strings.HasPrefix(model, region+"anthropic.") {
+			model = strings.TrimPrefix(model, region)
+			break
+		}
+	}
 	if index := strings.Index(model, "-v1:"); index > 0 {
+		model = model[:index]
+	}
+	// A trailing ":N" is a Bedrock version selector on any vendor's ID
+	// (openai.gpt-oss-120b-1:0); it is not part of the name.
+	if index := strings.LastIndexByte(model, ':'); index > 0 && isAllDigits(model[index+1:]) {
 		model = model[:index]
 	}
 	return strings.TrimSuffix(model, "-v1")
@@ -103,11 +185,11 @@ func resolveBedrockReviewModels() (string, string) {
 	modelA := normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_A"),
 		os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"),
-		defaultBedrockReviewModelA,
+		presetOr(func(p modelPreset) string { return p.ReviewerA }, defaultBedrockReviewModelA),
 	))
 	modelB := normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_B"),
-		defaultBedrockReviewModelB,
+		presetOr(func(p modelPreset) string { return p.ReviewerB }, defaultBedrockReviewModelB),
 	))
 	if bedrockLegDisabled(modelA) {
 		modelA = ""
@@ -171,19 +253,51 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	completion, err := r.completeJSON(ctx, enhanceDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
-	if err != nil {
-		return PRSummaryReview{}, err
-	}
-	output, err := parseAIReviewOutput(completion.Text, brief)
-	if err != nil {
-		if completion.truncated() {
-			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, err)
+	system := reviewDeveloperPrompt(brief)
+	input := mustJSON(brief)
+	// One retry, for malformed replies only — the same contract the
+	// constraints judge runs under. A leg sometimes answers in prose with no
+	// JSON at all ("I reviewed the change…"), which extractJSONObject cannot
+	// recover; observed live on a binary-only diff, and it turned a healthy
+	// panel into a DEGRADED run. The retry restates the JSON-only requirement
+	// at the top of the system prompt, which is enough for a model that
+	// drifted once. A truncated reply is not retried: the fix for that is the
+	// output cap, not another attempt at the same cap.
+	var lastParseErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		prompt := system
+		if attempt > 0 {
+			prompt = reviewJSONOnlyReminder + "\n" + system
 		}
-		return PRSummaryReview{}, err
+		completion, err := r.completeJSON(ctx, prompt, input, defaultReviewMaxOutputTokens)
+		if err != nil {
+			return PRSummaryReview{}, err
+		}
+		output, parseErr := parseAIReviewOutput(completion.Text, brief)
+		if parseErr == nil {
+			return aiReviewOutputToPRSummaryReview(output), nil
+		}
+		if errors.Is(parseErr, errTruncatedButSalvaged) {
+			// The cap cut the reply, but complete findings were recovered.
+			// Return them; the truncation is reported through the summary's
+			// Truncated field so the report can say the leg was cut short
+			// rather than pretending it answered in full.
+			review := aiReviewOutputToPRSummaryReview(output)
+			review.Truncated = describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, parseErr).Error()
+			return review, nil
+		}
+		if completion.truncated() {
+			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, parseErr)
+		}
+		lastParseErr = parseErr
 	}
-	return aiReviewOutputToPRSummaryReview(output), nil
+	return PRSummaryReview{}, lastParseErr
 }
+
+// reviewJSONOnlyReminder is prepended to the system prompt on the one retry
+// after a reply that carried no decodable JSON. It is deliberately blunt: the
+// first prompt already says "Return JSON only", and the model ignored it.
+const reviewJSONOnlyReminder = "Your previous reply was not JSON and could not be used. Reply with the JSON object only: no prose before it, no markdown headings, no summary after it. If there is nothing to report, reply exactly {\"recommendations\":[]}."
 
 // completeJSON is the single model call. Both reviewer legs and the judge go
 // through it, so the request shape and the response parsing live in one place;

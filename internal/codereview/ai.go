@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultReviewMaxOutputTokens = 6000
+	defaultReviewMaxOutputTokens = 8000
 	// defaultMaxFindings is the reported-recommendation ceiling when a caller
 	// does not set one. Raised from the old hidden 5 (and the unjudged path's
 	// hidden 3): a ceiling below the number of real defects is indistinguishable
@@ -132,7 +132,16 @@ type PRSummaryReview struct {
 	Overview         string
 	DownstreamImpact string
 	NotableChanges   []NotableChange
-	Findings         []Finding
+	// Story is the "what changed that you now own" lane: changes that passed
+	// review, ordered by materiality. Additive next to NotableChanges, which
+	// still feeds the PR body.
+	Story    []StoryItem
+	Findings []Finding
+	// Truncated is set when the reply hit the output cap and only the
+	// findings that closed before the cut were kept. Non-empty means the
+	// leg answered, partially; the panel reports it as a degradation
+	// without discarding what it did say.
+	Truncated string
 }
 
 type AIReviewerWithSummary interface {
@@ -498,6 +507,7 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	var overview string
 	var downstreamImpact string
 	var notableChanges []NotableChange
+	var story []StoryItem
 	var errors []string
 	parsed := false
 	for _, result := range results {
@@ -508,6 +518,13 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 			continue
 		}
 		parsed = true
+		if t := strings.TrimSpace(result.summary.Truncated); t != "" {
+			// The leg answered, but the cap cut it: its complete findings are
+			// kept below, and the truncation is recorded as a degradation so
+			// the report says this leg was cut short rather than either
+			// pretending it answered in full or dropping what it did say.
+			m.legFailures.record(item.label, fmt.Errorf("answered partially — %s", t))
+		}
 		if overview == "" && strings.TrimSpace(result.summary.Overview) != "" {
 			overview = strings.TrimSpace(result.summary.Overview)
 		}
@@ -516,6 +533,9 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		}
 		if len(notableChanges) == 0 && len(result.summary.NotableChanges) > 0 {
 			notableChanges = append([]NotableChange(nil), result.summary.NotableChanges...)
+		}
+		if len(story) == 0 && len(result.summary.Story) > 0 {
+			story = append([]StoryItem(nil), result.summary.Story...)
 		}
 		for _, finding := range result.summary.Findings {
 			finding.ID = item.name + "." + finding.ID
@@ -529,7 +549,8 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	}
 	out = mergeNearDuplicateFindings(ctx, m.adjudicator, out)
 	if parsed {
-		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Findings: out}, nil
+		sortStoryByMateriality(story)
+		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Story: story, Findings: out}, nil
 	}
 	if len(errors) > 0 {
 		return PRSummaryReview{}, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
@@ -589,6 +610,7 @@ func compactStaticToolResults(results []StaticToolResult) []StaticToolResult {
 }
 
 func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnippet {
+	snippets = capRetrievedChunksPerFile(snippets, maxRetrievedChunksPerFile)
 	if limit > 0 && len(snippets) > limit {
 		snippets = prioritizeContextSnippets(snippets)
 		snippets = snippets[:limit]
@@ -596,6 +618,49 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
 		snippet.Text = truncateReviewText(snippet.Text, contextSnippetByteLimit(snippet))
+		out = append(out, snippet)
+	}
+	return out
+}
+
+// maxRetrievedChunksPerFile bounds how many chunks of ONE file the retrieved
+// context may carry. The index answers a similarity query, and similarity
+// clusters: a change touching webhook tests pulled 48 code-index rows of which
+// five — the five largest, 32 KB together — were consecutive chunks of a
+// single planning document, and READMEs took most of the next slots. Those
+// five spent a third of the context budget on one file that was not near the
+// change while files that were got no slot at all. Two chunks per file keeps
+// the file (and both halves of a symbol that straddles a chunk boundary)
+// without letting one document crowd out the rest.
+//
+// The retriever's k is deliberately left alone: the recall it was measured
+// for (see defaultCodeIndexTopK) is recall of distinct files, and this cap
+// moves the budget toward exactly that. Local snippets are exempt: they were
+// chosen by name, not by similarity, and a doc split into parts is meant to
+// be read whole.
+const maxRetrievedChunksPerFile = 2
+
+// capRetrievedChunksPerFile drops the third and later retrieved chunk of any
+// one file, keeping the first ones in the order the retriever ranked them.
+// Snippets that carry no File (sessions, review history, resources) are not
+// grouped and pass through untouched.
+func capRetrievedChunksPerFile(snippets []ContextSnippet, limit int) []ContextSnippet {
+	if limit <= 0 {
+		return snippets
+	}
+	seen := map[string]int{}
+	out := make([]ContextSnippet, 0, len(snippets))
+	for _, snippet := range snippets {
+		file := strings.TrimSpace(snippet.File)
+		if !retrievedSnippetKinds[snippet.Kind] || file == "" {
+			out = append(out, snippet)
+			continue
+		}
+		key := snippet.Kind + "\x00" + file
+		if seen[key] >= limit {
+			continue
+		}
+		seen[key]++
 		out = append(out, snippet)
 	}
 	return out
@@ -808,7 +873,7 @@ func truncateAtHunkBoundary(text string, limit int) string {
 	return strings.TrimSpace(text[:cut]) + "\n[truncated]\n"
 }
 
-// enhanceDeveloperPrompt is the instruction string sent alongside the brief.
+// reviewDeveloperPrompt is the instruction string sent alongside the brief.
 //
 // It takes the brief because a profile the prompt never defines is worse than
 // no profile at all: the model is told "use review_profile to choose behavior",
@@ -828,7 +893,7 @@ func resolveMaxFindings(requested int) int {
 	return defaultMaxFindings
 }
 
-func enhanceDeveloperPrompt(brief ReviewBrief) string {
+func reviewDeveloperPrompt(brief ReviewBrief) string {
 	lines := baseReviewDeveloperPromptLines(brief)
 	if strings.TrimSpace(brief.ReviewProfile) == reviewProfileWholeRepo {
 		lines = append(lines, wholeRepoPromptLines()...)
@@ -852,7 +917,7 @@ func concisePromptLines() []string {
 	return []string{
 		"Write for an engineer reading in a terminal who is waiting on this review.",
 		"Keep each recommendation to a few sentences. State the defect, the risk, and the first concrete action, and stop.",
-		"Do not include code blocks, diffs, or before/after examples. Name the file, symbol, and line to change and describe the fix in prose instead.",
+		"Keep example to at most 4 diff lines, or omit it; never write a prose walkthrough of code that a 4-line diff would show.",
 		"Do not restate the change, summarize what the code does, or explain why a well-known practice is good.",
 		"Report every defect you would otherwise report. Concision applies to how each finding is written, never to how many you look for or how hard you look.",
 	}
@@ -878,8 +943,11 @@ func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 		"Use code_quality_hints as concrete candidates. Confirm whether they matter from the provided snippets before recommending a fix.",
 		"Treat source_refs as the attribution set. AI output is synthesis, not evidence; every recommendation must be traceable to static facts, diff snippets, context snippets, or source_refs.",
 		"Every recommendation must name at least one changed file path, Module, static tool result, code_quality_hint, or context source label. Do not produce coverage-only or structure-only recommendations without concrete evidence.",
-		"The recommendation field must be concrete work: name the specific files or Modules to touch, the first operation to perform, and the verification to run. Avoid vague verbs like assess, consider, clarify, improve, harden, or refactor unless followed by exact code actions.",
-		"The benefit field must state the expected payoff in concrete engineering terms: performance, readability, fewer lines of code, better error handling, better testability, lower coupling, faster onboarding, more reproducible dependencies, or better observability.",
+		"The report shows each finding as: the title, then the code under discussion (the diff hunk or source excerpt at file:line — the reader sees the code, so do not quote or re-describe it), then Why, then Fix, then an optional example diff. Write to that shape.",
+		"summary is Why: at most two sentences, naming the concrete value, path, or interleaving that fails — the mechanism in THIS code, not the category. No restating the diff, no praise, no generic advice.",
+		"recommendation is Fix: ONE imperative action a reader can perform, in one sentence — the exact call, guard, or change. If the fix genuinely takes three separate actions, that is three findings. Avoid vague verbs like assess, consider, clarify, improve, harden, or refactor unless followed by exact code actions.",
+		"example is optional and strongly encouraged when the fix is a code change: a minimal unified-diff fragment (lines prefixed with - and +, no @@ headers, 2-8 lines) showing the exact change at the finding's location. Prefer showing the fix over describing it; a reader scans a diff faster than a paragraph. Omit example when the fix is not expressible as a small diff.",
+		"benefit is one short clause: the concrete engineering payoff (fewer lines, one fewer allocation, no double charge, testable without a network). If you cannot name a concrete payoff, do not emit the recommendation.",
 		"If you cannot name a concrete payoff, do not emit that recommendation.",
 		"In deep_full_spectrum or architecture scope only, explore like the architecture skill: find deepening opportunities, leaked Implementation knowledge, shallow Interfaces, unclear seams, weak locality, test friction, and unjustified adapters.",
 		"Apply the deletion test: if deleting a Module removes complexity, call it shallow; if complexity spreads across callers, the Module is earning its keep.",
@@ -891,9 +959,11 @@ func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
 		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions, session_transcript context, and session_context intent/edit trail; no file lists, no URLs, no praise. For all other profiles, omit overview.",
 		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
+		"For patch_focused, pr_summary, and prompt_directed reviews, include story — 3 to 6 entries, ordered by materiality (high first), each a change that PASSED review and that the reader now owns. Nothing in story is wrong; never put a finding here. Each entry: headline (one sentence, past → present, e.g. 'Checkout retries on 5xx where it used to fail fast'), category one of behavior_delta|new_surface|semantic_shift|decision|coverage_move, materiality one of high|medium|low (how much observable behavior moved — NOT how sure you are), file and line anchoring the most representative changed line, consequence (what changes for a caller or operator, with numbers where the diff supports them), asked (the user's own words from session_context when available), chose (the approach taken and the alternative rejected, from the session), watch (optional: what to monitor after merge), passed_rule (optional: a rule id from rules that this change satisfies in a way worth pointing out — e.g. an idempotency key placed correctly). For repository-wide and scope_focused reviews, omit story — there is no single change for the reader to take ownership of.",
 		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
-		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"kind\":\"defect|hardening|suggestion\",\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		reviewClassPromptLine(),
+		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"story\":[{\"headline\":string,\"category\":\"behavior_delta|new_surface|semantic_shift|decision|coverage_move\",\"materiality\":\"high|medium|low\",\"file\":string,\"line\":number,\"consequence\":string,\"asked\":string(optional),\"chose\":string(optional),\"watch\":[string](optional),\"passed_rule\":string(optional)}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"kind\":\"defect|hardening|suggestion\",\"rule_id\":string(optional),\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"example\":string(optional, unified-diff fragment),\"source_labels\":[string](optional)}]}.",
 		"`kind` classifies what the finding asks of the reader, and honesty here matters more than severity: `defect` means the change's code does something wrong RIGHT NOW — a stated mechanism produces a crash, a wrong value, a race, a broken flow on inputs the code actually receives. `hardening` means the code is correct today but fragile — the failure needs a hypothetical future change or an input nothing currently sends. `suggestion` means style, naming, structure, tests, docs, or any improvement where nothing is incorrect. Do not inflate a hardening or suggestion into a defect to make it land; a reader who acts on a defect label and finds working code stops trusting every label.",
 		fmt.Sprintf("Return at most %d recommendations, ordered by significance. Report every real defect you find up to that ceiling — do not stop early to be brief, and do not pad to reach it.", resolveMaxFindings(brief.MaxFindings)),
 	}

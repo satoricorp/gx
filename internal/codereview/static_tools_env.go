@@ -17,7 +17,7 @@ import (
 // reviewer's shell had. On a gx developer machine that is ANTHROPIC_API_KEY,
 // OPENAI_API_KEY, TURBOPUFFER_API_KEY, GITHUB_TOKEN, GX_UPLOAD_TOKEN and the
 // AWS_* triple; in CI it is whatever the workflow exported into the step that
-// runs `gx enhance`. A TestMain that prints os.Environ() exfiltrates all of it,
+// runs `gx review`. A TestMain that prints os.Environ() exfiltrates all of it,
 // and the review output would even carry it back — runStaticTool captures the
 // child's stdout and stderr into the report.
 //
@@ -72,7 +72,7 @@ var staticToolEnvAllowed = buildStaticToolEnvAllowlist(
 	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "FTP_PROXY",
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 	// Many linters and test harnesses (eslint, cargo, pytest) change their
-	// output when CI is set. gx enhance is a CI gate; let them know.
+	// output when CI is set. gx review is a CI gate; let them know.
 	"CI",
 	// Windows. Environment variables are how Windows locates the system at
 	// all: Go's own runtime needs SystemRoot for crypto/rand, and exec needs

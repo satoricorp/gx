@@ -272,7 +272,7 @@ func rootHelpCommandOrder(groupID string) []string {
 	case groupSetup:
 		return []string{"init", "auth"}
 	case groupWork:
-		return []string{"enhance"}
+		return []string{"review"}
 	case groupHelp:
 		return []string{"doctor", "version", "help"}
 	default:

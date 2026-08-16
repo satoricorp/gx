@@ -91,7 +91,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	}
 
 	reviewTimingReset()
-	enhanceProgress(opts, "Scanning repository")
+	reviewProgress(opts, "Scanning repository")
 	facts, err := scanner.Scan(ctx, repoRoot, strings.TrimSpace(opts.Focus))
 	if err != nil {
 		return Report{}, err
@@ -165,7 +165,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			NoFindingsMessage: "No material issues in this change (documentation-only).",
 		}.applyChangeSet(changes), nil
 	}
-	enhanceProgress(opts, "Building review context")
+	reviewProgress(opts, "Building review context")
 	input := RetrieveInput{
 		RepoRoot:     repoRoot,
 		Options:      opts,
@@ -190,7 +190,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Triage:       triage,
 		Plan:         plan,
 	}
-	enhanceProgress(opts, "Checking fallback review rules")
+	reviewProgress(opts, "Checking fallback review rules")
 	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
 	var degradedReasons []string
@@ -207,6 +207,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// case where the reader needs to know.
 	reviewerInfo := reviewerInfoFromReviewer(reviewer)
 	var coverage Coverage
+	var modelStory []StoryItem
 	if wantAIReview {
 		if !reviewerAvailable(reviewer) {
 			if aiConfigured {
@@ -222,7 +223,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			// of it, rather than trimmed to fit one. Ordinary changes plan a
 			// single shard and behave exactly as before.
 			shards, planned := planReviewShards(brief, opts)
-			enhanceProgress(opts, "Asking AI reviewer")
+			reviewProgress(opts, "Asking AI reviewer")
 			result := runShardedReview(ctx, reviewer, shards, planned, opts)
 			coverage = result.Coverage
 			if result.Err != nil {
@@ -236,6 +237,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				// deterministic checks only" — the same sentence a real AI outage
 				// produces, which teaches readers to discount it when it is true.
 				findings = mergeFindings(findings, result.Findings)
+				modelStory = result.Story
 				reviewerLabel = "heuristic+ai"
 			}
 			if coverage.ShardsFailed > 0 && coverage.ShardsFailed < coverage.Shards && aiConfigured {
@@ -279,10 +281,10 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// not produce. The findings it would have graded are still reported; they
 	// are reported unverified, which the report says.
 	if opts.Fast {
-		enhanceProgress(opts, "Skipping verification (fast review)")
+		reviewProgress(opts, "Skipping verification (fast review)")
 	}
 	if !opts.Fast && !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisory) > 0 {
-		enhanceProgress(opts, "Verifying review findings")
+		reviewProgress(opts, "Verifying review findings")
 		candidates := advisory
 		// Verification runs in concurrent batches so that a large finding set
 		// neither overruns the judge's output budget nor pays for each batch in
@@ -340,7 +342,31 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	} else {
 		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)
 	}
-	findings = append(blocking, advisory...)
+	// Lanes are assigned here and nowhere else: this is the one line every
+	// review path — full panel, --fast, judge disabled or unreachable, no AI at
+	// all — passes through with its findings final. Earlier is too early (the
+	// judge rewrites strength and verdicts, and --fast never reaches it); a hook
+	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
+	// tool findings split out above. See lanes.go for the rule.
+	findings = AssignLanes(append(blocking, advisory...))
+	// Show the code under discussion. Constraints has done this since it
+	// shipped; the review path never did, so a report of twenty findings
+	// with file:line anchors showed zero lines of code — every finding was a
+	// paragraph about a location the reader had to open themselves. The diff
+	// hunk wins when the line is part of the change; otherwise ±2 lines of
+	// the current source. Both helpers are best-effort and never fail a run.
+	diffsByFile := make(map[string]string, len(diffs))
+	for _, snippet := range diffs {
+		diffsByFile[snippet.File] = snippet.Diff
+	}
+	attachConstraintsDiffHunks(diffsByFile, findings)
+	attachConstraintsCodeExcerpts(repoRoot, findings)
+	// The story lane: the mandatory items no model decides (a change that
+	// edits its own REVIEW.md exceptions), then the reviewer's own — carried
+	// back through the fan-out from the same reply as the findings — with
+	// hunks attached from the diffs the reviewer read. Nil when there is
+	// nothing to say.
+	story := assembleReportStory(opts.ReviewPolicy, changed, diffs, modelStory)
 
 	return Report{
 		RepoRoot:          repoRoot,
@@ -356,6 +382,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		ChangedFiles:      changed,
 		ObservationLabels: facts.observations(),
 		Findings:          findings,
+		Story:             story,
 		Sources:           sources,
 		SourceRefs:        brief.SourceRefs,
 		Reviewer:          reviewerLabel,
@@ -453,7 +480,7 @@ func dedupeScopes(scopes []string) []string {
 	return out
 }
 
-func enhanceProgress(opts Options, message string) {
+func reviewProgress(opts Options, message string) {
 	if strings.TrimSpace(message) == "" {
 		return
 	}

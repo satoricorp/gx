@@ -34,6 +34,30 @@ type Finding struct {
 	// strongest single noise separator the review produces.
 	Kind string `json:"kind,omitempty"`
 
+	// RuleID names the rule this finding is an instance of — a stable,
+	// namespaced identity (review/wrong-logic, gx:recommended/no-swallowed-errors,
+	// REVIEW.md/no-reinvented-utils) that survives across runs. It is separate
+	// from ID on purpose: ID is positional and is the de-duplication key in
+	// mergeFindings, so two findings from one rule must not share it. Empty means
+	// the finding is open-ended judgment that fits no named rule; see rules.go.
+	RuleID string `json:"rule_id,omitempty"`
+
+	// Lane is where the finding lands in the report: "blocking" stops the
+	// change, "advisory" is reported and does not. It is derived, not asked
+	// for: strength decides the default lane, and quorum decides whether a
+	// blocking-strength finding is allowed to keep it. See lanes.go.
+	Lane string `json:"lane,omitempty"`
+	// DemotedFrom is set when quorum moved a finding out of the lane its
+	// strength would have given it — the report says "one grader flagged ·
+	// demoted" instead of silently dropping the finding to advisory.
+	DemotedFrom string `json:"demoted_from,omitempty"`
+	// Materiality is how much observable behavior moved — high, medium, low.
+	// It orders the story lane and is deliberately NOT strength: a finding can
+	// be low-strength and high-materiality (that is exactly an escalation), or
+	// certain and trivial. Conflating the two axes was a naming collision the
+	// report design explicitly avoids; keep them separate fields.
+	Materiality string `json:"materiality,omitempty"`
+
 	// JudgeVerdict and the fields after it carry the verification model's
 	// assessment through to the report: "confirmed", "unverified" (the judge
 	// abstained or never ran), or empty for findings that predate the judge.
@@ -80,11 +104,16 @@ type Finding struct {
 	// the diff. CodeExcerpt is the fallback for findings about lines the
 	// change did not touch: the current source, ±2 lines of context, with
 	// CodeExcerptStart as the 1-based file line of its first line. Populated
-	// by the gate engine behind `gx review`; enhance findings leave all three
-	// empty.
+	// by the constraints engine; review findings leave all three empty.
 	DiffHunk         string `json:"diff_hunk,omitempty"`
 	CodeExcerpt      string `json:"code_excerpt,omitempty"`
 	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
+	// Example is the model's own minimal diff fragment showing the fix —
+	// lines prefixed with + and -, no headers, a few lines. It is rendered
+	// after Fix with the same hunk painter, so a reader sees the change
+	// rather than reading a description of it. Optional; kept only when it
+	// looks like a small diff (see normalizeExampleDiff).
+	Example string `json:"example,omitempty"`
 
 	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
 	Recommendation  string           `json:"recommendation,omitempty"`
@@ -459,7 +488,7 @@ func staticToolFailureFindings(ctx ReviewContext) []Finding {
 		Summary:        fmt.Sprintf("`%s` failed, so the review found concrete correctness or best-practice diagnostics before speculative structure work.", first.Command),
 		Benefit:        "Restores a clean correctness baseline so later architecture recommendations are judged against working code instead of compile, vet, or test failures.",
 		Evidence:       evidence,
-		Recommendation: "Start by fixing the failing tool output, then rerun `gx enhance` so the reviewer can judge structure on a clean baseline.",
+		Recommendation: "Start by fixing the failing tool output, then rerun `gx review` so the reviewer can judge structure on a clean baseline.",
 		Strength:       "Blocking",
 		SourceIDs:      []string{"google-eng-practices"},
 	}}

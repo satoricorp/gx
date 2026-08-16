@@ -24,14 +24,14 @@ func gateExitCode(t *testing.T, err error) int {
 // model ran exited 0 with zero findings and the pull request merged reporting a
 // review that never happened. The rendered report carries an "AI review
 // unavailable" banner, but an exit code is the only thing a CI step reads.
-func TestEnhanceGateFailsWhenNoModelRan(t *testing.T) {
+func TestReviewGateFailsWhenNoModelRan(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:        true,
 		ReviewTarget:    "the working tree",
 		ReviewMode:      codereview.ReviewModeWorkingTree,
 		DegradedReasons: []string{"AI review unavailable (no reviewer configured)"},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -39,7 +39,7 @@ func TestEnhanceGateFailsWhenNoModelRan(t *testing.T) {
 
 // Reading part of the subject cannot answer "no findings at or above X" for the
 // part that was never read.
-func TestEnhanceGateFailsOnPartialCoverage(t *testing.T) {
+func TestReviewGateFailsOnPartialCoverage(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:     true,
 		ReviewTarget: "the working tree",
@@ -51,7 +51,7 @@ func TestEnhanceGateFailsOnPartialCoverage(t *testing.T) {
 			Units:   "files",
 		},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -60,7 +60,7 @@ func TestEnhanceGateFailsOnPartialCoverage(t *testing.T) {
 // A degraded review must not be reported as a findings failure: the operator
 // response differs (retry the review vs fix the code), so the codes stay
 // distinct even when both conditions hold.
-func TestEnhanceGatePrefersDegradedOverFindings(t *testing.T) {
+func TestReviewGatePrefersDegradedOverFindings(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:        true,
 		ReviewTarget:    "the working tree",
@@ -68,7 +68,7 @@ func TestEnhanceGatePrefersDegradedOverFindings(t *testing.T) {
 		DegradedReasons: []string{"2 of 4 parallel reviews failed"},
 		Findings:        []codereview.Finding{{Strength: "Blocking"}},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -76,7 +76,7 @@ func TestEnhanceGatePrefersDegradedOverFindings(t *testing.T) {
 
 // A complete review with nothing to report still passes: the gate must not
 // become unusable.
-func TestEnhanceGatePassesCleanCompleteReview(t *testing.T) {
+func TestReviewGatePassesCleanCompleteReview(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:     true,
 		ReviewTarget: "the working tree",
@@ -88,28 +88,28 @@ func TestEnhanceGatePassesCleanCompleteReview(t *testing.T) {
 			Units:   "files",
 		},
 	}
-	if err := reviewGateError(report, codereview.FailOnStrong); err != nil {
+	if err := reviewGateError(report, codereview.FailOnStrong, true); err != nil {
 		t.Fatalf("clean review should pass the gate, got %v", err)
 	}
 }
 
-// Without --fail-on the command is advisory, so a degraded run must not start
-// failing builds that never opted into gating.
-func TestEnhanceGateSilentWhenDisabled(t *testing.T) {
+// Under --fail-on none the command is advisory, so a degraded run must not
+// start failing builds that opted out of gating.
+func TestReviewGateSilentWhenDisabled(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:        true,
 		DegradedReasons: []string{"AI review unavailable"},
 	}
-	if err := reviewGateError(report, codereview.FailOnNone); err != nil {
+	if err := reviewGateError(report, codereview.FailOnNone, true); err != nil {
 		t.Fatalf("disabled gate should return nil, got %v", err)
 	}
 }
 
 // Nothing-to-review keeps its own exit code: "there was no diff" and "the
 // review broke" are different operator problems.
-func TestEnhanceGateKeepsNothingToReviewDistinct(t *testing.T) {
+func TestReviewGateKeepsNothingToReviewDistinct(t *testing.T) {
 	report := codereview.Report{Reviewed: false, ReviewTarget: "the working tree"}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewNothingToReviewExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewNothingToReviewExitCode, err)
 	}

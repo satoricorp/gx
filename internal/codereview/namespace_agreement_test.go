@@ -8,9 +8,9 @@ import (
 	"github.com/satoricorp/gx/internal/semantic"
 )
 
-// TestEnhanceReadsTheNamespaceIndexWrites is the end-to-end half of the
+// TestReviewReadsTheNamespaceIndexWrites is the end-to-end half of the
 // namespace regression: the real `gx index` write path against the real
-// `gx enhance` read path, with nothing re-derived in between.
+// `gx review` read path, with nothing re-derived in between.
 //
 // The observed failure: `gx index` in a checkout with no remote wrote
 // gx-local-yeet-8d862445e7e4-v2, while `gx review` in that same checkout probed
@@ -22,7 +22,7 @@ import (
 // stops them going through anything else: it calls IndexRepository (with a fake
 // embedder and store, so it needs no credentials) and codeIndexTargets, and
 // asserts the namespace the first wrote is one the second searches.
-func TestEnhanceReadsTheNamespaceIndexWrites(t *testing.T) {
+func TestReviewReadsTheNamespaceIndexWrites(t *testing.T) {
 	cases := []struct {
 		name  string
 		setup func(t *testing.T, root string)
@@ -82,12 +82,12 @@ func TestEnhanceReadsTheNamespaceIndexWrites(t *testing.T) {
 	}
 }
 
-// TestEnhanceStillFindsAnIndexWrittenBeforeTheRemoteExisted covers what the
+// TestReviewStillFindsAnIndexWrittenBeforeTheRemoteExisted covers what the
 // shared resolver cannot: repository identity is derived from mutable git
 // config, so adding a remote renames the namespace and orphans the index
 // already written under the old name. That is exactly how the live divergence
 // arose — indexed at 07:34 with no remote, reviewed at 12:05 with one.
-func TestEnhanceStillFindsAnIndexWrittenBeforeTheRemoteExisted(t *testing.T) {
+func TestReviewStillFindsAnIndexWrittenBeforeTheRemoteExisted(t *testing.T) {
 	ctx := context.Background()
 	root := initRepo(t)
 	writeFile(t, root, "main.go", "package main\n\nfunc main() {}\n")

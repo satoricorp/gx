@@ -28,39 +28,38 @@ type slashCommand struct {
 func slashCommands() []slashCommand {
 	return []slashCommand{
 		{
-			name:         "enhance",
-			description:  "gx issues and tips to improve the current change",
-			argumentHint: "[optional prompt]",
-			bodyArgs:     slashEnhanceBodyArgs,
-			bodyPlain:    slashEnhanceBodyPlain,
-			legacyNames:  []string{"gx"},
+			name:         "gx",
+			description:  "gx AI review of the current change",
+			argumentHint: "[optional reviewer prompt]",
+			bodyArgs:     slashGxBodyArgs,
+			bodyPlain:    slashGxBodyPlain,
+			legacyNames:  []string{"better-review"},
 		},
 		{
-			name:         "review",
-			description:  "gx pre-ship review gate for the current change",
+			name:         "constraints",
+			description:  "gx pre-ship constraints exit gate for the current change",
 			argumentHint: "[optional focus or intent hint]",
-			bodyArgs:     slashReviewBodyArgs,
-			bodyPlain:    slashReviewBodyPlain,
+			bodyArgs:     slashConstraintsBodyArgs,
+			bodyPlain:    slashConstraintsBodyPlain,
 		},
 	}
 }
 
 // Body for agents that substitute $ARGUMENTS (Claude Code, Codex).
-const slashEnhanceBodyArgs = slashCommandMarker + `
+const slashGxBodyArgs = slashCommandMarker + `
 
-Run gx enhance on the current change: an AI pass that reports issues and tips
-to improve the code you are working on.
+Run an AI code review of the current change with gx.
 
-Use the ` + "`gx_enhance`" + ` MCP tool if it is available, passing "$ARGUMENTS" as the
+Use the ` + "`gx_review`" + ` MCP tool if it is available, passing "$ARGUMENTS" as the
 ` + "`prompt`" + ` parameter (omit the parameter when it is empty) and ` + "`fast: true`" + `.
 If the MCP tool is unavailable, run the CLI instead:
-` + "`" + `GX_CLIENT=slash-enhance gx enhance --fast "$ARGUMENTS"` + "`" + ` (plain
-` + "`GX_CLIENT=slash-enhance gx enhance --fast`" + ` when there is no prompt). Keep the
-` + "`GX_CLIENT=slash-enhance`" + ` prefix — it labels the run as an /enhance invocation.
+` + "`" + `GX_CLIENT=slash-gx gx review --fast "$ARGUMENTS"` + "`" + ` (plain
+` + "`GX_CLIENT=slash-gx gx review --fast`" + ` when there is no prompt). Keep the
+` + "`GX_CLIENT=slash-gx`" + ` prefix — it labels the run as a /gx invocation.
 
-` + "`--fast`" + ` is right for an interactive run: it uses one reviewer instead of
+` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes
-findings without code examples. If the user asks for the most thorough pass,
+findings without code examples. If the user asks for the most thorough review,
 or wants the result posted to a pull request, drop ` + "`--fast`" + `.
 
 Report the findings. Do not change any code unless the user asks.
@@ -68,41 +67,40 @@ Report the findings. Do not change any code unless the user asks.
 
 // Body for Cursor, which appends the user's text after the command instead of
 // substituting a placeholder.
-const slashEnhanceBodyPlain = slashCommandMarker + `
+const slashGxBodyPlain = slashCommandMarker + `
 
-Run gx enhance on the current change: an AI pass that reports issues and tips
-to improve the code you are working on.
+Run an AI code review of the current change with gx.
 
-Use the ` + "`gx_enhance`" + ` MCP tool if it is available, with ` + "`fast: true`" + `. If the
+Use the ` + "`gx_review`" + ` MCP tool if it is available, with ` + "`fast: true`" + `. If the
 user added instructions after the command, pass them as the ` + "`prompt`" + `
 parameter. If the MCP tool is unavailable, run
-` + "`GX_CLIENT=slash-enhance gx enhance --fast`" + ` instead, quoting those instructions as
-the positional prompt argument. Keep the ` + "`GX_CLIENT=slash-enhance`" + ` prefix — it
-labels the run as an /enhance invocation.
+` + "`GX_CLIENT=slash-gx gx review --fast`" + ` instead, quoting those instructions as
+the positional prompt argument. Keep the ` + "`GX_CLIENT=slash-gx`" + ` prefix — it
+labels the run as a /gx invocation.
 
-` + "`--fast`" + ` is right for an interactive run: it uses one reviewer instead of
+` + "`--fast`" + ` is right for an interactive review: it uses one reviewer instead of
 two, skips the verification pass and the project's test suite, and writes
-findings without code examples. If the user asks for the most thorough pass,
+findings without code examples. If the user asks for the most thorough review,
 or wants the result posted to a pull request, drop ` + "`--fast`" + `.
 
 Report the findings. Do not change any code unless the user asks.
 `
 
-// The /review bodies must never contain a "---" line: the Codex file is
+// The /constraints bodies must never contain a "---" line: the Codex file is
 // the args body verbatim, and a test pins that it carries no frontmatter.
-const slashReviewBodyArgs = slashCommandMarker + `
+const slashConstraintsBodyArgs = slashCommandMarker + `
 
-Run the gx review exit gate on the current change.
+Run the gx constraints exit gate on the current change.
 
-Use the ` + "`gx_review`" + ` MCP tool if it is available, passing "$ARGUMENTS" as
+Use the ` + "`gx_constraints`" + ` MCP tool if it is available, passing "$ARGUMENTS" as
 the ` + "`prompt`" + ` parameter (omit the parameter when it is empty). If the MCP tool
 is unavailable, run the CLI instead:
-` + "`" + `GX_CLIENT=slash-review gx review --md --report-only "$ARGUMENTS"` + "`" + `
-(plain ` + "`GX_CLIENT=slash-review gx review --md --report-only`" + ` when
-there is no hint). Keep the ` + "`GX_CLIENT=slash-review`" + ` prefix — it labels
-the run as a /review invocation.
+` + "`" + `GX_CLIENT=slash-constraints gx constraints --md --report-only "$ARGUMENTS"` + "`" + `
+(plain ` + "`GX_CLIENT=slash-constraints gx constraints --md --report-only`" + ` when
+there is no hint). Keep the ` + "`GX_CLIENT=slash-constraints`" + ` prefix — it labels
+the run as a /constraints invocation.
 
-The gate checks the change against six gates — correctness, security,
+The gate checks the change against six constraints — correctness, security,
 code health, back-pressure, accessibility, performance — reporting PASS, FAIL,
 or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (the
 project's tests and linters, a secrets scan, dependency audits) decide what
@@ -115,19 +113,19 @@ gate passed or was skipped, tell the user the change is clear to ship and ask
 whether to continue.
 `
 
-const slashReviewBodyPlain = slashCommandMarker + `
+const slashConstraintsBodyPlain = slashCommandMarker + `
 
-Run the gx review exit gate on the current change.
+Run the gx constraints exit gate on the current change.
 
-Use the ` + "`gx_review`" + ` MCP tool if it is available. If the user added
+Use the ` + "`gx_constraints`" + ` MCP tool if it is available. If the user added
 instructions after the command, pass them as the ` + "`prompt`" + ` parameter. If the
 MCP tool is unavailable, run
-` + "`GX_CLIENT=slash-review gx review --md --report-only`" + ` instead,
+` + "`GX_CLIENT=slash-constraints gx constraints --md --report-only`" + ` instead,
 quoting those instructions as the positional hint argument. Keep the
-` + "`GX_CLIENT=slash-review`" + ` prefix — it labels the run as a /review
+` + "`GX_CLIENT=slash-constraints`" + ` prefix — it labels the run as a /constraints
 invocation.
 
-The gate checks the change against six gates — correctness, security,
+The gate checks the change against six constraints — correctness, security,
 code health, back-pressure, accessibility, performance — reporting PASS, FAIL,
 or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (the
 project's tests and linters, a secrets scan, dependency audits) decide what

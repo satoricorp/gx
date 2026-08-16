@@ -13,7 +13,11 @@ import (
 )
 
 type CodeReviewFindingRecord struct {
-	Fingerprint    string         `json:"fingerprint,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// RuleID is the stable rule the finding is an instance of (see
+	// codereview.Finding.RuleID). Additive: the server may ignore it, and it
+	// also travels in Payload["rule_id"] for readers that only see the payload.
+	RuleID         string         `json:"ruleId,omitempty"`
 	Outcome        string         `json:"outcome,omitempty"`
 	Category       string         `json:"category,omitempty"`
 	Language       string         `json:"language,omitempty"`
@@ -152,6 +156,11 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, out any
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		// A structured refusal the CLI can render in one line beats quoting
+		// the JSON body into the report.
+		if notAllowed := modelNotAllowedFromBody(raw); notAllowed != nil {
+			return notAllowed
+		}
 		detail := strings.TrimSpace(string(raw))
 		if detail != "" {
 			return fmt.Errorf("gx cloud request %s: status %s: %s", path, resp.Status, detail)

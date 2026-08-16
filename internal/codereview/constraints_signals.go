@@ -10,14 +10,14 @@ import (
 	"strings"
 )
 
-// reviewSignals are the deterministic facts every gate reads: diff volume,
+// constraintSignals are the deterministic facts every gate reads: diff volume,
 // what looks generated, what dependencies arrived, which files are UI, and
 // which paths make the performance gate apply. They are computed once from the
 // change set and the diff snippets, before any command or model runs.
-type reviewSignals struct {
-	DiffStats          ReviewDiffStats
+type constraintSignals struct {
+	DiffStats          ConstraintsDiffStats
 	ChangedLinesByFile map[string]int
-	AddedLinesByFile   map[string][]reviewAddedLine
+	AddedLinesByFile   map[string][]constraintsAddedLine
 	GeneratedFiles     []string
 	WhitespaceDominant bool
 	NewDependencies    []string
@@ -35,39 +35,39 @@ type reviewSignals struct {
 	NonGenLines  int // changed lines outside generated files
 }
 
-// reviewAddedLine is one "+" line of a diff with its post-change line
+// constraintsAddedLine is one "+" line of a diff with its post-change line
 // number, so a finding about it can anchor to file:line.
-type reviewAddedLine struct {
+type constraintsAddedLine struct {
 	Number int
 	Text   string
 }
 
-var reviewUIExtensions = []string{".tsx", ".jsx", ".html", ".vue", ".svelte"}
+var constraintsUIExtensions = []string{".tsx", ".jsx", ".html", ".vue", ".svelte"}
 
-// reviewPerfPathPattern marks paths whose changes make the performance
+// constraintsPerfPathPattern marks paths whose changes make the performance
 // gate apply. Deliberately broad: a false "applies" costs one extra judgment in
 // the shared model call, a false "skipped" costs the one gate Joe weighted up.
-var reviewPerfPathPattern = regexp.MustCompile(`(?i)(^|[/_.-])(perf|bench|hot|render|query|sql|cache|worker|handler|stream|middleware)([/_.-]|$|\.)`)
+var constraintsPerfPathPattern = regexp.MustCompile(`(?i)(^|[/_.-])(perf|bench|hot|render|query|sql|cache|worker|handler|stream|middleware)([/_.-]|$|\.)`)
 
-var reviewPerfMessagePattern = regexp.MustCompile(`(?i)(perf|latenc|hot[- ]?path|throughput|load|slow)`)
+var constraintsPerfMessagePattern = regexp.MustCompile(`(?i)(perf|latenc|hot[- ]?path|throughput|load|slow)`)
 
-// reviewLineCounts is one file's exact added/removed counts from git
+// constraintsLineCounts is one file's exact added/removed counts from git
 // numstat, untruncated. The diff snippets are capped at 32KB per file for the
 // model's sake, so counting lines from them alone undercounts exactly the
 // oversized files the size warning exists for.
-type reviewLineCounts struct {
+type constraintsLineCounts struct {
 	Added   int
 	Removed int
 }
 
-func collectReviewSignals(changed []string, diffs []DiffSnippet, policy ReviewPolicy, numstat map[string]reviewLineCounts) reviewSignals {
-	signals := reviewSignals{
+func collectConstraintSignals(changed []string, diffs []DiffSnippet, policy ReviewPolicy, numstat map[string]constraintsLineCounts) constraintSignals {
+	signals := constraintSignals{
 		ChangedLinesByFile: map[string]int{},
-		AddedLinesByFile:   map[string][]reviewAddedLine{},
+		AddedLinesByFile:   map[string][]constraintsAddedLine{},
 	}
 	signals.DiffStats.Files = len(changed)
 	for _, snippet := range diffs {
-		added := reviewAddedLinesForDiff(snippet.Diff)
+		added := constraintsAddedLinesForDiff(snippet.Diff)
 		signals.AddedLinesByFile[snippet.File] = added
 		addedCount, removedCount := countDiffLines(snippet.Diff)
 		if strings.HasPrefix(snippet.Diff, diffUnavailableContentHeader) {
@@ -90,10 +90,10 @@ func collectReviewSignals(changed []string, diffs []DiffSnippet, policy ReviewPo
 		}
 		if isTestFile(file) {
 			signals.TestFilesChanged = append(signals.TestFilesChanged, file)
-		} else if isReviewSourceFile(file) {
+		} else if isConstraintsSourceFile(file) {
 			signals.SourceFilesChanged = append(signals.SourceFilesChanged, file)
 		}
-		if hasFileExtension(file, reviewUIExtensions) {
+		if hasFileExtension(file, constraintsUIExtensions) {
 			signals.UIFiles = append(signals.UIFiles, file)
 		}
 		if isDependencyFile(file) && !IsLockfilePath(file) {
@@ -102,22 +102,22 @@ func collectReviewSignals(changed []string, diffs []DiffSnippet, policy ReviewPo
 	}
 	signals.DiffStats.GeneratedFiles = len(signals.GeneratedFiles)
 	signals.WhitespaceDominant = whitespaceDominantDiff(diffs)
-	signals.NewDependencies = reviewNewDependencies(signals.ManifestsChanged, signals.AddedLinesByFile)
-	signals.A11yFindings, signals.A11yHardFail = reviewA11yLineFindings(signals.UIFiles, signals.AddedLinesByFile)
-	signals.PerfApplies, signals.PerfTriggers, signals.PerfFiles = reviewPerfApplicability(changed, signals.ManifestsChanged, policy)
+	signals.NewDependencies = constraintsNewDependencies(signals.ManifestsChanged, signals.AddedLinesByFile)
+	signals.A11yFindings, signals.A11yHardFail = constraintsA11yLineFindings(signals.UIFiles, signals.AddedLinesByFile)
+	signals.PerfApplies, signals.PerfTriggers, signals.PerfFiles = constraintsPerfApplicability(changed, signals.ManifestsChanged, policy)
 	return signals
 }
 
-// reviewNumstat reads exact per-file line counts from git. Empty refRange
+// constraintsNumstat reads exact per-file line counts from git. Empty refRange
 // means the working tree (unstaged plus staged, summed); untracked files do
 // not appear and fall back to the snippet-derived counts. Any git failure
 // returns nil — the snippet counts are the graceful floor.
-func reviewNumstat(ctx context.Context, repoRoot, refRange string) map[string]reviewLineCounts {
+func constraintsNumstat(ctx context.Context, repoRoot, refRange string) map[string]constraintsLineCounts {
 	argSets := [][]string{{"diff", "--numstat", "--no-ext-diff"}, {"diff", "--cached", "--numstat", "--no-ext-diff"}}
 	if refRange = strings.TrimSpace(refRange); refRange != "" {
 		argSets = [][]string{{"diff", "--numstat", "--no-ext-diff", refRange}}
 	}
-	out := map[string]reviewLineCounts{}
+	out := map[string]constraintsLineCounts{}
 	for _, args := range argSets {
 		cmd := gitCommand(ctx, repoRoot, args...)
 		output, err := cmd.Output()
@@ -147,10 +147,10 @@ func reviewNumstat(ctx context.Context, repoRoot, refRange string) map[string]re
 	return out
 }
 
-// isReviewSourceFile reports whether a changed file is code rather than
+// isConstraintsSourceFile reports whether a changed file is code rather than
 // docs, config, or assets — the denominator for the "tests accompany sources"
 // signal.
-func isReviewSourceFile(rel string) bool {
+func isConstraintsSourceFile(rel string) bool {
 	switch strings.ToLower(filepath.Ext(rel)) {
 	case ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rs", ".cs",
 		".dart", ".java", ".rb", ".php", ".c", ".h", ".cc", ".cpp", ".hpp", ".swift",
@@ -161,34 +161,34 @@ func isReviewSourceFile(rel string) bool {
 	}
 }
 
-// reviewAddedLinesForDiff returns the added lines of one snippet. A
+// constraintsAddedLinesForDiff returns the added lines of one snippet. A
 // content-fallback snippet (an untracked file — the commonest agent output)
 // has no hunks: every line of it is new, and skipping it would exempt exactly
 // the files most worth scanning.
-func reviewAddedLinesForDiff(diff string) []reviewAddedLine {
+func constraintsAddedLinesForDiff(diff string) []constraintsAddedLine {
 	if strings.HasPrefix(diff, diffUnavailableContentHeader) {
 		content := strings.TrimPrefix(strings.TrimPrefix(diff, diffUnavailableContentHeader), "\n")
 		if strings.TrimSpace(content) == "" {
 			return nil
 		}
 		lines := strings.Split(content, "\n")
-		out := make([]reviewAddedLine, 0, len(lines))
+		out := make([]constraintsAddedLine, 0, len(lines))
 		for i, line := range lines {
-			out = append(out, reviewAddedLine{Number: i + 1, Text: line})
+			out = append(out, constraintsAddedLine{Number: i + 1, Text: line})
 		}
 		return out
 	}
-	return parseReviewAddedLines(diff)
+	return parseConstraintsAddedLines(diff)
 }
 
-// reviewHunkContext is how many hunk lines surround the discussed line
+// constraintsHunkContext is how many hunk lines surround the discussed line
 // when a finding shows its diff window.
-const reviewHunkContext = 5
+const constraintsHunkContext = 2
 
-// reviewDiffHunkForLine returns the unified-diff window around a
+// constraintsDiffHunkForLine returns the unified-diff window around a
 // post-change line, hunk header included, or "" when the line is not part of
 // this diff — a finding about untouched code has no hunk to show.
-func reviewDiffHunkForLine(diff string, target int) string {
+func constraintsDiffHunkForLine(diff string, target int) string {
 	if target <= 0 || strings.HasPrefix(diff, diffUnavailableContentHeader) {
 		return ""
 	}
@@ -233,11 +233,11 @@ func reviewDiffHunkForLine(diff string, target int) string {
 		if targetIndex < 0 {
 			continue
 		}
-		start := targetIndex - reviewHunkContext
+		start := targetIndex - constraintsHunkContext
 		if start < 0 {
 			start = 0
 		}
-		end := targetIndex + reviewHunkContext + 1
+		end := targetIndex + constraintsHunkContext + 1
 		if end > len(hunk.lines) {
 			end = len(hunk.lines)
 		}
@@ -254,10 +254,10 @@ func reviewDiffHunkForLine(diff string, target int) string {
 	return ""
 }
 
-// parseReviewAddedLines walks a unified diff and returns the added lines
+// parseConstraintsAddedLines walks a unified diff and returns the added lines
 // with their post-change line numbers.
-func parseReviewAddedLines(diff string) []reviewAddedLine {
-	var out []reviewAddedLine
+func parseConstraintsAddedLines(diff string) []constraintsAddedLine {
+	var out []constraintsAddedLine
 	line := 0
 	inHunk := false
 	for _, raw := range strings.Split(diff, "\n") {
@@ -272,7 +272,7 @@ func parseReviewAddedLines(diff string) []reviewAddedLine {
 		case strings.HasPrefix(raw, "+++"), strings.HasPrefix(raw, "---"):
 			continue
 		case strings.HasPrefix(raw, "+"):
-			out = append(out, reviewAddedLine{Number: line, Text: strings.TrimPrefix(raw, "+")})
+			out = append(out, constraintsAddedLine{Number: line, Text: strings.TrimPrefix(raw, "+")})
 			line++
 		case strings.HasPrefix(raw, "-"):
 			// Removed lines do not advance the post-change counter.
@@ -322,14 +322,14 @@ func countDiffLines(diff string) (added, removed int) {
 // judgment ("a new dependency for a one-line change is bad work"), never a
 // verdict on their own, so rough matching is acceptable.
 var (
-	reviewGoModDepPattern   = regexp.MustCompile(`^\s*([A-Za-z0-9._~\-/]+)\s+v\d`)
-	reviewNodeDepPattern    = regexp.MustCompile(`"((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)"\s*:\s*"[~^]?\d`)
-	reviewCargoDepPattern   = regexp.MustCompile(`^([A-Za-z0-9_-]+)\s*=\s*(?:"|\{)`)
-	reviewPipDepPattern     = regexp.MustCompile(`^([A-Za-z0-9._-]+)\s*(?:[=<>!~;\[]|$)`)
-	reviewPubspecDepPattern = regexp.MustCompile(`^\s{2}([a-z0-9_]+):`)
+	constraintsGoModDepPattern   = regexp.MustCompile(`^\s*([A-Za-z0-9._~\-/]+)\s+v\d`)
+	constraintsNodeDepPattern    = regexp.MustCompile(`"((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)"\s*:\s*"[~^]?\d`)
+	constraintsCargoDepPattern   = regexp.MustCompile(`^([A-Za-z0-9_-]+)\s*=\s*(?:"|\{)`)
+	constraintsPipDepPattern     = regexp.MustCompile(`^([A-Za-z0-9._-]+)\s*(?:[=<>!~;\[]|$)`)
+	constraintsPubspecDepPattern = regexp.MustCompile(`^\s{2}([a-z0-9_]+):`)
 )
 
-func reviewNewDependencies(manifests []string, addedByFile map[string][]reviewAddedLine) []string {
+func constraintsNewDependencies(manifests []string, addedByFile map[string][]constraintsAddedLine) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	record := func(manifest, name string) {
@@ -353,28 +353,28 @@ func reviewNewDependencies(manifests []string, addedByFile map[string][]reviewAd
 			}
 			switch {
 			case base == "go.mod":
-				if match := reviewGoModDepPattern.FindStringSubmatch(text); match != nil && strings.Contains(match[1], "/") {
+				if match := constraintsGoModDepPattern.FindStringSubmatch(text); match != nil && strings.Contains(match[1], "/") {
 					record(manifest, match[1])
 				}
 			case base == "package.json":
-				if match := reviewNodeDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" {
+				if match := constraintsNodeDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" {
 					record(manifest, match[1])
 				}
 			case base == "Cargo.toml":
-				if match := reviewCargoDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" && match[1] != "edition" {
+				if match := constraintsCargoDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" && match[1] != "edition" {
 					record(manifest, match[1])
 				}
 			case base == "requirements.txt":
-				if match := reviewPipDepPattern.FindStringSubmatch(text); match != nil {
+				if match := constraintsPipDepPattern.FindStringSubmatch(text); match != nil {
 					record(manifest, match[1])
 				}
 			case base == "pubspec.yaml":
-				if match := reviewPubspecDepPattern.FindStringSubmatch(added.Text); match != nil && match[1] != "sdk" && match[1] != "flutter" {
+				if match := constraintsPubspecDepPattern.FindStringSubmatch(added.Text); match != nil && match[1] != "sdk" && match[1] != "flutter" {
 					record(manifest, match[1])
 				}
 			case base == "pyproject.toml":
 				if strings.Contains(text, "==") || strings.Contains(text, ">=") {
-					if match := reviewPipDepPattern.FindStringSubmatch(strings.Trim(text, `"',`)); match != nil {
+					if match := constraintsPipDepPattern.FindStringSubmatch(strings.Trim(text, `"',`)); match != nil {
 						record(manifest, match[1])
 					}
 				}
@@ -390,22 +390,22 @@ func reviewNewDependencies(manifests []string, addedByFile map[string][]reviewAd
 // have its keyboard handler three lines down, so that one stays a finding for
 // the model to confirm rather than a verdict.
 var (
-	reviewPositiveTabindexPattern = regexp.MustCompile(`(?i)tabindex\s*[=:]\s*["'{]?\s*([1-9]\d*)`)
-	reviewImgTagPattern           = regexp.MustCompile(`(?i)<img\b[^>]*>`)
-	reviewAltAttrPattern          = regexp.MustCompile(`(?i)\balt\s*=`)
-	reviewClickableDivPattern     = regexp.MustCompile(`(?i)<(div|span)\b[^>]*onclick`)
-	reviewKeyboardHintPattern     = regexp.MustCompile(`(?i)(onkey|role\s*=|tabindex)`)
+	constraintsPositiveTabindexPattern = regexp.MustCompile(`(?i)tabindex\s*[=:]\s*["'{]?\s*([1-9]\d*)`)
+	constraintsImgTagPattern           = regexp.MustCompile(`(?i)<img\b[^>]*>`)
+	constraintsAltAttrPattern          = regexp.MustCompile(`(?i)\balt\s*=`)
+	constraintsClickableDivPattern     = regexp.MustCompile(`(?i)<(div|span)\b[^>]*onclick`)
+	constraintsKeyboardHintPattern     = regexp.MustCompile(`(?i)(onkey|role\s*=|tabindex)`)
 )
 
-func reviewA11yLineFindings(uiFiles []string, addedByFile map[string][]reviewAddedLine) ([]Finding, bool) {
+func constraintsA11yLineFindings(uiFiles []string, addedByFile map[string][]constraintsAddedLine) ([]Finding, bool) {
 	var findings []Finding
 	hardFail := false
 	for _, file := range uiFiles {
 		for _, added := range addedByFile[file] {
 			text := added.Text
-			for _, tag := range reviewImgTagPattern.FindAllString(text, -1) {
-				if !reviewAltAttrPattern.MatchString(tag) {
-					findings = append(findings, reviewA11yFinding(file, added.Number,
+			for _, tag := range constraintsImgTagPattern.FindAllString(text, -1) {
+				if !constraintsAltAttrPattern.MatchString(tag) {
+					findings = append(findings, constraintsA11yFinding(file, added.Number,
 						"Image without alt text",
 						"An added <img> tag carries no alt attribute, so screen readers announce nothing for it.",
 						"Add alt text describing the image, or alt=\"\" when it is decorative.",
@@ -413,16 +413,16 @@ func reviewA11yLineFindings(uiFiles []string, addedByFile map[string][]reviewAdd
 					hardFail = true
 				}
 			}
-			if match := reviewPositiveTabindexPattern.FindStringSubmatch(text); match != nil {
-				findings = append(findings, reviewA11yFinding(file, added.Number,
+			if match := constraintsPositiveTabindexPattern.FindStringSubmatch(text); match != nil {
+				findings = append(findings, constraintsA11yFinding(file, added.Number,
 					"Positive tabindex overrides focus order",
 					fmt.Sprintf("An added element sets tabindex=%s, which hijacks the document's natural tab order for every keyboard user.", match[1]),
 					"Use tabindex=\"0\" to join the natural order (or restructure the DOM so the order is right without it).",
 					"Strong"))
 				hardFail = true
 			}
-			if reviewClickableDivPattern.MatchString(text) && !reviewKeyboardHintPattern.MatchString(text) {
-				findings = append(findings, reviewA11yFinding(file, added.Number,
+			if constraintsClickableDivPattern.MatchString(text) && !constraintsKeyboardHintPattern.MatchString(text) {
+				findings = append(findings, constraintsA11yFinding(file, added.Number,
 					"Click handler on a non-interactive element",
 					"An added div/span handles onClick with no role, tabindex, or keyboard handler on the same line, which usually means keyboard users cannot reach it.",
 					"Use a <button>, or add role, tabIndex={0}, and a keyboard handler.",
@@ -433,9 +433,9 @@ func reviewA11yLineFindings(uiFiles []string, addedByFile map[string][]reviewAdd
 	return findings, hardFail
 }
 
-func reviewA11yFinding(file string, line int, title, summary, recommendation, strength string) Finding {
+func constraintsA11yFinding(file string, line int, title, summary, recommendation, strength string) Finding {
 	return Finding{
-		ID:             "review.accessibility",
+		ID:             "constraints.accessibility",
 		Scopes:         []string{"maintainability"},
 		Title:          title,
 		Summary:        summary,
@@ -447,14 +447,14 @@ func reviewA11yFinding(file string, line int, title, summary, recommendation, st
 	}
 }
 
-// reviewPerfApplicability decides whether the performance gate applies:
+// constraintsPerfApplicability decides whether the performance gate applies:
 // a REVIEW.md risk-path with a performance-flavored message, a path that names
 // a hot-path concern, or any dependency-manifest change.
-func reviewPerfApplicability(changed []string, manifests []string, policy ReviewPolicy) (bool, []string, []string) {
+func constraintsPerfApplicability(changed []string, manifests []string, policy ReviewPolicy) (bool, []string, []string) {
 	var triggers []string
 	fileSet := map[string]struct{}{}
 	for _, risk := range policy.RiskPaths {
-		if !reviewPerfMessagePattern.MatchString(risk.Message) {
+		if !constraintsPerfMessagePattern.MatchString(risk.Message) {
 			continue
 		}
 		for _, file := range changed {
@@ -470,7 +470,7 @@ func reviewPerfApplicability(changed []string, manifests []string, policy Review
 		if isGeneratedReviewFile(file) {
 			continue
 		}
-		if reviewPerfPathPattern.MatchString(file) {
+		if constraintsPerfPathPattern.MatchString(file) {
 			keywordFiles = append(keywordFiles, file)
 			fileSet[file] = struct{}{}
 		}
@@ -506,12 +506,12 @@ func baseNames(files []string) []string {
 	return out
 }
 
-// reviewCodeFiles filters the change to source-code files (tests
+// constraintsCodeFiles filters the change to source-code files (tests
 // included), for gate file attribution.
-func reviewCodeFiles(changed []string) []string {
+func constraintsCodeFiles(changed []string) []string {
 	var out []string
 	for _, file := range changed {
-		if isReviewSourceFile(file) {
+		if isConstraintsSourceFile(file) {
 			out = append(out, file)
 		}
 	}

@@ -27,7 +27,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "gx",
-		Short:         "gx CLI for Git-native capture, commits, and code enhancement",
+		Short:         "gx CLI for Git-native capture, commits, and review",
 		Long:          gxTagline,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -63,8 +63,8 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newCaptureCommand(ctx),
 		newPublishUploadCommand(ctx),
 		newReportCommand(ctx),
-		newEnhanceCommand(ctx),
 		newReviewCommand(ctx),
+		newConstraintsCommand(ctx),
 		newIndexCommand(ctx),
 	)
 	assignCommandGroups(root)
@@ -90,7 +90,7 @@ func assignCommandGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "init", "auth":
 			cmd.GroupID = groupSetup
-		case "enhance", "review":
+		case "review", "constraints":
 			cmd.GroupID = groupWork
 		case "doctor", "version":
 			cmd.GroupID = groupHelp
@@ -271,10 +271,10 @@ func firstNonEmptyString(values ...string) string {
 func Execute(ctx context.Context) error {
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
-	case "gxe":
-		args = append([]string{"enhance"}, args...)
 	case "gxr":
 		args = append([]string{"review"}, args...)
+	case "gxc":
+		args = append([]string{"constraints"}, args...)
 	}
 	root := NewRoot(ctx)
 	root.SetArgs(args)

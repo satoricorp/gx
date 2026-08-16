@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 	os.Exit(gxtest.FailOnEgress(m.Run(), egress()))
 }
 
-func TestEnhanceUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
+func TestReviewUsesDefaultsAndDetectsRepoFacts(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "AGENTS.md", "# agents\n")
@@ -67,7 +67,7 @@ func TestUnpromptedDefaultReviewStaysPatchFocused(t *testing.T) {
 	}
 }
 
-func TestEnhanceEmitsProgress(t *testing.T) {
+func TestReviewEmitsProgress(t *testing.T) {
 	root := initRepo(t)
 	writeFile(t, root, "README.md", "# repo\n")
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -88,7 +88,7 @@ func TestEnhanceEmitsProgress(t *testing.T) {
 	}
 }
 
-func TestEnhanceUsesTrackedFilesAndSkipsNodeModules(t *testing.T) {
+func TestReviewUsesTrackedFilesAndSkipsNodeModules(t *testing.T) {
 	root := initRepo(t)
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 	writeFile(t, root, "node_modules/pkg/package.json", "{}\n")
@@ -103,7 +103,7 @@ func TestEnhanceUsesTrackedFilesAndSkipsNodeModules(t *testing.T) {
 	}
 }
 
-func TestEnhanceDedupesPrimaryBaselineScope(t *testing.T) {
+func TestReviewDedupesPrimaryBaselineScope(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# repo\n")
 
@@ -116,7 +116,7 @@ func TestEnhanceDedupesPrimaryBaselineScope(t *testing.T) {
 	}
 }
 
-func TestEnhanceFocusLimitsRepoFacts(t *testing.T) {
+func TestReviewFocusLimitsRepoFacts(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 	writeFile(t, root, "docs/spec_test.go", "package docs\n")
@@ -787,7 +787,7 @@ func TestRenderMarkdownDoesNotRenderOverview(t *testing.T) {
 }
 
 func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
-	prompt := enhanceDeveloperPrompt(ReviewBrief{})
+	prompt := reviewDeveloperPrompt(ReviewBrief{})
 	for _, want := range []string{
 		"patch_focused",
 		"pr_summary",
@@ -805,6 +805,8 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"\"notable_changes\"",
 		"\"downstream_impact\"",
 		"Only when review_profile is pr_summary: include notable_changes",
+		"For patch_focused, pr_summary, and prompt_directed reviews, include story",
+		"\"story\"",
 		"Only when review_profile is pr_summary: include downstream_impact",
 		"\"file\"",
 		"\"line\"",

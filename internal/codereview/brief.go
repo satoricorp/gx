@@ -43,6 +43,12 @@ type ReviewBrief struct {
 	SourceRefs    []SourceRef        `json:"source_refs,omitempty"`
 	SourceCatalog []SourceBrief      `json:"source_catalog"`
 	Rubric        ArchitectureRubric `json:"rubric"`
+	// Rules are the named rules in force for this review beyond the built-in
+	// defect classes: the pack and whatever REVIEW.md declares. The model is
+	// told to return one of these IDs (or a defect-class slug) as rule_id on
+	// each finding; NormalizeRuleID drops anything not in this set. Empty until
+	// a pack or REVIEW.md rules are loaded — the defect classes always apply.
+	Rules []RuleDef `json:"rules,omitempty"`
 	// Evidence records which retrieval sources answered and which did not. It
 	// travels in the brief so the model is told what it is missing, and so the
 	// report can say the same thing to the reader.
@@ -183,6 +189,10 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 	if err != nil {
 		return ReviewBrief{}, err
 	}
+	// Capped here, once, rather than only inside the per-call compaction: the
+	// shard planner sizes shards from this slice, and it must see the same
+	// context the model calls will carry or it plans for bytes that never ship.
+	contextSnippets = capRetrievedChunksPerFile(contextSnippets, maxRetrievedChunksPerFile)
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	changed := normalizedChangedFiles(in.ChangedFiles)
 	// A whole-repo review has to be given the repository, not just told that
@@ -226,6 +236,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		SourceRefs:    sourceRefsFromContextSnippets(contextSnippets),
 		SourceCatalog: sourceBriefs(sources),
 		Rubric:        reviewRubric(opts),
+		Rules:         AllRuleDefs(policy),
 		Evidence:      in.Evidence.Statuses(),
 	}, nil
 }
@@ -290,15 +301,18 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 		}
 	}
 	for _, rel := range facts.DependencyFiles {
-		// A declared manifest and its generated lockfile are not the same kind
-		// of evidence and must not compete for the same context slot: go.mod
-		// tells a reviewer what this project depends on, go.sum tells it
-		// nothing it can act on. They were one kind, ranked above source code.
-		kind := "dependency_manifest"
+		// A declared manifest is evidence: go.mod / package.json tell a reviewer
+		// what this project depends on. Its generated lockfile tells it nothing
+		// it can act on, and is large — one repository's three bun.lock files
+		// were 52 KB together, a third of the whole reviewer request, shipped
+		// to both legs on every review. Lockfiles were first demoted to their
+		// own kind ranked last; that only helps when the snippet count exceeds
+		// the budget, which an ordinary review's does not. So they are not read
+		// at all. A lockfile the change touches still appears in the diff.
 		if IsLockfilePath(rel) {
-			kind = "dependency_lockfile"
+			continue
 		}
-		if snippet, ok := readSnippet(repoRoot, rel, kind); ok {
+		if snippet, ok := readSnippet(repoRoot, rel, "dependency_manifest"); ok {
 			snippets = append(snippets, snippet)
 		}
 	}
@@ -309,7 +323,21 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 			}
 		}
 	}
+	// The quality scan runs over the whole repository, and its hints already
+	// travel in static.code_quality. What is decided here is which flagged
+	// files are ALSO shipped whole. For a change review that is only files the
+	// change touches: the review is of the diff, and a 16 KB file nobody
+	// edited, sent because a grep found a shell call in it, is weight the
+	// reviewer reads before the diff (measured: 40 KB of four such files on a
+	// five-file change). A whole-repo review is of the repository, and keeps
+	// them all.
+	changed := changedFileSet(in.ChangedFiles)
 	for _, rel := range qualityFiles(collectCodeQualityHints(repoRoot, facts, opts), opts.Deep) {
+		if !opts.WholeRepo && len(changed) > 0 {
+			if _, ok := changed[rel]; !ok {
+				continue
+			}
+		}
 		if snippet, ok := readSnippet(repoRoot, rel, "code_quality_file"); ok {
 			snippets = append(snippets, snippet)
 		}
@@ -396,7 +424,7 @@ func fileDiff(ctx context.Context, repoRoot, file string) string {
 
 // diffUnavailableContentHeader marks a snippet that carries file content
 // rather than a diff (an untracked file has no diff to render). Consumers that
-// parse hunks — the review signals, for one — key on it to treat every
+// parse hunks — the constraints signals, for one — key on it to treat every
 // line as added.
 const diffUnavailableContentHeader = "No git diff was available for this changed file. Current file content:"
 
@@ -405,7 +433,53 @@ func fileContentSnippet(repoRoot, file string) string {
 	if err != nil {
 		return ""
 	}
+	if kind, ok := describeBinaryContent(data); ok {
+		// A compiled artifact has no source to review. Sending its bytes to
+		// two models produced essays instead of JSON — one leg answered in
+		// prose and the reply failed to parse, degrading the run. Say what the
+		// file is, in one line the model and the reader can both act on, and
+		// send nothing else.
+		return diffUnavailableContentHeader + "\n" +
+			fmt.Sprintf("[binary file: %s, %d bytes — no source diff to review; if it was built from source, review the source; if it is a third-party artifact, verify its provenance]", kind, len(data))
+	}
 	return diffUnavailableContentHeader + "\n" + string(data)
+}
+
+// describeBinaryContent reports whether data is a binary artifact rather than
+// text, and names the kind when it can. The test is git's own: a NUL byte in
+// the first 8 KiB means binary. Well-known magic numbers give the kind a name
+// so the reader learns "Mach-O executable" rather than "binary".
+func describeBinaryContent(data []byte) (string, bool) {
+	if len(data) == 0 {
+		return "", false
+	}
+	probe := data
+	if len(probe) > 8192 {
+		probe = probe[:8192]
+	}
+	if !bytes.ContainsRune(probe, 0) {
+		return "", false
+	}
+	kind := "binary"
+	switch {
+	case len(data) >= 4 && (string(data[:4]) == "\xcf\xfa\xed\xfe" || string(data[:4]) == "\xce\xfa\xed\xfe" || string(data[:4]) == "\xca\xfe\xba\xbe"):
+		kind = "Mach-O executable"
+	case len(data) >= 4 && string(data[:4]) == "\x7fELF":
+		kind = "ELF executable"
+	case len(data) >= 2 && string(data[:2]) == "MZ":
+		kind = "Windows PE executable"
+	case len(data) >= 4 && string(data[:4]) == "\x89PNG":
+		kind = "PNG image"
+	case len(data) >= 3 && string(data[:3]) == "\xff\xd8\xff":
+		kind = "JPEG image"
+	case len(data) >= 4 && string(data[:4]) == "PK\x03\x04":
+		kind = "zip archive"
+	case len(data) >= 2 && string(data[:2]) == "\x1f\x8b":
+		kind = "gzip archive"
+	case len(data) >= 4 && string(data[:4]) == "%PDF":
+		kind = "PDF"
+	}
+	return kind, true
 }
 
 func readSnippet(repoRoot, rel, kind string) (ContextSnippet, bool) {

@@ -1,0 +1,911 @@
+package codereview
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/satoricorp/gx/internal/termstyle"
+)
+
+// The terminal render for gx review.
+//
+// gx review has printed markdown to stdout since the day it shipped — the
+// same string it posts as the PR comment. This is the render a terminal
+// actually deserves: a run ledger that says what ran, findings in two lanes
+// with the code under discussion and a one-line fix, a fix plan the agent can
+// work top to bottom, a story of what changed that the reader now owns, and
+// then the two-line Verdict/Next seam that the MCP tool and the slash commands
+// already relay — kept last, kept the same shape.
+//
+// Two audiences read one report. The agent reads the lanes and the fix plan
+// and converges to clean. The human reads the story and the verdict. Nothing
+// in the story is wrong; every item there ends in ownership, not action.
+//
+// Color rides on report.Color and termstyle.Enabled(), so --json, --md, and
+// piped output stay plain — the same discipline the constraints render keeps.
+
+const (
+	reviewRenderIndent     = "  "
+	reviewRenderCodeIndent = "      "
+	reviewRenderRuleWidth  = 74
+	// reviewRenderWidth is the column the report wraps prose at and clips code
+	// at. 100 fits the common wide terminal with room for the indent; prose
+	// wraps at word boundaries, code is clipped with an ellipsis rather than
+	// wrapped, because a wrapped code line reads as two lines of code.
+	reviewRenderWidth = 100
+)
+
+// RenderReviewText is the terminal render. Sections appear in a fixed order
+// and a section with nothing in it is omitted rather than printed empty, with
+// one exception: the verdict seam always prints, because agents key on it.
+func RenderReviewText(report Report) string {
+	var b strings.Builder
+	color := report.Color && termstyle.Enabled()
+
+	writeReviewLedger(&b, report, color)
+
+	blocking, advisory := splitFindingsByLane(report.Findings)
+	if len(blocking) > 0 {
+		b.WriteString("\n")
+		writeReviewLane(&b, report, color, "BLOCKING", termstyle.Danger, blocking)
+	}
+	if len(advisory) > 0 {
+		b.WriteString("\n")
+		writeReviewLane(&b, report, color, "ADVISORY", termstyle.Warning, advisory)
+	}
+	if len(blocking)+len(advisory) > 0 {
+		writeSuppressHint(&b, color)
+	}
+	if plan := BuildFixPlan(report.Findings); len(plan) > 0 {
+		b.WriteString("\n")
+		writeReviewFixPlan(&b, report, color, plan)
+	}
+	if len(report.Story) > 0 {
+		b.WriteString("\n")
+		writeReviewStory(&b, report, color, report.Story)
+	}
+	if !report.Reviewed || len(report.Findings) == 0 && len(report.Story) == 0 {
+		writeReviewNothingToShow(&b, report, color)
+	}
+
+	b.WriteString("\n")
+	verdict, next := ReviewVerdictLines(report)
+	paint := termstyle.Success
+	if len(blocking) > 0 || !report.Reviewed {
+		paint = termstyle.Danger
+	} else if len(report.DegradedReasons) > 0 {
+		paint = termstyle.Warning
+	}
+	b.WriteString(colorize(color, paint, verdict))
+	b.WriteString("\n")
+	b.WriteString(next)
+	b.WriteString("\n")
+	return b.String()
+}
+
+// ReviewVerdictLines is the two-line machine seam: a "Verdict: ..." line and a
+// "Next: ..." line, the last two lines of the render. It mirrors the
+// constraints seam so anything that already relays one relays the other.
+func ReviewVerdictLines(report Report) (verdict, next string) {
+	if !report.Reviewed {
+		target := strings.TrimSpace(report.ReviewTarget)
+		if target == "" {
+			target = "the working tree"
+		}
+		return "Verdict: NOTHING-TO-REVIEW — no change found (looked at " + target + ")",
+			"Next: make a change, then rerun `gx review`."
+	}
+	blocking, advisory := splitFindingsByLane(report.Findings)
+	if len(blocking) > 0 {
+		names := make([]string, 0, len(blocking))
+		seen := map[string]struct{}{}
+		for _, f := range blocking {
+			name := reviewRuleShortName(f)
+			if _, dup := seen[name]; dup || name == "" {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		detail := ""
+		if len(names) > 0 {
+			detail = " (" + strings.Join(names, ", ") + ")"
+		}
+		return fmt.Sprintf("Verdict: NO-SHIP — %d blocking finding(s)%s", len(blocking), detail),
+			"Next: work the fix plan, then rerun `gx review`."
+	}
+	if len(report.DegradedReasons) > 0 {
+		// One phrase, not the wrapped error: the verdict states the outcome,
+		// run details carries the reason. A parse failure on one leg is not
+		// worth a paragraph on the line agents relay.
+		return fmt.Sprintf("Verdict: DEGRADED — no blocking finding, but %s (%d advisory)",
+				summarizeDegradedReasons(report.DegradedReasons), len(advisory)),
+			"Next: ship if you're comfortable, or rerun `gx review` for a full panel; see run details."
+	}
+	if len(advisory) > 0 {
+		return fmt.Sprintf("Verdict: SHIP — no blocking finding (%d advisory)", len(advisory)),
+			"Next: ship it — the advisory items are yours to take or leave."
+	}
+	return "Verdict: SHIP — no findings",
+		"Next: ship it."
+}
+
+// ---- ledger ---------------------------------------------------------------
+
+func writeReviewLedger(b *strings.Builder, report Report, color bool) {
+	writeReviewLedgerHeader(b, report, color)
+	writeReviewLedgerRows(b, report, color)
+}
+
+func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
+	target := strings.TrimSpace(report.ReviewRange)
+	if target == "" {
+		target = strings.TrimSpace(report.ReviewTarget)
+	}
+	if target == "" {
+		target = "the current change"
+	}
+	head := colorize(color, boldPainter(reviewMint), "gx review")
+	b.WriteString(head)
+	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" — %s · %d file(s)", target, len(report.ChangedFiles))))
+	b.WriteString("\n")
+	// The intent line: what the change was supposed to do, in the user's
+	// words when they gave one. The reviewer holds the diff against it, and
+	// the story quotes it back as "asked". When none was given the line says
+	// so rather than showing an unexplained sentence — a reader who never
+	// typed one should not wonder where it came from.
+	if prompt := strings.TrimSpace(report.Prompt); prompt != "" {
+		lines := wrapText(prompt, reviewRenderWidth-len("intent: \"\""))
+		for i, line := range lines {
+			if i == 0 {
+				line = "intent: \"" + line
+			} else {
+				line = "        " + line
+			}
+			if i == len(lines)-1 {
+				line += "\""
+			}
+			b.WriteString(colorize(color, termstyle.Muted, line))
+			b.WriteString("\n")
+		}
+	} else if report.Reviewed {
+		// Only when the reader did not type one: a gloss on every report is
+		// noise to someone who did.
+		b.WriteString(colorize(color, termstyle.Muted, "intent: none — pass one as the argument (\"fix the auth timeout\") and the diff is judged against it"))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+}
+
+func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
+	row := func(label, value string) {
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("%-11s", label)))
+		b.WriteString(value)
+		b.WriteString("\n")
+	}
+	// The scope row states, in words, what was reviewed — "Reviewed the
+	// repository", "Reviewed `origin/main...HEAD`" — because that sentence is
+	// the contract a reader (and the tests) hold the report to. The file count
+	// rides along as detail.
+	scope := "Reviewed " + strings.TrimSpace(report.ReviewTarget)
+	if strings.TrimSpace(report.ReviewTarget) == "" {
+		scope = "Reviewed the current change"
+	}
+	if n := len(report.ChangedFiles); n > 0 {
+		scope += colorize(color, termstyle.Muted, fmt.Sprintf(" · %d file(s)", n))
+	}
+	if !report.Reviewed {
+		scope = colorize(color, termstyle.Warning, "Nothing to review") +
+			colorize(color, termstyle.Muted, ": no changes found in "+strings.TrimSpace(report.ReviewTarget)+". No code was inspected, so this is not a clean review.")
+	}
+	row("scope", scope)
+
+	models := colorize(color, termstyle.Muted, "no model ran")
+	if report.aiReviewRan() {
+		models = strings.Join(friendlyModelNames(report.ReviewModels), " · ")
+		if models == "" {
+			models = "AI panel"
+		}
+		if t := shortTransportName(report.ReviewTransport); t != "" {
+			models += colorize(color, termstyle.Muted, " via "+t)
+		}
+	}
+	row("reviewers", models)
+
+	if len(report.Evidence) > 0 {
+		// One entry per source. A source is recorded once per retriever call
+		// and a review makes several — two query legs, per-shard reads — so
+		// the raw log lists "code index" as many times as it was asked. The
+		// ledger collapses that: a source that answered OK anywhere is have;
+		// one that only ever failed is missing; states that mean "nothing to
+		// chase" are neither.
+		best := map[string]string{}
+		var order []string
+		for _, e := range report.Evidence {
+			label := strings.TrimSpace(e.Source)
+			if label == "" {
+				continue
+			}
+			if _, seen := best[label]; !seen {
+				order = append(order, label)
+				best[label] = e.State
+				continue
+			}
+			if e.State == EvidenceOK {
+				best[label] = EvidenceOK
+			}
+		}
+		have, asked := 0, 0
+		for _, label := range order {
+			switch best[label] {
+			case EvidenceOK:
+				have++
+				asked++
+			case EvidenceEmpty, EvidenceDisabled, EvidenceSkipped:
+			default:
+				asked++
+			}
+		}
+		// A count, not a list. The reader cannot act on which retrieval
+		// source answered; the number says whether the review was well
+		// grounded, and run details names them for anyone who wants that.
+		if asked > 0 {
+			paint := termstyle.Muted
+			if have < asked {
+				paint = termstyle.Warning
+			}
+			row("evidence", colorize(color, paint, fmt.Sprintf("%d of %d sources answered", have, asked)))
+		}
+	}
+
+	blocking, advisory := splitFindingsByLane(report.Findings)
+	demoted := 0
+	for _, f := range report.Findings {
+		if f.DemotedFrom != "" {
+			demoted++
+		}
+	}
+	verify := fmt.Sprintf("%d blocking · %d advisory", len(blocking), len(advisory))
+	if demoted > 0 {
+		verify += fmt.Sprintf(" · %d demoted", demoted)
+	}
+	row("findings", verify)
+
+	if report.Coverage.Partial() {
+		if s := strings.TrimSpace(report.Coverage.Statement()); s != "" {
+			row("coverage", colorize(color, termstyle.Warning, s))
+		}
+	}
+	// A degraded run is stated once, quietly, as a ledger row — not shouted
+	// as a banner. The verdict line already says DEGRADED, and RUN DETAILS
+	// carries the full reason for anyone who wants it. A reviewer leg that
+	// answered in prose is a fact about this run, not an emergency.
+	if n := len(report.DegradedReasons); n > 0 {
+		row("note", colorize(color, termstyle.Warning, fmt.Sprintf("degraded — %s", summarizeDegradedReasons(report.DegradedReasons)))+
+			colorize(color, termstyle.Muted, "  (see run details)"))
+	}
+}
+
+// summarizeDegradedReasons folds the degradation into one short phrase for the
+// ledger: "one reviewer did not run" rather than the wrapped decode error.
+// The full text stays in RenderReviewDetails and the JSON.
+func summarizeDegradedReasons(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	first := strings.TrimSpace(reasons[0])
+	// Most reasons read "<what happened> — <detail>" or "<what>: <detail>";
+	// keep the what.
+	for _, sep := range []string{" — ", ": "} {
+		if i := strings.Index(first, sep); i > 0 {
+			first = first[:i]
+			break
+		}
+	}
+	if len(reasons) > 1 {
+		return fmt.Sprintf("%s (+%d more)", first, len(reasons)-1)
+	}
+	return first
+}
+
+// ---- lanes ----------------------------------------------------------------
+
+func splitFindingsByLane(findings []Finding) (blocking, advisory []Finding) {
+	for _, f := range findings {
+		if LaneOf(f) == LaneBlocking {
+			blocking = append(blocking, f)
+		} else {
+			advisory = append(advisory, f)
+		}
+	}
+	return blocking, advisory
+}
+
+func writeReviewLane(b *strings.Builder, report Report, color bool, label string, paint func(string) string, findings []Finding) {
+	b.WriteString(reviewDivider(color, label, paint, fmt.Sprintf("%d", len(findings))))
+	b.WriteString("\n")
+	for _, f := range findings {
+		b.WriteString("\n")
+		writeReviewFinding(b, report, color, f)
+	}
+}
+
+// writeSuppressHint is the one place the report says how to silence a rule —
+// once, after the lanes, instead of two lines under every finding. The exact
+// paste-ready line for a given finding is in the JSON (suppress) and behind
+// [s] in the accordion.
+func writeSuppressHint(b *strings.Builder, color bool) {
+	b.WriteString("\n")
+	b.WriteString(reviewRenderIndent)
+	b.WriteString(colorize(color, termstyle.Muted, "to silence a rule where it doesn't apply: add a line under ## Exceptions in REVIEW.md, e.g."))
+	b.WriteString("\n")
+	b.WriteString(reviewRenderIndent + reviewRenderIndent)
+	b.WriteString(colorize(color, termstyle.Muted, `- "no-secrets-in-logs" doesn't apply in cmd/demo* — demos print and continue.`))
+	b.WriteString("\n")
+}
+
+func reviewDivider(color bool, label string, paint func(string) string, right string) string {
+	fill := reviewRenderRuleWidth - len(label) - len(right)
+	if fill < 4 {
+		fill = 4
+	}
+	return colorize(color, boldPainter(paint), label) + " " +
+		colorize(color, termstyle.Muted, strings.Repeat("─", fill)+" "+right+" ──")
+}
+
+func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding) {
+	// The rule leads. It is the thing a reader scans a report by — a column
+	// of rule names down the left is a table of contents; a column of prose
+	// titles is not. So the first line is the rule name, bold and painted by
+	// namespace (mint for the pack, indigo for the repo's own, muted for an
+	// open-ended defect class), with the location and how it was decided
+	// after it. The title is the second line, in plain text.
+	b.WriteString(reviewRenderIndent)
+	if f.RuleID != "" {
+		ns, name, _ := strings.Cut(f.RuleID, "/")
+		paint := ruleNamespacePainter(ns)
+		b.WriteString(colorize(color, boldPainter(paint), name))
+		b.WriteString(colorize(color, termstyle.Muted, "  "+ns))
+	} else {
+		b.WriteString(colorize(color, boldPainter(termstyle.Section), strings.TrimSpace(f.Title)))
+	}
+	if loc := findingLocation(f); loc != "" {
+		b.WriteString(colorize(color, termstyle.Muted, "  ·  "+loc))
+	}
+	if reviewDecidedBy(f) == "det" {
+		b.WriteString(colorize(color, termstyle.Muted, "  [det]"))
+	}
+	b.WriteString("\n")
+	if f.RuleID != "" {
+		if title := strings.TrimSpace(f.Title); title != "" {
+			for _, line := range wrapText(title, reviewRenderWidth-len(reviewRenderIndent)) {
+				b.WriteString(reviewRenderIndent)
+				b.WriteString(colorize(color, termstyle.Value, line))
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	if lines := renderCodeLines(color, f, reviewRenderCodeIndent); len(lines) > 0 {
+		b.WriteString("\n")
+		for _, line := range lines {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+
+	if why := strings.TrimSpace(f.Summary); why != "" {
+		b.WriteString("\n")
+		writeReviewLabeled(b, color, termstyle.Warning, "Why", firstSentences(why, 3))
+	}
+	if fix := strings.TrimSpace(f.Recommendation); fix != "" {
+		writeReviewLabeled(b, color, termstyle.Success, "Fix", firstSentences(fix, 2))
+	}
+	if ex := strings.TrimSpace(f.Example); ex != "" {
+		b.WriteString("\n")
+		for _, line := range renderHunkLinesFor(color, f.File, ex, reviewRenderCodeIndent) {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+
+	// Evidence footer: what the trust machinery said.
+	if ev := reviewEvidenceLine(f); ev != "" {
+		b.WriteString("\n")
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, termstyle.Muted, ev))
+		b.WriteString("\n")
+	}
+}
+
+// writeReviewLabeled writes "  Why  text" with continuation lines aligned
+// under the text, wrapping at a comfortable width.
+func writeReviewLabeled(b *strings.Builder, color bool, paint func(string) string, label, text string) {
+	const width = 72
+	pad := strings.Repeat(" ", len(reviewRenderIndent)+len(label)+2)
+	first := true
+	for _, line := range wrapText(text, width) {
+		if first {
+			b.WriteString(reviewRenderIndent)
+			b.WriteString(colorize(color, paint, label))
+			b.WriteString("  ")
+			first = false
+		} else {
+			b.WriteString(pad)
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+}
+
+func reviewEvidenceLine(f Finding) string {
+	var parts []string
+	switch n := len(f.Corroboration); {
+	case n >= 2:
+		parts = append(parts, "both graders agreed")
+	case n == 1:
+		parts = append(parts, "one grader flagged")
+	}
+	verdict := strings.ToLower(strings.TrimSpace(f.JudgeVerdict))
+	if verdict == "confirmed" {
+		parts = append(parts, "judge confirmed")
+	} else if verdict != "" {
+		parts = append(parts, "judge "+verdict)
+	}
+	if f.DemotedFrom != "" {
+		parts = append(parts, "demoted from "+f.DemotedFrom)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// reviewDecidedBy names how a finding was decided: a rule with no reviewer leg
+// behind it came from code; anything the panel raised was graded.
+func reviewDecidedBy(f Finding) string {
+	if len(f.Corroboration) == 0 && f.JudgeVerdict == "" {
+		return "det"
+	}
+	return "graded"
+}
+
+func reviewRuleShortName(f Finding) string {
+	if f.RuleID == "" {
+		return ""
+	}
+	_, name, ok := strings.Cut(f.RuleID, "/")
+	if !ok {
+		return f.RuleID
+	}
+	return name
+}
+
+func findingLocation(f Finding) string {
+	switch {
+	case f.File != "" && f.Line > 0:
+		return fmt.Sprintf("%s:%d", f.File, f.Line)
+	case f.File != "":
+		return f.File
+	default:
+		return ""
+	}
+}
+
+// SuppressLine is the exact, paste-ready exception a reader adds to REVIEW.md
+// to silence this rule where the finding landed. Friction belongs in the
+// decision to suppress, not in the mechanics of doing it.
+func SuppressLine(f Finding) string {
+	name := reviewRuleShortName(f)
+	scope := f.File
+	if scope == "" {
+		scope = "<path>"
+	}
+	return fmt.Sprintf("- %q doesn't apply in %s — <reason>.", name, scope)
+}
+
+// ---- fix plan -------------------------------------------------------------
+
+func writeReviewFixPlan(b *strings.Builder, report Report, color bool, plan []FixStep) {
+	blocking, advisory := 0, 0
+	for _, s := range plan {
+		if s.Lane == LaneBlocking {
+			blocking++
+		} else {
+			advisory++
+		}
+	}
+	b.WriteString(colorize(color, boldPainter(reviewMint), "FIX PLAN"))
+	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" ──── %d blocking · %d advisory ── fix, then rerun ", blocking, advisory)))
+	b.WriteString(colorize(color, termstyle.Command, "gx review"))
+	b.WriteString(colorize(color, termstyle.Muted, " ────"))
+	b.WriteString("\n\n")
+	writeReviewFixPlanBody(b, report, color, plan)
+}
+
+func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan []FixStep) {
+	// One line per step: the rule and where. The action itself is the Fix
+	// line of the finding above; repeating it here doubled the report's
+	// length and said nothing new. The JSON fix_plan carries the full text.
+	for _, s := range plan {
+		paint := termstyle.Warning
+		if s.Lane == LaneBlocking {
+			paint = termstyle.Danger
+		}
+		name := s.RuleID
+		if name == "" {
+			name = s.FindingID
+		}
+		if _, short, ok := strings.Cut(name, "/"); ok {
+			name = short
+		}
+		loc := s.File
+		if s.Line > 0 {
+			loc += fmt.Sprintf(":%d", s.Line)
+		}
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, paint, fmt.Sprintf("%d.", s.Order)))
+		b.WriteString(" ")
+		b.WriteString(colorize(color, boldPainter(termstyle.Section), name))
+		if loc != "" {
+			b.WriteString(colorize(color, termstyle.Muted, "  "+loc))
+		}
+		b.WriteString("\n")
+	}
+}
+
+// ---- story ----------------------------------------------------------------
+
+func writeReviewStory(b *strings.Builder, report Report, color bool, items []StoryItem) {
+	b.WriteString(colorize(color, boldPainter(termstyle.Command), "WORTH KNOWING"))
+	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" ────── %d change(s) that passed, and that you now own ──", len(items))))
+	b.WriteString("\n")
+	writeReviewStoryBody(b, report, color, items)
+}
+
+func writeReviewStoryBody(b *strings.Builder, report Report, color bool, items []StoryItem) {
+	for i, item := range items {
+		b.WriteString("\n")
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, termstyle.Command, fmt.Sprintf("%d", i+1)))
+		b.WriteString("  ")
+		b.WriteString(colorize(color, termstyle.Section, strings.TrimSpace(item.Headline)))
+		if m := strings.TrimSpace(item.Materiality); m != "" {
+			b.WriteString(colorize(color, termstyle.Muted, "   materiality: "+m))
+		}
+		b.WriteString("\n")
+		if loc := storyLocation(item); loc != "" {
+			b.WriteString(reviewRenderIndent + "   ")
+			b.WriteString(colorize(color, termstyle.Muted, loc))
+			b.WriteString("\n")
+		}
+		if hunk := strings.TrimSpace(item.DiffHunk); hunk != "" {
+			b.WriteString("\n")
+			for _, line := range renderHunkLinesFor(color, item.File, hunk, reviewRenderCodeIndent) {
+				b.WriteString(line)
+				b.WriteString("\n")
+			}
+		}
+		if c := strings.TrimSpace(item.Consequence); c != "" {
+			b.WriteString("\n")
+			pad := reviewRenderIndent + "   "
+			label := "What changes for you: "
+			// Wrap the whole sentence with the label counted in, so the first
+			// line does not overrun the width the rest of the report keeps.
+			wrapped := wrapText(label+c, 72)
+			for i, line := range wrapped {
+				b.WriteString(pad)
+				if i == 0 {
+					line = colorize(color, termstyle.Section, label) + strings.TrimPrefix(line, label)
+				}
+				b.WriteString(line)
+				b.WriteString("\n")
+			}
+		}
+		if item.PassedRule != "" {
+			b.WriteString(reviewRenderIndent + "   ")
+			b.WriteString(colorize(color, reviewMint, reviewRuleShortNameOf(item.PassedRule)+" passed on this"))
+			b.WriteString("\n")
+		}
+		if item.Asked != "" || item.Chose != "" || len(item.Watch) > 0 {
+			b.WriteString("\n")
+		}
+		if a := strings.TrimSpace(item.Asked); a != "" {
+			writeStoryKV(b, color, "asked", fmt.Sprintf("%q", a))
+		}
+		if c := strings.TrimSpace(item.Chose); c != "" {
+			writeStoryKV(b, color, "chose", c)
+		}
+		if len(item.Watch) > 0 {
+			writeStoryKV(b, color, "watch", strings.Join(item.Watch, " · "))
+		}
+	}
+}
+
+func writeStoryKV(b *strings.Builder, color bool, key, value string) {
+	b.WriteString(reviewRenderIndent + "   ")
+	b.WriteString(colorize(color, termstyle.Muted, key))
+	b.WriteString("  ")
+	b.WriteString(value)
+	b.WriteString("\n")
+}
+
+func storyLocation(item StoryItem) string {
+	if item.File == "" {
+		return ""
+	}
+	if len(item.Files) > 1 {
+		return fmt.Sprintf("%s (+%d more)", item.File, len(item.Files)-1)
+	}
+	return item.File
+}
+
+func reviewRuleShortNameOf(ruleID string) string {
+	if _, name, ok := strings.Cut(ruleID, "/"); ok {
+		return name
+	}
+	return ruleID
+}
+
+// ---- empty state ----------------------------------------------------------
+
+func writeReviewNothingToShow(b *strings.Builder, report Report, color bool) {
+	b.WriteString("\n")
+	b.WriteString(reviewRenderIndent)
+	switch {
+	case !report.Reviewed:
+		b.WriteString(colorize(color, termstyle.Muted, "Nothing to review — no code was inspected."))
+	case strings.TrimSpace(report.NoFindingsMessage) != "":
+		b.WriteString(colorize(color, termstyle.Muted, strings.TrimSpace(report.NoFindingsMessage)))
+	default:
+		b.WriteString(colorize(color, termstyle.Muted, "No findings."))
+	}
+	b.WriteString("\n")
+}
+
+// ---- small utilities ------------------------------------------------------
+
+// reviewMint paints with the review accent, in the same function shape as the
+// termstyle painters so it can be handed to colorize.
+func reviewMint(text string) string {
+	return reviewMintANSI + text + reviewResetANSI
+}
+
+// wrapText breaks text at spaces to fit width, never splitting a word.
+func wrapText(text string, width int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	cur := words[0]
+	for _, w := range words[1:] {
+		if len(cur)+1+len(w) > width {
+			lines = append(lines, cur)
+			cur = w
+			continue
+		}
+		cur += " " + w
+	}
+	return append(lines, cur)
+}
+
+// ---- section-level exports for the interactive shape ---------------------
+//
+// The accordion in internal/cli renders one section at a time under its own
+// node. It calls these rather than re-implementing the sections, so the
+// interactive and linear renders cannot drift: whatever RenderReviewText
+// prints for a lane, the accordion prints for that lane.
+
+// SplitFindingsByLane partitions findings into the blocking and advisory
+// lanes, preserving report order within each.
+func SplitFindingsByLane(findings []Finding) (blocking, advisory []Finding) {
+	return splitFindingsByLane(findings)
+}
+
+// RuleShortName is the part of a rule ID after the namespace — the name a
+// human reads and a suppression references.
+func RuleShortName(f Finding) string {
+	return reviewRuleShortName(f)
+}
+
+// ReviewMint paints with the review accent, in the same shape as the termstyle
+// painters so a caller can pick it by severity alongside them.
+func ReviewMint(text string) string {
+	return reviewMint(text)
+}
+
+// RenderReviewLedgerRows returns the ledger rows — scope, reviewers, evidence,
+// findings, coverage — one per line, without the header line above them.
+func RenderReviewLedgerRows(report Report, color bool) string {
+	var b strings.Builder
+	writeReviewLedgerRows(&b, report, color)
+	return b.String()
+}
+
+// RenderReviewLane renders one lane's findings, without the lane divider —
+// the accordion draws its own section header.
+func RenderReviewLane(report Report, color bool, label string, findings []Finding) string {
+	var b strings.Builder
+	for i, f := range findings {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		writeReviewFinding(&b, report, color, f)
+	}
+	return b.String()
+}
+
+// RenderReviewFixPlan renders the fix plan section body.
+func RenderReviewFixPlan(report Report, color bool) string {
+	plan := BuildFixPlan(report.Findings)
+	if len(plan) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	writeReviewFixPlanBody(&b, report, color, plan)
+	return b.String()
+}
+
+// RenderReviewStory renders the story section body.
+func RenderReviewStory(report Report, color bool) string {
+	if len(report.Story) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	writeReviewStoryBody(&b, report, color, report.Story)
+	return b.String()
+}
+
+// RenderReviewDetails renders the run details a reader opens on demand:
+// models, transport, every evidence source with its state, coverage, and any
+// degradation — the ledger's long form.
+func RenderReviewDetails(report Report, color bool) string {
+	var b strings.Builder
+	kv := func(k, v string) {
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("%-12s", k)))
+		b.WriteString(v)
+		b.WriteString("\n")
+	}
+	if report.aiReviewRan() {
+		kv("reviewers", strings.Join(friendlyModelNames(report.ReviewModels), " · "))
+		if len(report.ReviewModels) > 0 {
+			kv("model ids", colorize(color, termstyle.Muted, strings.Join(report.ReviewModels, " · ")))
+		}
+		if report.ReviewTransport != "" {
+			kv("transport", report.ReviewTransport)
+		}
+	} else {
+		kv("reviewers", "no model ran")
+	}
+	if report.ReviewMode != "" {
+		kv("mode", report.ReviewMode)
+	}
+	if report.ReviewBase != "" {
+		kv("base", report.ReviewBase)
+	}
+	if report.ContextSnippets > 0 {
+		kv("context", fmt.Sprintf("%d snippet(s)", report.ContextSnippets))
+	}
+	for _, e := range report.Evidence {
+		src := strings.TrimSpace(e.Source)
+		if src == "" {
+			continue
+		}
+		state := e.State
+		if d := strings.TrimSpace(e.Detail); d != "" {
+			state += " — " + d
+		}
+		paint := termstyle.Muted
+		if e.State == EvidenceOK {
+			paint = termstyle.Success
+		} else if e.Degraded() {
+			paint = termstyle.Warning
+		}
+		kv("evidence", colorize(color, paint, src+": "+state))
+	}
+	if s := strings.TrimSpace(report.Coverage.Statement()); s != "" {
+		kv("coverage", s)
+	}
+	for _, r := range report.DegradedReasons {
+		kv("degraded", colorize(color, termstyle.Warning, r))
+	}
+	if b.Len() == 0 {
+		return reviewRenderIndent + colorize(color, termstyle.Muted, "no run details recorded") + "\n"
+	}
+	return b.String()
+}
+
+// friendlyModelNames maps model IDs to the names a person uses. See
+// friendlyModelName.
+func friendlyModelNames(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if name := friendlyModelName(id); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// shortTransportName trims a transport description to the phrase that fits a
+// ledger row: "gx Cloud (https://api.gx.run)" → "gx Cloud". The full form stays
+// in run details and JSON.
+func shortTransportName(transport string) string {
+	transport = strings.TrimSpace(transport)
+	if i := strings.Index(transport, " ("); i > 0 {
+		return transport[:i]
+	}
+	return transport
+}
+
+// boldPainter wraps a painter so its output is also bold — the SGR 1 code
+// composes with the color code, and reset clears both.
+func boldPainter(paint func(string) string) func(string) string {
+	return func(text string) string {
+		if text == "" {
+			return text
+		}
+		return "\x1b[1m" + paint(text)
+	}
+}
+
+// SummarizeDegradedReasons is the one-phrase form of a degraded run, for the
+// accordion's RUN DETAILS row and anywhere else the full reason is too long.
+func SummarizeDegradedReasons(reasons []string) string {
+	return summarizeDegradedReasons(reasons)
+}
+
+// ruleNamespacePainter picks the accent for a rule by who wrote it: mint for
+// the built-in pack, indigo for the repository's own REVIEW.md rules, muted for
+// the open-ended defect classes — the same three colors the report's rule IDs
+// have carried since the first mockup, so the namespace is readable at a
+// glance without reading the namespace.
+func ruleNamespacePainter(ns string) func(string) string {
+	switch {
+	case strings.HasPrefix(ns, "gx:"):
+		return reviewMint
+	case strings.EqualFold(ns, "REVIEW.md"):
+		return termstyle.Command
+	default:
+		return termstyle.Section
+	}
+}
+
+// firstSentences clamps prose to its first n sentences for the terminal — the
+// prompt asks for two-sentence Whys and one-action Fixes, and the render holds
+// the line when a model does not. The full text is untouched in the Finding
+// and the JSON; only the terminal shows the head. Sentence ends are ". ", "! ",
+// "? " followed by an uppercase letter or a backtick, which keeps "e.g. foo"
+// and "internal/cli.go" from splitting. A clamp is marked with " …".
+func firstSentences(text string, n int) string {
+	text = strings.TrimSpace(text)
+	if n <= 0 || text == "" {
+		return text
+	}
+	count := 0
+	for i := 0; i+1 < len(text); i++ {
+		if text[i] != '.' && text[i] != '!' && text[i] != '?' {
+			continue
+		}
+		if text[i+1] != ' ' {
+			continue
+		}
+		// Look at the first non-space rune after the terminator.
+		j := i + 1
+		for j < len(text) && text[j] == ' ' {
+			j++
+		}
+		if j >= len(text) {
+			break
+		}
+		next := text[j]
+		if !(next >= 'A' && next <= 'Z') && next != '`' && next != '"' {
+			continue
+		}
+		count++
+		if count == n {
+			return strings.TrimSpace(text[:i+1]) + " …"
+		}
+	}
+	return text
+}

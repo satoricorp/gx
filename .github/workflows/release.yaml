@@ -98,7 +98,6 @@ jobs:
             dist/cli/*
             scripts/install.sh
           if-no-files-found: error
-          retention-days: 7
 
       - name: Configure AWS credentials with OIDC
         if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}

@@ -120,14 +120,24 @@ func TestConverseTruncationSurfacesAsMaxTokens(t *testing.T) {
 // TestCloudTransportRefusesConverseModels pins the honest failure: gx Cloud
 // only normalizes the Anthropic shape, so a non-Anthropic leg through Cloud
 // must fail here, naming the fix, not server-side with a misleading error.
-func TestCloudTransportRefusesConverseModels(t *testing.T) {
+// The cloud transport used to refuse every non-Anthropic model before the
+// network, saying gx Cloud "does not speak Converse yet". It does — the fight
+// route is a Converse passthrough — and whether a model is allowed is the
+// server's decision, answered as model_not_allowed with the list. So the
+// transport now forwards a Converse-family model like any other: with a bare
+// client there is no server to reach, and the failure is a transport error
+// from the HTTP layer, not the old pre-network refusal.
+func TestCloudTransportForwardsConverseModelsToTheServer(t *testing.T) {
 	transport := &cloudBedrockTransport{client: &cloud.Client{}, url: "https://example.invalid"}
 	_, err := transport.complete(
-		context.Background(), "us.meta.llama4-maverick-17b-instruct-v1:0", "s", "i", 32)
+		context.Background(), "zai.glm-5", "s", "i", 32)
 	if err == nil {
-		t.Fatal("cloud transport accepted a Converse-family model")
+		t.Fatal("a bare client cannot succeed; expected a transport error")
 	}
-	if !strings.Contains(err.Error(), bedrockDirectEnvVar) {
-		t.Errorf("error %q does not name %s, the way to actually run this model", err, bedrockDirectEnvVar)
+	if strings.Contains(err.Error(), "does not speak") || strings.Contains(err.Error(), bedrockDirectEnvVar) {
+		t.Errorf("cloud transport still refuses Converse-family models before the network: %q", err)
+	}
+	if !strings.Contains(err.Error(), "gx Cloud Bedrock call for zai.glm-5 failed") {
+		t.Errorf("error should come from the forwarded call, got %q", err)
 	}
 }

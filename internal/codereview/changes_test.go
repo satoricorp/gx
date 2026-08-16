@@ -151,7 +151,7 @@ func TestRangeDiffSnippetsComeFromTheRange(t *testing.T) {
 
 // The bug this fixes: a repo whose work is committed and whose tree is clean
 // used to review nothing and report a clean bill of health.
-func TestEnhanceOnCleanCommittedRepoReviewsTheCommitRange(t *testing.T) {
+func TestReviewOnCleanCommittedRepoReviewsTheCommitRange(t *testing.T) {
 	root := initRepoOnMain(t)
 	commitOnFeatureBranch(t, root)
 
@@ -181,7 +181,7 @@ func TestEnhanceOnCleanCommittedRepoReviewsTheCommitRange(t *testing.T) {
 	}
 }
 
-func TestEnhanceWithExplicitBaseReviewsThatRange(t *testing.T) {
+func TestReviewWithExplicitBaseReviewsThatRange(t *testing.T) {
 	root := initRepoOnMain(t)
 	commitOnFeatureBranch(t, root)
 	// A dirty file the explicit base must ignore.
@@ -199,7 +199,7 @@ func TestEnhanceWithExplicitBaseReviewsThatRange(t *testing.T) {
 	}
 }
 
-func TestEnhanceReportsNothingToReviewInsteadOfCleanBill(t *testing.T) {
+func TestReviewReportsNothingToReviewInsteadOfCleanBill(t *testing.T) {
 	root := initRepoOnMain(t)
 
 	report, err := Review(context.Background(), root, Options{})

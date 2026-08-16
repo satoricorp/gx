@@ -97,7 +97,7 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 		"  init",
 		"  auth",
 		"Work:",
-		"  enhance (gxe)",
+		"  review (gxr)",
 		"Help:",
 		"  doctor",
 		"  version",
