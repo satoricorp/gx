@@ -29,7 +29,7 @@ func TestSessionsForThisRepoWithholdsForeignSessions(t *testing.T) {
 	}}
 
 	ids := []string{"own", "other", "personal", "unbound", "sameOther"}
-	kept, withheld := sessionsForThisRepo(context.Background(), stager, repo, ids)
+	kept, withheld := sessionsForThisRepo(context.Background(), stager, noConnectedOrigins, repo, ids)
 
 	if withheld != 3 {
 		t.Fatalf("withheld = %d, want 3 (console twice, side-project once)", withheld)
@@ -60,7 +60,7 @@ func TestSessionsForThisRepoWithholdsNothingWithoutAnOrigin(t *testing.T) {
 	repo := initGateRepo(t, "")
 	stager := &fakeOriginStager{origins: map[string]string{"a": "github.com/satoricorp/console"}}
 
-	kept, withheld := sessionsForThisRepo(context.Background(), stager, repo, []string{"a"})
+	kept, withheld := sessionsForThisRepo(context.Background(), stager, noConnectedOrigins, repo, []string{"a"})
 	if withheld != 0 || len(kept) != 1 {
 		t.Fatalf("kept=%v withheld=%d, want everything kept", kept, withheld)
 	}
@@ -72,10 +72,57 @@ func TestSessionsForThisRepoKeepsEverythingWhenTheLookupFails(t *testing.T) {
 	repo := initGateRepo(t, "git@github.com:satoricorp/gx.git")
 	stager := &fakeOriginStager{err: os.ErrClosed}
 
-	kept, withheld := sessionsForThisRepo(context.Background(), stager, repo, []string{"a", "b"})
+	kept, withheld := sessionsForThisRepo(context.Background(), stager, noConnectedOrigins, repo, []string{"a", "b"})
 	if withheld != 0 || len(kept) != 2 {
 		t.Fatalf("kept=%v withheld=%d, want everything kept on lookup failure", kept, withheld)
 	}
+}
+
+// A repository the organization connected is allowed through the gate, so the
+// answer to "which repositories are connected" decides how much is withheld.
+// The production answer is read from a cache under $GX_HOME and refreshed over
+// the network, which is machine-local state: with satoricorp/console connected
+// on a developer's own account, the two console sessions above are legitimately
+// shareable and the sibling test withheld 1 instead of 3 — on that machine
+// only. Pinning the answer here is what keeps these tests hermetic.
+func TestSessionsForThisRepoKeepsConnectedRepositories(t *testing.T) {
+	repo := initGateRepo(t, "git@github.com:satoricorp/gx.git")
+
+	stager := &fakeOriginStager{origins: map[string]string{
+		"own":      "github.com/satoricorp/gx",
+		"sibling":  "github.com/satoricorp/console",
+		"personal": "github.com/joe/side-project",
+	}}
+	connected := connectedOrigins("github.com/satoricorp/console")
+
+	ids := []string{"own", "sibling", "personal"}
+	kept, withheld := sessionsForThisRepo(context.Background(), stager, connected, repo, ids)
+
+	if withheld != 1 {
+		t.Fatalf("withheld = %d, want 1 (side-project only)", withheld)
+	}
+	got := map[string]bool{}
+	for _, id := range kept {
+		got[id] = true
+	}
+	for _, id := range []string{"own", "sibling"} {
+		if !got[id] {
+			t.Errorf("session %q belongs to a connected repository but was withheld", id)
+		}
+	}
+	if got["personal"] {
+		t.Error("a session from an unconnected repository was shareable")
+	}
+}
+
+// noConnectedOrigins is the "the server could not say" answer: no list is
+// available, so only the pushed repository's own origin is allowed.
+func noConnectedOrigins(context.Context) ([]string, bool) { return nil, false }
+
+// connectedOrigins is the "the server answered" case, listing exactly these
+// origins as connected.
+func connectedOrigins(origins ...string) connectedOriginsFunc {
+	return func(context.Context) ([]string, bool) { return origins, true }
 }
 
 type fakeOriginStager struct {

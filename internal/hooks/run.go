@@ -300,7 +300,7 @@ func markShareable(ctx context.Context, repoRoot string, outcome *PushOutcome, r
 	//
 	// Only sessions bound *elsewhere* are withheld. A session with no binding
 	// keeps the previous behavior, so this can only ever share less.
-	shareableIDs, withheld := sessionsForThisRepo(ctx, stager, repoRoot, outcome.Result.StagedSessionIDs)
+	shareableIDs, withheld := sessionsForThisRepo(ctx, stager, cloud.ConnectedOrigins, repoRoot, outcome.Result.StagedSessionIDs)
 	outcome.WithheldSessions += withheld
 
 	outcome.ShareableExtract += count(stager.MarkExtractsShareableByID(ctx, outcome.Result.StagedExtractIDs, att))
@@ -396,6 +396,14 @@ func backgroundWorkersEnabled() bool {
 	return os.Getenv("GX_DISABLE_BACKGROUND_WORKERS") == ""
 }
 
+// connectedOriginsFunc reports the origins of the repositories an organization
+// has connected, and whether an answer is available at all. It is a parameter
+// rather than a direct call to cloud.ConnectedOrigins because that answer comes
+// from a cache under $GX_HOME and, failing that, the network — so a test
+// calling straight through would gate on whatever the developer's machine
+// happens to have connected, and pass or fail accordingly.
+type connectedOriginsFunc func(ctx context.Context) ([]string, bool)
+
 // sessionsForThisRepo keeps the staged sessions that belong to the repository
 // being pushed, and reports how many were withheld because they belong to a
 // different one.
@@ -405,7 +413,7 @@ func backgroundWorkersEnabled() bool {
 // only the server knows which repositories those are; until it can say, the
 // safe answer is the one repository we can prove is connected — this one, which
 // is being pushed through gx right now.
-func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repoRoot string, ids []string) ([]string, int) {
+func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, connectedOrigins connectedOriginsFunc, repoRoot string, ids []string) ([]string, int) {
 	if len(ids) == 0 {
 		return ids, 0
 	}
@@ -420,7 +428,7 @@ func sessionsForThisRepo(ctx context.Context, stager storage.CaptureStager, repo
 	// projects genuinely benefit from each other's sessions. Only the server
 	// knows which those are, and when it cannot say, the pushed repository
 	// stands alone rather than the gate opening.
-	if origins, ok := cloud.ConnectedOrigins(ctx); ok {
+	if origins, ok := connectedOrigins(ctx); ok {
 		for _, origin := range origins {
 			allowed[origin] = struct{}{}
 		}
