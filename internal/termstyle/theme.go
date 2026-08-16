@@ -130,6 +130,17 @@ func Success(text string) string {
 	return paint(styleSuccess, text)
 }
 
+// Warning paints text in the warning color: the advisory lane, a coverage
+// caveat, anything reported but not blocking. It sits between Success and
+// Danger in the same shape so a renderer can pick a painter by severity.
+func Warning(text string) string {
+	initTheme()
+	if text == "" {
+		return text
+	}
+	return paint(styleWarning, text)
+}
+
 func Section(text string) string {
 	initTheme()
 	if text == "" {

@@ -327,9 +327,12 @@ func TestReviewCommandUsesDefaults(t *testing.T) {
 		t.Fatalf("gx review error = %v\n%s", err, out.String())
 	}
 	text := out.String()
+	// The default path is the terminal render now: the run ledger and the
+	// Verdict/Next seam are its contract, not the markdown headings.
 	for _, want := range []string{
-		"## Recommendations",
-		"- No material issues found in this change.",
+		"gx review",
+		"Verdict: ",
+		"Next: ",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("gx review output missing %q in:\n%s", want, text)
@@ -423,8 +426,8 @@ func TestReviewCommandAcceptsScopeFlag(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("gx review --scope error = %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "## Recommendations") {
-		t.Fatalf("gx review --scope output missing recommendations:\n%s", out.String())
+	if !strings.Contains(out.String(), "Verdict: ") {
+		t.Fatalf("gx review --scope output missing the verdict seam:\n%s", out.String())
 	}
 }
 

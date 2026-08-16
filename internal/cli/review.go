@@ -43,6 +43,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var deep bool
 	var verbose bool
 	var jsonOut bool
+	var markdownOut bool
 	var failOn string
 	var noPublish bool
 	var noComment bool
@@ -95,7 +96,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 					Fast:           fast,
 					MaxFindings:    maxFindings,
 					ProgressWriter: progress,
-					Color:          !jsonOut,
+					Color:          !jsonOut && !markdownOut,
 				})
 			}
 			var report codereview.Report
@@ -110,12 +111,18 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOut {
+			switch {
+			case jsonOut:
 				if err := writeReviewJSON(cmd.OutOrStdout(), report); err != nil {
 					return err
 				}
-			} else {
+			case markdownOut:
 				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
+			default:
+				// The terminal render: lanes, fix plan, story, and the
+				// Verdict/Next seam last. RenderMarkdown remains the PR-comment
+				// body and the --md shape; it is no longer what a terminal sees.
+				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderReviewText(report))
 			}
 			// The saved-report notice goes to stderr so --json stdout stays
 			// pure report.
@@ -145,7 +152,8 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&wholeRepo, "repo", false, "review the whole repository rather than just the current change; uncommitted work stays in focus, and this wins over --base")
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of the terminal render")
+	cmd.Flags().BoolVar(&markdownOut, "md", false, "print the review report as markdown — the PR-comment body — instead of the terminal render")
 	// The gate is on by default. "blocking" is lane-aware: it fails only on
 	// findings that earned the blocking lane — a Blocking deterministic check,
 	// or a Strong finding both reviewers raised and the judge confirmed. A
