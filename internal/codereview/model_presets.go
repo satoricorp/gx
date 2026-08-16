@@ -51,6 +51,15 @@ var modelPresets = map[string]modelPreset{
 	// vendors with uncorrelated misses, and Nemotron 3 Super as the judge —
 	// the per-finding verification call, which is where cost concentrates.
 	// Both are on-demand in us-west-2 and speak Converse.
+	//
+	// Measured 2026-08-16 on a 54-file diff against the default panel:
+	// same finding count (9 advisory), but GLM 5 attached a rule_id to 1 of
+	// its 4 findings where Sonnet tagged 9 of 9, the two legs converged on
+	// zero findings (Sonnet's panel converged on several), and GLM's
+	// findings skewed toward documentation. Nemotron judged well — it
+	// refuted a hallucinated finding by reading the diff — once the parser
+	// accepted its bare-array reply. Requires GX_REVIEW_BEDROCK_DIRECT=1:
+	// gx Cloud does not yet speak Converse.
 	"budget": {
 		Why:         "Haiku + GLM 5 review, Nemotron 3 Super judges — open-weight models in the expensive slots",
 		ReviewerA:   defaultBedrockReviewModelA,
