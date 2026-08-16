@@ -53,6 +53,53 @@ func bedrockLegLabel(slot, model, transportKind string) string {
 	}
 }
 
+// friendlyModelName turns a Bedrock model ID into the name a person uses:
+// us.anthropic.claude-haiku-4-5-20251001-v1:0 → "Claude Haiku 4.5",
+// us.anthropic.claude-sonnet-4-6 → "Claude Sonnet 4.6". The report ledger and
+// run details show this; the JSON keeps the exact ID, because "which snapshot"
+// is a question that comes up the moment a review is slow or wrong.
+func friendlyModelName(model string) string {
+	short := shortBedrockModelName(model)
+	if short == "" || strings.HasPrefix(short, "arn:") {
+		return short
+	}
+	parts := strings.Split(short, "-")
+	if len(parts) < 2 || parts[0] != "claude" {
+		return short
+	}
+	family := strings.ToUpper(parts[1][:1]) + parts[1][1:]
+	// Version is the run of numeric segments after the family, joined with a
+	// dot; a trailing 8-digit date is a snapshot stamp, not part of the version.
+	var version []string
+	for _, seg := range parts[2:] {
+		if len(seg) == 8 && isAllDigits(seg) {
+			break
+		}
+		if isAllDigits(seg) {
+			version = append(version, seg)
+			continue
+		}
+		break
+	}
+	name := "Claude " + family
+	if len(version) > 0 {
+		name += " " + strings.Join(version, ".")
+	}
+	return name
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func shortBedrockModelName(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" || strings.HasPrefix(model, "arn:") {
@@ -171,19 +218,42 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	completion, err := r.completeJSON(ctx, reviewDeveloperPrompt(brief), mustJSON(brief), defaultReviewMaxOutputTokens)
-	if err != nil {
-		return PRSummaryReview{}, err
-	}
-	output, err := parseAIReviewOutput(completion.Text, brief)
-	if err != nil {
-		if completion.truncated() {
-			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, err)
+	system := reviewDeveloperPrompt(brief)
+	input := mustJSON(brief)
+	// One retry, for malformed replies only — the same contract the
+	// constraints judge runs under. A leg sometimes answers in prose with no
+	// JSON at all ("I reviewed the change…"), which extractJSONObject cannot
+	// recover; observed live on a binary-only diff, and it turned a healthy
+	// panel into a DEGRADED run. The retry restates the JSON-only requirement
+	// at the top of the system prompt, which is enough for a model that
+	// drifted once. A truncated reply is not retried: the fix for that is the
+	// output cap, not another attempt at the same cap.
+	var lastParseErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		prompt := system
+		if attempt > 0 {
+			prompt = reviewJSONOnlyReminder + "\n" + system
 		}
-		return PRSummaryReview{}, err
+		completion, err := r.completeJSON(ctx, prompt, input, defaultReviewMaxOutputTokens)
+		if err != nil {
+			return PRSummaryReview{}, err
+		}
+		output, parseErr := parseAIReviewOutput(completion.Text, brief)
+		if parseErr == nil {
+			return aiReviewOutputToPRSummaryReview(output), nil
+		}
+		if completion.truncated() {
+			return PRSummaryReview{}, describeTruncatedCompletion("AI review", defaultReviewMaxOutputTokens, parseErr)
+		}
+		lastParseErr = parseErr
 	}
-	return aiReviewOutputToPRSummaryReview(output), nil
+	return PRSummaryReview{}, lastParseErr
 }
+
+// reviewJSONOnlyReminder is prepended to the system prompt on the one retry
+// after a reply that carried no decodable JSON. It is deliberately blunt: the
+// first prompt already says "Return JSON only", and the model ignored it.
+const reviewJSONOnlyReminder = "Your previous reply was not JSON and could not be used. Reply with the JSON object only: no prose before it, no markdown headings, no summary after it. If there is nothing to report, reply exactly {\"recommendations\":[]}."
 
 // completeJSON is the single model call. Both reviewer legs and the judge go
 // through it, so the request shape and the response parsing live in one place;
