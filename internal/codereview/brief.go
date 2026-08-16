@@ -189,6 +189,10 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 	if err != nil {
 		return ReviewBrief{}, err
 	}
+	// Capped here, once, rather than only inside the per-call compaction: the
+	// shard planner sizes shards from this slice, and it must see the same
+	// context the model calls will carry or it plans for bytes that never ship.
+	contextSnippets = capRetrievedChunksPerFile(contextSnippets, maxRetrievedChunksPerFile)
 	contextSnippets = append(policy.ContextSnippets(), contextSnippets...)
 	changed := normalizedChangedFiles(in.ChangedFiles)
 	// A whole-repo review has to be given the repository, not just told that

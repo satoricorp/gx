@@ -610,6 +610,7 @@ func compactStaticToolResults(results []StaticToolResult) []StaticToolResult {
 }
 
 func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnippet {
+	snippets = capRetrievedChunksPerFile(snippets, maxRetrievedChunksPerFile)
 	if limit > 0 && len(snippets) > limit {
 		snippets = prioritizeContextSnippets(snippets)
 		snippets = snippets[:limit]
@@ -617,6 +618,49 @@ func compactContextSnippets(snippets []ContextSnippet, limit int) []ContextSnipp
 	out := make([]ContextSnippet, 0, len(snippets))
 	for _, snippet := range snippets {
 		snippet.Text = truncateReviewText(snippet.Text, contextSnippetByteLimit(snippet))
+		out = append(out, snippet)
+	}
+	return out
+}
+
+// maxRetrievedChunksPerFile bounds how many chunks of ONE file the retrieved
+// context may carry. The index answers a similarity query, and similarity
+// clusters: a change touching webhook tests pulled 48 code-index rows of which
+// five — the five largest, 32 KB together — were consecutive chunks of a
+// single planning document, and READMEs took most of the next slots. Those
+// five spent a third of the context budget on one file that was not near the
+// change while files that were got no slot at all. Two chunks per file keeps
+// the file (and both halves of a symbol that straddles a chunk boundary)
+// without letting one document crowd out the rest.
+//
+// The retriever's k is deliberately left alone: the recall it was measured
+// for (see defaultCodeIndexTopK) is recall of distinct files, and this cap
+// moves the budget toward exactly that. Local snippets are exempt: they were
+// chosen by name, not by similarity, and a doc split into parts is meant to
+// be read whole.
+const maxRetrievedChunksPerFile = 2
+
+// capRetrievedChunksPerFile drops the third and later retrieved chunk of any
+// one file, keeping the first ones in the order the retriever ranked them.
+// Snippets that carry no File (sessions, review history, resources) are not
+// grouped and pass through untouched.
+func capRetrievedChunksPerFile(snippets []ContextSnippet, limit int) []ContextSnippet {
+	if limit <= 0 {
+		return snippets
+	}
+	seen := map[string]int{}
+	out := make([]ContextSnippet, 0, len(snippets))
+	for _, snippet := range snippets {
+		file := strings.TrimSpace(snippet.File)
+		if !retrievedSnippetKinds[snippet.Kind] || file == "" {
+			out = append(out, snippet)
+			continue
+		}
+		key := snippet.Kind + "\x00" + file
+		if seen[key] >= limit {
+			continue
+		}
+		seen[key]++
 		out = append(out, snippet)
 	}
 	return out
