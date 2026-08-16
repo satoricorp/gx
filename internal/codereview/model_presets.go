@@ -67,6 +67,21 @@ var modelPresets = map[string]modelPreset{
 		Judge:       "nvidia.nemotron-super-3-120b",
 		Constraints: defaultBedrockReviewModelA,
 	},
+	// luna is GPT-5.6 Luna in every slot — one model, end to end. It is an
+	// inference-profile-only model on Bedrock, so the ID carries its us.
+	// prefix explicitly (normalizeBedrockModelID only adds one to Anthropic
+	// IDs). Access is per AWS account: the catalog lists it everywhere, but
+	// invoking it needs model access granted in the Bedrock console, and an
+	// account without it sees AccessDeniedException "not available for this
+	// account" — the review reports that as the reviewer being unavailable,
+	// with the message, rather than a silent fallback.
+	"luna": {
+		Why:         "GPT-5.6 Luna in every slot — one model, end to end (needs Bedrock model access for openai.gpt-5.6-luna)",
+		ReviewerA:   "us.openai.gpt-5.6-luna",
+		ReviewerB:   "us.openai.gpt-5.6-luna",
+		Judge:       "us.openai.gpt-5.6-luna",
+		Constraints: "us.openai.gpt-5.6-luna",
+	},
 	// glm puts GLM 5 in every graded slot — the "how does one open model do
 	// on its own" comparison, with Haiku only where it was already the
 	// default.

@@ -73,3 +73,28 @@ func TestFriendlyNamesForOpenWeightModels(t *testing.T) {
 		}
 	}
 }
+
+func TestLunaPresetAndName(t *testing.T) {
+	t.Setenv("GX_REVIEW_MODELS", "luna")
+	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_CONSTRAINTS_MODEL"} {
+		t.Setenv(k, "")
+	}
+	a, b := resolveBedrockReviewModels()
+	if a != "us.openai.gpt-5.6-luna" || b != "us.openai.gpt-5.6-luna" || resolveBedrockJudgeModel() != "us.openai.gpt-5.6-luna" {
+		t.Fatalf("luna preset: a=%q b=%q judge=%q", a, b, resolveBedrockJudgeModel())
+	}
+	// The us. profile prefix survives normalization (only anthropic. IDs are
+	// rewritten) and the model routes to Converse.
+	if normalizeBedrockModelID("us.openai.gpt-5.6-luna") != "us.openai.gpt-5.6-luna" {
+		t.Fatalf("normalizer must not touch a us.openai profile ID")
+	}
+	if bedrockActionForModel("us.openai.gpt-5.6-luna") != "converse" {
+		t.Fatalf("openai models on Bedrock speak Converse")
+	}
+	if got := friendlyModelName("us.openai.gpt-5.6-luna"); got != "GPT-5.6 Luna" {
+		t.Fatalf("friendlyModelName(luna) = %q", got)
+	}
+	if got := friendlyModelName("openai.gpt-oss-120b-1:0"); got != "GPT-oss-120b-1" {
+		t.Fatalf("friendlyModelName(gpt-oss) = %q", got)
+	}
+}

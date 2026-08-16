@@ -581,12 +581,13 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 	if t == nil || t.client == nil {
 		return bedrockCompletion{}, fmt.Errorf("Bedrock reviewer has no transport")
 	}
-	if !bedrockModelSpeaksAnthropic(model) {
-		// gx Cloud's /gx/bedrock/fight normalizes the Anthropic messages shape
-		// only. Refusing here is honest; forwarding would fail server-side with
-		// an error that points at the wrong layer.
-		return bedrockCompletion{}, fmt.Errorf("model %s needs Bedrock's Converse API, which gx Cloud does not speak yet; set %s=1 with AWS_* credentials to use it on your own AWS account", model, bedrockDirectEnvVar)
-	}
+	// gx Cloud's /gx/bedrock/fight is a passthrough to Bedrock Converse: it
+	// takes this Anthropic-shaped request and normalizes it into a
+	// ConverseCommand for whatever model is named, so non-Anthropic IDs
+	// (zai.*, nvidia.*, us.openai.*) work here exactly as they do on the
+	// direct wire. Whether a given model is ALLOWED is the server's call —
+	// it answers model_not_allowed with the list — and that error is more
+	// useful than a client-side refusal that pointed at the wrong layer.
 	payload := bedrockRequestPayload(system, input, maxOutputTokens)
 	resp, err := t.client.BedrockFight(ctx, cloud.BedrockFightRequest{
 		Model:            model,

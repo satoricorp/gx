@@ -68,6 +68,14 @@ func friendlyModelName(model string) string {
 	// nvidia.nemotron-super-3-120b. Name the ones the presets use; anything
 	// else falls through to the trimmed ID.
 	switch {
+	case strings.HasPrefix(short, "openai.gpt-"):
+		// openai.gpt-5.6-luna → "GPT-5.6 Luna"; openai.gpt-oss-120b-1 → "GPT-oss-120b-1"
+		rest := strings.TrimPrefix(short, "openai.gpt-")
+		if i := strings.LastIndexByte(rest, '-'); i > 0 && strings.Count(rest, "-") == 1 && !isAllDigits(rest[i+1:]) {
+			// version-name form: 5.6-luna
+			return "GPT-" + rest[:i] + " " + strings.ToUpper(rest[i+1:i+2]) + rest[i+2:]
+		}
+		return "GPT-" + rest
 	case strings.HasPrefix(short, "zai.glm-"):
 		return "GLM " + strings.TrimPrefix(short, "zai.glm-")
 	case strings.HasPrefix(short, "nvidia.nemotron-super-3"):
@@ -122,7 +130,20 @@ func shortBedrockModelName(model string) string {
 	if index := strings.LastIndex(model, "anthropic."); index >= 0 {
 		model = model[index+len("anthropic."):]
 	}
+	// Other vendors keep their vendor prefix (it is part of the name a person
+	// recognizes) but lose a leading regional profile prefix.
+	for _, region := range []string{"us.", "eu.", "apac.", "global.", "us-gov."} {
+		if strings.HasPrefix(model, region) && !strings.HasPrefix(model, region+"anthropic.") {
+			model = strings.TrimPrefix(model, region)
+			break
+		}
+	}
 	if index := strings.Index(model, "-v1:"); index > 0 {
+		model = model[:index]
+	}
+	// A trailing ":N" is a Bedrock version selector on any vendor's ID
+	// (openai.gpt-oss-120b-1:0); it is not part of the name.
+	if index := strings.LastIndexByte(model, ':'); index > 0 && isAllDigits(model[index+1:]) {
 		model = model[:index]
 	}
 	return strings.TrimSuffix(model, "-v1")
