@@ -78,25 +78,24 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 	order := []string{
 		"gx review — origin/main...feature/checkout-retry",
 		`intent: "make checkout survive gateway blips"`,
-		"1  scope",
-		"2  reviewers",
-		"3  findings",
+		"scope",
+		"reviewers",
+		"findings",
 		"BLOCKING",
-		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88  [graded]",
+		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88",
 		"Secrets must not reach logs",
 		"Why  req embeds PaymentToken",
 		"Fix  log req.ID and req.Amount",
 		"-        log.Printf(\"charge attempt %d failed: %+v\", attempt, req)",
 		"+        log.Printf(\"charge attempt %d failed: id=%s amount=%d\", attempt, req.ID, req.Amount)",
-		"both graders agreed · judge confirmed 0.91",
-		"Suppress ▸ paste into REVIEW.md ## Exceptions:",
-		`- "no-secrets-in-logs" doesn't apply in internal/checkout/session.go — <reason>.`,
+		"both graders agreed · judge confirmed",
 		"ADVISORY",
 		"Don't add what the codebase already has",
 		"Comments must describe what the code now does",
-		"one grader flagged · judge confirmed 0.77 · demoted from blocking",
+		"one grader flagged · judge confirmed · demoted from blocking",
+		"to silence a rule where it doesn't apply",
 		"FIX PLAN",
-		"1. log req.ID and req.Amount instead of req.",
+		"1. no-secrets-in-logs  internal/checkout/session.go:88",
 		"WORTH KNOWING",
 		"1  Checkout retries on 5xx where it used to fail fast   materiality: high",
 		"What changes for you: a failed charge",
@@ -125,7 +124,7 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 func TestRenderReviewTextFixPlanBlockingFirst(t *testing.T) {
 	out := RenderReviewText(renderFixtureReport())
 	plan := out[strings.Index(out, "FIX PLAN"):strings.Index(out, "WORTH KNOWING")]
-	first := strings.Index(plan, "1. log req.ID")
+	first := strings.Index(plan, "1. no-secrets-in-logs")
 	second := strings.Index(plan, "2. ")
 	if first < 0 || second < 0 || first > second {
 		t.Fatalf("fix plan must list the blocking finding first:\n%s", plan)

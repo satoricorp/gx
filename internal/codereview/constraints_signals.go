@@ -183,7 +183,7 @@ func constraintsAddedLinesForDiff(diff string) []constraintsAddedLine {
 
 // constraintsHunkContext is how many hunk lines surround the discussed line
 // when a finding shows its diff window.
-const constraintsHunkContext = 5
+const constraintsHunkContext = 2
 
 // constraintsDiffHunkForLine returns the unified-diff window around a
 // post-change line, hunk header included, or "" when the line is not part of

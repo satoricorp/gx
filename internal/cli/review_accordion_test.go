@@ -115,10 +115,10 @@ func TestAccordionEnterOpensSectionAndAdvancesCursor(t *testing.T) {
 	for _, want := range []string{
 		"◆  BLOCKING  1 finding",
 		"Secrets must not reach logs",
-		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88  [graded]",
+		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88",
 		"Why  req embeds PaymentToken.",
 		"Fix  log req.ID instead of req.",
-		"both graders agreed · judge confirmed 0.91",
+		"both graders agreed · judge confirmed",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("after enter, missing %q:\n%s", want, out)
@@ -246,12 +246,22 @@ func TestAccordionOpenSectionStartsAtItsHeader(t *testing.T) {
 	if !m.ready {
 		t.Fatalf("model should be sized after WindowSizeMsg")
 	}
-	// The viewport's top visible line must be the open section's ◆ header,
-	// not the end of its body.
+	// The section's ◆ header must be at the top of the viewport — or, when
+	// the content is too short for the header to reach row 0 (the viewport
+	// clamps at the bottom), the header must at least be visible and nothing
+	// of the section may sit above the fold. Either way: the reader sees the
+	// START, never the end.
 	top := m.vp.YOffset()
-	want := m.openSectionLine()
-	if want < 0 || top != want {
-		t.Fatalf("viewport top = %d, want the section header line %d", top, want)
+	header := m.openSectionLine()
+	maxOff := m.vp.TotalLineCount() - m.vp.VisibleLineCount()
+	if header < 0 {
+		t.Fatalf("no open section header found")
+	}
+	if top != min(header, maxOff) {
+		t.Fatalf("viewport top = %d, want the section header line %d (or the clamp %d)", top, header, maxOff)
+	}
+	if header < top {
+		t.Fatalf("section header (%d) scrolled above the fold (%d)", header, top)
 	}
 	// And the view is on the alt screen with the menu beneath the content.
 	v := m.View()
@@ -268,10 +278,9 @@ func TestAccordionOpenSectionStartsAtItsHeader(t *testing.T) {
 		t.Fatalf("↓ must scroll, not move the menu cursor")
 	}
 	// The viewport clamps at the bottom, so the offset advances by up to two.
-	maxOff := m.vp.TotalLineCount() - m.vp.VisibleLineCount()
-	want = min(top+2, maxOff)
-	if m.vp.YOffset() != want {
-		t.Fatalf("two ↓ presses should scroll toward the bottom: offset %d, want %d (top %d, max %d)", m.vp.YOffset(), want, top, maxOff)
+	wantOff := min(top+2, maxOff)
+	if m.vp.YOffset() != wantOff {
+		t.Fatalf("two ↓ presses should scroll toward the bottom: offset %d, want %d (top %d, max %d)", m.vp.YOffset(), wantOff, top, maxOff)
 	}
 	// Scrolled DOWN from the header, never up above it.
 	if m.vp.YOffset() < top {

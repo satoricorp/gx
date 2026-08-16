@@ -53,6 +53,9 @@ func RenderReviewText(report Report) string {
 		b.WriteString("\n")
 		writeReviewLane(&b, report, color, "ADVISORY", termstyle.Warning, advisory)
 	}
+	if len(blocking)+len(advisory) > 0 {
+		writeSuppressHint(&b, color)
+	}
 	if plan := BuildFixPlan(report.Findings); len(plan) > 0 {
 		b.WriteString("\n")
 		writeReviewFixPlan(&b, report, color, plan)
@@ -165,21 +168,19 @@ func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 			b.WriteString(colorize(color, termstyle.Muted, line))
 			b.WriteString("\n")
 		}
-		b.WriteString(colorize(color, termstyle.Muted, "        (what this change was meant to do — the diff is judged against it)"))
-		b.WriteString("\n")
 	} else if report.Reviewed {
-		b.WriteString(colorize(color, termstyle.Muted, "intent: none given — pass one as the argument (\"fix the auth timeout\") to have the diff judged against it"))
+		// Only when the reader did not type one: a gloss on every report is
+		// noise to someone who did.
+		b.WriteString(colorize(color, termstyle.Muted, "intent: none — pass one as the argument (\"fix the auth timeout\") and the diff is judged against it"))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 }
 
 func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
-	n := 0
 	row := func(label, value string) {
-		n++
 		b.WriteString(reviewRenderIndent)
-		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("%d  %-11s", n, label)))
+		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("%-11s", label)))
 		b.WriteString(value)
 		b.WriteString("\n")
 	}
@@ -235,28 +236,26 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 				best[label] = EvidenceOK
 			}
 		}
-		var have, missing []string
+		have, asked := 0, 0
 		for _, label := range order {
 			switch best[label] {
 			case EvidenceOK:
-				have = append(have, label)
+				have++
+				asked++
 			case EvidenceEmpty, EvidenceDisabled, EvidenceSkipped:
 			default:
-				missing = append(missing, label)
+				asked++
 			}
 		}
-		line := ""
-		if len(have) > 0 {
-			line = colorize(color, termstyle.Success, strings.Join(have, " · "))
-		}
-		if len(missing) > 0 {
-			if line != "" {
-				line += "   "
+		// A count, not a list. The reader cannot act on which retrieval
+		// source answered; the number says whether the review was well
+		// grounded, and run details names them for anyone who wants that.
+		if asked > 0 {
+			paint := termstyle.Muted
+			if have < asked {
+				paint = termstyle.Warning
 			}
-			line += colorize(color, termstyle.Muted, "missing: "+strings.Join(missing, ", "))
-		}
-		if line != "" {
-			row("evidence", line)
+			row("evidence", colorize(color, paint, fmt.Sprintf("%d of %d sources answered", have, asked)))
 		}
 	}
 
@@ -332,6 +331,20 @@ func writeReviewLane(b *strings.Builder, report Report, color bool, label string
 	}
 }
 
+// writeSuppressHint is the one place the report says how to silence a rule —
+// once, after the lanes, instead of two lines under every finding. The exact
+// paste-ready line for a given finding is in the JSON (suppress) and behind
+// [s] in the accordion.
+func writeSuppressHint(b *strings.Builder, color bool) {
+	b.WriteString("\n")
+	b.WriteString(reviewRenderIndent)
+	b.WriteString(colorize(color, termstyle.Muted, "to silence a rule where it doesn't apply: add a line under ## Exceptions in REVIEW.md, e.g."))
+	b.WriteString("\n")
+	b.WriteString(reviewRenderIndent + reviewRenderIndent)
+	b.WriteString(colorize(color, termstyle.Muted, `- "no-secrets-in-logs" doesn't apply in cmd/demo* — demos print and continue.`))
+	b.WriteString("\n")
+}
+
 func reviewDivider(color bool, label string, paint func(string) string, right string) string {
 	fill := reviewRenderRuleWidth - len(label) - len(right)
 	if fill < 4 {
@@ -360,7 +373,9 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 	if loc := findingLocation(f); loc != "" {
 		b.WriteString(colorize(color, termstyle.Muted, "  ·  "+loc))
 	}
-	b.WriteString(colorize(color, termstyle.Muted, "  ["+reviewDecidedBy(f)+"]"))
+	if reviewDecidedBy(f) == "det" {
+		b.WriteString(colorize(color, termstyle.Muted, "  [det]"))
+	}
 	b.WriteString("\n")
 	if f.RuleID != "" {
 		if title := strings.TrimSpace(f.Title); title != "" {
@@ -402,14 +417,6 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 		b.WriteString(colorize(color, termstyle.Muted, ev))
 		b.WriteString("\n")
 	}
-	if f.RuleID != "" && f.File != "" {
-		b.WriteString(reviewRenderIndent)
-		b.WriteString(colorize(color, termstyle.Muted, "Suppress ▸ paste into REVIEW.md ## Exceptions:"))
-		b.WriteString("\n")
-		b.WriteString(reviewRenderIndent + reviewRenderIndent)
-		b.WriteString(colorize(color, termstyle.Muted, SuppressLine(f)))
-		b.WriteString("\n")
-	}
 }
 
 // writeReviewLabeled writes "  Why  text" with continuation lines aligned
@@ -442,11 +449,7 @@ func reviewEvidenceLine(f Finding) string {
 	}
 	verdict := strings.ToLower(strings.TrimSpace(f.JudgeVerdict))
 	if verdict == "confirmed" {
-		if f.JudgeConfidence > 0 {
-			parts = append(parts, fmt.Sprintf("judge confirmed %.2f", f.JudgeConfidence))
-		} else {
-			parts = append(parts, "judge confirmed")
-		}
+		parts = append(parts, "judge confirmed")
 	} else if verdict != "" {
 		parts = append(parts, "judge "+verdict)
 	}
@@ -519,37 +522,34 @@ func writeReviewFixPlan(b *strings.Builder, report Report, color bool, plan []Fi
 }
 
 func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan []FixStep) {
+	// One line per step: the rule and where. The action itself is the Fix
+	// line of the finding above; repeating it here doubled the report's
+	// length and said nothing new. The JSON fix_plan carries the full text.
 	for _, s := range plan {
 		paint := termstyle.Warning
 		if s.Lane == LaneBlocking {
 			paint = termstyle.Danger
 		}
+		name := s.RuleID
+		if name == "" {
+			name = s.FindingID
+		}
+		if _, short, ok := strings.Cut(name, "/"); ok {
+			name = short
+		}
+		loc := s.File
+		if s.Line > 0 {
+			loc += fmt.Sprintf(":%d", s.Line)
+		}
 		b.WriteString(reviewRenderIndent)
 		b.WriteString(colorize(color, paint, fmt.Sprintf("%d.", s.Order)))
 		b.WriteString(" ")
-		b.WriteString(s.Action)
-		b.WriteString("\n")
-		meta := s.RuleID
-		if meta == "" {
-			meta = s.FindingID
+		b.WriteString(colorize(color, boldPainter(termstyle.Section), name))
+		if loc != "" {
+			b.WriteString(colorize(color, termstyle.Muted, "  "+loc))
 		}
-		if _, name, ok := strings.Cut(meta, "/"); ok {
-			meta = name
-		}
-		if s.File != "" {
-			meta += " · " + s.File
-			if s.Line > 0 {
-				meta += fmt.Sprintf(":%d", s.Line)
-			}
-		}
-		b.WriteString(reviewRenderIndent + "   ")
-		b.WriteString(colorize(color, termstyle.Muted, meta))
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(reviewRenderIndent)
-	b.WriteString(colorize(color, termstyle.Muted, "re-runs re-grade only the hunks you touch — the loop is cheap"))
-	b.WriteString("\n")
 }
 
 // ---- story ----------------------------------------------------------------
