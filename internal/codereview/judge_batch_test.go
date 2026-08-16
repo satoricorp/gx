@@ -58,13 +58,15 @@ func judgeBatchCandidates(n int) []Finding {
 func TestRunJudgeSplitsCandidatesIntoBoundedBatches(t *testing.T) {
 	judge := &recordingJudge{}
 	batchSize := resolveJudgeBatchSize()
-	candidates := judgeBatchCandidates(batchSize*2 + 5)
+	// Two full batches plus a partial one, whatever the batch size is.
+	candidates := judgeBatchCandidates(batchSize*2 + 1)
+	wantBatches := 3
 
 	outcome := runJudge(context.Background(), judge, ReviewContext{}, candidates)
 
-	if outcome.Batches != 3 {
-		t.Fatalf("Batches = %d, want 3 for %d candidates at batch size %d",
-			outcome.Batches, len(candidates), batchSize)
+	if outcome.Batches != wantBatches {
+		t.Fatalf("Batches = %d, want %d for %d candidates at batch size %d",
+			outcome.Batches, wantBatches, len(candidates), batchSize)
 	}
 	for _, size := range judge.sizes {
 		if size > batchSize {

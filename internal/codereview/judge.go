@@ -819,7 +819,24 @@ func strengthFromImpact(impact string) string {
 // numbers above the per-call output falls to roughly a third, and a batch
 // carries almost no shared context (changed_files and the files its own
 // candidates name), so the split duplicates very little.
-const defaultJudgeBatchSize = 8
+//
+// 3 rather than 8, for the same reason one step further. The argument above
+// stopped at "the ordinary case is one batch of 24"; it is equally true of 8.
+// Measured on a 5-file, 64-line change producing 9 candidates: at 8 the judge
+// was one serial call of 7 candidates (86 KB in, 9.6 KB out) that took 48s,
+// then the needed_files re-ask, 70s of a 119s review — the single largest
+// phase, longer than the two-model panel it was verifying. At 3 the same
+// candidates ran as three concurrent calls of 13s, 20s and 21s (20 KB, 94 KB
+// and 25 KB in), the whole verification took ~30s, and the review took 72s.
+// The duplicated input across batches (138 KB total against 86 KB) is the
+// price, and it is a cost, not a wait: input is read at hundreds of tokens per
+// second, output written at tens, and every judge call still returns exactly
+// one analysis-bearing object per candidate.
+//
+// Not smaller: each batch is also the set the judge ranks against each other,
+// and 3 is about the floor at which "rank these against each other" is still a
+// judgment rather than a coin flip. GX_REVIEW_JUDGE_BATCH_SIZE overrides.
+const defaultJudgeBatchSize = 3
 
 // maxConcurrentJudgeBatches caps how many judge calls are in flight at once.
 //
