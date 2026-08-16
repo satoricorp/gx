@@ -100,6 +100,155 @@ func TestLoadReviewPolicyParsesRiskPaths(t *testing.T) {
 	}
 }
 
+// A REVIEW.md with every construct the rule grammar knows: a title, the
+// reserved high-risk paths section (still the risk-path parser's), an inline
+// Extends, two rules (one advisory) with a sub-heading inside a body, an
+// Exceptions list, and a duplicate rule heading.
+const reviewRulesFixture = `# Review policy for the payments service
+
+Some intro prose that is not a rule.
+
+## high-risk paths
+
+risk-path: internal/auth/** — auth changes can leak or misuse credentials
+
+## Extends: gx:recommended@2
+
+## No reinvented utils
+
+Use the shared helpers in internal/util before writing a new one.
+This catches a second slugify or path-join.
+
+### Why this matters
+
+We have three of everything already; a fourth is not progress.
+
+- model: gpt-attacker
+- severity: blocking
+
+## Advisory: Handlers log request IDs
+
+Every handler should log the request ID it was given. Missing IDs make
+incidents slow to trace.
+
+## Exceptions
+
+- generated/** may duplicate helpers
+* legacy/billing is exempt from no-reinvented-utils
+
+## No reinvented utils
+
+A duplicate heading that must not open a second rule.
+`
+
+func TestParseReviewRulesFixture(t *testing.T) {
+	rules, exceptions, extends, diagnostics := parseReviewRules(reviewRulesFixture)
+
+	if len(rules) != 2 {
+		t.Fatalf("rules = %#v, want 2", rules)
+	}
+	first := rules[0]
+	if first.ID != "REVIEW.md/no-reinvented-utils" || first.Slug != "no-reinvented-utils" || first.Name != "No reinvented utils" || first.Advisory {
+		t.Fatalf("rules[0] = %#v", first)
+	}
+	// The ### sub-heading and its prose stay in the rule body; the
+	// directive-looking bullets are prose too — nothing here interprets them.
+	for _, want := range []string{"Use the shared helpers", "### Why this matters", "a fourth is not progress", "model: gpt-attacker", "severity: blocking"} {
+		if !strings.Contains(first.Text, want) {
+			t.Errorf("rules[0].Text missing %q:\n%s", want, first.Text)
+		}
+	}
+	if strings.Contains(first.Text, "A duplicate heading") {
+		t.Errorf("rules[0].Text absorbed the duplicate's body:\n%s", first.Text)
+	}
+	second := rules[1]
+	if second.ID != "REVIEW.md/handlers-log-request-ids" || second.Slug != "handlers-log-request-ids" || second.Name != "Handlers log request IDs" || !second.Advisory {
+		t.Fatalf("rules[1] = %#v", second)
+	}
+	if !strings.Contains(second.Text, "Every handler should log the request ID") {
+		t.Errorf("rules[1].Text = %q", second.Text)
+	}
+
+	if len(exceptions) != 2 || exceptions[0] != "generated/** may duplicate helpers" || exceptions[1] != "legacy/billing is exempt from no-reinvented-utils" {
+		t.Fatalf("exceptions = %#v", exceptions)
+	}
+	if extends != "gx:recommended@2" {
+		t.Fatalf("extends = %q, want gx:recommended@2", extends)
+	}
+	if len(diagnostics) != 1 || !strings.Contains(diagnostics[0], "duplicate rule \"no-reinvented-utils\"") {
+		t.Fatalf("diagnostics = %#v, want one duplicate-rule diagnostic", diagnostics)
+	}
+}
+
+func TestParseReviewRulesExtendsSectionAndEmptyBodies(t *testing.T) {
+	text := strings.Join([]string{
+		"## Extends",
+		"",
+		"- gx:recommended@2",
+		"",
+		"## ",
+		"body under a heading with no name",
+		"",
+		"## Empty rule",
+		"",
+		"## Real rule",
+		"Has text.",
+	}, "\n")
+	rules, _, extends, diagnostics := parseReviewRules(text)
+	if extends != "gx:recommended@2" {
+		t.Fatalf("extends = %q", extends)
+	}
+	if len(rules) != 1 || rules[0].Slug != "real-rule" {
+		t.Fatalf("rules = %#v, want only real-rule", rules)
+	}
+	// "## " with nothing after it does not match the heading pattern at all, so
+	// its line and the line under it are ignored; "Empty rule" is a heading with
+	// no body and is reported.
+	if len(diagnostics) != 1 || !strings.Contains(diagnostics[0], "no guidance text") {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+}
+
+func TestLoadReviewPolicyParsesRulesAlongsideRiskPaths(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "REVIEW.md", reviewRulesFixture)
+	policy := LoadReviewPolicy(root)
+	if !policy.Present {
+		t.Fatalf("policy = %#v, want present", policy)
+	}
+	if len(policy.RiskPaths) != 1 || policy.RiskPaths[0].Glob != "internal/auth/**" {
+		t.Fatalf("RiskPaths = %#v, want the one auth entry unchanged", policy.RiskPaths)
+	}
+	if len(policy.Rules) != 2 || policy.Rules[0].ID != "REVIEW.md/no-reinvented-utils" || policy.Rules[1].ID != "REVIEW.md/handlers-log-request-ids" {
+		t.Fatalf("Rules = %#v", policy.Rules)
+	}
+	if !policy.Rules[1].Advisory || policy.Rules[0].Advisory {
+		t.Fatalf("Advisory flags = %v/%v, want false/true", policy.Rules[0].Advisory, policy.Rules[1].Advisory)
+	}
+	if len(policy.Exceptions) != 2 {
+		t.Fatalf("Exceptions = %#v", policy.Exceptions)
+	}
+	if policy.Extends != "gx:recommended@2" {
+		t.Fatalf("Extends = %q", policy.Extends)
+	}
+	if len(policy.Diagnostics) != 1 || !strings.Contains(policy.Diagnostics[0], "duplicate rule") {
+		t.Fatalf("Diagnostics = %#v", policy.Diagnostics)
+	}
+	defs := policy.RuleDefs()
+	if len(defs) != 2 || defs[0].ID != "REVIEW.md/no-reinvented-utils" || defs[0].Summary != "Use the shared helpers in internal/util before writing a new one." {
+		t.Fatalf("RuleDefs = %#v", defs)
+	}
+	// The pack comes first, then the repo's rules; the brief carries both.
+	all := AllRuleDefs(&policy)
+	pack, err := RecommendedPack()
+	if err != nil {
+		t.Fatalf("RecommendedPack() error = %v", err)
+	}
+	if len(all) != len(pack)+2 || all[0].ID != "gx:recommended/"+pack[0].Slug || all[len(all)-1].ID != "REVIEW.md/handlers-log-request-ids" {
+		t.Fatalf("AllRuleDefs = %d entries, first %q last %q", len(all), all[0].ID, all[len(all)-1].ID)
+	}
+}
+
 // REVIEW.md is read, not executed. A URL in it used to be fetched with no
 // check beyond the scheme, by a client that followed redirects, and up to a
 // megabyte of the response was summarized into the model prompt and the report

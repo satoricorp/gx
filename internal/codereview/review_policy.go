@@ -40,12 +40,32 @@ type ReviewPolicy struct {
 	Summarized  bool       `json:"summarized,omitempty"`
 	RiskPaths   []RiskPath `json:"risk_paths,omitempty"`
 	Diagnostics []string   `json:"diagnostics,omitempty"`
+	// Rules are the named review rules the repository declared: every `##`
+	// heading in REVIEW.md that is not one of the reserved sections. Exceptions
+	// are the bullets under `## Exceptions`; Extends names a pack the repository
+	// builds on (e.g. "gx:recommended@2"). See parseReviewRules for the grammar
+	// and for the line REVIEW.md is not allowed to cross.
+	Rules      []PolicyRule `json:"rules,omitempty"`
+	Exceptions []string     `json:"exceptions,omitempty"`
+	Extends    string       `json:"extends,omitempty"`
 }
 
 type RiskPath struct {
 	Glob    string `json:"glob,omitempty"`
 	Message string `json:"message,omitempty"`
 	Raw     string `json:"raw,omitempty"`
+}
+
+// PolicyRule is one named rule as REVIEW.md (or a built-in pack written in the
+// same grammar) declares it. ID is the namespaced, canonical spelling that
+// findings carry as RuleID; Slug is the bare kebab name; Name is the heading
+// verbatim; Text is the guidance the model is given.
+type PolicyRule struct {
+	ID       string `json:"id"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Text     string `json:"text"`
+	Advisory bool   `json:"advisory,omitempty"`
 }
 
 func LoadReviewPolicy(repoRoot string) ReviewPolicy {
@@ -55,6 +75,7 @@ func LoadReviewPolicy(repoRoot string) ReviewPolicy {
 	}
 	text := string(data)
 	summary, summarized := summarizeReviewText(text, maxReviewPolicySummaryBytes)
+	rules, exceptions, extends, diagnostics := parseReviewRules(text)
 	policy := ReviewPolicy{
 		Present:    true,
 		Path:       reviewPolicyPath,
@@ -62,11 +83,60 @@ func LoadReviewPolicy(repoRoot string) ReviewPolicy {
 		Text:       summary,
 		Summarized: summarized,
 		RiskPaths:  parseReviewRiskPaths(text),
+		Rules:      rules,
+		Exceptions: exceptions,
+		Extends:    extends,
 	}
 	if summarized {
 		policy.Diagnostics = append(policy.Diagnostics, fmt.Sprintf("%s summarized from %d byte(s)", reviewPolicyPath, len(data)))
 	}
+	policy.Diagnostics = append(policy.Diagnostics, diagnostics...)
 	return policy
+}
+
+// RuleDefs renders the repository's rules as the minimal form the brief and
+// the constraints request carry: the namespaced ID and a one-line summary.
+func (p ReviewPolicy) RuleDefs() []RuleDef {
+	if len(p.Rules) == 0 {
+		return nil
+	}
+	defs := make([]RuleDef, 0, len(p.Rules))
+	for _, rule := range p.Rules {
+		defs = append(defs, RuleDef{ID: rule.ID, Summary: policyRuleSummary(rule.Text)})
+	}
+	return defs
+}
+
+// AllRuleDefs is the full set of named rules in force for a review: the
+// built-in recommended pack first, then whatever the repository's REVIEW.md
+// declares. A nil policy means only the pack applies.
+func AllRuleDefs(policy *ReviewPolicy) []RuleDef {
+	var defs []RuleDef
+	if pack, err := RecommendedPack(); err == nil {
+		for _, rule := range pack {
+			defs = append(defs, RuleDef{ID: rule.ID, Summary: policyRuleSummary(rule.Text)})
+		}
+	}
+	if policy != nil {
+		defs = append(defs, policy.RuleDefs()...)
+	}
+	return defs
+}
+
+// policyRuleSummary is the first sentence of a rule's text: up to the first
+// ". " (or the end of the first line), capped at 160 bytes.
+func policyRuleSummary(text string) string {
+	const maxSummaryBytes = 160
+	summary := strings.TrimSpace(text)
+	if i := strings.Index(summary, ". "); i >= 0 {
+		summary = summary[:i+1]
+	} else if i := strings.IndexByte(summary, '\n'); i >= 0 {
+		summary = strings.TrimSpace(summary[:i])
+	}
+	if len(summary) > maxSummaryBytes {
+		summary = trimReviewTextAtBoundary(summary, maxSummaryBytes)
+	}
+	return summary
 }
 
 func (p ReviewPolicy) ContextSnippets() []ContextSnippet {
@@ -169,6 +239,149 @@ func parseReviewRiskPaths(text string) []RiskPath {
 		})
 	}
 	return out
+}
+
+// A named rule is a `##` heading and the prose under it. Exactly two hashes:
+// `#` is the document title, and `###` or deeper is structure inside a rule
+// body — a sub-heading under a rule stays part of that rule, it does not open
+// a new one. Three headings are reserved and never become rules: high-risk
+// paths (parseReviewRiskPaths owns it), Exceptions (bullets to collect), and
+// Extends (the pack this file builds on, either as the first line under the
+// heading or inline after a colon).
+//
+// The line REVIEW.md may not cross, restated from the type comment above:
+// this parser hands the reviewer rule names, guidance text, and exceptions —
+// nothing else. The only thing a heading can set is the Advisory boolean via
+// the `Advisory:` prefix. Severity beyond that, which model reviews, whether
+// a gate passes, and anything to fetch are the operator's, and a rule body
+// that contains what looks like a directive (`model:`, `severity:`, `fetch:`,
+// `gate:`) is prose to the model, not a setting to this code. Nothing here
+// interprets it, and nothing here should start to.
+var (
+	reviewRuleHeadingPattern  = regexp.MustCompile(`^##\s+(.+?)\s*$`)
+	reviewRuleSlugPattern     = regexp.MustCompile(`[^a-z0-9]+`)
+	reviewRuleAdvisoryPattern = regexp.MustCompile(`(?i)^advisory:\s*`)
+)
+
+const (
+	reviewRuleNamespace = "REVIEW.md/"
+	maxReviewRuleBytes  = 2000
+)
+
+// slugifyReviewRule lowercases the heading and folds every run of characters
+// outside [a-z0-9] into one hyphen, trimming hyphens at either end.
+func slugifyReviewRule(name string) string {
+	slug := reviewRuleSlugPattern.ReplaceAllString(strings.ToLower(name), "-")
+	return strings.Trim(slug, "-")
+}
+
+// stripReviewBullet removes one leading list marker (-, *, •) and the
+// whitespace around it.
+func stripReviewBullet(line string) string {
+	line = strings.TrimSpace(line)
+	for _, marker := range []string{"-", "*", "•"} {
+		if strings.HasPrefix(line, marker) {
+			return strings.TrimSpace(strings.TrimPrefix(line, marker))
+		}
+	}
+	return line
+}
+
+func parseReviewRules(text string) (rules []PolicyRule, exceptions []string, extends string, diagnostics []string) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
+	type section int
+	const (
+		sectionNone section = iota
+		sectionRule
+		sectionRiskPaths
+		sectionExceptions
+		sectionExtends
+	)
+	current := sectionNone
+	var (
+		name     string
+		advisory bool
+		body     []string
+	)
+	seen := map[string]struct{}{}
+
+	flush := func() {
+		if current != sectionRule {
+			return
+		}
+		slug := slugifyReviewRule(name)
+		ruleText := trimReviewTextAtBoundary(normalizeReviewWhitespace(strings.Join(body, "\n")), maxReviewRuleBytes)
+		switch {
+		case slug == "":
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: rule heading %q has no usable name; skipped", reviewPolicyPath, name))
+		case ruleText == "":
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: rule %q has no guidance text; skipped", reviewPolicyPath, name))
+		default:
+			if _, dup := seen[slug]; dup {
+				diagnostics = append(diagnostics, fmt.Sprintf("%s: duplicate rule %q; keeping the first", reviewPolicyPath, slug))
+				return
+			}
+			seen[slug] = struct{}{}
+			rules = append(rules, PolicyRule{
+				ID:       reviewRuleNamespace + slug,
+				Slug:     slug,
+				Name:     name,
+				Text:     ruleText,
+				Advisory: advisory,
+			})
+		}
+	}
+
+	for _, line := range strings.Split(text, "\n") {
+		if match := reviewRuleHeadingPattern.FindStringSubmatch(line); len(match) == 2 {
+			flush()
+			heading := strings.TrimSpace(match[1])
+			lower := strings.ToLower(heading)
+			body = nil
+			name = ""
+			advisory = false
+			switch {
+			case lower == "high-risk paths" || lower == "high risk paths":
+				current = sectionRiskPaths
+			case lower == "exceptions":
+				current = sectionExceptions
+			case lower == "extends":
+				current = sectionExtends
+			case strings.HasPrefix(lower, "extends:"):
+				current = sectionNone
+				if inline := strings.TrimSpace(heading[len("extends:"):]); inline != "" && extends == "" {
+					extends = inline
+				}
+			default:
+				current = sectionRule
+				if loc := reviewRuleAdvisoryPattern.FindStringIndex(heading); loc != nil {
+					advisory = true
+					heading = strings.TrimSpace(heading[loc[1]:])
+				}
+				name = heading
+			}
+			continue
+		}
+		switch current {
+		case sectionRule:
+			body = append(body, line)
+		case sectionExceptions:
+			if item := stripReviewBullet(line); item != "" {
+				exceptions = append(exceptions, item)
+			}
+		case sectionExtends:
+			if item := stripReviewBullet(line); item != "" {
+				if extends == "" {
+					extends = item
+				}
+				current = sectionNone
+			}
+		}
+	}
+	flush()
+	return rules, exceptions, extends, diagnostics
 }
 
 func MatchRiskPathGlob(pattern, file string) bool {

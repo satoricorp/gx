@@ -29,11 +29,11 @@ func TestParseConstraintsJudgeResponse(t *testing.T) {
 }
 
 func TestConstraintsFindingFromAIDefaults(t *testing.T) {
-	finding := constraintsFindingFromAI(GateBackPressure, constraintsAIFinding{Title: "Out of scope"})
+	finding := constraintsFindingFromAI(GateBackPressure, constraintsAIFinding{Title: "Out of scope"}, KnownRuleIDs())
 	if finding.Strength != "Worth exploring" {
 		t.Fatalf("default strength = %q, want Worth exploring", finding.Strength)
 	}
-	perf := constraintsFindingFromAI(GatePerformance, constraintsAIFinding{Title: "N+1 query"})
+	perf := constraintsFindingFromAI(GatePerformance, constraintsAIFinding{Title: "N+1 query"}, KnownRuleIDs())
 	if perf.Strength != "Strong" {
 		t.Fatalf("performance default strength = %q, want Strong (the weighted gate)", perf.Strength)
 	}

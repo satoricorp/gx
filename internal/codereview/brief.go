@@ -232,6 +232,7 @@ func BuildReviewBrief(ctx context.Context, in RetrieveInput, sources []Source, r
 		SourceRefs:    sourceRefsFromContextSnippets(contextSnippets),
 		SourceCatalog: sourceBriefs(sources),
 		Rubric:        reviewRubric(opts),
+		Rules:         AllRuleDefs(policy),
 		Evidence:      in.Evidence.Statuses(),
 	}, nil
 }

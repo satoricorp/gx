@@ -45,6 +45,7 @@ type constraintsJudgeRequest struct {
 	ToolResults        []StaticToolResult     `json:"static_tool_results,omitempty"`
 	DiffSnippets       []DiffSnippet          `json:"diff_snippets"`
 	ReviewPolicy       string                 `json:"review_policy,omitempty"`
+	Rules              []RuleDef              `json:"rules,omitempty"`
 	SourceCatalog      []SourceBrief          `json:"source_catalog,omitempty"`
 	Context            []ContextSnippet       `json:"context,omitempty"`
 }
@@ -284,6 +285,8 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 			}
 		}
 	}
+	rules := AllRuleDefs(&in.policy)
+	known := KnownRuleIDs(rules...)
 	req := constraintsJudgeRequest{
 		Intent:             in.report.Intent,
 		IntentSource:       in.report.IntentSource,
@@ -297,6 +300,7 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 		ToolResults:        compactStaticToolResults(in.tools),
 		DiffSnippets:       diffs,
 		ReviewPolicy:       in.policy.Text,
+		Rules:              rules,
 		SourceCatalog:      sourceBriefs(sourcesForScopes(constraintsGateScopes(in.aiGates))),
 		Context:            in.retrieved,
 	}
@@ -322,7 +326,7 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 			gate.Status = GateFail
 		}
 		for _, finding := range verdict.Findings {
-			gate.Findings = append(gate.Findings, constraintsFindingFromAI(id, finding))
+			gate.Findings = append(gate.Findings, constraintsFindingFromAI(id, finding, known))
 		}
 		if justification := strings.TrimSpace(verdict.Justification); justification != "" {
 			switch {
@@ -342,7 +346,10 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 	return degraded
 }
 
-func constraintsFindingFromAI(id GateID, finding constraintsAIFinding) Finding {
+// constraintsFindingFromAI converts one model finding. known is the rule set
+// this run accepts (KnownRuleIDs over the pack and REVIEW.md rules); anything
+// the model names outside it is dropped, not minted.
+func constraintsFindingFromAI(id GateID, finding constraintsAIFinding, known map[string]string) Finding {
 	strength := strings.TrimSpace(finding.Strength)
 	if strength == "" {
 		strength = "Worth exploring"
@@ -363,7 +370,7 @@ func constraintsFindingFromAI(id GateID, finding constraintsAIFinding) Finding {
 		Summary:        strings.TrimSpace(finding.Summary),
 		Recommendation: strings.TrimSpace(finding.Recommendation),
 		Strength:       strength,
-		RuleID:         NormalizeRuleID(finding.RuleID, KnownRuleIDs()),
+		RuleID:         NormalizeRuleID(finding.RuleID, known),
 		File:           strings.TrimSpace(finding.File),
 		Line:           finding.Line,
 	}
