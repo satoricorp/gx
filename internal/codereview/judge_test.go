@@ -490,3 +490,31 @@ func TestAdvisoryCapFixturesAreDistinctOnTheSameFile(t *testing.T) {
 			len(kept), findingIDs(kept))
 	}
 }
+
+// Nemotron 3 Super, judging live, returned the verdicts as a bare top-level
+// array instead of {"results":[...]} — correct content, wrong wrapper — and
+// both verification batches were lost. The parser accepts the array.
+func TestParseJudgeResponseAcceptsBareArray(t *testing.T) {
+	bare := `[{"candidate_id":"a.1","verdict":"confirmed","impact":"functional","confidence":0.8,"analysis":"x"},` +
+		`{"candidate_id":"a.2","verdict":"wrong","impact":"none","confidence":0.9,"analysis":"y"}]`
+	got, err := parseJudgeResponse(bare, []string{"a.1", "a.2"})
+	if err != nil {
+		t.Fatalf("bare array should parse: %v", err)
+	}
+	if len(got) != 2 || got[0].CandidateID != "a.1" || got[1].Verdict != "wrong" {
+		t.Fatalf("wrong results from bare array: %+v", got)
+	}
+	// Prose around it, and a fence, still parse.
+	wrapped := "Here are the verdicts:\n```json\n" + bare + "\n```\nDone."
+	if got, err := parseJudgeResponse(wrapped, nil); err != nil || len(got) != 2 {
+		t.Fatalf("wrapped bare array should parse: %v %d", err, len(got))
+	}
+	// An array of something that is not verdicts is NOT accepted.
+	if _, err := parseJudgeResponse(`[{"pair_id":"p0-1","same_defect":true}]`, nil); err == nil {
+		t.Fatalf("an array without candidate_id must not be taken as verdicts")
+	}
+	// The canonical shape is unchanged.
+	if got, err := parseJudgeResponse(`{"results":`+bare+`}`, nil); err != nil || len(got) != 2 {
+		t.Fatalf("canonical object regressed: %v", err)
+	}
+}

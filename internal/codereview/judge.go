@@ -340,6 +340,15 @@ func (j bedrockReviewJudge) Judge(ctx context.Context, req judgeRequest) ([]judg
 func parseJudgeResponse(content string, asked []string) ([]judgeResult, error) {
 	object := pickAnsweringJSONObject(content, judgeAnswerScore(asked))
 	if object == "" {
+		// No {"results":[...]} object. Some models answer with the bare
+		// array — [{"candidate_id":...},...] — dropping the wrapper the
+		// prompt asked for. Observed live from Nemotron 3 Super as judge:
+		// two of two verification batches, correct verdicts, wrong wrapper,
+		// and both batches were lost. The elements are unambiguous (they
+		// carry candidate_id), so accept the array as the results.
+		if results, ok := salvageBareJudgeArray(content); ok {
+			return results, nil
+		}
 		return nil, fmt.Errorf("decode judge JSON: no complete JSON object with a results field in response")
 	}
 	var parsed judgeResponse
@@ -347,6 +356,28 @@ func parseJudgeResponse(content string, asked []string) ([]judgeResult, error) {
 		return nil, fmt.Errorf("decode judge JSON: %w", err)
 	}
 	return parsed.Results, nil
+}
+
+// salvageBareJudgeArray decodes a reply that is a top-level JSON array of
+// verdicts (or such an array wrapped in prose or a fence). It requires every
+// element to decode as a judgeResult carrying a candidate_id, so a stray
+// array of something else is not mistaken for verdicts.
+func salvageBareJudgeArray(content string) ([]judgeResult, bool) {
+	start := strings.IndexByte(content, '[')
+	if start < 0 {
+		return nil, false
+	}
+	dec := json.NewDecoder(strings.NewReader(content[start:]))
+	var results []judgeResult
+	if err := dec.Decode(&results); err != nil || len(results) == 0 {
+		return nil, false
+	}
+	for _, r := range results {
+		if strings.TrimSpace(r.CandidateID) == "" {
+			return nil, false
+		}
+	}
+	return results, true
 }
 
 // judgeAnswerScore ranks a decoded object by how much of this request it
