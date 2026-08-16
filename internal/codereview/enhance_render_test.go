@@ -71,7 +71,7 @@ func renderFixtureReport() Report {
 }
 
 func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
-	out := RenderReviewText(renderFixtureReport()) // Color=false: plain
+	out := RenderEnhanceText(renderFixtureReport()) // Color=false: plain
 	if strings.Contains(out, "\x1b[") {
 		t.Fatalf("plain render must carry no ANSI:\n%s", out)
 	}
@@ -122,7 +122,7 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 }
 
 func TestRenderReviewTextFixPlanBlockingFirst(t *testing.T) {
-	out := RenderReviewText(renderFixtureReport())
+	out := RenderEnhanceText(renderFixtureReport())
 	plan := out[strings.Index(out, "FIX PLAN"):strings.Index(out, "WORTH KNOWING")]
 	first := strings.Index(plan, "1. no-secrets-in-logs")
 	second := strings.Index(plan, "2. ")
@@ -155,7 +155,7 @@ func TestRenderReviewTextVerdictShapes(t *testing.T) {
 			if got != tc.verdict {
 				t.Fatalf("verdict = %q\nwant      %q", got, tc.verdict)
 			}
-			out := RenderReviewText(r)
+			out := RenderEnhanceText(r)
 			if !strings.Contains(out, got) {
 				t.Fatalf("render missing its own verdict line:\n%s", out)
 			}
@@ -168,12 +168,12 @@ func TestRenderReviewTextColorIsGatedOnReportColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	r := renderFixtureReport()
 	r.Color = true
-	colored := RenderReviewText(r)
+	colored := RenderEnhanceText(r)
 	if !strings.Contains(colored, "\x1b[") {
 		t.Fatalf("Color=true under FORCE_COLOR should paint:\n%s", colored)
 	}
 	r.Color = false
-	if plain := RenderReviewText(r); strings.Contains(plain, "\x1b[") {
+	if plain := RenderEnhanceText(r); strings.Contains(plain, "\x1b[") {
 		t.Fatalf("Color=false must never paint even under FORCE_COLOR")
 	}
 }

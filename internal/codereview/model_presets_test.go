@@ -11,7 +11,7 @@ func TestModelPresetFillsEverySlot(t *testing.T) {
 	t.Setenv("GX_REVIEW_BEDROCK_MODEL_B", "")
 	t.Setenv("GX_REVIEW_ANTHROPIC_MODEL", "")
 	t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
-	t.Setenv("GX_CONSTRAINTS_MODEL", "")
+	t.Setenv("GX_GATE_MODEL", "")
 	a, b := resolveBedrockReviewModels()
 	if a != defaultBedrockReviewModelA {
 		t.Fatalf("budget leg A = %q, want Haiku kept", a)
@@ -76,7 +76,7 @@ func TestFriendlyNamesForOpenWeightModels(t *testing.T) {
 
 func TestLunaPresetAndName(t *testing.T) {
 	t.Setenv("GX_REVIEW_MODELS", "luna")
-	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_CONSTRAINTS_MODEL"} {
+	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_GATE_MODEL"} {
 		t.Setenv(k, "")
 	}
 	a, b := resolveBedrockReviewModels()

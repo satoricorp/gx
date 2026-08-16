@@ -21,7 +21,7 @@ curl -fsSL https://download.gx.run/install.sh | sh
 
 Re-run the same command to upgrade or repair an existing installation. The
 installer replaces only the gx-managed `gx` and `gx-mcp` binaries and refreshes
-the `gxr` alias. It does not remove `~/.gx`, repository metadata, or
+the `gxe` and `gxr` aliases. It does not remove `~/.gx`, repository metadata, or
 hooks.
 
 ```bash
@@ -37,7 +37,7 @@ gx init
 
 This configures your gx identity, installs Git lifecycle hooks to identify and
 record revisions plus a pre-push hook to publish session data, registers the gx
-MCP server, installs `/gx` and `/constraints` commands for Claude Code, Codex,
+MCP server, installs `/enhance` and `/review` commands for Claude Code, Codex,
 and Cursor, and offers to add gx workflow instructions to `AGENTS.md`.
 
 Most gx commands initialize the repository on first use, so `gx init` is the way
@@ -54,7 +54,7 @@ gx init --global
 To uninstall the CLI:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxc ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxe ~/.local/bin/gxr ~/.local/bin/gxc ~/.local/bin/gx-mcp
 rm -f ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
 ```
 
@@ -103,8 +103,8 @@ Default flow:
 - Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
 - To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
 
-For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
-Before shipping, run the `gx_constraints` MCP tool (or `gx constraints`) to check the change against the pre-ship constraint gates.
+To enhance the current change — AI-reported issues and tips to improve it — run the `gx_enhance` MCP tool (or the `gx enhance` CLI).
+Before shipping, run the `gx_review` MCP tool (or `gx review`) to check the change against the pre-ship gates.
 ```
 
 gx PR summaries are posted for PRs whose branch was pushed through gx with `git
@@ -131,23 +131,24 @@ git status                             # inspect with plain Git
 git push                               # push code; gx hook publishes sessions and PR summaries
 ```
 
-Useful review commands:
+Useful enhance commands:
 
 ```bash
-gxr                                              # gx review, patch-focused
-gx review --repo "how does capture work?"        # ask about the codebase
-gx review --base origin/main --fail-on strong --no-publish   # CI gate
+gxe                                              # gx enhance, patch-focused
+gx enhance --repo "how does capture work?"       # ask about the codebase
+gx enhance --base origin/main --fail-on strong --no-publish   # CI gate
 ```
 
-`gx review` leaves no gx state on the machine that runs it: it never runs `gx
+`gx enhance` gives you issues and tips on how to improve the change you are
+working on. It leaves no gx state on the machine that runs it: it never runs `gx
 init`, writes `~/.gx`, or touches `.git/index`, so it is safe in CI and on a
 checkout you do not own. It does publish outward by default — posting the PR
-review comment and recording review history to gx Cloud. `--no-comment` skips
+comment and recording history to gx Cloud. `--no-comment` skips
 the comment, and `--no-publish` skips both.
 
 Under `--fail-on` it exits `3` when findings at or above the threshold survive,
 `4` when nothing was reviewed at all, and `5` when code was read but the review
-that read it ran degraded. Run `gx review --help` for the full flag surface, and
+that read it ran degraded. Run `gx enhance --help` for the full flag surface, and
 `gx --help` for the rest of the commands.
 
 ## MCP
@@ -175,7 +176,7 @@ Claude Code:
 claude mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
 ```
 
-MCP exposes `gx_review` and `gx_constraints`. There is still no save or publish
+MCP exposes `gx_enhance` and `gx_review`. There is still no save or publish
 tool and no gx-specific verb to ask for: the server tells your agent to use
 plain Git, and the hooks do the rest.
 
@@ -185,25 +186,25 @@ Expected flow:
 git add -> git commit -> git push -> gh pr create
 ```
 
-`gx init` also installs `/gx` and `/constraints` slash commands for Claude
-Code, Codex, and Cursor: `/gx` runs a fast review of the current change, and
-`/constraints` runs the pre-ship constraints exit gate.
+`gx init` also installs `/enhance` and `/review` slash commands for Claude
+Code, Codex, and Cursor: `/enhance` runs a fast pass over the current change —
+issues and tips to improve it — and `/review` runs the pre-ship exit gate.
 
 Publish with plain `git push` only. Do not run `gx push` or `gx capture push`.
 
-## Constraints
+## Review
 
-`gx constraints` (shortcut `gxc`) is the pre-ship exit gate: it checks the
-current change against six constraints — correctness, security, code health,
+`gx review` (shortcut `gxr`) is the pre-ship exit gate: it checks the
+current change against six gates — correctness, security, code health,
 back-pressure, accessibility, performance — and reports PASS, FAIL, or SKIPPED
 for each plus a ship / no-ship verdict. Deterministic checks decide what they
 can (the project's tests and linters, a secrets scan over added lines,
 dependency audits like govulncheck and npm audit); one AI judgment call covers
 the rest, grounded in the same code-index, session, prior-finding, and
-knowledge-corpus context `gx review` uses. Run it before opening a PR:
+knowledge-corpus context `gx enhance` uses. Run it before opening a PR:
 
 ```bash
-gx constraints "fix auth timeout"
+gx review "fix auth timeout"
 ```
 
 The optional argument states the change's intent, which the back-pressure gate

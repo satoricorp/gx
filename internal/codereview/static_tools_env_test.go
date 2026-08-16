@@ -13,7 +13,7 @@ import (
 // reviewerCredentialEnv is the set this whole file exists to keep out of the
 // reviewed checkout's processes. These are the real names a gx developer has
 // exported (see internal/cloud/credentials.go and internal/telemetry) plus the
-// two cloud conventions a CI runner exports into the step that runs gx review.
+// two cloud conventions a CI runner exports into the step that runs gx enhance.
 var reviewerCredentialEnv = map[string]string{
 	"ANTHROPIC_API_KEY":              "sk-ant-leaked",
 	"OPENAI_API_KEY":                 "sk-openai-leaked",

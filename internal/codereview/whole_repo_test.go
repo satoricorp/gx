@@ -418,7 +418,7 @@ func TestDirectedReviewWithoutAnyDiffStillFallsBackToTheRepository(t *testing.T)
 }
 
 // That fallback path reaches repo mode without anyone passing --repo, and the
-// report it produces is published: `gx review` upserts it as the PR comment
+// report it produces is published: `gx enhance` upserts it as the PR comment
 // and records it as the gx Cloud history summary. So the wording is pinned
 // here too, not only for the flag, and the two must agree.
 func TestRepoModeNamesItsSubjectWithoutTheFlagToo(t *testing.T) {
@@ -495,7 +495,7 @@ func TestWholeRepoReviewKeepsEveryLensThePatchReviewHas(t *testing.T) {
 // A whole-repo review with no diff still has to run the tools. Every runner
 // detects against the change set, and collectStaticToolResults returns before
 // detection when that set is empty — so without the repository standing in,
-// `gx review --repo --fail-on any` on a clean tree reports the repository
+// `gx enhance --repo --fail-on any` on a clean tree reports the repository
 // clean having compiled nothing.
 func TestStaticToolsRunOverTheRepositoryWhenAWholeRepoReviewHasNoDiff(t *testing.T) {
 	root := initRepoOnMain(t)
@@ -538,13 +538,13 @@ func TestEveryReviewProfileIsDefinedInThePromptSentWithIt(t *testing.T) {
 		"pr_summary",
 	}
 	for _, profile := range profiles {
-		prompt := reviewDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
+		prompt := enhanceDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
 		if !strings.Contains(prompt, profile) {
 			t.Fatalf("review prompt never defines profile %q:\n%s", profile, prompt)
 		}
 	}
 
-	wholeRepoPrompt := reviewDeveloperPrompt(ReviewBrief{ReviewProfile: reviewProfileWholeRepo})
+	wholeRepoPrompt := enhanceDeveloperPrompt(ReviewBrief{ReviewProfile: reviewProfileWholeRepo})
 	for _, want := range []string{"repo_inventory", "repo_source_file", "the repository itself is the subject"} {
 		if !strings.Contains(wholeRepoPrompt, want) {
 			t.Fatalf("whole-repo prompt missing %q:\n%s", want, wholeRepoPrompt)
@@ -609,7 +609,7 @@ func TestTheRepositoryReachesTheModelAfterCompaction(t *testing.T) {
 func TestAddingTheWholeRepoProfileLeavesEveryOtherPromptUnchanged(t *testing.T) {
 	base := strings.Join(baseReviewDeveloperPromptLines(ReviewBrief{}), "\n")
 	for _, profile := range []string{"", "patch_focused", "pr_summary", "prompt_directed", "scope_focused", "deep_full_spectrum"} {
-		prompt := reviewDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
+		prompt := enhanceDeveloperPrompt(ReviewBrief{ReviewProfile: profile})
 		if prompt != base {
 			t.Fatalf("prompt for profile %q is no longer the shared instruction set", profile)
 		}
