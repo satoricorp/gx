@@ -34,6 +34,14 @@ type Finding struct {
 	// strongest single noise separator the review produces.
 	Kind string `json:"kind,omitempty"`
 
+	// RuleID names the rule this finding is an instance of — a stable,
+	// namespaced identity (review/wrong-logic, gx:recommended/no-swallowed-errors,
+	// REVIEW.md/no-reinvented-utils) that survives across runs. It is separate
+	// from ID on purpose: ID is positional and is the de-duplication key in
+	// mergeFindings, so two findings from one rule must not share it. Empty means
+	// the finding is open-ended judgment that fits no named rule; see rules.go.
+	RuleID string `json:"rule_id,omitempty"`
+
 	// JudgeVerdict and the fields after it carry the verification model's
 	// assessment through to the report: "confirmed", "unverified" (the judge
 	// abstained or never ran), or empty for findings that predate the judge.

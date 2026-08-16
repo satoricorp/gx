@@ -75,6 +75,7 @@ type constraintsAIFinding struct {
 	File           string `json:"file,omitempty"`
 	Line           int    `json:"line,omitempty"`
 	Strength       string `json:"strength,omitempty"`
+	RuleID         string `json:"rule_id,omitempty"`
 }
 
 type bedrockConstraintsJudge struct {
@@ -157,8 +158,9 @@ func constraintsDeveloperPrompt() string {
 		"Treat review_policy as repo-local instructions and follow it unless it conflicts with the evidence.",
 		"Findings must be concrete: name the file (a path from changed_files), the line when you can anchor one, what is wrong, and the first action to take. No generic advice, no praise, no restating the diff.",
 		"strength is one of: Blocking, Strong, Worth exploring, Speculative. Performance findings default to Strong.",
+		reviewClassPromptLine(),
 		"A gate with nothing wrong passes with an empty findings array — do not invent findings to look thorough, and do not fail a gate you cannot support with named evidence.",
-		"Return JSON only: {\"gates\":[{\"gate\":string,\"status\":\"pass|fail\",\"justification\":string,\"findings\":[{\"title\":string,\"summary\":string,\"recommendation\":string,\"file\":string(optional),\"line\":number(optional),\"strength\":string(optional)}]}]} with exactly one entry per requested gate.",
+		"Return JSON only: {\"gates\":[{\"gate\":string,\"status\":\"pass|fail\",\"justification\":string,\"findings\":[{\"title\":string,\"summary\":string,\"recommendation\":string,\"file\":string(optional),\"line\":number(optional),\"strength\":string(optional),\"rule_id\":string(optional)}]}]} with exactly one entry per requested gate.",
 	}, "\n")
 }
 
@@ -361,6 +363,7 @@ func constraintsFindingFromAI(id GateID, finding constraintsAIFinding) Finding {
 		Summary:        strings.TrimSpace(finding.Summary),
 		Recommendation: strings.TrimSpace(finding.Recommendation),
 		Strength:       strength,
+		RuleID:         NormalizeRuleID(finding.RuleID, KnownRuleIDs()),
 		File:           strings.TrimSpace(finding.File),
 		Line:           finding.Line,
 	}

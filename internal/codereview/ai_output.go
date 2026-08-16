@@ -32,6 +32,7 @@ type aiRecommendation struct {
 	Benefit        string          `json:"benefit"`
 	Recommendation string          `json:"recommendation"`
 	Kind           string          `json:"kind"`
+	RuleID         string          `json:"rule_id"`
 	Strength       string          `json:"strength"`
 	Evidence       []string        `json:"evidence"`
 	File           string          `json:"file"`
@@ -150,6 +151,7 @@ func normalizeFindingKind(kind string) string {
 
 func aiRecommendationsToFindings(recommendations []aiRecommendation, brief ReviewBrief) []Finding {
 	var out []Finding
+	knownRules := KnownRuleIDs(brief.Rules...)
 	for i, rec := range recommendations {
 		title := strings.TrimSpace(rec.Title)
 		summary := strings.TrimSpace(rec.Summary)
@@ -196,6 +198,7 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation, brief Revie
 			Anchors:         anchors,
 			Recommendation:  recommendation,
 			Kind:            normalizeFindingKind(rec.Kind),
+			RuleID:          NormalizeRuleID(rec.RuleID, knownRules),
 			Strength:        strength,
 			ResolvedSources: resolveSourceLabels(brief, labels),
 		})

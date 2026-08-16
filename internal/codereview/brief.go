@@ -43,6 +43,12 @@ type ReviewBrief struct {
 	SourceRefs    []SourceRef        `json:"source_refs,omitempty"`
 	SourceCatalog []SourceBrief      `json:"source_catalog"`
 	Rubric        ArchitectureRubric `json:"rubric"`
+	// Rules are the named rules in force for this review beyond the built-in
+	// defect classes: the pack and whatever REVIEW.md declares. The model is
+	// told to return one of these IDs (or a defect-class slug) as rule_id on
+	// each finding; NormalizeRuleID drops anything not in this set. Empty until
+	// a pack or REVIEW.md rules are loaded — the defect classes always apply.
+	Rules []RuleDef `json:"rules,omitempty"`
 	// Evidence records which retrieval sources answered and which did not. It
 	// travels in the brief so the model is told what it is missing, and so the
 	// report can say the same thing to the reader.
