@@ -106,7 +106,16 @@ func FileImpact(file string, policy ReviewPolicy) ChangeImpact {
 // churn the way it names a go.sum's.
 func IsLockfilePath(file string) bool {
 	switch strings.ToLower(path.Base(strings.TrimSpace(file))) {
-	case "go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "cargo.lock", "gemfile.lock", "poetry.lock", "composer.lock", "pubspec.lock":
+	case "go.sum", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+		// bun.lock is Bun's text lockfile (default since 1.2); bun.lockb the
+		// older binary one. Missing the text form classified three 17 KB
+		// bun.lock files in one repository as declared manifests, ranked them
+		// above the source under review, and shipped all 52 KB to both
+		// reviewer legs.
+		"bun.lock", "bun.lockb", "deno.lock",
+		"cargo.lock", "gemfile.lock", "poetry.lock", "uv.lock", "pdm.lock", "pixi.lock",
+		"composer.lock", "pubspec.lock", "mix.lock", "podfile.lock", "flake.lock",
+		"packages.lock.json", "gradle.lockfile":
 		return true
 	default:
 		return false

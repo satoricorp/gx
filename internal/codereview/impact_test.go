@@ -106,16 +106,18 @@ func TestLockfilesNeverEvictSourceCode(t *testing.T) {
 }
 
 // go.sum and go.mod are both "dependency files" and are not the same evidence.
-// Splitting the kind is what lets the budget keep the one a reviewer can act on.
-func TestLockfilesGetTheirOwnSnippetKind(t *testing.T) {
+// The manifest is read; the lockfile — which a reviewer cannot act on and
+// which can be tens of KB — is not read into the context at all.
+func TestLockfilesAreNotReadIntoContext(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 	writeFile(t, root, "go.sum", "example.com/dep v1.0.0 h1:abc=\n")
+	writeFile(t, root, "bun.lock", "{\n  \"lockfileVersion\": 1\n}\n")
 
 	snippets, err := LocalContextRetriever{}.Retrieve(t.Context(), RetrieveInput{
 		RepoRoot: root,
 		Options:  Options{Scope: DefaultScope},
-		Facts:    RepoFacts{DependencyFiles: []string{"go.mod", "go.sum"}},
+		Facts:    RepoFacts{DependencyFiles: []string{"go.mod", "go.sum", "bun.lock"}},
 	})
 	if err != nil {
 		t.Fatalf("Retrieve() error = %v", err)
@@ -127,8 +129,25 @@ func TestLockfilesGetTheirOwnSnippetKind(t *testing.T) {
 	if kinds["go.mod"] != "dependency_manifest" {
 		t.Fatalf("go.mod kind = %q", kinds["go.mod"])
 	}
-	if kinds["go.sum"] != "dependency_lockfile" {
-		t.Fatalf("go.sum kind = %q; it shares a budget slot with the manifest", kinds["go.sum"])
+	for _, lock := range []string{"go.sum", "bun.lock"} {
+		if kind, ok := kinds[lock]; ok {
+			t.Fatalf("%s must not be read into context, got kind %q", lock, kind)
+		}
+	}
+}
+
+// bun.lock is Bun's text lockfile (default since 1.2). Not knowing it
+// classified three of them as manifests and shipped 52 KB of hashes.
+func TestIsLockfilePathKnowsTextLockfiles(t *testing.T) {
+	for _, p := range []string{"bun.lock", "server/bun.lock", "bun.lockb", "uv.lock", "deno.lock", "packages.lock.json"} {
+		if !IsLockfilePath(p) {
+			t.Errorf("IsLockfilePath(%q) = false, want true", p)
+		}
+	}
+	for _, p := range []string{"package.json", "go.mod", "pyproject.toml", "Cargo.toml"} {
+		if IsLockfilePath(p) {
+			t.Errorf("IsLockfilePath(%q) = true, want false", p)
+		}
 	}
 }
 

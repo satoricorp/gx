@@ -301,15 +301,18 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 		}
 	}
 	for _, rel := range facts.DependencyFiles {
-		// A declared manifest and its generated lockfile are not the same kind
-		// of evidence and must not compete for the same context slot: go.mod
-		// tells a reviewer what this project depends on, go.sum tells it
-		// nothing it can act on. They were one kind, ranked above source code.
-		kind := "dependency_manifest"
+		// A declared manifest is evidence: go.mod / package.json tell a reviewer
+		// what this project depends on. Its generated lockfile tells it nothing
+		// it can act on, and is large — one repository's three bun.lock files
+		// were 52 KB together, a third of the whole reviewer request, shipped
+		// to both legs on every review. Lockfiles were first demoted to their
+		// own kind ranked last; that only helps when the snippet count exceeds
+		// the budget, which an ordinary review's does not. So they are not read
+		// at all. A lockfile the change touches still appears in the diff.
 		if IsLockfilePath(rel) {
-			kind = "dependency_lockfile"
+			continue
 		}
-		if snippet, ok := readSnippet(repoRoot, rel, kind); ok {
+		if snippet, ok := readSnippet(repoRoot, rel, "dependency_manifest"); ok {
 			snippets = append(snippets, snippet)
 		}
 	}
@@ -320,7 +323,21 @@ func (LocalContextRetriever) Retrieve(_ context.Context, in RetrieveInput) ([]Co
 			}
 		}
 	}
+	// The quality scan runs over the whole repository, and its hints already
+	// travel in static.code_quality. What is decided here is which flagged
+	// files are ALSO shipped whole. For a change review that is only files the
+	// change touches: the review is of the diff, and a 16 KB file nobody
+	// edited, sent because a grep found a shell call in it, is weight the
+	// reviewer reads before the diff (measured: 40 KB of four such files on a
+	// five-file change). A whole-repo review is of the repository, and keeps
+	// them all.
+	changed := changedFileSet(in.ChangedFiles)
 	for _, rel := range qualityFiles(collectCodeQualityHints(repoRoot, facts, opts), opts.Deep) {
+		if !opts.WholeRepo && len(changed) > 0 {
+			if _, ok := changed[rel]; !ok {
+				continue
+			}
+		}
 		if snippet, ok := readSnippet(repoRoot, rel, "code_quality_file"); ok {
 			snippets = append(snippets, snippet)
 		}
