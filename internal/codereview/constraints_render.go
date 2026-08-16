@@ -2,13 +2,8 @@ package codereview
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
-	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/formatters"
-	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/satoricorp/gx/internal/termstyle"
 )
 
@@ -19,10 +14,7 @@ import (
 const constraintsMaxRenderedFiles = 8
 
 func constraintsColorize(report ConstraintsReport, paint func(string) string, text string) string {
-	if !report.Color || text == "" || !termstyle.Enabled() {
-		return text
-	}
-	return paint(text)
+	return colorize(report.Color, paint, text)
 }
 
 func constraintsAccent(report ConstraintsReport, text string) string {
@@ -146,88 +138,6 @@ func constraintsResolveSteps(report ConstraintsReport) []constraintsResolveStep 
 	return steps
 }
 
-// constraintsHighlightCode syntax-highlights an excerpt for the terminal.
-// Plain text comes back on any failure — highlighting is presentation, never a
-// reason to lose the code.
-func constraintsHighlightCode(file, code string) string {
-	lexer := lexers.Match(filepath.Base(file))
-	if lexer == nil {
-		lexer = lexers.Fallback
-	}
-	lexer = chroma.Coalesce(lexer)
-	style := styles.Get("monokai")
-	if style == nil {
-		style = styles.Fallback
-	}
-	formatter := formatters.Get("terminal256")
-	if formatter == nil {
-		return code
-	}
-	iterator, err := lexer.Tokenise(nil, code)
-	if err != nil {
-		return code
-	}
-	var b strings.Builder
-	if err := formatter.Format(&b, style, iterator); err != nil {
-		return code
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// constraintsCodeLines renders whatever code a finding carries for the
-// terminal: the diff hunk when the finding is about the change, otherwise the
-// source excerpt.
-func constraintsCodeLines(report ConstraintsReport, finding Finding, indent string) []string {
-	if strings.TrimSpace(finding.DiffHunk) != "" {
-		return constraintsHunkLines(report, finding.DiffHunk, indent)
-	}
-	return constraintsExcerptLines(report, finding, indent)
-}
-
-// constraintsHunkLines renders a unified-diff window with the coloring a
-// terminal reader expects: additions green, removals red, the hunk header and
-// trims muted.
-func constraintsHunkLines(report ConstraintsReport, hunk, indent string) []string {
-	var out []string
-	for _, line := range strings.Split(hunk, "\n") {
-		painted := line
-		switch {
-		case strings.HasPrefix(line, "@@"), line == "…":
-			painted = constraintsColorize(report, termstyle.Muted, line)
-		case strings.HasPrefix(line, "+"):
-			painted = constraintsColorize(report, termstyle.Success, line)
-		case strings.HasPrefix(line, "-"):
-			painted = constraintsColorize(report, termstyle.Danger, line)
-		}
-		out = append(out, indent+painted)
-	}
-	return out
-}
-
-// constraintsExcerptLines renders a finding's excerpt with a line-number
-// gutter and a marker on the discussed line, syntax-highlighted when the
-// report is in color.
-func constraintsExcerptLines(report ConstraintsReport, finding Finding, indent string) []string {
-	if strings.TrimSpace(finding.CodeExcerpt) == "" {
-		return nil
-	}
-	code := finding.CodeExcerpt
-	if report.Color && termstyle.Enabled() {
-		code = constraintsHighlightCode(finding.File, code)
-	}
-	var out []string
-	for i, line := range strings.Split(code, "\n") {
-		number := finding.CodeExcerptStart + i
-		gutter := constraintsColorize(report, termstyle.Muted, fmt.Sprintf("  %4d | ", number))
-		if number == finding.Line {
-			gutter = constraintsColorize(report, termstyle.Danger, "→ ") +
-				constraintsColorize(report, termstyle.Muted, fmt.Sprintf("%4d | ", number))
-		}
-		out = append(out, indent+gutter+line)
-	}
-	return out
-}
-
 func constraintsFilesLine(files []string) string {
 	if len(files) == 0 {
 		return ""
@@ -286,7 +196,7 @@ func RenderConstraintsText(report ConstraintsReport) string {
 		for index, step := range steps {
 			header := fmt.Sprintf("%d. %s — %s", index+1, step.gateTitle, constraintsFindingLine(step.finding))
 			fmt.Fprintf(&b, "  %s\n", header)
-			for _, line := range constraintsCodeLines(report, step.finding, "     ") {
+			for _, line := range renderCodeLines(report.Color, step.finding, "     ") {
 				fmt.Fprintln(&b, line)
 			}
 			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
@@ -350,7 +260,7 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 				fmt.Fprintf(&b, "```diff\n%s\n```\n", step.finding.DiffHunk)
 			case strings.TrimSpace(step.finding.CodeExcerpt) != "":
 				fmt.Fprintln(&b)
-				fmt.Fprintf(&b, "```%s\n%s\n```\n", constraintsFenceLanguage(step.finding.File), step.finding.CodeExcerpt)
+				fmt.Fprintf(&b, "```%s\n%s\n```\n", fenceLanguage(step.finding.File), step.finding.CodeExcerpt)
 			}
 			if fix := strings.TrimSpace(step.finding.Recommendation); fix != "" {
 				fmt.Fprintln(&b)
@@ -386,32 +296,4 @@ func RenderConstraintsMarkdown(report ConstraintsReport) string {
 func markdownTableCell(text string) string {
 	text = strings.ReplaceAll(text, "|", "\\|")
 	return strings.ReplaceAll(text, "\n", " ")
-}
-
-// constraintsFenceLanguage tags a markdown code fence so renderers highlight
-// the excerpt. Empty is fine: an untagged fence still renders as code.
-func constraintsFenceLanguage(file string) string {
-	if language := qualityLanguage(file); language != "" {
-		return language
-	}
-	switch strings.ToLower(filepath.Ext(file)) {
-	case ".html":
-		return "html"
-	case ".vue":
-		return "vue"
-	case ".svelte":
-		return "svelte"
-	case ".sh", ".bash":
-		return "bash"
-	case ".yml", ".yaml":
-		return "yaml"
-	case ".json":
-		return "json"
-	case ".toml":
-		return "toml"
-	case ".mod":
-		return "go"
-	default:
-		return ""
-	}
 }
