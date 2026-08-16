@@ -111,7 +111,7 @@ func TestAccordionEnterOpensSectionAndAdvancesCursor(t *testing.T) {
 	for _, want := range []string{
 		"◆  BLOCKING  1 finding",
 		"Secrets must not reach logs",
-		"gx:recommended/no-secrets-in-logs  ·  internal/checkout/session.go:88  [graded]",
+		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88  [graded]",
 		"Why  req embeds PaymentToken.",
 		"Fix  log req.ID instead of req.",
 		"both graders agreed · judge confirmed 0.91",

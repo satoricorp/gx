@@ -207,6 +207,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// case where the reader needs to know.
 	reviewerInfo := reviewerInfoFromReviewer(reviewer)
 	var coverage Coverage
+	var modelStory []StoryItem
 	if wantAIReview {
 		if !reviewerAvailable(reviewer) {
 			if aiConfigured {
@@ -236,6 +237,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				// deterministic checks only" — the same sentence a real AI outage
 				// produces, which teaches readers to discount it when it is true.
 				findings = mergeFindings(findings, result.Findings)
+				modelStory = result.Story
 				reviewerLabel = "heuristic+ai"
 			}
 			if coverage.ShardsFailed > 0 && coverage.ShardsFailed < coverage.Shards && aiConfigured {
@@ -347,13 +349,24 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
 	// tool findings split out above. See lanes.go for the rule.
 	findings = AssignLanes(append(blocking, advisory...))
-	// The story lane. This path asks the reviewer for findings (Review), not
-	// for a summary (ReviewForSummary), so the model's story items are not
-	// available here — they travel in PRSummaryReview.Story for the pr_summary
-	// callers. What is assembled here is the part no model decides: the
-	// mandatory items, hunks attached from the same diffs the reviewer read.
-	// Nil when there is nothing to say.
-	story := assembleReportStory(opts.ReviewPolicy, changed, diffs, nil)
+	// Show the code under discussion. Constraints has done this since it
+	// shipped; the review path never did, so a report of twenty findings
+	// with file:line anchors showed zero lines of code — every finding was a
+	// paragraph about a location the reader had to open themselves. The diff
+	// hunk wins when the line is part of the change; otherwise ±2 lines of
+	// the current source. Both helpers are best-effort and never fail a run.
+	diffsByFile := make(map[string]string, len(diffs))
+	for _, snippet := range diffs {
+		diffsByFile[snippet.File] = snippet.Diff
+	}
+	attachConstraintsDiffHunks(diffsByFile, findings)
+	attachConstraintsCodeExcerpts(repoRoot, findings)
+	// The story lane: the mandatory items no model decides (a change that
+	// edits its own REVIEW.md exceptions), then the reviewer's own — carried
+	// back through the fan-out from the same reply as the findings — with
+	// hunks attached from the diffs the reviewer read. Nil when there is
+	// nothing to say.
+	story := assembleReportStory(opts.ReviewPolicy, changed, diffs, modelStory)
 
 	return Report{
 		RepoRoot:          repoRoot,

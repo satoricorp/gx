@@ -108,6 +108,12 @@ type Finding struct {
 	DiffHunk         string `json:"diff_hunk,omitempty"`
 	CodeExcerpt      string `json:"code_excerpt,omitempty"`
 	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
+	// Example is the model's own minimal diff fragment showing the fix —
+	// lines prefixed with + and -, no headers, a few lines. It is rendered
+	// after Fix with the same hunk painter, so a reader sees the change
+	// rather than reading a description of it. Optional; kept only when it
+	// looks like a small diff (see normalizeExampleDiff).
+	Example string `json:"example,omitempty"`
 
 	ResolvedSources []ResolvedSource `json:"resolved_sources,omitempty"`
 	Recommendation  string           `json:"recommendation,omitempty"`

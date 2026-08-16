@@ -300,28 +300,33 @@ func reviewDivider(color bool, label string, paint func(string) string, right st
 }
 
 func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding) {
-	// Requirement line: the rule's plain-English name when there is one,
-	// otherwise the finding's own title.
-	title := strings.TrimSpace(f.Title)
-	b.WriteString(reviewRenderIndent)
-	b.WriteString(colorize(color, termstyle.Section, title))
-	b.WriteString("\n")
-
-	// Identity line: namespace/rule · file:line · how it was decided.
+	// The rule leads. It is the thing a reader scans a report by — a column
+	// of rule names down the left is a table of contents; a column of prose
+	// titles is not. So the first line is the rule name, bold and painted by
+	// namespace (mint for the pack, indigo for the repo's own, muted for an
+	// open-ended defect class), with the location and how it was decided
+	// after it. The title is the second line, in plain text.
 	b.WriteString(reviewRenderIndent)
 	if f.RuleID != "" {
 		ns, name, _ := strings.Cut(f.RuleID, "/")
-		b.WriteString(colorize(color, boldPainter(reviewMint), ns))
-		b.WriteString(colorize(color, termstyle.Muted, "/"))
-		b.WriteString(colorize(color, termstyle.Section, name))
+		paint := ruleNamespacePainter(ns)
+		b.WriteString(colorize(color, boldPainter(paint), name))
+		b.WriteString(colorize(color, termstyle.Muted, "  "+ns))
 	} else {
-		b.WriteString(colorize(color, termstyle.Muted, f.ID))
+		b.WriteString(colorize(color, boldPainter(termstyle.Section), strings.TrimSpace(f.Title)))
 	}
 	if loc := findingLocation(f); loc != "" {
 		b.WriteString(colorize(color, termstyle.Muted, "  ·  "+loc))
 	}
 	b.WriteString(colorize(color, termstyle.Muted, "  ["+reviewDecidedBy(f)+"]"))
 	b.WriteString("\n")
+	if f.RuleID != "" {
+		if title := strings.TrimSpace(f.Title); title != "" {
+			b.WriteString(reviewRenderIndent)
+			b.WriteString(colorize(color, termstyle.Value, title))
+			b.WriteString("\n")
+		}
+	}
 
 	if lines := renderCodeLines(color, f, reviewRenderCodeIndent); len(lines) > 0 {
 		b.WriteString("\n")
@@ -337,6 +342,13 @@ func writeReviewFinding(b *strings.Builder, report Report, color bool, f Finding
 	}
 	if fix := strings.TrimSpace(f.Recommendation); fix != "" {
 		writeReviewLabeled(b, color, termstyle.Success, "Fix", fix)
+	}
+	if ex := strings.TrimSpace(f.Example); ex != "" {
+		b.WriteString("\n")
+		for _, line := range renderHunkLines(color, ex, reviewRenderCodeIndent) {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
 	}
 
 	// Evidence footer: what the trust machinery said.
@@ -797,4 +809,20 @@ func boldPainter(paint func(string) string) func(string) string {
 // accordion's RUN DETAILS row and anywhere else the full reason is too long.
 func SummarizeDegradedReasons(reasons []string) string {
 	return summarizeDegradedReasons(reasons)
+}
+
+// ruleNamespacePainter picks the accent for a rule by who wrote it: mint for
+// the built-in pack, indigo for the repository's own REVIEW.md rules, muted for
+// the open-ended defect classes — the same three colors the report's rule IDs
+// have carried since the first mockup, so the namespace is readable at a
+// glance without reading the namespace.
+func ruleNamespacePainter(ns string) func(string) string {
+	switch {
+	case strings.HasPrefix(ns, "gx:"):
+		return reviewMint
+	case strings.EqualFold(ns, "REVIEW.md"):
+		return termstyle.Command
+	default:
+		return termstyle.Section
+	}
 }

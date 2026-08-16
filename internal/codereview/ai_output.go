@@ -55,6 +55,7 @@ type aiRecommendation struct {
 	Evidence       []string        `json:"evidence"`
 	File           string          `json:"file"`
 	Line           json.RawMessage `json:"line"`
+	Example        string          `json:"example"`
 	SourceLabels   []string        `json:"source_labels"`
 	Anchors        []FindingAnchor `json:"anchors"`
 	Sources        []string        `json:"sources"`
@@ -283,6 +284,7 @@ func aiRecommendationsToFindings(recommendations []aiRecommendation, brief Revie
 			Recommendation:  recommendation,
 			Kind:            normalizeFindingKind(rec.Kind),
 			RuleID:          NormalizeRuleID(rec.RuleID, knownRules),
+			Example:         normalizeExampleDiff(rec.Example),
 			Strength:        strength,
 			ResolvedSources: resolveSourceLabels(brief, labels),
 		})
@@ -357,4 +359,38 @@ func salvageTruncatedRecommendations(content string) []aiRecommendation {
 		out = append(out, rec)
 	}
 	return out
+}
+
+// normalizeExampleDiff keeps an example only when it looks like a small diff
+// fragment: some line begins with + or -, and it is short. Anything else — a
+// prose paragraph the model put in the wrong field, a whole file — is dropped,
+// because the renderer paints it as a hunk and a hunk of prose is worse than
+// no example. Fenced ```diff blocks are unwrapped first.
+func normalizeExampleDiff(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	if strings.HasPrefix(text, "```") {
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			text = text[i+1:]
+		}
+		text = strings.TrimSuffix(strings.TrimSpace(text), "```")
+		text = strings.TrimSpace(text)
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > 12 {
+		return ""
+	}
+	diffLike := false
+	for _, l := range lines {
+		if strings.HasPrefix(l, "+") || strings.HasPrefix(l, "-") {
+			diffLike = true
+			break
+		}
+	}
+	if !diffLike {
+		return ""
+	}
+	return strings.Join(lines, "\n")
 }

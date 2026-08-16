@@ -20,6 +20,7 @@ func renderFixtureReport() Report {
 			File: "internal/checkout/session.go", Line: 88,
 			CodeExcerpt:      "    for attempt := 0; attempt < maxRetries; attempt++ {\n        log.Printf(\"charge attempt %d failed: %+v\", attempt, req)",
 			CodeExcerptStart: 87,
+			Example:          "-        log.Printf(\"charge attempt %d failed: %+v\", attempt, req)\n+        log.Printf(\"charge attempt %d failed: id=%s amount=%d\", attempt, req.ID, req.Amount)",
 		},
 		{
 			ID: "bedrock-a.ai.review.2", RuleID: "gx:recommended/reuse-before-rewrite",
@@ -81,10 +82,12 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 		"2  reviewers",
 		"3  findings",
 		"BLOCKING",
+		"no-secrets-in-logs  gx:recommended  ·  internal/checkout/session.go:88  [graded]",
 		"Secrets must not reach logs",
-		"gx:recommended/no-secrets-in-logs  ·  internal/checkout/session.go:88  [graded]",
 		"Why  req embeds PaymentToken",
 		"Fix  log req.ID and req.Amount",
+		"-        log.Printf(\"charge attempt %d failed: %+v\", attempt, req)",
+		"+        log.Printf(\"charge attempt %d failed: id=%s amount=%d\", attempt, req.ID, req.Amount)",
 		"both graders agreed · judge confirmed 0.91",
 		"Suppress ▸ paste into REVIEW.md ## Exceptions:",
 		`- "no-secrets-in-logs" doesn't apply in internal/checkout/session.go — <reason>.`,
@@ -193,5 +196,21 @@ func TestWrapTextNeverSplitsWords(t *testing.T) {
 	}
 	if got := wrapText("", 10); got != nil {
 		t.Fatalf("wrapText(empty) = %v, want nil", got)
+	}
+}
+
+func TestNormalizeExampleDiffKeepsSmallDiffsOnly(t *testing.T) {
+	cases := map[string]string{
+		"-old\n+new":                    "-old\n+new",
+		"```diff\n-old\n+new\n```":      "-old\n+new",
+		"  -old\n  +new  ":              "-old\n  +new",
+		"just prose explaining the fix": "",
+		"":                              "",
+		strings.Repeat("+line\n", 20):   "",
+	}
+	for in, want := range cases {
+		if got := normalizeExampleDiff(in); got != want {
+			t.Errorf("normalizeExampleDiff(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

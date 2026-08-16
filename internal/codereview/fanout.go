@@ -384,6 +384,10 @@ func distinctSnippetRefs(snippets []ContextSnippet) []string {
 // shardedReviewResult is what a fan-out review produced.
 type shardedReviewResult struct {
 	Findings []Finding
+	// Story is the reviewer's "what changed that you now own" lane, taken
+	// from the first shard that produced one — the summary call carries it
+	// beside the findings, so it costs no extra model round-trip.
+	Story    []StoryItem
 	Coverage Coverage
 	// Err is set only when every shard failed, which is a failed review rather
 	// than a partial one.
@@ -396,24 +400,41 @@ type shardedReviewResult struct {
 // Partial failure is reported, not swallowed: a shard that errors leaves a
 // region of the subject unreviewed, and Coverage.ShardsFailed is what tells the
 // reader their "no issues" covers less than it says.
+// reviewShard asks one reviewer about one shard. Every real reviewer can
+// answer with a summary — findings plus the story lane in the same reply — so
+// that is what is asked for; a bare AIReviewer (a test stub, a future
+// findings-only provider) is asked for findings and yields no story.
+func reviewShard(ctx context.Context, reviewer AIReviewer, brief ReviewBrief) ([]Finding, []StoryItem, error) {
+	if withSummary, ok := reviewer.(AIReviewerWithSummary); ok {
+		summary, err := withSummary.ReviewForSummary(ctx, brief)
+		if err != nil {
+			return nil, nil, err
+		}
+		return summary.Findings, summary.Story, nil
+	}
+	findings, err := reviewer.Review(ctx, brief)
+	return findings, nil, err
+}
+
 func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewShard, coverage Coverage, opts Options) shardedReviewResult {
 	if len(shards) == 0 {
 		return shardedReviewResult{Coverage: coverage}
 	}
 	if len(shards) == 1 {
-		findings, err := reviewer.Review(ctx, shards[0].Brief)
+		findings, story, err := reviewShard(ctx, reviewer, shards[0].Brief)
 		if err != nil {
 			coverage.ShardsFailed = 1
 			coverage.Read = 0
 			return shardedReviewResult{Coverage: coverage, Err: err}
 		}
-		return shardedReviewResult{Findings: findings, Coverage: coverage}
+		return shardedReviewResult{Findings: findings, Story: story, Coverage: coverage}
 	}
 
 	reviewProgress(opts, fmt.Sprintf("Asking AI reviewer (%d parallel reviews)", len(shards)))
 	type result struct {
 		index    int
 		findings []Finding
+		story    []StoryItem
 		err      error
 	}
 	results := make([]result, len(shards))
@@ -427,8 +448,8 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			findings, err := reviewer.Review(ctx, shard.Brief)
-			results[i] = result{index: i, findings: namespaceShardFindings(findings, shard), err: err}
+			findings, story, err := reviewShard(ctx, reviewer, shard.Brief)
+			results[i] = result{index: i, findings: namespaceShardFindings(findings, shard), story: story, err: err}
 			// Progress is serialized because the shards are not. A fan-out over
 			// a large repository is minutes of silence otherwise.
 			progressMu.Lock()
@@ -444,6 +465,7 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 	wg.Wait()
 
 	var merged []Finding
+	var story []StoryItem
 	failed := 0
 	unreadFiles := 0
 	var firstErr error
@@ -457,6 +479,13 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 			continue
 		}
 		merged = mergeFindings(merged, res.findings)
+		// One story per review: shards see disjoint slices of the subject, so
+		// their stories are about different files, but the reader wants one
+		// list. Take the first shard's and let it lead; a merged story is a
+		// follow-up if it proves needed.
+		if len(story) == 0 && len(res.story) > 0 {
+			story = res.story
+		}
 	}
 	coverage.ShardsFailed = failed
 	coverage.Read -= unreadFiles
@@ -466,7 +495,7 @@ func runShardedReview(ctx context.Context, reviewer AIReviewer, shards []ReviewS
 	if failed == len(shards) {
 		return shardedReviewResult{Coverage: coverage, Err: firstErr}
 	}
-	return shardedReviewResult{Findings: merged, Coverage: coverage}
+	return shardedReviewResult{Findings: merged, Story: story, Coverage: coverage}
 }
 
 // namespaceShardFindings makes shard findings survive the merge.
