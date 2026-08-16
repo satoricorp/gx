@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/term"
 
 	"github.com/satoricorp/gx/internal/codereview"
+	"github.com/satoricorp/gx/internal/termstyle"
 )
 
 // useInteractiveTerminal reports whether both ends of the pipe are a real
@@ -51,6 +52,10 @@ type reviewLoaderResultMsg struct {
 	err    error
 }
 
+// runReviewWithLoader runs the review under a spinner when both ends are a
+// terminal, and plain otherwise. It returns the report; whether the caller
+// then prints the linear render or opens the accordion is decided by
+// browseReviewInteractively, which needs the same tty answer.
 func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
 	if !useInteractiveTerminal(in, out) {
 		return run(nil)
@@ -142,4 +147,31 @@ func (w reviewLoaderProgressWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+// browseReviewInteractively opens the accordion over a finished report when
+// both ends are a terminal and the caller has not asked for a machine shape.
+// It returns true when it took over the screen — the caller then prints
+// nothing else to stdout, because the accordion already showed the report and
+// the seam. It returns false when the terminal is not interactive, so the
+// caller falls back to RenderReviewText, and the exit code is identical
+// either way.
+//
+// GX_PLAIN_PROMPTS and CI both route here as "not interactive" through
+// useInteractiveTerminal, so agents and CI never see a menu.
+func browseReviewInteractively(in io.Reader, out io.Writer, report codereview.Report) bool {
+	if !useInteractiveTerminal(in, out) {
+		return false
+	}
+	if os.Getenv("CI") != "" {
+		return false
+	}
+	model := newAccordionModel(report, report.Color && termstyle.Enabled())
+	program := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out))
+	if _, err := program.Run(); err != nil {
+		// The accordion is presentation. If the TUI cannot run for any
+		// reason, fall back to the linear render rather than lose the report.
+		return false
+	}
+	return true
 }

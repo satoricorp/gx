@@ -121,6 +121,11 @@ func ReviewVerdictLines(report Report) (verdict, next string) {
 // ---- ledger ---------------------------------------------------------------
 
 func writeReviewLedger(b *strings.Builder, report Report, color bool) {
+	writeReviewLedgerHeader(b, report, color)
+	writeReviewLedgerRows(b, report, color)
+}
+
+func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 	target := strings.TrimSpace(report.ReviewRange)
 	if target == "" {
 		target = strings.TrimSpace(report.ReviewTarget)
@@ -137,7 +142,9 @@ func writeReviewLedger(b *strings.Builder, report Report, color bool) {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+}
 
+func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 	n := 0
 	row := func(label, value string) {
 		n++
@@ -424,6 +431,10 @@ func writeReviewFixPlan(b *strings.Builder, report Report, color bool, plan []Fi
 	b.WriteString(colorize(color, termstyle.Command, "gx review"))
 	b.WriteString(colorize(color, termstyle.Muted, " ────"))
 	b.WriteString("\n\n")
+	writeReviewFixPlanBody(b, report, color, plan)
+}
+
+func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan []FixStep) {
 	for _, s := range plan {
 		paint := termstyle.Warning
 		if s.Lane == LaneBlocking {
@@ -463,6 +474,10 @@ func writeReviewStory(b *strings.Builder, report Report, color bool, items []Sto
 	b.WriteString(colorize(color, termstyle.Command, "WORTH KNOWING"))
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" ────── %d change(s) that passed, and that you now own ──", len(items))))
 	b.WriteString("\n")
+	writeReviewStoryBody(b, report, color, items)
+}
+
+func writeReviewStoryBody(b *strings.Builder, report Report, color bool, items []StoryItem) {
 	for i, item := range items {
 		b.WriteString("\n")
 		b.WriteString(reviewRenderIndent)
@@ -587,4 +602,128 @@ func wrapText(text string, width int) []string {
 		cur += " " + w
 	}
 	return append(lines, cur)
+}
+
+// ---- section-level exports for the interactive shape ---------------------
+//
+// The accordion in internal/cli renders one section at a time under its own
+// node. It calls these rather than re-implementing the sections, so the
+// interactive and linear renders cannot drift: whatever RenderReviewText
+// prints for a lane, the accordion prints for that lane.
+
+// SplitFindingsByLane partitions findings into the blocking and advisory
+// lanes, preserving report order within each.
+func SplitFindingsByLane(findings []Finding) (blocking, advisory []Finding) {
+	return splitFindingsByLane(findings)
+}
+
+// RuleShortName is the part of a rule ID after the namespace — the name a
+// human reads and a suppression references.
+func RuleShortName(f Finding) string {
+	return reviewRuleShortName(f)
+}
+
+// ReviewMint paints with the review accent, in the same shape as the termstyle
+// painters so a caller can pick it by severity alongside them.
+func ReviewMint(text string) string {
+	return reviewMint(text)
+}
+
+// RenderReviewLedgerRows returns the ledger rows — scope, reviewers, evidence,
+// findings, coverage — one per line, without the header line above them.
+func RenderReviewLedgerRows(report Report, color bool) string {
+	var b strings.Builder
+	writeReviewLedgerRows(&b, report, color)
+	return b.String()
+}
+
+// RenderReviewLane renders one lane's findings, without the lane divider —
+// the accordion draws its own section header.
+func RenderReviewLane(report Report, color bool, label string, findings []Finding) string {
+	var b strings.Builder
+	for i, f := range findings {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		writeReviewFinding(&b, report, color, f)
+	}
+	return b.String()
+}
+
+// RenderReviewFixPlan renders the fix plan section body.
+func RenderReviewFixPlan(report Report, color bool) string {
+	plan := BuildFixPlan(report.Findings)
+	if len(plan) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	writeReviewFixPlanBody(&b, report, color, plan)
+	return b.String()
+}
+
+// RenderReviewStory renders the story section body.
+func RenderReviewStory(report Report, color bool) string {
+	if len(report.Story) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	writeReviewStoryBody(&b, report, color, report.Story)
+	return b.String()
+}
+
+// RenderReviewDetails renders the run details a reader opens on demand:
+// models, transport, every evidence source with its state, coverage, and any
+// degradation — the ledger's long form.
+func RenderReviewDetails(report Report, color bool) string {
+	var b strings.Builder
+	kv := func(k, v string) {
+		b.WriteString(reviewRenderIndent)
+		b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf("%-12s", k)))
+		b.WriteString(v)
+		b.WriteString("\n")
+	}
+	if report.aiReviewRan() {
+		kv("reviewers", strings.Join(report.ReviewModels, " · "))
+		if report.ReviewTransport != "" {
+			kv("transport", report.ReviewTransport)
+		}
+	} else {
+		kv("reviewers", "no model ran")
+	}
+	if report.ReviewMode != "" {
+		kv("mode", report.ReviewMode)
+	}
+	if report.ReviewBase != "" {
+		kv("base", report.ReviewBase)
+	}
+	if report.ContextSnippets > 0 {
+		kv("context", fmt.Sprintf("%d snippet(s)", report.ContextSnippets))
+	}
+	for _, e := range report.Evidence {
+		src := strings.TrimSpace(e.Source)
+		if src == "" {
+			continue
+		}
+		state := e.State
+		if d := strings.TrimSpace(e.Detail); d != "" {
+			state += " — " + d
+		}
+		paint := termstyle.Muted
+		if e.State == EvidenceOK {
+			paint = termstyle.Success
+		} else if e.Degraded() {
+			paint = termstyle.Warning
+		}
+		kv("evidence", colorize(color, paint, src+": "+state))
+	}
+	if s := strings.TrimSpace(report.Coverage.Statement()); s != "" {
+		kv("coverage", s)
+	}
+	for _, r := range report.DegradedReasons {
+		kv("degraded", colorize(color, termstyle.Warning, r))
+	}
+	if b.Len() == 0 {
+		return reviewRenderIndent + colorize(color, termstyle.Muted, "no run details recorded") + "\n"
+	}
+	return b.String()
 }

@@ -120,9 +120,14 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderMarkdown(report))
 			default:
 				// The terminal render: lanes, fix plan, story, and the
-				// Verdict/Next seam last. RenderMarkdown remains the PR-comment
-				// body and the --md shape; it is no longer what a terminal sees.
-				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderReviewText(report))
+				// Verdict/Next seam last. On a real terminal it is the accordion
+				// — the same sections as a menu the reader walks. Piped, in CI,
+				// or under GX_PLAIN_PROMPTS it is the linear text, and either
+				// way the exit code below is the same. RenderMarkdown remains
+				// the PR-comment body and the --md shape.
+				if !browseReviewInteractively(cmd.InOrStdin(), cmd.OutOrStdout(), report) {
+					fmt.Fprint(cmd.OutOrStdout(), codereview.RenderReviewText(report))
+				}
 			}
 			// The saved-report notice goes to stderr so --json stdout stays
 			// pure report.
