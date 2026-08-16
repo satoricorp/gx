@@ -13,7 +13,11 @@ import (
 )
 
 type CodeReviewFindingRecord struct {
-	Fingerprint    string         `json:"fingerprint,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// RuleID is the stable rule the finding is an instance of (see
+	// codereview.Finding.RuleID). Additive: the server may ignore it, and it
+	// also travels in Payload["rule_id"] for readers that only see the payload.
+	RuleID         string         `json:"ruleId,omitempty"`
 	Outcome        string         `json:"outcome,omitempty"`
 	Category       string         `json:"category,omitempty"`
 	Language       string         `json:"language,omitempty"`

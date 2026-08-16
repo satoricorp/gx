@@ -347,6 +347,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
 	// tool findings split out above. See lanes.go for the rule.
 	findings = AssignLanes(append(blocking, advisory...))
+	// The story lane. This path asks the reviewer for findings (Review), not
+	// for a summary (ReviewForSummary), so the model's story items are not
+	// available here — they travel in PRSummaryReview.Story for the pr_summary
+	// callers. What is assembled here is the part no model decides: the
+	// mandatory items, hunks attached from the same diffs the reviewer read.
+	// Nil when there is nothing to say.
+	story := assembleReportStory(opts.ReviewPolicy, changed, diffs, nil)
 
 	return Report{
 		RepoRoot:          repoRoot,
@@ -362,6 +369,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		ChangedFiles:      changed,
 		ObservationLabels: facts.observations(),
 		Findings:          findings,
+		Story:             story,
 		Sources:           sources,
 		SourceRefs:        brief.SourceRefs,
 		Reviewer:          reviewerLabel,

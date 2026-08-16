@@ -93,6 +93,7 @@ type Report struct {
 	ChangedFiles      []string       `json:"changed_files,omitempty"`
 	ObservationLabels []string       `json:"observation_labels,omitempty"`
 	Findings          []Finding      `json:"findings"`
+	Story             []StoryItem    `json:"story,omitempty"` // "what you now own"; see story.go
 	Sources           []Source       `json:"sources,omitempty"`
 	SourceRefs        []SourceRef    `json:"source_refs,omitempty"`
 	Reviewer          string         `json:"reviewer,omitempty"`

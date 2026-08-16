@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -137,7 +136,7 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 				}
 				recordReviewHistory(ctx, repo, report, client, prompt, scopeExplicit, deep, wholeRepo, cmd.ErrOrStderr())
 			}
-			return reviewGateError(report, failOnLevel)
+			return reviewGateError(report, failOnLevel, cmd.Flags().Changed("fail-on"))
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", codereview.DefaultScope, "review scope when explicitly set: architecture, security, performance, onboarding, docs, dependencies, testing, maintainability")
@@ -159,12 +158,6 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().IntVar(&maxFindings, "max-findings", 0, "cap how many recommendations the review reports (0 uses the default); applies to both what the model is asked for and what is reported")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd
-}
-
-func writeReviewJSON(out io.Writer, report codereview.Report) error {
-	encoder := json.NewEncoder(out)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(report)
 }
 
 // saveReviewReport persists the full JSON report to
@@ -267,17 +260,31 @@ func resolveGitCommonDir(repoRoot string) (string, error) {
 	return filepath.Clean(gitDir), nil
 }
 
-// reviewGateError turns a review outcome into an exit code. "Nothing to
-// review" is its own outcome: it never counts as findings-clean, and under a
-// gate it fails, because a gate that passes on a diff it never opened is
-// exactly the silent false pass --fail-on is meant to catch. The gate is on by
-// default (--fail-on blocking); --fail-on none is the advisory-only mode where
-// every outcome stays exit 0.
-func reviewGateError(report codereview.Report, level codereview.FailOnLevel) error {
+// reviewGateError turns a review outcome into an exit code.
+//
+// Two strictnesses live here, and which one applies depends on whether the
+// caller asked for a gate or got the default.
+//
+// The default (--fail-on blocking, flag not passed) is the linter contract:
+// blocking-lane findings exit 3, and everything else — including a clean
+// tree and a run that could not reach a model — exits 0. Interactive use, the
+// MCP tool, and the slash commands all live here, and for them "nothing to
+// fix" must be a green run, not a refusal.
+//
+// An explicit --fail-on (any level, passed on the command line) is a CI gate,
+// and a gate is held to the stricter rule: "nothing to review" exits 4 and a
+// degraded run exits 5, because a gate that passes on a diff it never opened,
+// or on a review that never happened, is exactly the silent false pass
+// --fail-on exists to catch. --fail-on none is advisory-only: every outcome
+// stays exit 0.
+func reviewGateError(report codereview.Report, level codereview.FailOnLevel, explicit bool) error {
 	if !level.Enabled() {
 		return nil
 	}
 	if !report.Reviewed {
+		if !explicit {
+			return nil
+		}
 		target := strings.TrimSpace(report.ReviewTarget)
 		if target == "" {
 			target = "the working tree"
@@ -289,7 +296,9 @@ func reviewGateError(report codereview.Report, level codereview.FailOnLevel) err
 	// once patch-focus filtering is applied — so the gate exited 0 and the pull
 	// request merged reporting a review that never happened. The rendered report
 	// says so in a banner, but an exit code is the only thing a CI step reads.
-	if reason := gateDegradedReason(report); reason != "" {
+	// The default path still reports the degradation in the banner; it just
+	// does not turn a degraded interactive run into a red exit.
+	if reason := gateDegradedReason(report); reason != "" && explicit {
 		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx review: %s; refusing to pass a gate on an incomplete review", reason))
 	}
 	failures := report.GateFailures(level)
@@ -447,8 +456,30 @@ func reviewHistoryFindings(repoFullName string, report codereview.Report) []clou
 		} else if before, _, ok := strings.Cut(finding.ID, "."); ok && strings.TrimSpace(before) != "" {
 			category = strings.TrimSpace(before)
 		}
+		payload := map[string]any{
+			"id":       finding.ID,
+			"scopes":   finding.Scopes,
+			"benefit":  finding.Benefit,
+			"sources":  finding.SourceIDs,
+			"evidence": finding.Evidence,
+		}
+		// Rule identity and lane travel with the row so history can be read
+		// per rule (which rules keep firing, which get demoted) without
+		// re-deriving them from prose. Only set when the finding carries them:
+		// older rows have no such keys and readers treat absence as unknown.
+		for key, value := range map[string]string{
+			"rule_id":      finding.RuleID,
+			"lane":         finding.Lane,
+			"demoted_from": finding.DemotedFrom,
+			"materiality":  finding.Materiality,
+		} {
+			if value = strings.TrimSpace(value); value != "" {
+				payload[key] = value
+			}
+		}
 		record := cloud.CodeReviewFindingRecord{
 			Fingerprint:    reviewFindingFingerprint(repoFullName, finding, file, line, category),
+			RuleID:         strings.TrimSpace(finding.RuleID),
 			Outcome:        "valid",
 			Category:       category,
 			Language:       reviewHistoryLanguageForFile(file),
@@ -460,13 +491,7 @@ func reviewHistoryFindings(repoFullName string, report codereview.Report) []clou
 			Recommendation: finding.Recommendation,
 			Confidence:     reviewFindingConfidence(finding.Strength),
 			Severity:       finding.Strength,
-			Payload: map[string]any{
-				"id":       finding.ID,
-				"scopes":   finding.Scopes,
-				"benefit":  finding.Benefit,
-				"sources":  finding.SourceIDs,
-				"evidence": finding.Evidence,
-			},
+			Payload:        payload,
 		}
 		findings = append(findings, record)
 	}
@@ -511,7 +536,32 @@ func parseReviewLocation(text string) (string, int) {
 	return "", 0
 }
 
+// reviewFindingFingerprint is the identity a finding keeps across review runs,
+// so gx Cloud history can connect the same problem raised twice.
+//
+// Two layouts:
+//
+//   - Rule findings (RuleID set): identity is repo ‖ "rule" ‖ rule ‖ file ‖
+//     line. AI findings carry a positional ID (ai.review.3) and model-written
+//     Title/Summary, so hashing those made the same rule firing on the same
+//     line in two runs look like two unrelated findings and history rows never
+//     connected. The rule and the location are the parts that are stable. The
+//     literal "rule" domain separator sits where the legacy layout has the
+//     finding ID, so no rule ID can collide with a legacy fingerprint.
+//   - Everything else (RuleID empty): the legacy layout, repo ‖ id ‖ category ‖
+//     file ‖ line ‖ title ‖ summary, unchanged byte for byte so every row
+//     already stored keeps the fingerprint it was recorded under.
 func reviewFindingFingerprint(repoFullName string, finding codereview.Finding, file string, line int, category string) string {
+	if ruleID := strings.TrimSpace(finding.RuleID); ruleID != "" {
+		sum := sha256.Sum256([]byte(strings.Join([]string{
+			repoFullName,
+			"rule",
+			ruleID,
+			file,
+			strconv.Itoa(line),
+		}, "\x00")))
+		return fmt.Sprintf("%x", sum[:16])
+	}
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		repoFullName,
 		finding.ID,

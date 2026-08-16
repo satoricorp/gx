@@ -805,6 +805,8 @@ func TestAIReviewPromptSeparatesPatchAndDeepReview(t *testing.T) {
 		"\"notable_changes\"",
 		"\"downstream_impact\"",
 		"Only when review_profile is pr_summary: include notable_changes",
+		"Only when review_profile is pr_summary: include story",
+		"\"story\"",
 		"Only when review_profile is pr_summary: include downstream_impact",
 		"\"file\"",
 		"\"line\"",

@@ -95,16 +95,26 @@ func reviewHistoryQuery(opts Options, facts RepoFacts, hints []ReviewHint) strin
 func reviewHistorySnippets(result cloud.CodeReviewHistorySearchResult, limit int) []ContextSnippet {
 	var snippets []ContextSnippet
 	for _, finding := range result.ExactMatches {
-		text := strings.TrimSpace(strings.Join([]string{
+		lines := []string{
 			"Prior code review finding.",
 			"Outcome: " + finding.Outcome,
 			"Category: " + finding.Category,
-			"Language: " + finding.Language,
-			"File: " + finding.FilePath,
-			"Title: " + finding.Title,
-			"Summary: " + finding.Summary,
-			"Recommendation: " + finding.Recommendation,
-		}, "\n"))
+		}
+		// The rule is the identity a finding keeps across runs (the
+		// fingerprint hashes it), so a reader of the snippet can tell "this
+		// rule fired here before" apart from "something similar was said".
+		// Rows recorded before rules existed carry no key and print no line.
+		if ruleID := stringAttribute(finding.Payload, "rule_id"); ruleID != "" {
+			lines = append(lines, "Rule: "+ruleID)
+		}
+		lines = append(lines,
+			"Language: "+finding.Language,
+			"File: "+finding.FilePath,
+			"Title: "+finding.Title,
+			"Summary: "+finding.Summary,
+			"Recommendation: "+finding.Recommendation,
+		)
+		text := strings.TrimSpace(strings.Join(lines, "\n"))
 		snippets = append(snippets, ContextSnippet{
 			Kind:      "code_review_history",
 			Ref:       firstNonEmpty(finding.Fingerprint, finding.ID),

@@ -11,12 +11,14 @@ type aiReviewResponse struct {
 	DownstreamImpact string             `json:"downstream_impact"`
 	Recommendations  []aiRecommendation `json:"recommendations"`
 	NotableChanges   []aiNotableChange  `json:"notable_changes"`
+	Story            []aiStoryItem      `json:"story"`
 }
 
 type aiReviewOutput struct {
 	Overview         string
 	DownstreamImpact string
 	NotableChanges   []NotableChange
+	Story            []StoryItem
 	Findings         []Finding
 }
 
@@ -24,6 +26,21 @@ type aiNotableChange struct {
 	File string          `json:"file"`
 	Line json.RawMessage `json:"line"`
 	Note string          `json:"note"`
+}
+
+// aiStoryItem is the wire shape of one story entry. Line is raw because the
+// model returns it as a number or a quoted string, same as everywhere else.
+type aiStoryItem struct {
+	Headline    string          `json:"headline"`
+	Category    string          `json:"category"`
+	Materiality string          `json:"materiality"`
+	File        string          `json:"file"`
+	Line        json.RawMessage `json:"line"`
+	Consequence string          `json:"consequence"`
+	Asked       string          `json:"asked"`
+	Chose       string          `json:"chose"`
+	Watch       []string        `json:"watch"`
+	PassedRule  string          `json:"passed_rule"`
 }
 
 type aiRecommendation struct {
@@ -88,7 +105,7 @@ func ParsePRSummaryReview(content string, brief ReviewBrief) (PRSummaryReview, e
 func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, error) {
 	var parsed aiReviewResponse
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		trimmed := extractJSONObject(content, "recommendations", "overview", "notable_changes", "downstream_impact")
+		trimmed := extractJSONObject(content, "recommendations", "overview", "notable_changes", "downstream_impact", "story")
 		if trimmed == "" {
 			return aiReviewOutput{}, fmt.Errorf("decode AI review JSON: %w", err)
 		}
@@ -100,6 +117,7 @@ func parseAIReviewOutput(content string, brief ReviewBrief) (aiReviewOutput, err
 		Overview:         strings.TrimSpace(parsed.Overview),
 		DownstreamImpact: strings.TrimSpace(parsed.DownstreamImpact),
 		NotableChanges:   aiNotableChangesToNotableChanges(parsed.NotableChanges),
+		Story:            aiStoryToStoryItems(parsed.Story, brief),
 		Findings:         aiRecommendationsToFindings(parsed.Recommendations, brief),
 	}, nil
 }
@@ -109,8 +127,59 @@ func aiReviewOutputToPRSummaryReview(output aiReviewOutput) PRSummaryReview {
 		Overview:         output.Overview,
 		DownstreamImpact: output.DownstreamImpact,
 		NotableChanges:   append([]NotableChange(nil), output.NotableChanges...),
+		Story:            append([]StoryItem(nil), output.Story...),
 		Findings:         output.Findings,
 	}
+}
+
+// aiStoryToStoryItems converts the model's story entries. An entry with no
+// headline or no consequence is not a story item — those two are what make it
+// one — so it is dropped. Category and materiality are folded onto the schema's
+// vocabulary; passed_rule is validated against the rules the brief carried, so
+// an invented rule id never reaches the reader.
+//
+// exception_taken is reserved for MandatoryStoryItems: a change exempting
+// itself from a rule is reported by the review, not by the model's discretion,
+// so a model entry claiming that category keeps its text and loses the label.
+func aiStoryToStoryItems(raw []aiStoryItem, brief ReviewBrief) []StoryItem {
+	if len(raw) == 0 {
+		return nil
+	}
+	knownRules := KnownRuleIDs(brief.Rules...)
+	out := make([]StoryItem, 0, len(raw))
+	for _, item := range raw {
+		headline := strings.TrimSpace(item.Headline)
+		consequence := strings.TrimSpace(item.Consequence)
+		if headline == "" || consequence == "" {
+			continue
+		}
+		category := normalizeStoryCategory(item.Category)
+		if category == StoryExceptionTaken {
+			category = ""
+		}
+		var watch []string
+		for _, w := range item.Watch {
+			if w = strings.TrimSpace(w); w != "" {
+				watch = append(watch, w)
+			}
+		}
+		out = append(out, StoryItem{
+			Headline:    headline,
+			Category:    category,
+			Materiality: normalizeMateriality(item.Materiality),
+			File:        strings.TrimSpace(item.File),
+			Line:        parseRecommendationLine(item.Line),
+			Consequence: consequence,
+			Asked:       strings.TrimSpace(item.Asked),
+			Chose:       strings.TrimSpace(item.Chose),
+			Watch:       watch,
+			PassedRule:  NormalizeRuleID(item.PassedRule, knownRules),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func aiNotableChangesToNotableChanges(raw []aiNotableChange) []NotableChange {

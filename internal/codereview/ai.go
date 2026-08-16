@@ -132,7 +132,11 @@ type PRSummaryReview struct {
 	Overview         string
 	DownstreamImpact string
 	NotableChanges   []NotableChange
-	Findings         []Finding
+	// Story is the "what changed that you now own" lane: changes that passed
+	// review, ordered by materiality. Additive next to NotableChanges, which
+	// still feeds the PR body.
+	Story    []StoryItem
+	Findings []Finding
 }
 
 type AIReviewerWithSummary interface {
@@ -498,6 +502,7 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	var overview string
 	var downstreamImpact string
 	var notableChanges []NotableChange
+	var story []StoryItem
 	var errors []string
 	parsed := false
 	for _, result := range results {
@@ -517,6 +522,9 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 		if len(notableChanges) == 0 && len(result.summary.NotableChanges) > 0 {
 			notableChanges = append([]NotableChange(nil), result.summary.NotableChanges...)
 		}
+		if len(story) == 0 && len(result.summary.Story) > 0 {
+			story = append([]StoryItem(nil), result.summary.Story...)
+		}
 		for _, finding := range result.summary.Findings {
 			finding.ID = item.name + "." + finding.ID
 			finding.Evidence = append([]Evidence{{Label: "Reviewer", Value: item.label}}, finding.Evidence...)
@@ -529,7 +537,8 @@ func (m multiAIReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief
 	}
 	out = mergeNearDuplicateFindings(ctx, m.adjudicator, out)
 	if parsed {
-		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Findings: out}, nil
+		sortStoryByMateriality(story)
+		return PRSummaryReview{Overview: overview, DownstreamImpact: downstreamImpact, NotableChanges: notableChanges, Story: story, Findings: out}, nil
 	}
 	if len(errors) > 0 {
 		return PRSummaryReview{}, fmt.Errorf("AI reviewers failed: %s", strings.Join(errors, "; "))
@@ -891,10 +900,11 @@ func baseReviewDeveloperPromptLines(brief ReviewBrief) []string {
 		"Set source_labels to the labels of context snippets or source_refs you actually relied on (e.g. R1, L2). Omit labels you did not use.",
 		"Only when review_profile is pr_summary: include a top-level overview field, 2-3 sentences on what this change does and why, based on the revision descriptions, session_transcript context, and session_context intent/edit trail; no file lists, no URLs, no praise. For all other profiles, omit overview.",
 		"Only when review_profile is pr_summary: include notable_changes — 3 to 6 entries, each the single most important changed line of one logical change. file must be an exact changed file path from static.diff_snippets and line a changed line inside that hunk. note is one sentence describing what changed and why it matters, no file paths, no URLs. Omit entries you cannot anchor. For all other profiles, omit notable_changes.",
+		"Only when review_profile is pr_summary: include story — 3 to 6 entries, ordered by materiality (high first), each a change that PASSED review and that the reader now owns. Nothing in story is wrong; never put a finding here. Each entry: headline (one sentence, past → present, e.g. 'Checkout retries on 5xx where it used to fail fast'), category one of behavior_delta|new_surface|semantic_shift|decision|coverage_move, materiality one of high|medium|low (how much observable behavior moved — NOT how sure you are), file and line anchoring the most representative changed line, consequence (what changes for a caller or operator, with numbers where the diff supports them), asked (the user's own words from session_context when available), chose (the approach taken and the alternative rejected, from the session), watch (optional: what to monitor after merge), passed_rule (optional: a rule id from rules that this change satisfies in a way worth pointing out — e.g. an idempotency key placed correctly). For all other profiles, omit story.",
 		"Only when review_profile is pr_summary: include downstream_impact — 1 to 3 sentences on customer-facing risk (could this introduce bugs or issues for customers?) and how the change shifts the status quo of the codebase or application, including potential downstream effects. Calibrate depth to diff size: tiny localized changes get one brief sentence (e.g. low risk to existing behavior); large multi-area changes get a broader assessment. No file lists, no URLs, no praise. For all other profiles, omit downstream_impact.",
 		"pr_summary behaves like patch_focused for finding selection (current-change review, changed-lines evidence, same rejection rules — no quota-filling, no generic advice) plus the overview and downstream_impact rules.",
 		reviewClassPromptLine(),
-		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"kind\":\"defect|hardening|suggestion\",\"rule_id\":string(optional),\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
+		"Return JSON only with shape {\"overview\":string(optional),\"downstream_impact\":string(optional),\"notable_changes\":[{\"file\":string,\"line\":number,\"note\":string}](optional),\"story\":[{\"headline\":string,\"category\":\"behavior_delta|new_surface|semantic_shift|decision|coverage_move\",\"materiality\":\"high|medium|low\",\"file\":string,\"line\":number,\"consequence\":string,\"asked\":string(optional),\"chose\":string(optional),\"watch\":[string](optional),\"passed_rule\":string(optional)}](optional),\"recommendations\":[{\"title\":string,\"summary\":string,\"benefit\":string,\"recommendation\":string,\"kind\":\"defect|hardening|suggestion\",\"rule_id\":string(optional),\"strength\":\"Strong|Worth exploring|Speculative\",\"evidence\":[string],\"file\":string(optional),\"line\":number(optional),\"source_labels\":[string](optional)}]}.",
 		"`kind` classifies what the finding asks of the reader, and honesty here matters more than severity: `defect` means the change's code does something wrong RIGHT NOW — a stated mechanism produces a crash, a wrong value, a race, a broken flow on inputs the code actually receives. `hardening` means the code is correct today but fragile — the failure needs a hypothetical future change or an input nothing currently sends. `suggestion` means style, naming, structure, tests, docs, or any improvement where nothing is incorrect. Do not inflate a hardening or suggestion into a defect to make it land; a reader who acts on a defect label and finds working code stops trusting every label.",
 		fmt.Sprintf("Return at most %d recommendations, ordered by significance. Report every real defect you find up to that ceiling — do not stop early to be brief, and do not pad to reach it.", resolveMaxFindings(brief.MaxFindings)),
 	}

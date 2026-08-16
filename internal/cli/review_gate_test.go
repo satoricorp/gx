@@ -142,11 +142,13 @@ func TestReviewJSONMarksNothingToReview(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	// The gate is on by default and "nothing to review" fails it; the JSON is
-	// written before the exit code is decided, so it is still there to parse.
+	// Under the default gate "nothing to review" is a green run (exit 0); the
+	// JSON still says Reviewed=false and ReviewMode=none so a consumer can
+	// tell "clean" from "never looked". The stricter exit-4 rule is reserved
+	// for an explicit --fail-on, tested elsewhere.
 	out, err := runReviewCommand(t, "--json", "--no-publish")
-	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
-		t.Fatalf("ExitCode() = %d, want %d under the default gate (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
+	if err != nil {
+		t.Fatalf("default gate on nothing-to-review with --json: error = %v, want nil\n%s", err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -223,9 +225,19 @@ func TestReviewDefaultGateIsBlocking(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--no-publish")
+	// The default gate is the linter contract: blocking findings exit 3, and
+	// everything else — including a clean tree — is a green run. Nothing to
+	// review under the default is exit 0, so interactive use, the MCP tool, and
+	// the slash commands never see a red exit for "nothing to fix".
+	if out, err := runReviewCommand(t, "--no-publish"); err != nil {
+		t.Fatalf("default gate on nothing-to-review: error = %v, want nil (exit 0)\n%s", err, out)
+	}
+	// An explicit --fail-on is a CI gate and is held to the stricter rule: a
+	// gate that passes on a diff it never opened is the false pass it exists to
+	// catch, so nothing-to-review exits 4 there.
+	out, err := runReviewCommand(t, "--fail-on", "blocking", "--no-publish")
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
-		t.Fatalf("ExitCode() = %d, want %d: the default gate must not pass without inspecting any code (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
+		t.Fatalf("explicit --fail-on blocking on nothing-to-review: ExitCode() = %d, want %d (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
 	}
 	if out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
 		t.Fatalf("gx review --fail-on none error = %v\n%s", err, out)
@@ -246,11 +258,11 @@ func TestReviewGateErrorBlockingLevelReadsLanes(t *testing.T) {
 	demoted.Findings = codereview.AssignLanes([]codereview.Finding{
 		{ID: "one-leg", Strength: "Strong", Corroboration: []string{"Bedrock A"}, JudgeVerdict: "confirmed"},
 	})
-	if err := reviewGateError(demoted, codereview.FailOnBlocking); err != nil {
+	if err := reviewGateError(demoted, codereview.FailOnBlocking, true); err != nil {
 		t.Fatalf("reviewGateError(demoted Strong) = %v, want nil: one grader is advisory", err)
 	}
 	// The stricter strength-only level still fails on it.
-	if code := ExitCode(reviewGateError(demoted, codereview.FailOnStrong)); code != reviewFindingsExitCode {
+	if code := ExitCode(reviewGateError(demoted, codereview.FailOnStrong, true)); code != reviewFindingsExitCode {
 		t.Fatalf("reviewGateError(demoted Strong, strong) exit = %d, want %d", code, reviewFindingsExitCode)
 	}
 
@@ -258,7 +270,7 @@ func TestReviewGateErrorBlockingLevelReadsLanes(t *testing.T) {
 	quorum.Findings = codereview.AssignLanes([]codereview.Finding{
 		{ID: "quorum", Strength: "Strong", Corroboration: twoLegs, JudgeVerdict: "confirmed"},
 	})
-	if code := ExitCode(reviewGateError(quorum, codereview.FailOnBlocking)); code != reviewFindingsExitCode {
+	if code := ExitCode(reviewGateError(quorum, codereview.FailOnBlocking, true)); code != reviewFindingsExitCode {
 		t.Fatalf("reviewGateError(quorum Strong) exit = %d, want %d", code, reviewFindingsExitCode)
 	}
 
@@ -266,7 +278,7 @@ func TestReviewGateErrorBlockingLevelReadsLanes(t *testing.T) {
 	tool.Findings = codereview.AssignLanes([]codereview.Finding{
 		{ID: "tools.static-failure", Strength: "Blocking"},
 	})
-	if code := ExitCode(reviewGateError(tool, codereview.FailOnBlocking)); code != reviewFindingsExitCode {
+	if code := ExitCode(reviewGateError(tool, codereview.FailOnBlocking, true)); code != reviewFindingsExitCode {
 		t.Fatalf("reviewGateError(Blocking tool finding) exit = %d, want %d", code, reviewFindingsExitCode)
 	}
 }

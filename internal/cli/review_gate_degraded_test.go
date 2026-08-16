@@ -31,7 +31,7 @@ func TestReviewGateFailsWhenNoModelRan(t *testing.T) {
 		ReviewMode:      codereview.ReviewModeWorkingTree,
 		DegradedReasons: []string{"AI review unavailable (no reviewer configured)"},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -51,7 +51,7 @@ func TestReviewGateFailsOnPartialCoverage(t *testing.T) {
 			Units:   "files",
 		},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -68,7 +68,7 @@ func TestReviewGatePrefersDegradedOverFindings(t *testing.T) {
 		DegradedReasons: []string{"2 of 4 parallel reviews failed"},
 		Findings:        []codereview.Finding{{Strength: "Blocking"}},
 	}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewDegradedExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewDegradedExitCode, err)
 	}
@@ -88,7 +88,7 @@ func TestReviewGatePassesCleanCompleteReview(t *testing.T) {
 			Units:   "files",
 		},
 	}
-	if err := reviewGateError(report, codereview.FailOnStrong); err != nil {
+	if err := reviewGateError(report, codereview.FailOnStrong, true); err != nil {
 		t.Fatalf("clean review should pass the gate, got %v", err)
 	}
 }
@@ -100,7 +100,7 @@ func TestReviewGateSilentWhenDisabled(t *testing.T) {
 		Reviewed:        true,
 		DegradedReasons: []string{"AI review unavailable"},
 	}
-	if err := reviewGateError(report, codereview.FailOnNone); err != nil {
+	if err := reviewGateError(report, codereview.FailOnNone, true); err != nil {
 		t.Fatalf("disabled gate should return nil, got %v", err)
 	}
 }
@@ -109,7 +109,7 @@ func TestReviewGateSilentWhenDisabled(t *testing.T) {
 // review broke" are different operator problems.
 func TestReviewGateKeepsNothingToReviewDistinct(t *testing.T) {
 	report := codereview.Report{Reviewed: false, ReviewTarget: "the working tree"}
-	err := reviewGateError(report, codereview.FailOnStrong)
+	err := reviewGateError(report, codereview.FailOnStrong, true)
 	if got := gateExitCode(t, err); got != reviewNothingToReviewExitCode {
 		t.Fatalf("exit code = %d, want %d (err=%v)", got, reviewNothingToReviewExitCode, err)
 	}
