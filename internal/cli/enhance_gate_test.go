@@ -88,7 +88,7 @@ func denyReviewNetwork(t *testing.T) {
 	t.Setenv("GX_TPUF_BASE_URL", server.URL)
 }
 
-func runReviewCommand(t *testing.T, args ...string) (string, error) {
+func runEnhanceCommand(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
@@ -105,7 +105,7 @@ func TestReviewJSONReportsTheResolvedCommitRange(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--json", "--no-publish")
+	out, err := runEnhanceCommand(t, "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --json error = %v\n%s", err, out)
 	}
@@ -146,7 +146,7 @@ func TestReviewJSONMarksNothingToReview(t *testing.T) {
 	// JSON still says Reviewed=false and ReviewMode=none so a consumer can
 	// tell "clean" from "never looked". The stricter exit-4 rule is reserved
 	// for an explicit --fail-on, tested elsewhere.
-	out, err := runReviewCommand(t, "--json", "--no-publish")
+	out, err := runEnhanceCommand(t, "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("default gate on nothing-to-review with --json: error = %v, want nil\n%s", err, out)
 	}
@@ -168,7 +168,7 @@ func TestReviewNothingToReviewDoesNotClaimACleanReview(t *testing.T) {
 	setReviewGateEnv(t)
 
 	// Gate off: this test is about the words, not the exit code.
-	out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
+	out, err := runEnhanceCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance error = %v\n%s", err, out)
 	}
@@ -188,7 +188,7 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
+	out, err := runEnhanceCommand(t, "--scope", "dependencies", "--fail-on", "strong", "--no-publish")
 	if err == nil {
 		t.Fatalf("gx enhance --fail-on strong exited 0 with findings:\n%s", out)
 	}
@@ -198,15 +198,15 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 
 	// The same review under a stricter threshold has nothing blocking: a Strong
 	// deterministic finding is advisory, and only the blocking lane fails here.
-	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "blocking", "--no-publish"); err != nil {
+	if out, err := runEnhanceCommand(t, "--scope", "dependencies", "--fail-on", "blocking", "--no-publish"); err != nil {
 		t.Fatalf("gx enhance --fail-on blocking error = %v\n%s", err, out)
 	}
 	// The default gate is "blocking", so it agrees with the line above.
-	if out, err := runReviewCommand(t, "--scope", "dependencies", "--no-publish"); err != nil {
+	if out, err := runEnhanceCommand(t, "--scope", "dependencies", "--no-publish"); err != nil {
 		t.Fatalf("gx enhance without --fail-on error = %v\n%s", err, out)
 	}
 	// And the gate can be switched off entirely.
-	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "none", "--no-publish"); err != nil {
+	if out, err := runEnhanceCommand(t, "--scope", "dependencies", "--fail-on", "none", "--no-publish"); err != nil {
 		t.Fatalf("gx review --fail-on none error = %v\n%s", err, out)
 	}
 }
@@ -216,7 +216,7 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 // exactly as it does under any explicit gate, and --fail-on none is the way
 // back to an advisory exit 0.
 func TestReviewDefaultGateIsBlocking(t *testing.T) {
-	cmd := newReviewCommand(context.Background())
+	cmd := newEnhanceCommand(context.Background())
 	if got := cmd.Flags().Lookup("fail-on").DefValue; got != string(codereview.FailOnBlocking) {
 		t.Fatalf("--fail-on default = %q, want %q", got, codereview.FailOnBlocking)
 	}
@@ -229,17 +229,17 @@ func TestReviewDefaultGateIsBlocking(t *testing.T) {
 	// everything else — including a clean tree — is a green run. Nothing to
 	// review under the default is exit 0, so interactive use, the MCP tool, and
 	// the slash commands never see a red exit for "nothing to fix".
-	if out, err := runReviewCommand(t, "--no-publish"); err != nil {
+	if out, err := runEnhanceCommand(t, "--no-publish"); err != nil {
 		t.Fatalf("default gate on nothing-to-review: error = %v, want nil (exit 0)\n%s", err, out)
 	}
 	// An explicit --fail-on is a CI gate and is held to the stricter rule: a
 	// gate that passes on a diff it never opened is the false pass it exists to
 	// catch, so nothing-to-review exits 4 there.
-	out, err := runReviewCommand(t, "--fail-on", "blocking", "--no-publish")
+	out, err := runEnhanceCommand(t, "--fail-on", "blocking", "--no-publish")
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("explicit --fail-on blocking on nothing-to-review: ExitCode() = %d, want %d (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
 	}
-	if out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
+	if out, err := runEnhanceCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
 		t.Fatalf("gx review --fail-on none error = %v\n%s", err, out)
 	}
 }
@@ -290,7 +290,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--fail-on", "any", "--no-publish")
+	out, err := runEnhanceCommand(t, "--fail-on", "any", "--no-publish")
 	if err == nil {
 		t.Fatalf("gx enhance --fail-on any exited 0 without reviewing anything:\n%s", out)
 	}
@@ -302,7 +302,7 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 	}
 
 	// With the gate switched off the same run stays exit 0 for advisory use.
-	if _, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
+	if _, err := runEnhanceCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
 		t.Fatalf("gx enhance --fail-on none error = %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 			t.Chdir(root)
 			setReviewGateEnv(t)
 
-			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "none", "--json", "--no-publish")...)
+			out, err := runEnhanceCommand(t, append(append([]string{}, flags...), "--fail-on", "none", "--json", "--no-publish")...)
 			if err != nil {
 				t.Fatalf("gx enhance error = %v\n%s", err, out)
 			}
@@ -336,7 +336,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 				t.Fatalf("reviewed/review_mode = %v/%q, want false/%q:\n%s", report.Reviewed, report.ReviewMode, codereview.ReviewModeNone, out)
 			}
 
-			gateOut, gateErr := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "any", "--no-publish")...)
+			gateOut, gateErr := runEnhanceCommand(t, append(append([]string{}, flags...), "--fail-on", "any", "--no-publish")...)
 			if gateErr == nil {
 				t.Fatalf("gx enhance --fail-on any passed on an empty repo:\n%s", gateOut)
 			}
@@ -388,7 +388,7 @@ func TestReviewBaseFlagSelectsTheRange(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--base", "main", "--json", "--no-publish")
+	out, err := runEnhanceCommand(t, "--base", "main", "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --base error = %v\n%s", err, out)
 	}
@@ -413,7 +413,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
+	out, err := runEnhanceCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --repo error = %v\n%s", err, out)
 	}
@@ -433,7 +433,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithADirtyTree(t *testing.T) {
 	}
 
 	// Without the flag the same tree is a working-tree review, unchanged.
-	plain, err := runReviewCommand(t, "--json", "--no-publish")
+	plain, err := runEnhanceCommand(t, "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance error = %v\n%s", err, plain)
 	}
@@ -452,7 +452,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--repo", "--no-publish")
+	out, err := runEnhanceCommand(t, "--repo", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --repo error = %v\n%s", err, out)
 	}
@@ -466,7 +466,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	// Saying it reviewed the repository is only honest if it read the
 	// repository, so the report has to show context it could only have got
 	// from there: this repo has no diff of any kind.
-	jsonOut, err := runReviewCommand(t, "--repo", "--json", "--no-publish")
+	jsonOut, err := runEnhanceCommand(t, "--repo", "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --repo --json error = %v\n%s", err, jsonOut)
 	}
@@ -482,7 +482,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	}
 
 	// The same repo without the flag is still honest about reading nothing.
-	plain, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
+	plain, err := runEnhanceCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance error = %v\n%s", err, plain)
 	}
@@ -499,7 +499,7 @@ func TestReviewRepoFlagWinsOverBaseAndSaysSo(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--repo", "--base", "main", "--json", "--no-publish")
+	out, err := runEnhanceCommand(t, "--repo", "--base", "main", "--json", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx enhance --repo --base error = %v\n%s", err, out)
 	}
@@ -525,7 +525,7 @@ func TestReviewRejectsUnknownFailOnLevel(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	_, err := runReviewCommand(t, "--fail-on", "critical", "--no-publish")
+	_, err := runEnhanceCommand(t, "--fail-on", "critical", "--no-publish")
 	if err == nil {
 		t.Fatal("gx enhance accepted an unknown --fail-on level")
 	}

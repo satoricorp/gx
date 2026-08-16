@@ -35,10 +35,10 @@ const (
 	reviewRenderWidth = 100
 )
 
-// RenderReviewText is the terminal render. Sections appear in a fixed order
+// RenderEnhanceText is the terminal render. Sections appear in a fixed order
 // and a section with nothing in it is omitted rather than printed empty, with
 // one exception: the verdict seam always prints, because agents key on it.
-func RenderReviewText(report Report) string {
+func RenderEnhanceText(report Report) string {
 	var b strings.Builder
 	color := report.Color && termstyle.Enabled()
 
@@ -692,7 +692,7 @@ func wrapText(text string, width int) []string {
 //
 // The accordion in internal/cli renders one section at a time under its own
 // node. It calls these rather than re-implementing the sections, so the
-// interactive and linear renders cannot drift: whatever RenderReviewText
+// interactive and linear renders cannot drift: whatever RenderEnhanceText
 // prints for a lane, the accordion prints for that lane.
 
 // SplitFindingsByLane partitions findings into the blocking and advisory

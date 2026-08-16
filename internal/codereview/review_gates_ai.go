@@ -33,21 +33,21 @@ type reviewJudge interface {
 }
 
 type reviewJudgeRequest struct {
-	Intent             string                 `json:"intent,omitempty"`
-	IntentSource       string                 `json:"intent_source,omitempty"`
-	Target             string                 `json:"target,omitempty"`
-	ChangedFiles       []string               `json:"changed_files"`
-	DiffStats          ReviewDiffStats   `json:"diff_stats"`
-	GeneratedFiles     []string               `json:"generated_files,omitempty"`
-	WhitespaceDominant bool                   `json:"whitespace_dominant,omitempty"`
-	NewDependencies    []string               `json:"new_dependencies,omitempty"`
-	Gates              []reviewGateBrief `json:"gates"`
-	ToolResults        []StaticToolResult     `json:"static_tool_results,omitempty"`
-	DiffSnippets       []DiffSnippet          `json:"diff_snippets"`
-	ReviewPolicy       string                 `json:"review_policy,omitempty"`
-	Rules              []RuleDef              `json:"rules,omitempty"`
-	SourceCatalog      []SourceBrief          `json:"source_catalog,omitempty"`
-	Context            []ContextSnippet       `json:"context,omitempty"`
+	Intent             string             `json:"intent,omitempty"`
+	IntentSource       string             `json:"intent_source,omitempty"`
+	Target             string             `json:"target,omitempty"`
+	ChangedFiles       []string           `json:"changed_files"`
+	DiffStats          ReviewDiffStats    `json:"diff_stats"`
+	GeneratedFiles     []string           `json:"generated_files,omitempty"`
+	WhitespaceDominant bool               `json:"whitespace_dominant,omitempty"`
+	NewDependencies    []string           `json:"new_dependencies,omitempty"`
+	Gates              []reviewGateBrief  `json:"gates"`
+	ToolResults        []StaticToolResult `json:"static_tool_results,omitempty"`
+	DiffSnippets       []DiffSnippet      `json:"diff_snippets"`
+	ReviewPolicy       string             `json:"review_policy,omitempty"`
+	Rules              []RuleDef          `json:"rules,omitempty"`
+	SourceCatalog      []SourceBrief      `json:"source_catalog,omitempty"`
+	Context            []ContextSnippet   `json:"context,omitempty"`
 }
 
 // reviewGateBrief is one gate as the model receives it: the question it
@@ -63,9 +63,9 @@ type reviewJudgeResponse struct {
 }
 
 type reviewGateVerdict struct {
-	Gate          string                 `json:"gate"`
-	Status        string                 `json:"status"`
-	Justification string                 `json:"justification"`
+	Gate          string            `json:"gate"`
+	Status        string            `json:"status"`
+	Justification string            `json:"justification"`
 	Findings      []reviewAIFinding `json:"findings"`
 }
 
@@ -100,8 +100,8 @@ func reviewJudgeFromEnv() (judge reviewJudge, model, transport, unavailableReaso
 		return nil, "", "", err.Error()
 	}
 	model = normalizeBedrockModelID(firstNonEmpty(
-		os.Getenv("GX_CONSTRAINTS_MODEL"),
-		presetOr(func(p modelPreset) string { return p.Review }, defaultBedrockReviewModelA),
+		os.Getenv("GX_GATE_MODEL"),
+		presetOr(func(p modelPreset) string { return p.Gate }, defaultBedrockReviewModelA),
 	))
 	return bedrockReviewJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
 }

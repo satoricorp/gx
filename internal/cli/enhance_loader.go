@@ -52,11 +52,11 @@ type enhanceLoaderResultMsg struct {
 	err    error
 }
 
-// runReviewWithLoader runs the review under a spinner when both ends are a
+// runEnhanceWithLoader runs the review under a spinner when both ends are a
 // terminal, and plain otherwise. It returns the report; whether the caller
 // then prints the linear render or opens the accordion is decided by
 // browseReviewInteractively, which needs the same tty answer.
-func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
+func runEnhanceWithLoader(in io.Reader, out io.Writer, run enhanceLoaderRunFunc) (codereview.Report, error) {
 	if !useInteractiveTerminal(in, out) {
 		return run(nil)
 	}
@@ -154,7 +154,7 @@ func (w enhanceLoaderProgressWriter) Write(p []byte) (int, error) {
 // It returns true when it took over the screen — the caller then prints
 // nothing else to stdout, because the accordion already showed the report and
 // the seam. It returns false when the terminal is not interactive, so the
-// caller falls back to RenderReviewText, and the exit code is identical
+// caller falls back to RenderEnhanceText, and the exit code is identical
 // either way.
 //
 // GX_PLAIN_PROMPTS and CI both route here as "not interactive" through

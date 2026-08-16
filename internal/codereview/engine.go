@@ -359,8 +359,8 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	for _, snippet := range diffs {
 		diffsByFile[snippet.File] = snippet.Diff
 	}
-	attachConstraintsDiffHunks(diffsByFile, findings)
-	attachConstraintsCodeExcerpts(repoRoot, findings)
+	attachReviewDiffHunks(diffsByFile, findings)
+	attachReviewCodeExcerpts(repoRoot, findings)
 	// The story lane: the mandatory items no model decides (a change that
 	// edits its own REVIEW.md exceptions), then the reviewer's own — carried
 	// back through the fan-out from the same reply as the findings — with

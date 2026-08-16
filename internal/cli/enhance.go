@@ -35,7 +35,7 @@ const (
 	reviewDegradedExitCode = 5
 )
 
-func newReviewCommand(ctx context.Context) *cobra.Command {
+func newEnhanceCommand(ctx context.Context) *cobra.Command {
 	var scope string
 	var focus string
 	var base string
@@ -75,7 +75,7 @@ GX_REVIEW_MODELS=<preset> swaps the whole panel — reviewers, judge, and the
 constraints judge — for a named set: "default" (the shipped Claude panel),
 "budget" (Haiku + GLM 5 review, Nemotron 3 Super judges), or "glm" (GLM 5
 end to end). Any single slot's env var (GX_REVIEW_BEDROCK_MODEL_A/_B,
-GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
+GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below runs under a context that forbids writing gx
@@ -108,7 +108,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 			// repo (or on a machine) that has never run `gx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				emitReviewRunTelemetry(ctx, codereview.Report{}, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
+				emitEnhanceRunTelemetry(ctx, codereview.Report{}, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 				return err
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
@@ -134,7 +134,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 			} else {
 				report, err = runEnhanceWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
-			emitReviewRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
+			emitEnhanceRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -153,7 +153,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 				// way the exit code below is the same. RenderMarkdown remains
 				// the PR-comment body and the --md shape.
 				if !browseReviewInteractively(cmd.InOrStdin(), cmd.OutOrStdout(), report) {
-					fmt.Fprint(cmd.OutOrStdout(), codereview.RenderReviewText(report))
+					fmt.Fprint(cmd.OutOrStdout(), codereview.RenderEnhanceText(report))
 				}
 			}
 			// The saved-report notice goes to stderr so --json stdout stays
@@ -364,7 +364,7 @@ func gateDegradedReason(report codereview.Report) string {
 	return ""
 }
 
-func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, client string, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
+func emitEnhanceRunTelemetry(ctx context.Context, report codereview.Report, runErr error, client string, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
 	status := "success"
 	if runErr != nil {
 		status = "error"

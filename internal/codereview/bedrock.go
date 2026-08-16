@@ -253,7 +253,7 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	system := reviewDeveloperPrompt(brief)
+	system := enhanceDeveloperPrompt(brief)
 	input := mustJSON(brief)
 	// One retry, for malformed replies only — the same contract the
 	// constraints judge runs under. A leg sometimes answers in prose with no
