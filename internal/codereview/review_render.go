@@ -146,6 +146,11 @@ func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 	b.WriteString(head)
 	b.WriteString(colorize(color, termstyle.Muted, fmt.Sprintf(" — %s · %d file(s)", target, len(report.ChangedFiles))))
 	b.WriteString("\n")
+	// The intent line: what the change was supposed to do, in the user's
+	// words when they gave one. The reviewer holds the diff against it, and
+	// the story quotes it back as "asked". When none was given the line says
+	// so rather than showing an unexplained sentence — a reader who never
+	// typed one should not wonder where it came from.
 	if prompt := strings.TrimSpace(report.Prompt); prompt != "" {
 		lines := wrapText(prompt, reviewRenderWidth-len("intent: \"\""))
 		for i, line := range lines {
@@ -160,6 +165,11 @@ func writeReviewLedgerHeader(b *strings.Builder, report Report, color bool) {
 			b.WriteString(colorize(color, termstyle.Muted, line))
 			b.WriteString("\n")
 		}
+		b.WriteString(colorize(color, termstyle.Muted, "        (what this change was meant to do — the diff is judged against it)"))
+		b.WriteString("\n")
+	} else if report.Reviewed {
+		b.WriteString(colorize(color, termstyle.Muted, "intent: none given — pass one as the argument (\"fix the auth timeout\") to have the diff judged against it"))
+		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 }

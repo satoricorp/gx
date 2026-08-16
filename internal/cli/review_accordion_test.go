@@ -52,6 +52,10 @@ func key(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	}
 	r := []rune(s)[0]
 	return tea.KeyPressMsg{Code: r, Text: s}
@@ -115,7 +119,6 @@ func TestAccordionEnterOpensSectionAndAdvancesCursor(t *testing.T) {
 		"Why  req embeds PaymentToken.",
 		"Fix  log req.ID instead of req.",
 		"both graders agreed · judge confirmed 0.91",
-		"[esc] collapse",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("after enter, missing %q:\n%s", want, out)
@@ -170,7 +173,7 @@ func TestAccordionCursorSkipsEmptySections(t *testing.T) {
 	r := accordionFixture()
 	r.Story = nil // no story → WORTH KNOWING not selectable
 	m := newAccordionModel(r, false)
-	m = press(t, m, "down", "down", "down") // blocking → advisory → fix plan → (skip story) run details
+	m = press(t, m, "tab", "tab", "tab") // blocking → advisory → fix plan → (skip story) run details
 	if m.cursor != sectionRunDetails {
 		t.Fatalf("cursor should skip the empty story section, got %d", m.cursor)
 	}
@@ -198,7 +201,7 @@ func TestAccordionQuitPaths(t *testing.T) {
 		t.Fatalf("q should quit")
 	}
 	// Enter on Done quits too.
-	m = press(t, m, "down", "down", "down", "down", "down") // to Done
+	m = press(t, m, "tab", "tab", "tab", "tab", "tab") // to Done
 	if m.cursor != sectionDone {
 		t.Fatalf("expected cursor on Done, got %d", m.cursor)
 	}
@@ -228,5 +231,50 @@ func TestBrowseReviewInteractivelyFallsBackWhenNotATTY(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("non-tty path must write nothing itself, got %q", out.String())
+	}
+}
+
+// The bug this guards: opening a long section used to leave the reader at
+// its END (inline repaint from the bottom), scrolling up to find the start.
+// The viewport must put the section header at the top and scroll down.
+func TestAccordionOpenSectionStartsAtItsHeader(t *testing.T) {
+	m := newAccordionModel(accordionFixture(), false)
+	// Give it a small window so the content overflows and scrolling matters.
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m = next.(accordionModel)
+	m = press(t, m, "enter") // open BLOCKING
+	if !m.ready {
+		t.Fatalf("model should be sized after WindowSizeMsg")
+	}
+	// The viewport's top visible line must be the open section's ◆ header,
+	// not the end of its body.
+	top := m.vp.YOffset()
+	want := m.openSectionLine()
+	if want < 0 || top != want {
+		t.Fatalf("viewport top = %d, want the section header line %d", top, want)
+	}
+	// And the view is on the alt screen with the menu beneath the content.
+	v := m.View()
+	if !v.AltScreen {
+		t.Fatalf("accordion must take the alt screen so scrollback stays intact")
+	}
+	if !strings.Contains(v.Content, "Open a section") {
+		t.Fatalf("menu must be present beneath the viewport:\n%s", v.Content)
+	}
+	// down scrolls the content, not the menu cursor.
+	before := m.cursor
+	m = press(t, m, "down", "down")
+	if m.cursor != before {
+		t.Fatalf("↓ must scroll, not move the menu cursor")
+	}
+	// The viewport clamps at the bottom, so the offset advances by up to two.
+	maxOff := m.vp.TotalLineCount() - m.vp.VisibleLineCount()
+	want = min(top+2, maxOff)
+	if m.vp.YOffset() != want {
+		t.Fatalf("two ↓ presses should scroll toward the bottom: offset %d, want %d (top %d, max %d)", m.vp.YOffset(), want, top, maxOff)
+	}
+	// Scrolled DOWN from the header, never up above it.
+	if m.vp.YOffset() < top {
+		t.Fatalf("scrolling after open must not move above the section header")
 	}
 }

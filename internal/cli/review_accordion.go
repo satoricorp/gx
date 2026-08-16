@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/satoricorp/gx/internal/codereview"
@@ -24,6 +25,16 @@ import (
 // It is the clack rail-and-diamond grammar — ◆ for an open group, ● for the
 // current row, ◉ for a visited one, ○ for an unvisited one, │ down the left —
 // drawn with the bubbletea and lipgloss already in the tree; no new dependency.
+//
+// Screen model. The program takes the alternate screen, like less or a
+// pager, so it owns the whole window and leaves the shell scrollback intact
+// on exit. The report — header, ledger, verdict, and the open section — lives
+// in a viewport anchored at the TOP: opening a section shows its first line,
+// and the reader scrolls DOWN through it. The menu is a fixed footer beneath
+// the viewport, so it never scrolls out of view. The first cut rendered
+// everything inline and let the terminal repaint from the bottom, which put
+// the reader at the end of a long section and made them scroll up to find
+// its start — the wrong way round.
 //
 // Two rules keep it honest. Agents and CI never see it: the model is only
 // entered when useInteractiveTerminal says both fds are ttys, and every other
@@ -53,6 +64,11 @@ type accordionModel struct {
 	showJSON bool
 	quit     bool
 	width    int
+	height   int
+	// vp holds everything above the menu and scrolls it; the menu itself is
+	// drawn beneath vp with a fixed height so it is always on screen.
+	vp    viewport.Model
+	ready bool
 
 	// Precomputed once: the lanes, the plan, and the footer, so View() never
 	// re-derives — View() runs on every keypress, and the footer reads
@@ -74,6 +90,8 @@ func newAccordionModel(report codereview.Report, color bool) accordionModel {
 		plan:     codereview.BuildFixPlan(report.Findings),
 		footer:   accordionFooter(report),
 		width:    100,
+		height:   40,
+		vp:       viewport.New(),
 	}
 	// Start on the first section that has content, so enter does something.
 	m.cursor = m.firstNonEmpty()
@@ -88,17 +106,44 @@ func (m accordionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Width > 0 {
 			m.width = msg.Width
 		}
+		if msg.Height > 0 {
+			m.height = msg.Height
+		}
+		m.resize()
+		m.ready = true
 		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quit = true
 			return m, tea.Quit
-		case "up", "k":
-			m.cursor = m.prevRow(m.cursor)
-		case "down", "j":
+		// The menu cursor moves with tab / shift+tab (and left/right), so
+		// that up/down are free to scroll the report the way a pager does.
+		case "tab", "right", "l":
 			m.cursor = m.nextRow(m.cursor)
-		case "enter", " ":
+			return m, nil
+		case "shift+tab", "left", "h":
+			m.cursor = m.prevRow(m.cursor)
+			return m, nil
+		case "up", "k":
+			m.vp.ScrollUp(1)
+			return m, nil
+		case "down", "j":
+			m.vp.ScrollDown(1)
+			return m, nil
+		case "pgup", "b", "ctrl+u":
+			m.vp.HalfPageUp()
+			return m, nil
+		case "pgdown", "f", "ctrl+d", " ":
+			m.vp.HalfPageDown()
+			return m, nil
+		case "g", "home":
+			m.vp.GotoTop()
+			return m, nil
+		case "G", "end":
+			m.vp.GotoBottom()
+			return m, nil
+		case "enter":
 			if m.cursor == sectionDone {
 				m.quit = true
 				return m, tea.Quit
@@ -109,23 +154,67 @@ func (m accordionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.open = m.cursor
 				m.visited[m.cursor] = true
 				m.showJSON = false
-				// Advance to the next unvisited row so the reader walks down.
 				if next := m.nextUnvisited(m.cursor); next != m.cursor {
 					m.cursor = next
 				}
 			}
+			m.refresh()
+			// A freshly opened section starts at its first line: scroll the
+			// viewport so the section's ◆ header is the top visible row.
+			m.scrollToOpenSection()
 		case "esc":
 			if m.showJSON {
 				m.showJSON = false
 			} else {
 				m.open = sectionCount
 			}
+			m.refresh()
+			m.vp.GotoTop()
 		case "J":
 			m.showJSON = !m.showJSON
 			m.open = sectionCount
+			m.refresh()
+			m.scrollToOpenSection()
 		}
 	}
 	return m, nil
+}
+
+// resize fits the viewport under the fixed footer (the menu) and refreshes.
+func (m *accordionModel) resize() {
+	footer := len(strings.Split(m.menuView(), "\n"))
+	h := m.height - footer
+	if h < 5 {
+		h = 5
+	}
+	m.vp.SetWidth(m.width)
+	m.vp.SetHeight(h)
+	m.refresh()
+}
+
+// refresh re-renders the scrollable content into the viewport, preserving
+// the reader's scroll position when the content did not shrink past it.
+func (m *accordionModel) refresh() {
+	off := m.vp.YOffset()
+	m.vp.SetContent(m.contentView())
+	if off < m.vp.TotalLineCount() {
+		m.vp.SetYOffset(off)
+	}
+}
+
+// scrollToOpenSection puts the open section's header at the top of the
+// viewport — the reader sees the start and scrolls down, never up.
+func (m *accordionModel) scrollToOpenSection() {
+	if m.open >= sectionCount && !m.showJSON {
+		m.vp.GotoTop()
+		return
+	}
+	line := m.openSectionLine()
+	if line < 0 {
+		m.vp.GotoTop()
+		return
+	}
+	m.vp.SetYOffset(line)
 }
 
 // nextRow / prevRow move the cursor, skipping sections that would render
@@ -185,24 +274,31 @@ func (m accordionModel) selectable(s accordionSection) bool {
 
 // ---- view -----------------------------------------------------------------
 
-func (m accordionModel) View() tea.View {
-	var b strings.Builder
-	c := func(paint func(string) string, s string) string {
+// paint helpers shared by the content and menu views.
+func (m accordionModel) painters() (c func(func(string) string, string) string, mint, mute, rail func(string) string) {
+	c = func(paint func(string) string, s string) string {
 		if !m.color || s == "" {
 			return s
 		}
 		return paint(s)
 	}
-	mint := func(s string) string { return c(codereview.ReviewMint, s) }
-	mute := func(s string) string { return c(termstyle.Muted, s) }
-	rail := func(s string) string {
+	mint = func(s string) string { return c(codereview.ReviewMint, s) }
+	mute = func(s string) string { return c(termstyle.Muted, s) }
+	rail = func(s string) string {
 		if s == "" {
 			return mute("│")
 		}
 		return mute("│") + "  " + s
 	}
+	return c, mint, mute, rail
+}
 
-	// Header node.
+// contentView is everything that scrolls: header, ledger, verdict, and the
+// open section. It is what the viewport holds.
+func (m accordionModel) contentView() string {
+	var b strings.Builder
+	c, mint, mute, rail := m.painters()
+
 	target := strings.TrimSpace(m.report.ReviewRange)
 	if target == "" {
 		target = strings.TrimSpace(m.report.ReviewTarget)
@@ -217,7 +313,6 @@ func (m accordionModel) View() tea.View {
 	}
 	b.WriteString(rail("") + "\n")
 
-	// Verdict node — before the menu, always.
 	verdict, _ := codereview.ReviewVerdictLines(m.report)
 	vp := termstyle.Success
 	if len(m.blocking) > 0 || !m.report.Reviewed {
@@ -230,7 +325,6 @@ func (m accordionModel) View() tea.View {
 	b.WriteString(c(vp, "◇") + "  " + c(vp, head) + mute(tail) + "\n")
 	b.WriteString(rail("") + "\n")
 
-	// The open section, if any, under its own node.
 	if m.showJSON {
 		b.WriteString(mint("◆") + "  " + c(termstyle.Section, "JSON") + mute("  gx.review/2 · same object --json prints") + "\n")
 		b.WriteString(rail("") + "\n")
@@ -245,12 +339,39 @@ func (m accordionModel) View() tea.View {
 		for _, line := range strings.Split(strings.TrimRight(m.sectionBody(m.open), "\n"), "\n") {
 			b.WriteString(rail(line) + "\n")
 		}
-		b.WriteString(rail(mute("  [esc] collapse   [↑↓] move   [J] json   [q] quit")) + "\n")
 		b.WriteString(rail("") + "\n")
 	}
+	return b.String()
+}
 
-	// The menu.
-	b.WriteString(mint("◆") + "  " + c(termstyle.Section, "Open a section") + mute("   ↑↓ move · enter open · esc collapse · J json · q quit") + "\n")
+// openSectionLine is the 0-based line in contentView where the open section's
+// ◆ header sits, or -1 when nothing is open. The viewport scrolls to it.
+func (m accordionModel) openSectionLine() int {
+	if m.open >= sectionCount && !m.showJSON {
+		return -1
+	}
+	lines := strings.Split(m.contentView(), "\n")
+	// The section header is the second ◆ line (the first is the gx review
+	// header). Find it by scanning for a line that starts with the ◆ glyph
+	// after the first.
+	seen := 0
+	for i, l := range lines {
+		plain := stripANSI(l)
+		if strings.HasPrefix(plain, "◆") {
+			seen++
+			if seen == 2 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// menuView is the fixed footer: the section list and the pack line.
+func (m accordionModel) menuView() string {
+	var b strings.Builder
+	c, mint, mute, rail := m.painters()
+	b.WriteString(mint("◆") + "  " + c(termstyle.Section, "Open a section") + mute("   tab move · enter open · ↑↓ scroll · esc collapse · J json · q quit") + "\n")
 	b.WriteString(rail("") + "\n")
 	for s := accordionSection(0); s < sectionCount; s++ {
 		title, paint := m.sectionLabel(s)
@@ -277,8 +398,37 @@ func (m accordionModel) View() tea.View {
 		b.WriteString(rail(row) + "\n")
 	}
 	b.WriteString(rail("") + "\n")
-	b.WriteString(mint("└") + "  " + mute(m.footer) + "\n")
-	return tea.NewView(b.String())
+	b.WriteString(mint("└") + "  " + mute(m.footer))
+	// A scroll indicator when the content is taller than the viewport, so the
+	// reader knows there is more above or below.
+	if m.ready && m.vp.TotalLineCount() > m.vp.VisibleLineCount() {
+		pct := 100
+		if m.vp.TotalLineCount() > 0 {
+			pct = int(float64(m.vp.YOffset()+m.vp.VisibleLineCount()) / float64(m.vp.TotalLineCount()) * 100)
+			if pct > 100 {
+				pct = 100
+			}
+		}
+		b.WriteString(mute(fmt.Sprintf("  · %d%%", pct)))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// View composes the scrolling content over the fixed menu, on the alternate
+// screen so the shell's scrollback is untouched.
+func (m accordionModel) View() tea.View {
+	var content string
+	if m.ready {
+		content = m.vp.View()
+	} else {
+		// Before the first WindowSizeMsg the viewport has no size; show the
+		// content unclipped so tests and a headless run still see it.
+		content = strings.TrimRight(m.contentView(), "\n")
+	}
+	v := tea.NewView(content + "\n" + m.menuView())
+	v.AltScreen = true
+	return v
 }
 
 func (m accordionModel) sectionLabel(s accordionSection) (string, func(string) string) {

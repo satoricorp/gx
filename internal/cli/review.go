@@ -51,10 +51,26 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	var maxFindings int
 	var clientOverride string
 	cmd := &cobra.Command{
-		Use:     "review [prompt]",
+		Use:     "review [intent]",
 		Aliases: []string{"gxr"},
 		Short:   "Review changes based on codebase & session context, along with independent resources",
-		Args:    cobra.MaximumNArgs(1),
+		Long: `Review the current change — the working tree by default, a commit range with
+--base, or the whole repository with --repo.
+
+The optional INTENT is one sentence saying what the change was supposed to do,
+in your words: "make checkout survive gateway blips", "fix the auth timeout".
+It is not a question and not a filter. The reviewer holds the diff against it:
+a change that quietly does more than the intent says is a finding
+(scope-matches-intent), and the story lane's "asked" line quotes it back. With
+no intent, gx derives one from the branch name and recent commit subjects and
+says so in the report.
+
+Findings land in two lanes. BLOCKING stops the change and exits 3; ADVISORY is
+reported and does not. A finding blocks only when both reviewers raised it and
+the verification model confirmed it — one model's opinion is advisory. Under a
+terminal the report opens as a menu; piped or in CI it prints in full. --json
+and --md are the machine and PR-comment shapes.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below runs under a context that forbids writing gx
 			// state, so review's own telemetry reports without minting a
