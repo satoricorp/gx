@@ -64,6 +64,19 @@ func friendlyModelName(model string) string {
 	if short == "" || strings.HasPrefix(short, "arn:") {
 		return short
 	}
+	// Non-Anthropic Bedrock IDs are "vendor.model-name": zai.glm-5,
+	// nvidia.nemotron-super-3-120b. Name the ones the presets use; anything
+	// else falls through to the trimmed ID.
+	switch {
+	case strings.HasPrefix(short, "zai.glm-"):
+		return "GLM " + strings.TrimPrefix(short, "zai.glm-")
+	case strings.HasPrefix(short, "nvidia.nemotron-super-3"):
+		return "Nemotron 3 Super"
+	case strings.HasPrefix(short, "nvidia.nemotron-nano-3"):
+		return "Nemotron 3 Nano"
+	case strings.HasPrefix(short, "nvidia.nemotron-"):
+		return "Nemotron " + strings.TrimPrefix(short, "nvidia.nemotron-")
+	}
 	parts := strings.Split(short, "-")
 	if len(parts) < 2 || parts[0] != "claude" {
 		return short
@@ -151,11 +164,11 @@ func resolveBedrockReviewModels() (string, string) {
 	modelA := normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_A"),
 		os.Getenv("GX_REVIEW_ANTHROPIC_MODEL"),
-		defaultBedrockReviewModelA,
+		presetOr(func(p modelPreset) string { return p.ReviewerA }, defaultBedrockReviewModelA),
 	))
 	modelB := normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_BEDROCK_MODEL_B"),
-		defaultBedrockReviewModelB,
+		presetOr(func(p modelPreset) string { return p.ReviewerB }, defaultBedrockReviewModelB),
 	))
 	if bedrockLegDisabled(modelA) {
 		modelA = ""

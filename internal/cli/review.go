@@ -69,7 +69,13 @@ Findings land in two lanes. BLOCKING stops the change and exits 3; ADVISORY is
 reported and does not. A finding blocks only when both reviewers raised it and
 the verification model confirmed it — one model's opinion is advisory. Under a
 terminal the report opens as a menu; piped or in CI it prints in full. --json
-and --md are the machine and PR-comment shapes.`,
+and --md are the machine and PR-comment shapes.
+
+GX_REVIEW_MODELS=<preset> swaps the whole panel — reviewers, judge, and the
+constraints judge — for a named set: "default" (the shipped Claude panel),
+"budget" (Haiku + GLM 5 review, Nemotron 3 Super judges), or "glm" (GLM 5
+end to end). Any single slot's env var (GX_REVIEW_BEDROCK_MODEL_A/_B,
+GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below runs under a context that forbids writing gx
@@ -82,6 +88,11 @@ and --md are the machine and PR-comment shapes.`,
 			client := telemetry.ClientSurface(clientOverride)
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
 			if err != nil {
+				return err
+			}
+			// A mistyped GX_REVIEW_MODELS would silently review with the
+			// defaults; say so before spending a model call.
+			if err := codereview.ValidateModelPresetEnv(); err != nil {
 				return err
 			}
 			reviewScope := ""

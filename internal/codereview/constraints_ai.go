@@ -101,7 +101,7 @@ func constraintsJudgeFromEnv() (judge constraintsJudge, model, transport, unavai
 	}
 	model = normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_CONSTRAINTS_MODEL"),
-		defaultBedrockReviewModelA,
+		presetOr(func(p modelPreset) string { return p.Constraints }, defaultBedrockReviewModelA),
 	))
 	return bedrockConstraintsJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
 }

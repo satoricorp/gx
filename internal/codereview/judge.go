@@ -266,7 +266,7 @@ func judgeFromEnv() FindingJudge {
 func resolveBedrockJudgeModel() string {
 	return normalizeBedrockModelID(firstNonEmpty(
 		os.Getenv("GX_REVIEW_JUDGE_MODEL"),
-		defaultBedrockJudgeModel,
+		presetOr(func(p modelPreset) string { return p.Judge }, defaultBedrockJudgeModel),
 	))
 }
 
