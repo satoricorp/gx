@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 )
 
 // Paper CLI palette from Console — PR Console / CLI Terminal artboards.
@@ -51,6 +52,22 @@ func initTheme() {
 }
 
 // Enabled reports whether gx should emit color and styled output.
+//
+// The decision has three layers, in order:
+//
+//  1. NO_COLOR set, or TERM=dumb → never. This is the long-standing contract.
+//  2. FORCE_COLOR set (any non-empty value except "0") → always. This is how a
+//     CI log viewer, a pager, or a test asserts color through a pipe.
+//  3. Otherwise → only when stdout is a terminal.
+//
+// Layer 3 is the one that used to be missing: color was decided from the
+// environment alone, so `gx review | tee out.txt` wrote ANSI into the file.
+// The interactive report — the accordion, the lanes, the code windows — must
+// fall back to plain text the moment it is piped, and it needs the same fd
+// answer the bubbletea loader gets from term.IsTerminal, not a different one.
+//
+// stdoutIsTerminal is a variable so tests can pin either answer without
+// owning a real tty; the default reads os.Stdout.
 func Enabled() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
@@ -58,7 +75,16 @@ func Enabled() bool {
 	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
 		return false
 	}
-	return true
+	if force := os.Getenv("FORCE_COLOR"); force != "" && force != "0" {
+		return true
+	}
+	return stdoutIsTerminal()
+}
+
+// stdoutIsTerminal reports whether stdout is attached to a terminal. It is a
+// package variable, not a function, so tests can substitute an answer.
+var stdoutIsTerminal = func() bool {
+	return term.IsTerminal(os.Stdout.Fd())
 }
 
 func paint(style lipgloss.Style, text string) string {
