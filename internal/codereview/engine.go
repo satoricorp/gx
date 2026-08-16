@@ -340,7 +340,13 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	} else {
 		advisory = capAdvisoryFindings(advisory, opts.MaxFindings)
 	}
-	findings = append(blocking, advisory...)
+	// Lanes are assigned here and nowhere else: this is the one line every
+	// review path — full panel, --fast, judge disabled or unreachable, no AI at
+	// all — passes through with its findings final. Earlier is too early (the
+	// judge rewrites strength and verdicts, and --fast never reaches it); a hook
+	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
+	// tool findings split out above. See lanes.go for the rule.
+	findings = AssignLanes(append(blocking, advisory...))
 
 	return Report{
 		RepoRoot:          repoRoot,

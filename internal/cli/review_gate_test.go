@@ -142,9 +142,11 @@ func TestReviewJSONMarksNothingToReview(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
+	// The gate is on by default and "nothing to review" fails it; the JSON is
+	// written before the exit code is decided, so it is still there to parse.
 	out, err := runReviewCommand(t, "--json", "--no-publish")
-	if err != nil {
-		t.Fatalf("gx review --json error = %v\n%s", err, out)
+	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
+		t.Fatalf("ExitCode() = %d, want %d under the default gate (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
 	}
 	var report codereview.Report
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
@@ -163,7 +165,8 @@ func TestReviewNothingToReviewDoesNotClaimACleanReview(t *testing.T) {
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runReviewCommand(t, "--no-publish")
+	// Gate off: this test is about the words, not the exit code.
+	out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx review error = %v\n%s", err, out)
 	}
@@ -191,13 +194,80 @@ func TestReviewFailOnExitsNonZeroForSurvivingFindings(t *testing.T) {
 		t.Fatalf("ExitCode() = %d, want %d (error: %v)", code, reviewFindingsExitCode, err)
 	}
 
-	// The same review under a stricter threshold has nothing blocking.
+	// The same review under a stricter threshold has nothing blocking: a Strong
+	// deterministic finding is advisory, and only the blocking lane fails here.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "blocking", "--no-publish"); err != nil {
 		t.Fatalf("gx review --fail-on blocking error = %v\n%s", err, out)
 	}
-	// And the default gate never fails.
+	// The default gate is "blocking", so it agrees with the line above.
 	if out, err := runReviewCommand(t, "--scope", "dependencies", "--no-publish"); err != nil {
 		t.Fatalf("gx review without --fail-on error = %v\n%s", err, out)
+	}
+	// And the gate can be switched off entirely.
+	if out, err := runReviewCommand(t, "--scope", "dependencies", "--fail-on", "none", "--no-publish"); err != nil {
+		t.Fatalf("gx review --fail-on none error = %v\n%s", err, out)
+	}
+}
+
+// The gate is on by default: `gx review` with no --fail-on behaves as
+// --fail-on blocking. Nothing-to-review therefore fails by default (exit 4),
+// exactly as it does under any explicit gate, and --fail-on none is the way
+// back to an advisory exit 0.
+func TestReviewDefaultGateIsBlocking(t *testing.T) {
+	cmd := newReviewCommand(context.Background())
+	if got := cmd.Flags().Lookup("fail-on").DefValue; got != string(codereview.FailOnBlocking) {
+		t.Fatalf("--fail-on default = %q, want %q", got, codereview.FailOnBlocking)
+	}
+
+	root := newReviewGateRepo(t)
+	t.Chdir(root)
+	setReviewGateEnv(t)
+
+	out, err := runReviewCommand(t, "--no-publish")
+	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
+		t.Fatalf("ExitCode() = %d, want %d: the default gate must not pass without inspecting any code (error: %v)\n%s", code, reviewNothingToReviewExitCode, err, out)
+	}
+	if out, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
+		t.Fatalf("gx review --fail-on none error = %v\n%s", err, out)
+	}
+}
+
+// The default gate reads lanes: a finding fails it only when it earned the
+// blocking lane. A Strong finding one reviewer raised is demoted and passes;
+// the same finding raised by both reviewers and confirmed by the judge fails.
+func TestReviewGateErrorBlockingLevelReadsLanes(t *testing.T) {
+	twoLegs := []string{"Bedrock A", "Bedrock B"}
+	base := codereview.Report{
+		ReviewMode: codereview.ReviewModeRange,
+		Reviewed:   true,
+	}
+
+	demoted := base
+	demoted.Findings = codereview.AssignLanes([]codereview.Finding{
+		{ID: "one-leg", Strength: "Strong", Corroboration: []string{"Bedrock A"}, JudgeVerdict: "confirmed"},
+	})
+	if err := reviewGateError(demoted, codereview.FailOnBlocking); err != nil {
+		t.Fatalf("reviewGateError(demoted Strong) = %v, want nil: one grader is advisory", err)
+	}
+	// The stricter strength-only level still fails on it.
+	if code := ExitCode(reviewGateError(demoted, codereview.FailOnStrong)); code != reviewFindingsExitCode {
+		t.Fatalf("reviewGateError(demoted Strong, strong) exit = %d, want %d", code, reviewFindingsExitCode)
+	}
+
+	quorum := base
+	quorum.Findings = codereview.AssignLanes([]codereview.Finding{
+		{ID: "quorum", Strength: "Strong", Corroboration: twoLegs, JudgeVerdict: "confirmed"},
+	})
+	if code := ExitCode(reviewGateError(quorum, codereview.FailOnBlocking)); code != reviewFindingsExitCode {
+		t.Fatalf("reviewGateError(quorum Strong) exit = %d, want %d", code, reviewFindingsExitCode)
+	}
+
+	tool := base
+	tool.Findings = codereview.AssignLanes([]codereview.Finding{
+		{ID: "tools.static-failure", Strength: "Blocking"},
+	})
+	if code := ExitCode(reviewGateError(tool, codereview.FailOnBlocking)); code != reviewFindingsExitCode {
+		t.Fatalf("reviewGateError(Blocking tool finding) exit = %d, want %d", code, reviewFindingsExitCode)
 	}
 }
 
@@ -219,9 +289,9 @@ func TestReviewFailOnExitsDistinctlyWhenNothingWasReviewed(t *testing.T) {
 		t.Fatalf("error = %v, want the nothing-to-review message", err)
 	}
 
-	// Without a gate the same run stays exit 0 for interactive use.
-	if _, err := runReviewCommand(t, "--no-publish"); err != nil {
-		t.Fatalf("gx review without --fail-on error = %v", err)
+	// With the gate switched off the same run stays exit 0 for advisory use.
+	if _, err := runReviewCommand(t, "--fail-on", "none", "--no-publish"); err != nil {
+		t.Fatalf("gx review --fail-on none error = %v", err)
 	}
 }
 
@@ -242,7 +312,7 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 			t.Chdir(root)
 			setReviewGateEnv(t)
 
-			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--json", "--no-publish")...)
+			out, err := runReviewCommand(t, append(append([]string{}, flags...), "--fail-on", "none", "--json", "--no-publish")...)
 			if err != nil {
 				t.Fatalf("gx review error = %v\n%s", err, out)
 			}
@@ -400,7 +470,7 @@ func TestReviewRepoFlagReviewsTheRepositoryWithACleanTree(t *testing.T) {
 	}
 
 	// The same repo without the flag is still honest about reading nothing.
-	plain, err := runReviewCommand(t, "--no-publish")
+	plain, err := runReviewCommand(t, "--fail-on", "none", "--no-publish")
 	if err != nil {
 		t.Fatalf("gx review error = %v\n%s", err, plain)
 	}

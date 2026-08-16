@@ -42,6 +42,22 @@ type Finding struct {
 	// the finding is open-ended judgment that fits no named rule; see rules.go.
 	RuleID string `json:"rule_id,omitempty"`
 
+	// Lane is where the finding lands in the report: "blocking" stops the
+	// change, "advisory" is reported and does not. It is derived, not asked
+	// for: strength decides the default lane, and quorum decides whether a
+	// blocking-strength finding is allowed to keep it. See lanes.go.
+	Lane string `json:"lane,omitempty"`
+	// DemotedFrom is set when quorum moved a finding out of the lane its
+	// strength would have given it — the report says "one grader flagged ·
+	// demoted" instead of silently dropping the finding to advisory.
+	DemotedFrom string `json:"demoted_from,omitempty"`
+	// Materiality is how much observable behavior moved — high, medium, low.
+	// It orders the story lane and is deliberately NOT strength: a finding can
+	// be low-strength and high-materiality (that is exactly an escalation), or
+	// certain and trivial. Conflating the two axes was a naming collision the
+	// report design explicitly avoids; keep them separate fields.
+	Materiality string `json:"materiality,omitempty"`
+
 	// JudgeVerdict and the fields after it carry the verification model's
 	// assessment through to the report: "confirmed", "unverified" (the judge
 	// abstained or never ran), or empty for findings that predate the judge.

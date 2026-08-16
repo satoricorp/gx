@@ -93,8 +93,8 @@ func TestReviewGatePassesCleanCompleteReview(t *testing.T) {
 	}
 }
 
-// Without --fail-on the command is advisory, so a degraded run must not start
-// failing builds that never opted into gating.
+// Under --fail-on none the command is advisory, so a degraded run must not
+// start failing builds that opted out of gating.
 func TestReviewGateSilentWhenDisabled(t *testing.T) {
 	report := codereview.Report{
 		Reviewed:        true,

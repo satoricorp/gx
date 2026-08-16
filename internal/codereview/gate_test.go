@@ -51,6 +51,63 @@ func TestGateFailuresAppliesTheThreshold(t *testing.T) {
 	}
 }
 
+// The blocking level is lane-aware: quorum decides, not strength alone. Every
+// other level is unchanged and still reads strength.
+func TestGateFailuresBlockingLevelReadsLanes(t *testing.T) {
+	twoLegs := []string{"Bedrock A", "Bedrock B"}
+	report := Report{
+		ReviewMode: ReviewModeRange,
+		Reviewed:   true,
+		Findings: AssignLanes([]Finding{
+			// Deterministic Blocking: no judge, strength alone → blocking lane.
+			{ID: "tools.static-failure", Strength: "Blocking"},
+			// Strong with quorum: two legs and confirmed → blocking lane.
+			{ID: "quorum", Strength: "Strong", Corroboration: twoLegs, JudgeVerdict: "confirmed"},
+			// Strong, one leg, confirmed → demoted to advisory.
+			{ID: "one-leg", Strength: "Strong", Corroboration: []string{"Bedrock A"}, JudgeVerdict: "confirmed"},
+			// Strong, two legs, unverified → demoted to advisory.
+			{ID: "unverified", Strength: "Strong", Corroboration: twoLegs, JudgeVerdict: "unverified"},
+			// Below Strong never blocks.
+			{ID: "explore", Strength: "Worth exploring", Corroboration: twoLegs, JudgeVerdict: "confirmed"},
+		}),
+	}
+	blocking := report.GateFailures(FailOnBlocking)
+	if len(blocking) != 2 {
+		t.Fatalf("GateFailures(blocking) = %d findings (%s), want 2 (the Blocking tool finding and the quorum finding)", len(blocking), findingIDs(blocking))
+	}
+	for _, f := range blocking {
+		if f.ID != "tools.static-failure" && f.ID != "quorum" {
+			t.Fatalf("GateFailures(blocking) included %q, want only lane-blocking findings", f.ID)
+		}
+	}
+	// "strong" keeps strength-only semantics: every Strong-or-worse finding,
+	// demoted or not.
+	if got := len(report.GateFailures(FailOnStrong)); got != 4 {
+		t.Fatalf("GateFailures(strong) = %d findings, want 4", got)
+	}
+	if got := len(report.GateFailures(FailOnAny)); got != 5 {
+		t.Fatalf("GateFailures(any) = %d findings, want 5", got)
+	}
+}
+
+// A report whose lanes were never assigned is gated by the same rule: LaneOf
+// computes the lane on the fly. A demoted-in-effect finding must not fail the
+// blocking gate just because Lane is empty.
+func TestGateFailuresBlockingLevelComputesMissingLanes(t *testing.T) {
+	report := Report{
+		ReviewMode: ReviewModeRange,
+		Reviewed:   true,
+		Findings: []Finding{
+			{ID: "one-leg", Strength: "Strong", Corroboration: []string{"Bedrock A"}, JudgeVerdict: "confirmed"},
+			{ID: "tools.static-failure", Strength: "Blocking"},
+		},
+	}
+	got := report.GateFailures(FailOnBlocking)
+	if len(got) != 1 || got[0].ID != "tools.static-failure" {
+		t.Fatalf("GateFailures(blocking) = %s, want only tools.static-failure", findingIDs(got))
+	}
+}
+
 // A gate must never report "no issues at or above X" for a diff it never read.
 func TestGateFailuresIgnoresAnUnreviewedReport(t *testing.T) {
 	report := Report{

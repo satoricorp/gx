@@ -73,10 +73,18 @@ func (l FailOnLevel) Enabled() bool {
 	return ok
 }
 
-// GateFailures returns the findings at or above the threshold. It returns
-// nothing when the level is disabled, and nothing when the review never
-// inspected any code: a gate must not report "no issues at or above X" for a
-// diff it never read. Callers handle that case through Report.ReviewMode.
+// GateFailures returns the findings the level fails on. It returns nothing
+// when the level is disabled, and nothing when the review never inspected any
+// code: a gate must not report "no issues at or above X" for a diff it never
+// read. Callers handle that case through Report.ReviewMode.
+//
+// The blocking level reads lanes, not strength: a finding fails it iff
+// LaneOf(finding) == LaneBlocking. That is what makes quorum count — a Strong
+// finding one model raised and the judge waved through is demoted to advisory
+// (lanes.go) and does not fail the default gate, while the same finding raised
+// by both legs and confirmed does. Every other level keeps its strength-only
+// threshold: "strong" still fails on every Strong-or-worse finding regardless
+// of lane, so a stricter --fail-on is still strictly stricter.
 func (r Report) GateFailures(level FailOnLevel) []Finding {
 	threshold, ok := failOnRanks[level]
 	if !ok || r.ReviewMode == ReviewModeNone {
@@ -84,6 +92,12 @@ func (r Report) GateFailures(level FailOnLevel) []Finding {
 	}
 	var out []Finding
 	for _, finding := range r.Findings {
+		if level == FailOnBlocking {
+			if LaneOf(finding) == LaneBlocking {
+				out = append(out, finding)
+			}
+			continue
+		}
 		if strengthRank(finding.Strength) <= threshold {
 			out = append(out, finding)
 		}

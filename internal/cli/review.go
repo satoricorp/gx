@@ -147,7 +147,12 @@ func newReviewCommand(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "include repo facts, docs, and changed files")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the review report as JSON instead of markdown")
-	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnNone), fmt.Sprintf("exit %d when findings at or above this level survive: %s (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), reviewNothingToReviewExitCode, reviewDegradedExitCode))
+	// The gate is on by default. "blocking" is lane-aware: it fails only on
+	// findings that earned the blocking lane — a Blocking deterministic check,
+	// or a Strong finding both reviewers raised and the judge confirmed. A
+	// Strong finding one model raised is demoted to advisory and does not fail
+	// it. --fail-on none restores the advisory-only exit 0.
+	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnBlocking), fmt.Sprintf("exit %d when findings at or above this level survive: %s; the default %q fails only on findings in the blocking lane, and \"none\" turns the gate off (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), string(codereview.FailOnBlocking), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
 	cmd.Flags().BoolVar(&noComment, "no-comment", false, "skip posting the PR review comment but still record review history; use --no-publish to suppress both")
 	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this review, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-constraints")
@@ -263,10 +268,11 @@ func resolveGitCommonDir(repoRoot string) (string, error) {
 }
 
 // reviewGateError turns a review outcome into an exit code. "Nothing to
-// review" is its own outcome: it never counts as findings-clean, and under an
-// explicit gate it fails, because a gate that passes on a diff it never opened
-// is exactly the silent false pass --fail-on is meant to catch. Without
-// --fail-on the default stays exit 0, so interactive use is unaffected.
+// review" is its own outcome: it never counts as findings-clean, and under a
+// gate it fails, because a gate that passes on a diff it never opened is
+// exactly the silent false pass --fail-on is meant to catch. The gate is on by
+// default (--fail-on blocking); --fail-on none is the advisory-only mode where
+// every outcome stays exit 0.
 func reviewGateError(report codereview.Report, level codereview.FailOnLevel) error {
 	if !level.Enabled() {
 		return nil
@@ -518,10 +524,21 @@ func reviewFindingFingerprint(repoFullName string, finding codereview.Finding, f
 	return fmt.Sprintf("%x", sum[:16])
 }
 
+// reviewFindingConfidence maps a finding's Strength onto the 1-10 confidence
+// the gx Cloud history row stores. The real Strength vocabulary is "Blocking",
+// "Strong", "Worth exploring", "Speculative" (codereview.Finding.Strength); the
+// generic high/medium/low spellings are kept as aliases so any older producer
+// still lands where it used to.
 func reviewFindingConfidence(strength string) int {
 	switch strings.ToLower(strings.TrimSpace(strength)) {
-	case "high", "strong":
+	case "blocking":
+		return 9
+	case "strong", "high":
 		return 8
+	case "worth exploring", "worth-exploring":
+		return 5
+	case "speculative":
+		return 3
 	case "low", "weak":
 		return 4
 	case "medium", "moderate":
