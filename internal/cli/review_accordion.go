@@ -16,11 +16,23 @@ import (
 // When gx review has a terminal on both ends, the linear render becomes a
 // menu. The header and the run ledger print once and stay; the verdict prints
 // as its own node so the reader sees NO-SHIP before choosing what to read;
-// then a list of sections. Enter opens a section in place under its own
-// marker, and the menu re-renders beneath with the cursor advanced to the next
-// unvisited row, so the reader walks the report top to bottom without ever
-// losing the list. Esc collapses. j prints the JSON. q (or Done) quits with
-// the same exit code the linear render would have produced.
+// then a list of sections. The keys are the ones every list UI trains:
+//
+//	↑ ↓ (k j)   move between sections — and open the one you land on, so
+//	            browsing is reading; no second keypress to see it
+//	tab ⇧tab    the same, wrapping at either end
+//	1‥5         jump straight to that section
+//	enter → l   open / close the section under the cursor (enter on Done quits)
+//	← h esc     close the open section (esc with nothing open quits)
+//	PgDn PgUp   scroll the open section; space / b and ctrl+d / ctrl+u too,
+//	            and the mouse wheel; g / G for top / bottom
+//	J           toggle the --json object
+//	q ctrl+c    quit with the same exit code the linear render produces
+//
+// The first cut used tab to move and ↑↓ to scroll, pager-style. In practice
+// nobody reached for tab, ↑↓ "did nothing" (they scrolled a report that was
+// not yet open), tab did not wrap so it read as one-way, and ⇧tab is dropped
+// by some terminals — so the menu felt broken. Arrows move; the wheel scrolls.
 //
 // It is the clack rail-and-diamond grammar — ◆ for an open group, ● for the
 // current row, ◉ for a visited one, ○ for an unvisited one, │ down the left —
@@ -112,64 +124,58 @@ func (m accordionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize()
 		m.ready = true
 		return m, nil
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m.vp.ScrollUp(3)
+		case tea.MouseWheelDown:
+			m.vp.ScrollDown(3)
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quit = true
 			return m, tea.Quit
-		// The menu cursor moves with tab / shift+tab (and left/right), so
-		// that up/down are free to scroll the report the way a pager does.
-		case "tab", "right", "l":
-			m.cursor = m.nextRow(m.cursor)
-			return m, nil
-		case "shift+tab", "left", "h":
-			m.cursor = m.prevRow(m.cursor)
-			return m, nil
-		case "up", "k":
-			m.vp.ScrollUp(1)
-			return m, nil
-		case "down", "j":
-			m.vp.ScrollDown(1)
-			return m, nil
-		case "pgup", "b", "ctrl+u":
-			m.vp.HalfPageUp()
-			return m, nil
-		case "pgdown", "f", "ctrl+d", " ":
-			m.vp.HalfPageDown()
-			return m, nil
-		case "g", "home":
-			m.vp.GotoTop()
-			return m, nil
-		case "G", "end":
-			m.vp.GotoBottom()
-			return m, nil
-		case "enter":
+		// Move — and show. Landing on a section opens it, so ↓ ↓ ↓ reads the
+		// report top to bottom. Wraps, so tab from the last row is not a dead
+		// key. Landing on Done leaves whatever was open on screen.
+		case "down", "j", "tab":
+			m.moveTo(m.nextRow(m.cursor))
+		case "up", "k", "shift+tab":
+			m.moveTo(m.prevRow(m.cursor))
+		case "1", "2", "3", "4", "5":
+			if s := accordionSection(msg.String()[0] - '1'); m.selectable(s) {
+				m.moveTo(s)
+			}
+		// Open / close the section under the cursor. Enter on Done quits.
+		case "enter", "right", "l":
 			if m.cursor == sectionDone {
 				m.quit = true
 				return m, tea.Quit
 			}
 			if m.open == m.cursor {
-				m.open = sectionCount
+				m.close()
 			} else {
-				m.open = m.cursor
-				m.visited[m.cursor] = true
-				m.showJSON = false
-				if next := m.nextUnvisited(m.cursor); next != m.cursor {
-					m.cursor = next
-				}
+				m.show(m.cursor)
 			}
-			m.refresh()
-			// A freshly opened section starts at its first line: scroll the
-			// viewport so the section's ◆ header is the top visible row.
-			m.scrollToOpenSection()
+		case "left", "h":
+			m.close()
 		case "esc":
-			if m.showJSON {
-				m.showJSON = false
-			} else {
-				m.open = sectionCount
+			if !m.showJSON && m.open >= sectionCount {
+				m.quit = true
+				return m, tea.Quit
 			}
-			m.refresh()
+			m.close()
+		// Scroll the open section: pager keys, and the wheel above.
+		case "pgup", "b", "ctrl+u":
+			m.vp.HalfPageUp()
+		case "pgdown", "f", "ctrl+d", " ":
+			m.vp.HalfPageDown()
+		case "g", "home":
 			m.vp.GotoTop()
+		case "G", "end":
+			m.vp.GotoBottom()
 		case "J":
 			m.showJSON = !m.showJSON
 			m.open = sectionCount
@@ -178,6 +184,35 @@ func (m accordionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// moveTo puts the cursor on s and, when s is a readable section, opens it.
+// Done is only highlighted: it has nothing to show, and closing what the
+// reader was looking at just because they moved past it would be a surprise.
+func (m *accordionModel) moveTo(s accordionSection) {
+	m.cursor = s
+	if s == sectionDone || !m.selectable(s) {
+		return
+	}
+	m.show(s)
+}
+
+// show opens s and puts its header at the top of the viewport.
+func (m *accordionModel) show(s accordionSection) {
+	m.open = s
+	m.visited[s] = true
+	m.showJSON = false
+	m.refresh()
+	m.scrollToOpenSection()
+}
+
+// close collapses whatever is open — a section or the JSON — and returns the
+// viewport to the top, where the header and verdict are.
+func (m *accordionModel) close() {
+	m.showJSON = false
+	m.open = sectionCount
+	m.refresh()
+	m.vp.GotoTop()
 }
 
 // resize fits the viewport under the fixed footer (the menu) and refreshes.
@@ -219,9 +254,12 @@ func (m *accordionModel) scrollToOpenSection() {
 
 // nextRow / prevRow move the cursor, skipping sections that would render
 // nothing — an empty ADVISORY row is still listed (as "0 findings") but the
-// cursor does not stop on it, so enter never opens an empty section.
+// cursor does not stop on it, so enter never opens an empty section. Both
+// wrap: past Done comes the first section, before the first comes Done. A
+// menu whose last row eats keypresses reads as broken, not as finished.
 func (m accordionModel) nextRow(from accordionSection) accordionSection {
-	for s := from + 1; s < sectionCount; s++ {
+	for i := accordionSection(1); i <= sectionCount; i++ {
+		s := (from + i) % sectionCount
 		if m.selectable(s) {
 			return s
 		}
@@ -230,17 +268,9 @@ func (m accordionModel) nextRow(from accordionSection) accordionSection {
 }
 
 func (m accordionModel) prevRow(from accordionSection) accordionSection {
-	for s := from - 1; s >= 0; s-- {
+	for i := accordionSection(1); i <= sectionCount; i++ {
+		s := (from + sectionCount - i) % sectionCount
 		if m.selectable(s) {
-			return s
-		}
-	}
-	return from
-}
-
-func (m accordionModel) nextUnvisited(from accordionSection) accordionSection {
-	for s := from + 1; s < sectionCount; s++ {
-		if m.selectable(s) && !m.visited[s] {
 			return s
 		}
 	}
@@ -371,7 +401,7 @@ func (m accordionModel) openSectionLine() int {
 func (m accordionModel) menuView() string {
 	var b strings.Builder
 	c, mint, mute, rail := m.painters()
-	b.WriteString(mint("◆") + "  " + c(termstyle.Section, "Open a section") + mute("   tab move · enter open · ↑↓ scroll · esc collapse · J json · q quit") + "\n")
+	b.WriteString(mint("◆") + "  " + c(termstyle.Section, "Sections") + mute("   ↑↓ move · enter open/close · PgUp PgDn scroll · 1-5 jump · J json · q quit") + "\n")
 	b.WriteString(rail("") + "\n")
 	for s := accordionSection(0); s < sectionCount; s++ {
 		title, paint := m.sectionLabel(s)
@@ -389,7 +419,12 @@ func (m accordionModel) menuView() string {
 			label = mute(title)
 		}
 		pad := strings.Repeat(" ", max(1, 16-len(title)))
-		row := mark + "  " + label + pad + fmt.Sprintf("%-11s", m.sectionCount(s)) + mute(m.sectionHint(s))
+		// The digit is the shortcut: 1‥5 jumps to that section. Done has none.
+		digit := " "
+		if s < sectionDone {
+			digit = mute(fmt.Sprintf("%d", int(s)+1))
+		}
+		row := digit + " " + mark + "  " + label + pad + fmt.Sprintf("%-11s", m.sectionCount(s)) + mute(m.sectionHint(s))
 		if s == m.cursor {
 			row = mint("❯") + " " + row
 		} else {
@@ -428,6 +463,9 @@ func (m accordionModel) View() tea.View {
 	}
 	v := tea.NewView(content + "\n" + m.menuView())
 	v.AltScreen = true
+	// Cell-motion mouse reporting is what makes the wheel scroll the report;
+	// it does not capture drag-select the way all-motion would.
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 

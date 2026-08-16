@@ -82,14 +82,14 @@ func TestAccordionOpensWithHeaderVerdictAndMenu(t *testing.T) {
 	for _, want := range []string{
 		"◆  gx review — origin/main...feature/checkout-retry",
 		"◇  Verdict: NO-SHIP", // verdict node before the menu, always
-		"◆  Open a section",
-		"❯ ●  BLOCKING", // cursor starts on the first non-empty section
+		"◆  Sections",
+		"❯ 1 ●  BLOCKING", // cursor starts on the first non-empty section; 1 is its shortcut
 		"1 finding",
 		"no-secrets-in-logs", // rule name in the hint column
-		"○  ADVISORY",
-		"○  FIX PLAN",
-		"○  WORTH KNOWING",
-		"○  RUN DETAILS",
+		"2 ○  ADVISORY",
+		"3 ○  FIX PLAN",
+		"4 ○  WORTH KNOWING",
+		"5 ○  RUN DETAILS",
 		"○  Done",
 		"exit 3 (no-ship)",
 		"└  gx:recommended v",
@@ -107,7 +107,7 @@ func TestAccordionOpensWithHeaderVerdictAndMenu(t *testing.T) {
 	}
 }
 
-func TestAccordionEnterOpensSectionAndAdvancesCursor(t *testing.T) {
+func TestAccordionEnterOpensSectionAndCursorStays(t *testing.T) {
 	m := press(t, newAccordionModel(accordionFixture(), false), "enter")
 	out := view(m)
 	// BLOCKING opened under its own node with the finding body, rendered by
@@ -124,37 +124,112 @@ func TestAccordionEnterOpensSectionAndAdvancesCursor(t *testing.T) {
 			t.Fatalf("after enter, missing %q:\n%s", want, out)
 		}
 	}
-	// The menu re-renders beneath, BLOCKING marked open (●), and the cursor
-	// advanced to the next unvisited row.
-	if !strings.Contains(out, "●  BLOCKING") || !strings.Contains(out, "❯ ●  ADVISORY") {
-		t.Fatalf("menu should show BLOCKING open and cursor on ADVISORY:\n%s", out)
+	// The menu re-renders beneath with BLOCKING open (●) and the cursor still
+	// on it: enter is "show me this", not "and move on". ↓ moves.
+	if !strings.Contains(out, "❯ 1 ●  BLOCKING") {
+		t.Fatalf("menu should show the cursor on the open BLOCKING row:\n%s", out)
 	}
-	if m.open != sectionBlocking || m.cursor != sectionAdvisory {
-		t.Fatalf("open=%d cursor=%d, want open=blocking cursor=advisory", m.open, m.cursor)
+	if m.open != sectionBlocking || m.cursor != sectionBlocking {
+		t.Fatalf("open=%d cursor=%d, want both blocking", m.open, m.cursor)
+	}
+	// Enter again closes it.
+	m = press(t, m, "enter")
+	if m.open != sectionCount {
+		t.Fatalf("second enter should close the section, open=%d", m.open)
+	}
+}
+
+// The core of the new contract: arrows move between sections AND show the one
+// you land on, so ↓ ↓ ↓ reads the report. Tab does the same. Both wrap.
+func TestAccordionArrowsMoveAndOpen(t *testing.T) {
+	m := newAccordionModel(accordionFixture(), false)
+	m = press(t, m, "down")
+	if m.cursor != sectionAdvisory || m.open != sectionAdvisory {
+		t.Fatalf("↓ should move to ADVISORY and open it: cursor=%d open=%d", m.cursor, m.open)
+	}
+	if !strings.Contains(view(m), "◆  ADVISORY") {
+		t.Fatalf("ADVISORY body should be on screen after ↓:\n%s", view(m))
+	}
+	m = press(t, m, "up")
+	if m.cursor != sectionBlocking || m.open != sectionBlocking {
+		t.Fatalf("↑ should move back to BLOCKING and open it: cursor=%d open=%d", m.cursor, m.open)
+	}
+	// Wrap: ↑ from the first row lands on Done, which is highlighted but not
+	// "opened" — the section that was showing stays showing.
+	m = press(t, m, "up")
+	if m.cursor != sectionDone {
+		t.Fatalf("↑ from the first row should wrap to Done, got %d", m.cursor)
+	}
+	if m.open != sectionBlocking {
+		t.Fatalf("landing on Done must not close what was open, open=%d", m.open)
+	}
+	// And ↓ from Done wraps to the first section.
+	m = press(t, m, "down")
+	if m.cursor != sectionBlocking {
+		t.Fatalf("↓ from Done should wrap to BLOCKING, got %d", m.cursor)
+	}
+	// tab / shift+tab are the same moves.
+	m = press(t, m, "tab")
+	if m.cursor != sectionAdvisory || m.open != sectionAdvisory {
+		t.Fatalf("tab should behave like ↓: cursor=%d open=%d", m.cursor, m.open)
+	}
+	m = press(t, m, "shift+tab")
+	if m.cursor != sectionBlocking {
+		t.Fatalf("shift+tab should behave like ↑, got %d", m.cursor)
+	}
+}
+
+func TestAccordionDigitsJump(t *testing.T) {
+	m := press(t, newAccordionModel(accordionFixture(), false), "4")
+	if m.cursor != sectionStory || m.open != sectionStory {
+		t.Fatalf("4 should jump to WORTH KNOWING and open it: cursor=%d open=%d", m.cursor, m.open)
+	}
+	if !strings.Contains(view(m), "◆  WORTH KNOWING") {
+		t.Fatalf("story body should be on screen after 4")
+	}
+	// A digit for a section with nothing in it is ignored.
+	r := accordionFixture()
+	r.Story = nil
+	m = press(t, newAccordionModel(r, false), "4")
+	if m.cursor != sectionBlocking {
+		t.Fatalf("4 on an empty story section should do nothing, cursor=%d", m.cursor)
 	}
 }
 
 func TestAccordionEscCollapsesAndVisitedMarkPersists(t *testing.T) {
-	m := press(t, newAccordionModel(accordionFixture(), false), "enter", "esc")
+	// Open BLOCKING, move the cursor off it (↓ opens ADVISORY), esc closes.
+	m := press(t, newAccordionModel(accordionFixture(), false), "enter", "down", "esc")
 	out := view(m)
-	if strings.Contains(out, "◆  BLOCKING") {
+	if strings.Contains(out, "◆  ADVISORY") {
 		t.Fatalf("esc should collapse the open section:\n%s", out)
 	}
-	if !strings.Contains(out, "◉  BLOCKING") {
-		t.Fatalf("a visited section should keep its ◉ mark after collapse:\n%s", out)
+	if !strings.Contains(out, "1 ◉  BLOCKING") {
+		t.Fatalf("a visited section should keep its ◉ mark after the cursor leaves it:\n%s", out)
 	}
 	if m.open != sectionCount {
 		t.Fatalf("open should be reset after esc, got %d", m.open)
+	}
+	// ← closes too; esc with nothing open quits.
+	m = press(t, m, "enter")
+	if m.open != sectionAdvisory {
+		t.Fatalf("enter should reopen the cursor's section")
+	}
+	m = press(t, m, "left")
+	if m.open != sectionCount {
+		t.Fatalf("← should close the open section")
+	}
+	if next, cmd := m.Update(key("esc")); cmd == nil || !next.(accordionModel).quit {
+		t.Fatalf("esc with nothing open should quit")
 	}
 }
 
 func TestAccordionWalksSectionsAndDelegatesToLinearRenderers(t *testing.T) {
 	m := newAccordionModel(accordionFixture(), false)
-	// enter (blocking) → enter (advisory) → enter (fix plan) → enter (story)
-	m = press(t, m, "enter", "enter", "enter", "enter")
+	// enter (blocking) → ↓ (advisory) → ↓ (fix plan) → ↓ (story)
+	m = press(t, m, "enter", "down", "down", "down")
 	out := view(m)
 	if !strings.Contains(out, "◆  WORTH KNOWING") || !strings.Contains(out, "Checkout retries on 5xx") {
-		t.Fatalf("fourth enter should open the story:\n%s", out)
+		t.Fatalf("third ↓ should open the story:\n%s", out)
 	}
 	if !strings.Contains(out, "What changes for you: up to 4 attempts") {
 		t.Fatalf("story body should come from the linear renderer:\n%s", out)
@@ -164,8 +239,8 @@ func TestAccordionWalksSectionsAndDelegatesToLinearRenderers(t *testing.T) {
 			t.Fatalf("section %d should be visited", s)
 		}
 	}
-	if m.cursor != sectionRunDetails {
-		t.Fatalf("cursor should have advanced to RUN DETAILS, got %d", m.cursor)
+	if m.cursor != sectionStory {
+		t.Fatalf("cursor should be on the story it opened, got %d", m.cursor)
 	}
 }
 
@@ -268,22 +343,27 @@ func TestAccordionOpenSectionStartsAtItsHeader(t *testing.T) {
 	if !v.AltScreen {
 		t.Fatalf("accordion must take the alt screen so scrollback stays intact")
 	}
-	if !strings.Contains(v.Content, "Open a section") {
+	if !strings.Contains(v.Content, "◆  Sections") {
 		t.Fatalf("menu must be present beneath the viewport:\n%s", v.Content)
 	}
-	// down scrolls the content, not the menu cursor.
+	// PgDn scrolls the open section; the cursor stays put.
 	before := m.cursor
-	m = press(t, m, "down", "down")
+	m = press(t, m, "pgdown")
 	if m.cursor != before {
-		t.Fatalf("↓ must scroll, not move the menu cursor")
+		t.Fatalf("PgDn must scroll, not move the menu cursor")
 	}
-	// The viewport clamps at the bottom, so the offset advances by up to two.
-	wantOff := min(top+2, maxOff)
-	if m.vp.YOffset() != wantOff {
-		t.Fatalf("two ↓ presses should scroll toward the bottom: offset %d, want %d (top %d, max %d)", m.vp.YOffset(), wantOff, top, maxOff)
-	}
-	// Scrolled DOWN from the header, never up above it.
+	// Scrolled DOWN from the header (clamped at the bottom), never up above it.
 	if m.vp.YOffset() < top {
 		t.Fatalf("scrolling after open must not move above the section header")
+	}
+	if maxOff > top && m.vp.YOffset() == top {
+		t.Fatalf("PgDn should have moved the viewport down from %d (max %d)", top, maxOff)
+	}
+	// The mouse wheel scrolls too.
+	off := m.vp.YOffset()
+	next, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	m = next.(accordionModel)
+	if off > 0 && m.vp.YOffset() >= off {
+		t.Fatalf("wheel up should scroll up: %d → %d", off, m.vp.YOffset())
 	}
 }
