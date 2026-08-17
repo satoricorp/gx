@@ -111,7 +111,11 @@ mkdir -p "$install_dir"
 install -m 755 "$tmp_dir/gx/bin/gx" "$install_dir/gx"
 install -m 755 "$tmp_dir/gx/bin/gx-mcp" "$install_dir/gx-mcp"
 ln -sf gx "$install_dir/gxr"
-ln -sf gx "$install_dir/gxc"
+ln -sf gx "$install_dir/gxg"
+# gxc was the shorthand while the gate was called `gx constraints`.
+# It is not an alias any more: left in place it resolves to gx with no
+# subcommand, which opens the root help and looks like a broken install.
+rm -f "$install_dir/gxc"
 
 if [ -f "$tmp_dir/gx/completions/gx.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"

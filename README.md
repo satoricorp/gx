@@ -37,7 +37,7 @@ gx init
 
 This configures your gx identity, installs Git lifecycle hooks to identify and
 record revisions plus a pre-push hook to publish session data, registers the gx
-MCP server, installs `/gx` and `/constraints` commands for Claude Code, Codex,
+MCP server, installs `/gx` and `/gates` commands for Claude Code, Codex,
 and Cursor, and offers to add gx workflow instructions to `AGENTS.md`.
 
 Most gx commands initialize the repository on first use, so `gx init` is the way
@@ -54,7 +54,7 @@ gx init --global
 To uninstall the CLI:
 
 ```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxc ~/.local/bin/gx-mcp
+rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxg ~/.local/bin/gxc ~/.local/bin/gx-mcp
 rm -f ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
 ```
 
@@ -104,7 +104,7 @@ Default flow:
 - To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
 
 For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
-Before shipping, run the `gx_constraints` MCP tool (or `gx constraints`) to check the change against the pre-ship constraint gates.
+Before shipping, run the `gx_gates` MCP tool (or `gx gates`) to check the change against the pre-ship gates.
 ```
 
 gx PR summaries are posted for PRs whose branch was pushed through gx with `git
@@ -175,7 +175,7 @@ Claude Code:
 claude mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
 ```
 
-MCP exposes `gx_review` and `gx_constraints`. There is still no save or publish
+MCP exposes `gx_review` and `gx_gates`. There is still no save or publish
 tool and no gx-specific verb to ask for: the server tells your agent to use
 plain Git, and the hooks do the rest.
 
@@ -185,16 +185,16 @@ Expected flow:
 git add -> git commit -> git push -> gh pr create
 ```
 
-`gx init` also installs `/gx` and `/constraints` slash commands for Claude
+`gx init` also installs `/gx` and `/gates` slash commands for Claude
 Code, Codex, and Cursor: `/gx` runs a fast review of the current change, and
-`/constraints` runs the pre-ship constraints exit gate.
+`/gates` runs the pre-ship exit gate.
 
 Publish with plain `git push` only. Do not run `gx push` or `gx capture push`.
 
-## Constraints
+## Gates
 
-`gx constraints` (shortcut `gxc`) is the pre-ship exit gate: it checks the
-current change against six constraints — correctness, security, code health,
+`gx gates` (shortcut `gxg`) is the pre-ship exit gate: it checks the
+current change against six gates — correctness, security, code health,
 back-pressure, accessibility, performance — and reports PASS, FAIL, or SKIPPED
 for each plus a ship / no-ship verdict. Deterministic checks decide what they
 can (the project's tests and linters, a secrets scan over added lines,
@@ -203,7 +203,7 @@ the rest, grounded in the same code-index, session, prior-finding, and
 knowledge-corpus context `gx review` uses. Run it before opening a PR:
 
 ```bash
-gx constraints "fix auth timeout"
+gx gates "fix auth timeout"
 ```
 
 The optional argument states the change's intent, which the back-pressure gate
@@ -211,3 +211,21 @@ judges scope against. `--md` prints markdown, `--json` the full report,
 `--verbose` lists the files behind each gate, and `--skip-gates` skips named
 gates. Exit codes make it a CI gate by default — 0 ship, 3 no-ship, 4 nothing
 to check, 5 degraded — and `--report-only` opts out of the coded exits.
+
+## Enhance
+
+`gx enhance` (shortcut `gxe`) prints the single highest-value fix in the
+current change, written to hand straight to a coding model: the problem, where
+it lives, the code around it, why it matters, the change to make, and a
+concrete finish line. It runs the same review `gx review` runs and reports the
+top of that review's fix plan — blocking findings first, then the judge's own
+ranking — so the two commands never disagree about what matters most.
+
+```bash
+gx enhance | pbcopy
+gx enhance | claude -p "apply this"
+```
+
+Output is plain text on stdout with no ANSI, and the spinner goes to stderr, so
+piping copies something usable. Exit status is always 0: gating is `gx review`'s
+job, and a review with nothing to fix says so rather than failing.
