@@ -90,7 +90,11 @@ jobs:
           test -f dist/cli/manifest.json
           test -f scripts/install.sh
 
+      # Tag builds only: on main the archives already go to S3 under
+      # cli/releases/$SHA, so a per-push copy here is redundant and at ~180 MB
+      # a push it exhausts the org's Actions storage on its own.
       - name: Upload workflow artifacts
+        if: ${{ github.ref_type == 'tag' }}
         uses: actions/upload-artifact@v4
         with:
           name: gx-cli
@@ -98,6 +102,7 @@ jobs:
             dist/cli/*
             scripts/install.sh
           if-no-files-found: error
+          retention-days: 7
 
       - name: Configure AWS credentials with OIDC
         if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
