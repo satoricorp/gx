@@ -10,13 +10,13 @@ import (
 	"github.com/satoricorp/gx/internal/codereview"
 )
 
-func runConstraintsCommand(t *testing.T, args ...string) (string, error) {
+func runGatesCommand(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := NewRoot(context.Background())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs(append([]string{"constraints"}, args...))
+	cmd.SetArgs(append([]string{"gates"}, args...))
 	err := cmd.Execute()
 	return out.String(), err
 }
@@ -25,7 +25,7 @@ func runConstraintsCommand(t *testing.T, args ...string) (string, error) {
 // protection included) never see a contiguous key shape in this source file.
 var fixtureAWSKey = "AKIA" + "ABCDEFGHIJKLMNOP"
 
-func commitConstraintsSecret(t *testing.T, root string) {
+func commitGatesSecret(t *testing.T, root string) {
 	t.Helper()
 	runGitTest(t, root, "checkout", "-b", "feature")
 	writeTestFile(t, root, "internal/app/creds.go", "package app\n\nconst awsKey = \""+fixtureAWSKey+"\"\n")
@@ -33,13 +33,13 @@ func commitConstraintsSecret(t *testing.T, root string) {
 	runGitTest(t, root, "commit", "-m", "add creds")
 }
 
-func TestConstraintsExitsThreeOnNoShip(t *testing.T) {
+func TestGatesExitsThreeOnNoShip(t *testing.T) {
 	root := newReviewGateRepo(t)
-	commitConstraintsSecret(t, root)
+	commitGatesSecret(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runConstraintsCommand(t)
+	out, err := runGatesCommand(t)
 	if err == nil {
 		t.Fatalf("expected a no-ship error, output:\n%s", out)
 	}
@@ -51,39 +51,39 @@ func TestConstraintsExitsThreeOnNoShip(t *testing.T) {
 	}
 }
 
-func TestConstraintsExitsZeroOnShip(t *testing.T) {
+func TestGatesExitsZeroOnShip(t *testing.T) {
 	root := newReviewGateRepo(t)
 	commitOnBranch(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runConstraintsCommand(t)
+	out, err := runGatesCommand(t)
 	if err != nil {
-		t.Fatalf("gx constraints error = %v\n%s", err, out)
+		t.Fatalf("gx gates error = %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "Verdict: SHIP") {
 		t.Fatalf("output missing the ship verdict:\n%s", out)
 	}
 }
 
-func TestConstraintsExitsFourOnNothingToCheck(t *testing.T) {
+func TestGatesExitsFourOnNothingToCheck(t *testing.T) {
 	root := newReviewGateRepo(t)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	_, err := runConstraintsCommand(t)
+	_, err := runGatesCommand(t)
 	if code := ExitCode(err); code != reviewNothingToReviewExitCode {
 		t.Fatalf("ExitCode() = %d, want %d (%v)", code, reviewNothingToReviewExitCode, err)
 	}
 }
 
-func TestConstraintsReportOnlyExitsZero(t *testing.T) {
+func TestGatesReportOnlyExitsZero(t *testing.T) {
 	root := newReviewGateRepo(t)
-	commitConstraintsSecret(t, root)
+	commitGatesSecret(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runConstraintsCommand(t, "--report-only")
+	out, err := runGatesCommand(t, "--report-only")
 	if err != nil {
 		t.Fatalf("--report-only must exit clean, got %v\n%s", err, out)
 	}
@@ -92,17 +92,17 @@ func TestConstraintsReportOnlyExitsZero(t *testing.T) {
 	}
 }
 
-func TestConstraintsJSONRoundTrips(t *testing.T) {
+func TestGatesJSONRoundTrips(t *testing.T) {
 	root := newReviewGateRepo(t)
-	commitConstraintsSecret(t, root)
+	commitGatesSecret(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runConstraintsCommand(t, "--json", "--report-only")
+	out, err := runGatesCommand(t, "--json", "--report-only")
 	if err != nil {
-		t.Fatalf("gx constraints --json error = %v\n%s", err, out)
+		t.Fatalf("gx gates --json error = %v\n%s", err, out)
 	}
-	var report codereview.ConstraintsReport
+	var report codereview.GatesReport
 	if decodeErr := json.Unmarshal([]byte(out), &report); decodeErr != nil {
 		t.Fatalf("json.Unmarshal() error = %v, output:\n%s", decodeErr, out)
 	}
@@ -123,15 +123,15 @@ func TestConstraintsJSONRoundTrips(t *testing.T) {
 	}
 }
 
-func TestConstraintsMarkdownEmitsTheTable(t *testing.T) {
+func TestGatesMarkdownEmitsTheTable(t *testing.T) {
 	root := newReviewGateRepo(t)
-	commitConstraintsSecret(t, root)
+	commitGatesSecret(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	out, err := runConstraintsCommand(t, "--md", "--report-only")
+	out, err := runGatesCommand(t, "--md", "--report-only")
 	if err != nil {
-		t.Fatalf("gx constraints --md error = %v\n%s", err, out)
+		t.Fatalf("gx gates --md error = %v\n%s", err, out)
 	}
 	for _, want := range []string{"| # | Gate | Status | Evidence |", "❌ FAIL", "**Verdict: NO-SHIP"} {
 		if !strings.Contains(out, want) {
@@ -143,14 +143,14 @@ func TestConstraintsMarkdownEmitsTheTable(t *testing.T) {
 	}
 }
 
-func TestConstraintsRejectsUnknownSkipGate(t *testing.T) {
+func TestGatesRejectsUnknownSkipGate(t *testing.T) {
 	root := newReviewGateRepo(t)
 	commitOnBranch(t, root)
 	t.Chdir(root)
 	setReviewGateEnv(t)
 
-	_, err := runConstraintsCommand(t, "--skip-gates", "correctness,typo")
-	if err == nil || !strings.Contains(err.Error(), "unknown constraints gate") {
+	_, err := runGatesCommand(t, "--skip-gates", "correctness,typo")
+	if err == nil || !strings.Contains(err.Error(), "unknown gates gate") {
 		t.Fatalf("err = %v, want the unknown-gate rejection", err)
 	}
 }

@@ -18,7 +18,7 @@ const (
 	EventCLIPushRun        = "cli.push.run"
 	EventCLIReportSent     = "cli.report.sent"
 	EventCLIReviewRun      = "cli.review.run"
-	EventCLIConstraintsRun = "cli.constraints.run"
+	EventCLIGatesRun       = "cli.gates.run"
 	EventCLIAuthLogin      = "cli.auth.login"
 	EventCLIAuthLogout     = "cli.auth.logout"
 	EventSchemaDrift       = "capture.schema_drift"

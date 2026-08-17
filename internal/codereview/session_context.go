@@ -364,7 +364,7 @@ func sessionQueryText(in RetrieveInput) string {
 	identifiers := changedIdentifiers(in.DiffSnippets, in.ChangedFiles, 24)
 	return strings.Join([]string{
 		"gx code review: recall the agent sessions behind this code.",
-		"Wanted: the instructions an agent was given, the decisions and trade-offs it recorded, constraints it was told to respect, and known-incomplete work in these files.",
+		"Wanted: the instructions an agent was given, the decisions and trade-offs it recorded, gates it was told to respect, and known-incomplete work in these files.",
 		"changed files: " + strings.Join(limitStrings(signals.Files, 30), " "),
 		"changed symbols: " + strings.Join(identifiers, " "),
 		"review prompt: " + strings.TrimSpace(in.Options.Prompt),

@@ -72,10 +72,10 @@ terminal the report opens as a menu; piped or in CI it prints in full. --json
 and --md are the machine and PR-comment shapes.
 
 GX_REVIEW_MODELS=<preset> swaps the whole panel — reviewers, judge, and the
-constraints judge — for a named set: "default" (the shipped Claude panel),
+gates judge — for a named set: "default" (the shipped Claude panel),
 "budget" (Haiku + GLM 5 review, Nemotron 3 Super judges), or "glm" (GLM 5
 end to end). Any single slot's env var (GX_REVIEW_BEDROCK_MODEL_A/_B,
-GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
+GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below runs under a context that forbids writing gx
@@ -194,7 +194,7 @@ GX_REVIEW_JUDGE_MODEL, GX_CONSTRAINTS_MODEL) still wins over the preset.`,
 	cmd.Flags().StringVar(&failOn, "fail-on", string(codereview.FailOnBlocking), fmt.Sprintf("exit %d when findings at or above this level survive: %s; the default %q fails only on findings in the blocking lane, and \"none\" turns the gate off (exit %d when there was nothing to review, exit %d when the review ran degraded)", reviewFindingsExitCode, strings.Join(codereview.FailOnLevels(), ", "), string(codereview.FailOnBlocking), reviewNothingToReviewExitCode, reviewDegradedExitCode))
 	cmd.Flags().BoolVar(&noPublish, "no-publish", false, "skip posting the PR review comment and recording review history")
 	cmd.Flags().BoolVar(&noComment, "no-comment", false, "skip posting the PR review comment but still record review history; use --no-publish to suppress both")
-	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this review, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-constraints")
+	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this review, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-gates")
 	cmd.Flags().IntVar(&maxFindings, "max-findings", 0, "cap how many recommendations the review reports (0 uses the default); applies to both what the model is asked for and what is reported")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass, and findings written without code examples")
 	return cmd

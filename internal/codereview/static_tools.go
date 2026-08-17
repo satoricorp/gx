@@ -421,7 +421,7 @@ func detectFlutterAnalyze(env staticToolEnv) (staticToolCommand, bool) {
 }
 
 // pubspecDeclaresFlutter matches the `flutter:` key anywhere in the manifest —
-// the dependency, the top-level assets section, or an environment constraint.
+// the dependency, the top-level assets section, or an environment gate.
 // Any of them means the package expects the Flutter SDK's analyzer.
 func pubspecDeclaresFlutter(repoRoot string) bool {
 	return repoFileContains(repoRoot, "pubspec.yaml", "flutter:")

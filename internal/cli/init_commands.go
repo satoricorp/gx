@@ -36,11 +36,11 @@ func slashCommands() []slashCommand {
 			legacyNames:  []string{"better-review"},
 		},
 		{
-			name:         "constraints",
-			description:  "gx pre-ship constraints exit gate for the current change",
+			name:         "gates",
+			description:  "gx pre-ship gates exit gate for the current change",
 			argumentHint: "[optional focus or intent hint]",
-			bodyArgs:     slashConstraintsBodyArgs,
-			bodyPlain:    slashConstraintsBodyPlain,
+			bodyArgs:     slashGatesBodyArgs,
+			bodyPlain:    slashGatesBodyPlain,
 		},
 	}
 }
@@ -86,21 +86,21 @@ or wants the result posted to a pull request, drop ` + "`--fast`" + `.
 Report the findings. Do not change any code unless the user asks.
 `
 
-// The /constraints bodies must never contain a "---" line: the Codex file is
+// The /gates bodies must never contain a "---" line: the Codex file is
 // the args body verbatim, and a test pins that it carries no frontmatter.
-const slashConstraintsBodyArgs = slashCommandMarker + `
+const slashGatesBodyArgs = slashCommandMarker + `
 
-Run the gx constraints exit gate on the current change.
+Run the gx gates exit gate on the current change.
 
-Use the ` + "`gx_constraints`" + ` MCP tool if it is available, passing "$ARGUMENTS" as
+Use the ` + "`gx_gates`" + ` MCP tool if it is available, passing "$ARGUMENTS" as
 the ` + "`prompt`" + ` parameter (omit the parameter when it is empty). If the MCP tool
 is unavailable, run the CLI instead:
-` + "`" + `GX_CLIENT=slash-constraints gx constraints --md --report-only "$ARGUMENTS"` + "`" + `
-(plain ` + "`GX_CLIENT=slash-constraints gx constraints --md --report-only`" + ` when
-there is no hint). Keep the ` + "`GX_CLIENT=slash-constraints`" + ` prefix — it labels
-the run as a /constraints invocation.
+` + "`" + `GX_CLIENT=slash-gates gx gates --md --report-only "$ARGUMENTS"` + "`" + `
+(plain ` + "`GX_CLIENT=slash-gates gx gates --md --report-only`" + ` when
+there is no hint). Keep the ` + "`GX_CLIENT=slash-gates`" + ` prefix — it labels
+the run as a /gates invocation.
 
-The gate checks the change against six constraints — correctness, security,
+The gate checks the change against six gates — correctness, security,
 code health, back-pressure, accessibility, performance — reporting PASS, FAIL,
 or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (the
 project's tests and linters, a secrets scan, dependency audits) decide what
@@ -113,19 +113,19 @@ gate passed or was skipped, tell the user the change is clear to ship and ask
 whether to continue.
 `
 
-const slashConstraintsBodyPlain = slashCommandMarker + `
+const slashGatesBodyPlain = slashCommandMarker + `
 
-Run the gx constraints exit gate on the current change.
+Run the gx gates exit gate on the current change.
 
-Use the ` + "`gx_constraints`" + ` MCP tool if it is available. If the user added
+Use the ` + "`gx_gates`" + ` MCP tool if it is available. If the user added
 instructions after the command, pass them as the ` + "`prompt`" + ` parameter. If the
 MCP tool is unavailable, run
-` + "`GX_CLIENT=slash-constraints gx constraints --md --report-only`" + ` instead,
+` + "`GX_CLIENT=slash-gates gx gates --md --report-only`" + ` instead,
 quoting those instructions as the positional hint argument. Keep the
-` + "`GX_CLIENT=slash-constraints`" + ` prefix — it labels the run as a /constraints
+` + "`GX_CLIENT=slash-gates`" + ` prefix — it labels the run as a /gates
 invocation.
 
-The gate checks the change against six constraints — correctness, security,
+The gate checks the change against six gates — correctness, security,
 code health, back-pressure, accessibility, performance — reporting PASS, FAIL,
 or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (the
 project's tests and linters, a secrets scan, dependency audits) decide what

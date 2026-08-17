@@ -15,61 +15,61 @@ import (
 // index, sessions, prior findings, knowledge corpus) are fetched concurrently
 // with the tool run and attached as labeled context.
 
-const defaultConstraintsJudgeMaxOutputTokens = 3000
+const defaultGatesJudgeMaxOutputTokens = 3000
 
-// constraintsMaxContextSnippets bounds the retrieval grounding: enough to
+// gatesMaxContextSnippets bounds the retrieval grounding: enough to
 // carry a repeat-offender warning or a duplicated-helper match, small enough
 // that grounding never doubles the one call's cost.
 const (
-	constraintsMaxContextSnippets     = 12
-	constraintsMaxContextSnippetBytes = 4000
-	constraintsMaxDiffFiles           = 60
+	gatesMaxContextSnippets     = 12
+	gatesMaxContextSnippetBytes = 4000
+	gatesMaxDiffFiles           = 60
 )
 
-// constraintsJudge is the test seam for the judgment pass, mirroring
+// gatesJudge is the test seam for the judgment pass, mirroring
 // FindingJudge.
-type constraintsJudge interface {
-	JudgeConstraints(ctx context.Context, req constraintsJudgeRequest) (constraintsJudgeResponse, error)
+type gatesJudge interface {
+	JudgeGates(ctx context.Context, req gatesJudgeRequest) (gatesJudgeResponse, error)
 }
 
-type constraintsJudgeRequest struct {
-	Intent             string                 `json:"intent,omitempty"`
-	IntentSource       string                 `json:"intent_source,omitempty"`
-	Target             string                 `json:"target,omitempty"`
-	ChangedFiles       []string               `json:"changed_files"`
-	DiffStats          ConstraintsDiffStats   `json:"diff_stats"`
-	GeneratedFiles     []string               `json:"generated_files,omitempty"`
-	WhitespaceDominant bool                   `json:"whitespace_dominant,omitempty"`
-	NewDependencies    []string               `json:"new_dependencies,omitempty"`
-	Gates              []constraintsGateBrief `json:"gates"`
-	ToolResults        []StaticToolResult     `json:"static_tool_results,omitempty"`
-	DiffSnippets       []DiffSnippet          `json:"diff_snippets"`
-	ReviewPolicy       string                 `json:"review_policy,omitempty"`
-	Rules              []RuleDef              `json:"rules,omitempty"`
-	SourceCatalog      []SourceBrief          `json:"source_catalog,omitempty"`
-	Context            []ContextSnippet       `json:"context,omitempty"`
+type gatesJudgeRequest struct {
+	Intent             string             `json:"intent,omitempty"`
+	IntentSource       string             `json:"intent_source,omitempty"`
+	Target             string             `json:"target,omitempty"`
+	ChangedFiles       []string           `json:"changed_files"`
+	DiffStats          GatesDiffStats     `json:"diff_stats"`
+	GeneratedFiles     []string           `json:"generated_files,omitempty"`
+	WhitespaceDominant bool               `json:"whitespace_dominant,omitempty"`
+	NewDependencies    []string           `json:"new_dependencies,omitempty"`
+	Gates              []gateBrief        `json:"gates"`
+	ToolResults        []StaticToolResult `json:"static_tool_results,omitempty"`
+	DiffSnippets       []DiffSnippet      `json:"diff_snippets"`
+	ReviewPolicy       string             `json:"review_policy,omitempty"`
+	Rules              []RuleDef          `json:"rules,omitempty"`
+	SourceCatalog      []SourceBrief      `json:"source_catalog,omitempty"`
+	Context            []ContextSnippet   `json:"context,omitempty"`
 }
 
-// constraintsGateBrief is one gate as the model receives it: the question it
+// gateBrief is one gate as the model receives it: the question it
 // must answer and the deterministic evidence already established.
-type constraintsGateBrief struct {
+type gateBrief struct {
 	Gate     string   `json:"gate"`
 	Question string   `json:"question"`
 	Evidence []string `json:"evidence,omitempty"`
 }
 
-type constraintsJudgeResponse struct {
-	Gates []constraintsGateVerdict `json:"gates"`
+type gatesJudgeResponse struct {
+	Gates []gateVerdict `json:"gates"`
 }
 
-type constraintsGateVerdict struct {
-	Gate          string                 `json:"gate"`
-	Status        string                 `json:"status"`
-	Justification string                 `json:"justification"`
-	Findings      []constraintsAIFinding `json:"findings"`
+type gateVerdict struct {
+	Gate          string           `json:"gate"`
+	Status        string           `json:"status"`
+	Justification string           `json:"justification"`
+	Findings      []gatesAIFinding `json:"findings"`
 }
 
-type constraintsAIFinding struct {
+type gatesAIFinding struct {
 	Title          string `json:"title"`
 	Summary        string `json:"summary"`
 	Recommendation string `json:"recommendation"`
@@ -79,19 +79,19 @@ type constraintsAIFinding struct {
 	RuleID         string `json:"rule_id,omitempty"`
 }
 
-type bedrockConstraintsJudge struct {
+type bedrockGatesJudge struct {
 	client *bedrockAnthropicReviewer
 }
 
-// constraintsJudgeFactory is the engine's seam for the judgment model; tests
+// gatesJudgeFactory is the engine's seam for the judgment model; tests
 // swap it for a stub the same way NewEngineWithReviewer injects a reviewer.
-var constraintsJudgeFactory = constraintsJudgeFromEnv
+var gatesJudgeFactory = gatesJudgeFromEnv
 
-// constraintsJudgeFromEnv builds the judgment model, or explains why there is
+// gatesJudgeFromEnv builds the judgment model, or explains why there is
 // none. The four-way return distinguishes the two nil cases: a deliberate
 // opt-out (GX_REVIEW_AI=0, unavailableReason empty) skips the AI gates without
 // degrading the run, while a configured-but-unreachable judge degrades it.
-func constraintsJudgeFromEnv() (judge constraintsJudge, model, transport, unavailableReason string) {
+func gatesJudgeFromEnv() (judge gatesJudge, model, transport, unavailableReason string) {
 	if !aiReviewRequestedFromEnv() {
 		return nil, "", "", ""
 	}
@@ -100,55 +100,55 @@ func constraintsJudgeFromEnv() (judge constraintsJudge, model, transport, unavai
 		return nil, "", "", err.Error()
 	}
 	model = normalizeBedrockModelID(firstNonEmpty(
-		os.Getenv("GX_CONSTRAINTS_MODEL"),
-		presetOr(func(p modelPreset) string { return p.Constraints }, defaultBedrockReviewModelA),
+		os.Getenv("GX_GATE_MODEL"),
+		presetOr(func(p modelPreset) string { return p.Gates }, defaultBedrockReviewModelA),
 	))
-	return bedrockConstraintsJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
+	return bedrockGatesJudge{client: newBedrockReviewer(plan.newTransport(), model)}, model, bedrockTransportShortName(plan.Kind), ""
 }
 
-func (j bedrockConstraintsJudge) JudgeConstraints(ctx context.Context, req constraintsJudgeRequest) (constraintsJudgeResponse, error) {
+func (j bedrockGatesJudge) JudgeGates(ctx context.Context, req gatesJudgeRequest) (gatesJudgeResponse, error) {
 	if j.client == nil {
-		return constraintsJudgeResponse{}, fmt.Errorf("constraints judge is not configured")
+		return gatesJudgeResponse{}, fmt.Errorf("gates judge is not configured")
 	}
 	input := mustJSON(req)
 	// One retry, for malformed replies only — the same contract the finding
 	// judge runs under (see bedrockReviewJudge.Judge for the measurements).
 	var lastParseErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		completion, err := j.client.completeJSON(ctx, constraintsDeveloperPrompt(), input, defaultConstraintsJudgeMaxOutputTokens)
+		completion, err := j.client.completeJSON(ctx, gatesDeveloperPrompt(), input, defaultGatesJudgeMaxOutputTokens)
 		if err != nil {
-			return constraintsJudgeResponse{}, err
+			return gatesJudgeResponse{}, err
 		}
-		response, parseErr := parseConstraintsJudgeResponse(completion.Text)
+		response, parseErr := parseGatesJudgeResponse(completion.Text)
 		if parseErr == nil {
 			return response, nil
 		}
 		if completion.truncated() {
-			return constraintsJudgeResponse{}, describeTruncatedCompletion("constraints judge", defaultConstraintsJudgeMaxOutputTokens, parseErr)
+			return gatesJudgeResponse{}, describeTruncatedCompletion("gates judge", defaultGatesJudgeMaxOutputTokens, parseErr)
 		}
 		lastParseErr = parseErr
 	}
-	return constraintsJudgeResponse{}, lastParseErr
+	return gatesJudgeResponse{}, lastParseErr
 }
 
-func parseConstraintsJudgeResponse(content string) (constraintsJudgeResponse, error) {
+func parseGatesJudgeResponse(content string) (gatesJudgeResponse, error) {
 	object := extractJSONObject(content, "gates")
 	if object == "" {
-		return constraintsJudgeResponse{}, fmt.Errorf("constraints judge reply carried no gates object")
+		return gatesJudgeResponse{}, fmt.Errorf("gates judge reply carried no gates object")
 	}
-	var response constraintsJudgeResponse
+	var response gatesJudgeResponse
 	if err := json.Unmarshal([]byte(object), &response); err != nil {
-		return constraintsJudgeResponse{}, fmt.Errorf("constraints judge reply did not decode: %w", err)
+		return gatesJudgeResponse{}, fmt.Errorf("gates judge reply did not decode: %w", err)
 	}
 	if len(response.Gates) == 0 {
-		return constraintsJudgeResponse{}, fmt.Errorf("constraints judge reply judged no gates")
+		return gatesJudgeResponse{}, fmt.Errorf("gates judge reply judged no gates")
 	}
 	return response, nil
 }
 
-func constraintsDeveloperPrompt() string {
+func gatesDeveloperPrompt() string {
 	return strings.Join([]string{
-		"You are the gx constraints judge: the pre-ship exit gate's judgment pass. You answer ONLY the gates listed in `gates`, each with pass or fail.",
+		"You are the gx gates judge: the pre-ship exit gate's judgment pass. You answer ONLY the gates listed in `gates`, each with pass or fail.",
 		"The deterministic results are settled facts. static_tool_results, the per-gate evidence lines, diff_stats, generated_files, and new_dependencies were measured by real commands and parsers; never dispute them, never re-litigate a gate that is not in your list.",
 		"Gate questions:",
 		"- code-health: could a careful human review this diff as shipped? Judge naming, mixed concerns, and whether the tests that accompany the sources are plausible for the change. The linters' verdicts and the size thresholds are already decided; you add the judgment layer only.",
@@ -165,9 +165,9 @@ func constraintsDeveloperPrompt() string {
 	}, "\n")
 }
 
-// constraintsGateScopes maps a gate onto the review scopes whose authoritative
+// gateScopes maps a gate onto the review scopes whose authoritative
 // sources ground it.
-func constraintsGateScopes(ids []GateID) []string {
+func gateScopes(ids []GateID) []string {
 	var scopes []string
 	for _, id := range ids {
 		switch id {
@@ -182,7 +182,7 @@ func constraintsGateScopes(ids []GateID) []string {
 	return dedupeScopes(scopes)
 }
 
-func constraintsGateQuestion(id GateID) string {
+func gateQuestion(id GateID) string {
 	switch id {
 	case GateCodeHealth:
 		return "Could a careful human review this diff as shipped — is it coherent, well named, and plausibly tested?"
@@ -197,16 +197,16 @@ func constraintsGateQuestion(id GateID) string {
 	}
 }
 
-// collectConstraintsContext fetches the retrieval grounding: the same
+// collectGatesContext fetches the retrieval grounding: the same
 // composite `gx review` uses, filtered to the indexed kinds, tightly budgeted,
 // and bounded by its own timeout so a hung index cannot stall the gate. Any
 // failure returns nothing — grounding enriches the judgment, it is never a
 // precondition.
-func collectConstraintsContext(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changes ChangeSet, diffs []DiffSnippet) []ContextSnippet {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_CONSTRAINTS_RETRIEVAL")), "0") {
+func collectGatesContext(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changes ChangeSet, diffs []DiffSnippet) []ContextSnippet {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_GATE_RETRIEVAL")), "0") {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, constraintsRetrievalTimeout)
+	ctx, cancel := context.WithTimeout(ctx, gatesRetrievalTimeout)
 	defer cancel()
 	retriever := contextRetrieverFromEnv()
 	snippets, err := retriever.Retrieve(ctx, RetrieveInput{
@@ -226,22 +226,22 @@ func collectConstraintsContext(ctx context.Context, repoRoot string, facts RepoF
 		if !retrievedSnippetKinds[snippet.Kind] {
 			continue
 		}
-		snippet.Text = truncateReviewText(snippet.Text, constraintsMaxContextSnippetBytes)
+		snippet.Text = truncateReviewText(snippet.Text, gatesMaxContextSnippetBytes)
 		retrieved = append(retrieved, snippet)
-		if len(retrieved) >= constraintsMaxContextSnippets {
+		if len(retrieved) >= gatesMaxContextSnippets {
 			break
 		}
 	}
 	return labelContextSnippets(retrieved)
 }
 
-// constraintsAIPassInput carries everything the judgment pass reads and the
+// gatesAIPassInput carries everything the judgment pass reads and the
 // gate map it writes back into.
-type constraintsAIPassInput struct {
-	report    *ConstraintsReport
+type gatesAIPassInput struct {
+	report    *GatesReport
 	gates     map[GateID]GateResult
 	aiGates   []GateID
-	signals   constraintSignals
+	signals   gateSignals
 	diffs     []DiffSnippet
 	tools     []StaticToolResult
 	policy    ReviewPolicy
@@ -250,12 +250,12 @@ type constraintsAIPassInput struct {
 	changes   ChangeSet
 }
 
-// runConstraintsAIPass makes the one model call and folds its verdicts into
+// runGatesAIPass makes the one model call and folds its verdicts into
 // the gate map. It returns the degraded reasons: a failed call, a truncated
 // diff, or a gate the reply omitted.
-func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constraintsAIPassInput) []string {
+func runGatesAIPass(ctx context.Context, judge gatesJudge, in gatesAIPassInput) []string {
 	var degraded []string
-	briefs := make([]constraintsGateBrief, 0, len(in.aiGates))
+	briefs := make([]gateBrief, 0, len(in.aiGates))
 	for _, id := range in.aiGates {
 		gate := in.gates[id]
 		evidence := []string{"current deterministic status: " + string(gate.Status)}
@@ -268,15 +268,15 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 		for _, finding := range gate.Findings {
 			evidence = append(evidence, fmt.Sprintf("deterministic finding: %s (%s:%d)", finding.Title, finding.File, finding.Line))
 		}
-		briefs = append(briefs, constraintsGateBrief{
+		briefs = append(briefs, gateBrief{
 			Gate:     string(id),
-			Question: constraintsGateQuestion(id),
+			Question: gateQuestion(id),
 			Evidence: evidence,
 		})
 	}
-	diffs := compactDiffSnippets(in.diffs, constraintsMaxDiffFiles)
-	if len(in.diffs) > constraintsMaxDiffFiles {
-		degraded = append(degraded, fmt.Sprintf("only %d of %d changed files fit the judgment call; the AI gates saw a partial change", constraintsMaxDiffFiles, len(in.diffs)))
+	diffs := compactDiffSnippets(in.diffs, gatesMaxDiffFiles)
+	if len(in.diffs) > gatesMaxDiffFiles {
+		degraded = append(degraded, fmt.Sprintf("only %d of %d changed files fit the judgment call; the AI gates saw a partial change", gatesMaxDiffFiles, len(in.diffs)))
 	} else {
 		for _, snippet := range diffs {
 			if strings.Contains(snippet.Diff, "[truncated]") {
@@ -287,7 +287,7 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 	}
 	rules := AllRuleDefs(&in.policy)
 	known := KnownRuleIDs(rules...)
-	req := constraintsJudgeRequest{
+	req := gatesJudgeRequest{
 		Intent:             in.report.Intent,
 		IntentSource:       in.report.IntentSource,
 		Target:             in.changes.Target,
@@ -301,24 +301,24 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 		DiffSnippets:       diffs,
 		ReviewPolicy:       in.policy.Text,
 		Rules:              rules,
-		SourceCatalog:      sourceBriefs(sourcesForScopes(constraintsGateScopes(in.aiGates))),
+		SourceCatalog:      sourceBriefs(sourcesForScopes(gateScopes(in.aiGates))),
 		Context:            in.retrieved,
 	}
-	response, err := judge.JudgeConstraints(ctx, req)
+	response, err := judge.JudgeGates(ctx, req)
 	if err != nil {
 		reason := formatReviewerDegradation(err)
-		markConstraintsAIGatesSkipped(in.gates, in.aiGates, "AI judgment failed: "+reason)
-		return append(degraded, "constraints judge failed: "+reason)
+		markGatesAIGatesSkipped(in.gates, in.aiGates, "AI judgment failed: "+reason)
+		return append(degraded, "gates judge failed: "+reason)
 	}
-	verdicts := map[GateID]constraintsGateVerdict{}
+	verdicts := map[GateID]gateVerdict{}
 	for _, verdict := range response.Gates {
 		verdicts[GateID(strings.ToLower(strings.TrimSpace(verdict.Gate)))] = verdict
 	}
 	for _, id := range in.aiGates {
 		verdict, ok := verdicts[id]
 		if !ok {
-			markConstraintsAIGatesSkipped(in.gates, []GateID{id}, "the model's reply omitted this gate")
-			degraded = append(degraded, fmt.Sprintf("the constraints judge did not answer the %s gate", id))
+			markGatesAIGatesSkipped(in.gates, []GateID{id}, "the model's reply omitted this gate")
+			degraded = append(degraded, fmt.Sprintf("the gates judge did not answer the %s gate", id))
 			continue
 		}
 		gate := in.gates[id]
@@ -326,7 +326,7 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 			gate.Status = GateFail
 		}
 		for _, finding := range verdict.Findings {
-			gate.Findings = append(gate.Findings, constraintsFindingFromAI(id, finding, known))
+			gate.Findings = append(gate.Findings, gatesFindingFromAI(id, finding, known))
 		}
 		if justification := strings.TrimSpace(verdict.Justification); justification != "" {
 			switch {
@@ -346,10 +346,10 @@ func runConstraintsAIPass(ctx context.Context, judge constraintsJudge, in constr
 	return degraded
 }
 
-// constraintsFindingFromAI converts one model finding. known is the rule set
+// gatesFindingFromAI converts one model finding. known is the rule set
 // this run accepts (KnownRuleIDs over the pack and REVIEW.md rules); anything
 // the model names outside it is dropped, not minted.
-func constraintsFindingFromAI(id GateID, finding constraintsAIFinding, known map[string]string) Finding {
+func gatesFindingFromAI(id GateID, finding gatesAIFinding, known map[string]string) Finding {
 	strength := strings.TrimSpace(finding.Strength)
 	if strength == "" {
 		strength = "Worth exploring"
@@ -359,12 +359,12 @@ func constraintsFindingFromAI(id GateID, finding constraintsAIFinding, known map
 		// the one class of finding Joe asked to be loud.
 		strength = "Strong"
 	}
-	scopes := constraintsGateScopes([]GateID{id})
+	scopes := gateScopes([]GateID{id})
 	if len(scopes) == 0 {
 		scopes = []string{"maintainability"}
 	}
 	return Finding{
-		ID:             "constraints." + string(id),
+		ID:             "gates." + string(id),
 		Scopes:         scopes,
 		Title:          strings.TrimSpace(finding.Title),
 		Summary:        strings.TrimSpace(finding.Summary),

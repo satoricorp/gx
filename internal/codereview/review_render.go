@@ -22,7 +22,7 @@ import (
 // in the story is wrong; every item there ends in ownership, not action.
 //
 // Color rides on report.Color and termstyle.Enabled(), so --json, --md, and
-// piped output stay plain — the same discipline the constraints render keeps.
+// piped output stay plain — the same discipline the gates render keeps.
 
 const (
 	reviewRenderIndent     = "  "
@@ -85,7 +85,7 @@ func RenderReviewText(report Report) string {
 
 // ReviewVerdictLines is the two-line machine seam: a "Verdict: ..." line and a
 // "Next: ..." line, the last two lines of the render. It mirrors the
-// constraints seam so anything that already relays one relays the other.
+// gates seam so anything that already relays one relays the other.
 func ReviewVerdictLines(report Report) (verdict, next string) {
 	if !report.Reviewed {
 		target := strings.TrimSpace(report.ReviewTarget)

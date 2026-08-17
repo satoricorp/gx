@@ -349,7 +349,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
 	// tool findings split out above. See lanes.go for the rule.
 	findings = AssignLanes(append(blocking, advisory...))
-	// Show the code under discussion. Constraints has done this since it
+	// Show the code under discussion. Gates has done this since it
 	// shipped; the review path never did, so a report of twenty findings
 	// with file:line anchors showed zero lines of code — every finding was a
 	// paragraph about a location the reader had to open themselves. The diff
@@ -359,8 +359,8 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	for _, snippet := range diffs {
 		diffsByFile[snippet.File] = snippet.Diff
 	}
-	attachConstraintsDiffHunks(diffsByFile, findings)
-	attachConstraintsCodeExcerpts(repoRoot, findings)
+	attachGatesDiffHunks(diffsByFile, findings)
+	attachGatesCodeExcerpts(repoRoot, findings)
 	// The story lane: the mandatory items no model decides (a change that
 	// edits its own REVIEW.md exceptions), then the reviewer's own — carried
 	// back through the fan-out from the same reply as the findings — with

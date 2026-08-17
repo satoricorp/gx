@@ -16,7 +16,7 @@ import (
 const (
 	// codeMaxFileBytes is the largest file that is chunked. Generated bundles
 	// and vendored blobs above this are noise, but the limit is deliberately
-	// generous: indexing cost is not a constraint, missing a real source file
+	// generous: indexing cost is not a gate, missing a real source file
 	// is.
 	codeMaxFileBytes = 512 * 1024
 	// codeMaxFiles is a runaway guard, not a budget.

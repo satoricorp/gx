@@ -9,7 +9,7 @@ import (
 // Model presets.
 //
 // A review is four model slots — reviewer A, reviewer B, the judge, and the
-// constraints judge — and every one is an env var. That is the right shape
+// gates judge — and every one is an env var. That is the right shape
 // for a deployment and the wrong shape for an experiment: comparing "the
 // default panel" against "a cheaper panel" means exporting four variables,
 // remembering which four, and unsetting them afterwards.
@@ -28,24 +28,24 @@ import (
 // modelPreset is one named panel.
 type modelPreset struct {
 	// Why is one line for the operator: what this preset trades for what.
-	Why         string
-	ReviewerA   string
-	ReviewerB   string
-	Judge       string
-	Constraints string
+	Why       string
+	ReviewerA string
+	ReviewerB string
+	Judge     string
+	Gates     string
 }
 
 var modelPresets = map[string]modelPreset{
 	// The shipped defaults, spelled out so "default" is a valid preset name and
 	// so the table documents them next to the alternatives.
 	"default": {
-		Why:         "two Claude reviewers across tiers, Claude judge — the panel gx ships with",
-		ReviewerA:   defaultBedrockReviewModelA,
-		ReviewerB:   defaultBedrockReviewModelB,
-		Judge:       defaultBedrockJudgeModel,
-		Constraints: defaultBedrockReviewModelA,
+		Why:       "two Claude reviewers across tiers, Claude judge — the panel gx ships with",
+		ReviewerA: defaultBedrockReviewModelA,
+		ReviewerB: defaultBedrockReviewModelB,
+		Judge:     defaultBedrockJudgeModel,
+		Gates:     defaultBedrockReviewModelA,
 	},
-	// budget keeps Haiku as leg A (fast, cheap, and the model the constraints
+	// budget keeps Haiku as leg A (fast, cheap, and the model the gates
 	// judge already runs on) and swaps the two expensive slots for open-weight
 	// models on Bedrock: GLM 5 as the second reviewer so the panel stays two
 	// vendors with uncorrelated misses, and Nemotron 3 Super as the judge —
@@ -61,11 +61,11 @@ var modelPresets = map[string]modelPreset{
 	// accepted its bare-array reply. Requires GX_REVIEW_BEDROCK_DIRECT=1:
 	// gx Cloud does not yet speak Converse.
 	"budget": {
-		Why:         "Haiku + GLM 5 review, Nemotron 3 Super judges — open-weight models in the expensive slots",
-		ReviewerA:   defaultBedrockReviewModelA,
-		ReviewerB:   "zai.glm-5",
-		Judge:       "nvidia.nemotron-super-3-120b",
-		Constraints: defaultBedrockReviewModelA,
+		Why:       "Haiku + GLM 5 review, Nemotron 3 Super judges — open-weight models in the expensive slots",
+		ReviewerA: defaultBedrockReviewModelA,
+		ReviewerB: "zai.glm-5",
+		Judge:     "nvidia.nemotron-super-3-120b",
+		Gates:     defaultBedrockReviewModelA,
 	},
 	// luna is GPT-5.6 Luna in every slot — one model, end to end. It is an
 	// inference-profile-only model on Bedrock, so the ID carries its us.
@@ -76,21 +76,21 @@ var modelPresets = map[string]modelPreset{
 	// account" — the review reports that as the reviewer being unavailable,
 	// with the message, rather than a silent fallback.
 	"luna": {
-		Why:         "GPT-5.6 Luna in every slot — one model, end to end (needs Bedrock model access for openai.gpt-5.6-luna)",
-		ReviewerA:   "us.openai.gpt-5.6-luna",
-		ReviewerB:   "us.openai.gpt-5.6-luna",
-		Judge:       "us.openai.gpt-5.6-luna",
-		Constraints: "us.openai.gpt-5.6-luna",
+		Why:       "GPT-5.6 Luna in every slot — one model, end to end (needs Bedrock model access for openai.gpt-5.6-luna)",
+		ReviewerA: "us.openai.gpt-5.6-luna",
+		ReviewerB: "us.openai.gpt-5.6-luna",
+		Judge:     "us.openai.gpt-5.6-luna",
+		Gates:     "us.openai.gpt-5.6-luna",
 	},
 	// glm puts GLM 5 in every graded slot — the "how does one open model do
 	// on its own" comparison, with Haiku only where it was already the
 	// default.
 	"glm": {
-		Why:         "GLM 5 in every slot — one open model, end to end",
-		ReviewerA:   "zai.glm-5",
-		ReviewerB:   "zai.glm-4.7",
-		Judge:       "zai.glm-5",
-		Constraints: "zai.glm-5",
+		Why:       "GLM 5 in every slot — one open model, end to end",
+		ReviewerA: "zai.glm-5",
+		ReviewerB: "zai.glm-4.7",
+		Judge:     "zai.glm-5",
+		Gates:     "zai.glm-5",
 	},
 }
 

@@ -104,7 +104,7 @@ type Finding struct {
 	// the diff. CodeExcerpt is the fallback for findings about lines the
 	// change did not touch: the current source, ±2 lines of context, with
 	// CodeExcerptStart as the 1-based file line of its first line. Populated
-	// by the constraints engine; review findings leave all three empty.
+	// by the gates engine; review findings leave all three empty.
 	DiffHunk         string `json:"diff_hunk,omitempty"`
 	CodeExcerpt      string `json:"code_excerpt,omitempty"`
 	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
@@ -730,7 +730,7 @@ func missingAgentsFinding(facts RepoFacts) Finding {
 		Evidence: []Evidence{
 			{Label: "File", Value: "`AGENTS.md` is missing"},
 		},
-		Recommendation: "Add `AGENTS.md` with the expected build/test commands, version-control workflow, and repo-specific constraints.",
+		Recommendation: "Add `AGENTS.md` with the expected build/test commands, version-control workflow, and repo-specific gates.",
 		Strength:       "Worth exploring",
 		SourceIDs:      []string{"google-eng-practices"},
 	}

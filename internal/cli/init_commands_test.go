@@ -35,13 +35,13 @@ func TestInstallSlashCommandsWritesForDetectedAgents(t *testing.T) {
 		}
 	}
 
-	claudeConstraints, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "constraints.md"))
+	claudeGates, err := os.ReadFile(filepath.Join(home, ".claude", "commands", "gates.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"description:", "argument-hint:", "$ARGUMENTS", "gx_constraints", "slash-constraints", slashCommandMarker} {
-		if !strings.Contains(string(claudeConstraints), fragment) {
-			t.Fatalf("claude constraints command missing %q:\n%s", fragment, claudeConstraints)
+	for _, fragment := range []string{"description:", "argument-hint:", "$ARGUMENTS", "gx_gates", "slash-gates", slashCommandMarker} {
+		if !strings.Contains(string(claudeGates), fragment) {
+			t.Fatalf("claude gates command missing %q:\n%s", fragment, claudeGates)
 		}
 	}
 
@@ -56,16 +56,16 @@ func TestInstallSlashCommandsWritesForDetectedAgents(t *testing.T) {
 		t.Fatalf("codex prompt missing $ARGUMENTS:\n%s", codex)
 	}
 
-	codexConstraints, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "constraints.md"))
+	codexGates, err := os.ReadFile(filepath.Join(home, ".codex", "prompts", "gates.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(codexConstraints), "---") {
-		t.Fatalf("codex constraints prompt should not have frontmatter:\n%s", codexConstraints)
+	if strings.Contains(string(codexGates), "---") {
+		t.Fatalf("codex gates prompt should not have frontmatter:\n%s", codexGates)
 	}
-	for _, fragment := range []string{"$ARGUMENTS", "gx_constraints"} {
-		if !strings.Contains(string(codexConstraints), fragment) {
-			t.Fatalf("codex constraints prompt missing %q:\n%s", fragment, codexConstraints)
+	for _, fragment := range []string{"$ARGUMENTS", "gx_gates"} {
+		if !strings.Contains(string(codexGates), fragment) {
+			t.Fatalf("codex gates prompt missing %q:\n%s", fragment, codexGates)
 		}
 	}
 
@@ -88,7 +88,7 @@ func TestInstallSlashCommandsCursorBodyHasNoPlaceholder(t *testing.T) {
 	if strings.Join(installed, ",") != "Cursor" {
 		t.Fatalf("installed = %v, want [Cursor]", installed)
 	}
-	for _, name := range []string{"gx.md", "constraints.md"} {
+	for _, name := range []string{"gx.md", "gates.md"} {
 		cursor, err := os.ReadFile(filepath.Join(home, ".cursor", "commands", name))
 		if err != nil {
 			t.Fatal(err)
@@ -97,12 +97,12 @@ func TestInstallSlashCommandsCursorBodyHasNoPlaceholder(t *testing.T) {
 			t.Fatalf("cursor %s must not use $ARGUMENTS:\n%s", name, cursor)
 		}
 	}
-	cursorConstraints, err := os.ReadFile(filepath.Join(home, ".cursor", "commands", "constraints.md"))
+	cursorGates, err := os.ReadFile(filepath.Join(home, ".cursor", "commands", "gates.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(cursorConstraints), "gx_constraints") {
-		t.Fatalf("cursor constraints command missing gx_constraints:\n%s", cursorConstraints)
+	if !strings.Contains(string(cursorGates), "gx_gates") {
+		t.Fatalf("cursor gates command missing gx_gates:\n%s", cursorGates)
 	}
 }
 
@@ -127,7 +127,7 @@ func TestInstallSlashCommandsPreservesUserOwnedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Join(installed, ",") != "Claude Code" {
-		t.Fatalf("installed = %v, want [Claude Code]: constraints.md still installs", installed)
+		t.Fatalf("installed = %v, want [Claude Code]: gates.md still installs", installed)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -136,23 +136,23 @@ func TestInstallSlashCommandsPreservesUserOwnedFile(t *testing.T) {
 	if string(data) != custom {
 		t.Fatalf("user-owned file was modified:\n%s", data)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "constraints.md")); err != nil {
-		t.Fatalf("constraints.md missing despite user-owned gx.md: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "gates.md")); err != nil {
+		t.Fatalf("gates.md missing despite user-owned gx.md: %v", err)
 	}
 }
 
-// TestInstallSlashCommandsPreservesUserOwnedConstraintsFile is the name
-// collision case: "constraints" is generic enough that a user may already have
+// TestInstallSlashCommandsPreservesUserOwnedGatesFile is the name
+// collision case: "gates" is generic enough that a user may already have
 // their own. The marker logic must leave it byte-identical.
-func TestInstallSlashCommandsPreservesUserOwnedConstraintsFile(t *testing.T) {
+func TestInstallSlashCommandsPreservesUserOwnedGatesFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, ".claude", "commands")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	custom := "my own constraints command, predating gx\n"
-	path := filepath.Join(dir, "constraints.md")
+	custom := "my own gates command, predating gx\n"
+	path := filepath.Join(dir, "gates.md")
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -169,10 +169,10 @@ func TestInstallSlashCommandsPreservesUserOwnedConstraintsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(data) != custom {
-		t.Fatalf("user-owned constraints.md was modified:\n%s", data)
+		t.Fatalf("user-owned gates.md was modified:\n%s", data)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "gx.md")); err != nil {
-		t.Fatalf("gx.md missing despite user-owned constraints.md: %v", err)
+		t.Fatalf("gx.md missing despite user-owned gates.md: %v", err)
 	}
 }
 
@@ -183,7 +183,7 @@ func TestInstallSlashCommandsRefreshesManagedFile(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"gx.md", "constraints.md"} {
+	for _, name := range []string{"gx.md", "gates.md"} {
 		stale := slashCommandMarker + "\n\nold template\n"
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(stale), 0o644); err != nil {
 			t.Fatal(err)
@@ -197,7 +197,7 @@ func TestInstallSlashCommandsRefreshesManagedFile(t *testing.T) {
 	if strings.Join(installed, ",") != "Claude Code" {
 		t.Fatalf("installed = %v, want [Claude Code]", installed)
 	}
-	for name, fragment := range map[string]string{"gx.md": "gx_review", "constraints.md": "gx_constraints"} {
+	for name, fragment := range map[string]string{"gx.md": "gx_review", "gates.md": "gx_gates"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -270,12 +270,12 @@ func TestRemoveLegacySlashCommandsNeverDeletesALiveCommandName(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	live := filepath.Join(dir, "constraints.md")
+	live := filepath.Join(dir, "gates.md")
 	if err := os.WriteFile(live, []byte(slashCommandMarker+"\n\nlive command\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	agent := slashCommandAgents()[0]
-	removeLegacySlashCommands(home, agent, slashCommand{name: "gx", legacyNames: []string{"constraints"}})
+	removeLegacySlashCommands(home, agent, slashCommand{name: "gx", legacyNames: []string{"gates"}})
 	if _, err := os.Stat(live); err != nil {
 		t.Fatalf("a live command name was deleted via legacyNames: %v", err)
 	}

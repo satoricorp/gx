@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// `gx constraints` is the pre-ship exit gate. Unlike review, where --fail-on
-// opts a gate in, the coded exits are the default here — constraints IS the
+// `gx gates` is the pre-ship exit gate. Unlike review, where --fail-on
+// opts a gate in, the coded exits are the default here — gates IS the
 // gate — and --report-only opts out for hosts that read the report instead of
 // the exit code (the MCP tool does exactly that). The exit values are review's,
 // so CI authors learn one vocabulary:
@@ -24,7 +24,7 @@ import (
 //	3  no-ship: at least one gate failed        (reviewFindingsExitCode)
 //	4  nothing to check                          (reviewNothingToReviewExitCode)
 //	5  degraded: the AI gates could not run      (reviewDegradedExitCode)
-func newConstraintsCommand(ctx context.Context) *cobra.Command {
+func newGatesCommand(ctx context.Context) *cobra.Command {
 	var base string
 	var jsonOut bool
 	var markdownOut bool
@@ -34,10 +34,10 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 	var reportOnly bool
 	var clientOverride string
 	cmd := &cobra.Command{
-		Use:     "constraints [intent]",
-		Aliases: []string{"gxc"},
-		Short:   "Pre-ship exit gate: check the current change against six constraints",
-		Long: "Check the current change against six constraint gates — correctness, security,\n" +
+		Use:     "gates [intent]",
+		Aliases: []string{"gxg"},
+		Short:   "Pre-ship exit gate: check the current change against six gates",
+		Long: "Check the current change against six gate gates — correctness, security,\n" +
 			"code health, back-pressure, accessibility, performance — reporting PASS, FAIL,\n" +
 			"or SKIPPED for each plus a ship / no-ship verdict. Deterministic checks (tests,\n" +
 			"linters, secret scan, dependency audits) decide what they can; one AI judgment\n" +
@@ -59,14 +59,14 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 			}
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				emitConstraintsRunTelemetry(ctx, codereview.ConstraintsReport{}, err, client, intent, time.Since(startedAt))
+				emitGatesRunTelemetry(ctx, codereview.GatesReport{}, err, client, intent, time.Since(startedAt))
 				return err
 			}
 			var progress io.Writer
 			if !jsonOut {
 				progress = cmd.ErrOrStderr()
 			}
-			report, err := codereview.CheckConstraints(ctx, repo.RootPath, codereview.ConstraintsOptions{
+			report, err := codereview.CheckGates(ctx, repo.RootPath, codereview.GatesOptions{
 				Intent:         intent,
 				Base:           base,
 				SkipGates:      skip,
@@ -75,7 +75,7 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 				ProgressWriter: progress,
 				Color:          !jsonOut && !markdownOut,
 			})
-			emitConstraintsRunTelemetry(ctx, report, err, client, intent, time.Since(startedAt))
+			emitGatesRunTelemetry(ctx, report, err, client, intent, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -87,28 +87,28 @@ func newConstraintsCommand(ctx context.Context) *cobra.Command {
 					return err
 				}
 			case markdownOut:
-				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderConstraintsMarkdown(report))
+				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderGatesMarkdown(report))
 			default:
-				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderConstraintsText(report))
+				fmt.Fprint(cmd.OutOrStdout(), codereview.RenderGatesText(report))
 			}
 			if reportOnly {
 				return nil
 			}
-			return constraintsGateError(report)
+			return gateError(report)
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "check the commit range <ref>...HEAD instead of the working tree, e.g. --base origin/main")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the constraints report as JSON instead of text")
-	cmd.Flags().BoolVar(&markdownOut, "md", false, "print the constraints report as markdown (what the MCP tool returns to agents)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the gates report as JSON instead of text")
+	cmd.Flags().BoolVar(&markdownOut, "md", false, "print the gates report as markdown (what the MCP tool returns to agents)")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "list the source files behind each gate")
-	cmd.Flags().StringVar(&skipGates, "skip-gates", "", "comma-separated gates to skip: "+strings.Join(constraintsGateNames(), ", "))
+	cmd.Flags().StringVar(&skipGates, "skip-gates", "", "comma-separated gates to skip: "+strings.Join(gateNames(), ", "))
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "whole-run budget (default 5m; per-tool caps still apply)")
 	cmd.Flags().BoolVar(&reportOnly, "report-only", false, fmt.Sprintf("always exit 0; the verdict lives in the report only (without this, no-ship exits %d, nothing-to-check %d, degraded %d)", reviewFindingsExitCode, reviewNothingToReviewExitCode, reviewDegradedExitCode))
-	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-constraints")
+	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT: cli, mcp, skill, slash-gx, slash-gates")
 	return cmd
 }
 
-func constraintsGateNames() []string {
+func gateNames() []string {
 	ids := codereview.AllGateIDs()
 	names := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -117,8 +117,8 @@ func constraintsGateNames() []string {
 	return names
 }
 
-// constraintsGateError maps the verdict onto the exit-code contract.
-func constraintsGateError(report codereview.ConstraintsReport) error {
+// gateError maps the verdict onto the exit-code contract.
+func gateError(report codereview.GatesReport) error {
 	switch report.Verdict {
 	case codereview.VerdictNoShip:
 		failed := report.FailedGates()
@@ -126,21 +126,21 @@ func constraintsGateError(report codereview.ConstraintsReport) error {
 		for _, id := range failed {
 			names = append(names, string(id))
 		}
-		return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx constraints: %d gate(s) failed (%s)", len(failed), strings.Join(names, ", ")))
+		return vcs.CodedErrorf(reviewFindingsExitCode, fmt.Errorf("gx gates: %d gate(s) failed (%s)", len(failed), strings.Join(names, ", ")))
 	case codereview.VerdictNothingToCheck:
 		target := strings.TrimSpace(report.ReviewTarget)
 		if target == "" {
 			target = "the working tree"
 		}
-		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx constraints: nothing to check (looked at %s); refusing to pass a gate without inspecting any code", target))
+		return vcs.CodedErrorf(reviewNothingToReviewExitCode, fmt.Errorf("gx gates: nothing to check (looked at %s); refusing to pass a gate without inspecting any code", target))
 	case codereview.VerdictDegraded:
-		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx constraints: %s; refusing to pass a gate on an incomplete run", strings.Join(report.DegradedReasons, "; ")))
+		return vcs.CodedErrorf(reviewDegradedExitCode, fmt.Errorf("gx gates: %s; refusing to pass a gate on an incomplete run", strings.Join(report.DegradedReasons, "; ")))
 	default:
 		return nil
 	}
 }
 
-func emitConstraintsRunTelemetry(ctx context.Context, report codereview.ConstraintsReport, runErr error, client, intent string, duration time.Duration) {
+func emitGatesRunTelemetry(ctx context.Context, report codereview.GatesReport, runErr error, client, intent string, duration time.Duration) {
 	status := "success"
 	if runErr != nil {
 		status = "error"
@@ -166,5 +166,5 @@ func emitConstraintsRunTelemetry(ctx context.Context, report codereview.Constrai
 	if strings.TrimSpace(report.AITransport) != "" {
 		props["ai_transport"] = report.AITransport
 	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIConstraintsRun, props)
+	telemetry.EmitProductEvent(ctx, telemetry.EventCLIGatesRun, props)
 }

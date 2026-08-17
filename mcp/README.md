@@ -7,7 +7,7 @@ TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` C
 1. `git add`, then `git commit` to record work. gx's `prepare-commit-msg` hook stamps each commit with its gx revision trailer and `post-commit` records it — no gx-specific commit verb is required.
 2. Publish with plain `git push` when the stack is ready — the gx pre-push hook captures the agent session, links edits to the changed hunks, and publishes the metadata that becomes the PR summary. Open the PR with `gh pr create`.
 3. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
-4. `gx_constraints` before shipping: the pre-ship exit gate that checks the change against six constraints and returns a ship/no-ship verdict.
+4. `gx_gates` before shipping: the pre-ship exit gate that checks the change against six gates and returns a ship/no-ship verdict.
 
 When a user says "save work", "save using gx", or "save with gx", treat that as
 a request to stage with `git add`, commit with `git commit`, and publish ready
@@ -37,7 +37,7 @@ then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` 
 bypass or suppress the hook.
 
 Use `gx_review` (MCP) or `gx review` (CLI) for review context on the current change.
-Before shipping, run `gx_constraints` (MCP) or `gx constraints` (CLI) to check the change against the pre-ship constraint gates.
+Before shipping, run `gx_gates` (MCP) or `gx gates` (CLI) to check the change against the pre-ship gate gates.
 
 gx PR summaries are posted for PRs whose branch was pushed through gx with `git push`
 while the pre-push hook is installed. A PR opened before that push will not get a summary
@@ -49,7 +49,7 @@ until the branch is pushed through gx.
 | Tool | CLI | Purpose |
 |------|-----|---------|
 | `gx_review` | `gx review --no-comment --client mcp [prompt]` | Gather local review/context with AI reviewers enabled |
-| `gx_constraints` | `gx constraints --report-only --md --client mcp [hint]` | Pre-ship exit gate: six constraint checks with a ship/no-ship verdict |
+| `gx_gates` | `gx gates --report-only --md --client mcp [hint]` | Pre-ship exit gate: six gate checks with a ship/no-ship verdict |
 
 `gx_review` always passes `--no-comment` and `--client mcp`. `gx review` on its
 own posts a review comment on the matching GitHub pull request, which an agent
@@ -59,7 +59,7 @@ gx Cloud review history, labeled as an MCP invocation, so per-surface review
 counts include MCP runs; `--no-publish` remains the flag that suppresses the
 history record too.
 
-`gx_constraints` always passes `--report-only` and `--md`. The CLI's coded
+`gx_gates` always passes `--report-only` and `--md`. The CLI's coded
 exits (no-ship exits 3) are for humans and CI; over MCP a no-ship verdict is
 the tool doing its job, not a tool failure, so the verdict travels in the
 markdown report's final `Verdict:` / `Next:` lines instead of the exit code.
@@ -109,7 +109,7 @@ gx auth login
 
 The installer provides the `gx` CLI and `gx-mcp` binary. Repo Git
 hooks are installed when a repo is initialized with `gx init`; the `gx_review`
-and `gx_constraints` MCP tools are read-only — they never initialize a repo,
+and `gx_gates` MCP tools are read-only — they never initialize a repo,
 never write `~/.gx`, never touch `.git/index`, and never publish. The `pre-push` hook runs `gx capture push` for
 the pushed ref range, stages captured Claude/Codex/Cursor session context in
 `~/.gx/gx.db`, and uploads only when gx upload credentials are configured.

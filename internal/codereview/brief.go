@@ -424,7 +424,7 @@ func fileDiff(ctx context.Context, repoRoot, file string) string {
 
 // diffUnavailableContentHeader marks a snippet that carries file content
 // rather than a diff (an untracked file has no diff to render). Consumers that
-// parse hunks — the constraints signals, for one — key on it to treat every
+// parse hunks — the gates signals, for one — key on it to treat every
 // line as added.
 const diffUnavailableContentHeader = "No git diff was available for this changed file. Current file content:"
 

@@ -10,14 +10,14 @@ import (
 	"strings"
 )
 
-// constraintSignals are the deterministic facts every gate reads: diff volume,
+// gateSignals are the deterministic facts every gate reads: diff volume,
 // what looks generated, what dependencies arrived, which files are UI, and
 // which paths make the performance gate apply. They are computed once from the
 // change set and the diff snippets, before any command or model runs.
-type constraintSignals struct {
-	DiffStats          ConstraintsDiffStats
+type gateSignals struct {
+	DiffStats          GatesDiffStats
 	ChangedLinesByFile map[string]int
-	AddedLinesByFile   map[string][]constraintsAddedLine
+	AddedLinesByFile   map[string][]gatesAddedLine
 	GeneratedFiles     []string
 	WhitespaceDominant bool
 	NewDependencies    []string
@@ -35,39 +35,39 @@ type constraintSignals struct {
 	NonGenLines  int // changed lines outside generated files
 }
 
-// constraintsAddedLine is one "+" line of a diff with its post-change line
+// gatesAddedLine is one "+" line of a diff with its post-change line
 // number, so a finding about it can anchor to file:line.
-type constraintsAddedLine struct {
+type gatesAddedLine struct {
 	Number int
 	Text   string
 }
 
-var constraintsUIExtensions = []string{".tsx", ".jsx", ".html", ".vue", ".svelte"}
+var gatesUIExtensions = []string{".tsx", ".jsx", ".html", ".vue", ".svelte"}
 
-// constraintsPerfPathPattern marks paths whose changes make the performance
+// gatesPerfPathPattern marks paths whose changes make the performance
 // gate apply. Deliberately broad: a false "applies" costs one extra judgment in
 // the shared model call, a false "skipped" costs the one gate Joe weighted up.
-var constraintsPerfPathPattern = regexp.MustCompile(`(?i)(^|[/_.-])(perf|bench|hot|render|query|sql|cache|worker|handler|stream|middleware)([/_.-]|$|\.)`)
+var gatesPerfPathPattern = regexp.MustCompile(`(?i)(^|[/_.-])(perf|bench|hot|render|query|sql|cache|worker|handler|stream|middleware)([/_.-]|$|\.)`)
 
-var constraintsPerfMessagePattern = regexp.MustCompile(`(?i)(perf|latenc|hot[- ]?path|throughput|load|slow)`)
+var gatesPerfMessagePattern = regexp.MustCompile(`(?i)(perf|latenc|hot[- ]?path|throughput|load|slow)`)
 
-// constraintsLineCounts is one file's exact added/removed counts from git
+// gatesLineCounts is one file's exact added/removed counts from git
 // numstat, untruncated. The diff snippets are capped at 32KB per file for the
 // model's sake, so counting lines from them alone undercounts exactly the
 // oversized files the size warning exists for.
-type constraintsLineCounts struct {
+type gatesLineCounts struct {
 	Added   int
 	Removed int
 }
 
-func collectConstraintSignals(changed []string, diffs []DiffSnippet, policy ReviewPolicy, numstat map[string]constraintsLineCounts) constraintSignals {
-	signals := constraintSignals{
+func collectGateSignals(changed []string, diffs []DiffSnippet, policy ReviewPolicy, numstat map[string]gatesLineCounts) gateSignals {
+	signals := gateSignals{
 		ChangedLinesByFile: map[string]int{},
-		AddedLinesByFile:   map[string][]constraintsAddedLine{},
+		AddedLinesByFile:   map[string][]gatesAddedLine{},
 	}
 	signals.DiffStats.Files = len(changed)
 	for _, snippet := range diffs {
-		added := constraintsAddedLinesForDiff(snippet.Diff)
+		added := gatesAddedLinesForDiff(snippet.Diff)
 		signals.AddedLinesByFile[snippet.File] = added
 		addedCount, removedCount := countDiffLines(snippet.Diff)
 		if strings.HasPrefix(snippet.Diff, diffUnavailableContentHeader) {
@@ -90,10 +90,10 @@ func collectConstraintSignals(changed []string, diffs []DiffSnippet, policy Revi
 		}
 		if isTestFile(file) {
 			signals.TestFilesChanged = append(signals.TestFilesChanged, file)
-		} else if isConstraintsSourceFile(file) {
+		} else if isGatesSourceFile(file) {
 			signals.SourceFilesChanged = append(signals.SourceFilesChanged, file)
 		}
-		if hasFileExtension(file, constraintsUIExtensions) {
+		if hasFileExtension(file, gatesUIExtensions) {
 			signals.UIFiles = append(signals.UIFiles, file)
 		}
 		if isDependencyFile(file) && !IsLockfilePath(file) {
@@ -102,22 +102,22 @@ func collectConstraintSignals(changed []string, diffs []DiffSnippet, policy Revi
 	}
 	signals.DiffStats.GeneratedFiles = len(signals.GeneratedFiles)
 	signals.WhitespaceDominant = whitespaceDominantDiff(diffs)
-	signals.NewDependencies = constraintsNewDependencies(signals.ManifestsChanged, signals.AddedLinesByFile)
-	signals.A11yFindings, signals.A11yHardFail = constraintsA11yLineFindings(signals.UIFiles, signals.AddedLinesByFile)
-	signals.PerfApplies, signals.PerfTriggers, signals.PerfFiles = constraintsPerfApplicability(changed, signals.ManifestsChanged, policy)
+	signals.NewDependencies = gatesNewDependencies(signals.ManifestsChanged, signals.AddedLinesByFile)
+	signals.A11yFindings, signals.A11yHardFail = gatesA11yLineFindings(signals.UIFiles, signals.AddedLinesByFile)
+	signals.PerfApplies, signals.PerfTriggers, signals.PerfFiles = gatesPerfApplicability(changed, signals.ManifestsChanged, policy)
 	return signals
 }
 
-// constraintsNumstat reads exact per-file line counts from git. Empty refRange
+// gatesNumstat reads exact per-file line counts from git. Empty refRange
 // means the working tree (unstaged plus staged, summed); untracked files do
 // not appear and fall back to the snippet-derived counts. Any git failure
 // returns nil — the snippet counts are the graceful floor.
-func constraintsNumstat(ctx context.Context, repoRoot, refRange string) map[string]constraintsLineCounts {
+func gatesNumstat(ctx context.Context, repoRoot, refRange string) map[string]gatesLineCounts {
 	argSets := [][]string{{"diff", "--numstat", "--no-ext-diff"}, {"diff", "--cached", "--numstat", "--no-ext-diff"}}
 	if refRange = strings.TrimSpace(refRange); refRange != "" {
 		argSets = [][]string{{"diff", "--numstat", "--no-ext-diff", refRange}}
 	}
-	out := map[string]constraintsLineCounts{}
+	out := map[string]gatesLineCounts{}
 	for _, args := range argSets {
 		cmd := gitCommand(ctx, repoRoot, args...)
 		output, err := cmd.Output()
@@ -147,10 +147,10 @@ func constraintsNumstat(ctx context.Context, repoRoot, refRange string) map[stri
 	return out
 }
 
-// isConstraintsSourceFile reports whether a changed file is code rather than
+// isGatesSourceFile reports whether a changed file is code rather than
 // docs, config, or assets — the denominator for the "tests accompany sources"
 // signal.
-func isConstraintsSourceFile(rel string) bool {
+func isGatesSourceFile(rel string) bool {
 	switch strings.ToLower(filepath.Ext(rel)) {
 	case ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rs", ".cs",
 		".dart", ".java", ".rb", ".php", ".c", ".h", ".cc", ".cpp", ".hpp", ".swift",
@@ -161,34 +161,34 @@ func isConstraintsSourceFile(rel string) bool {
 	}
 }
 
-// constraintsAddedLinesForDiff returns the added lines of one snippet. A
+// gatesAddedLinesForDiff returns the added lines of one snippet. A
 // content-fallback snippet (an untracked file — the commonest agent output)
 // has no hunks: every line of it is new, and skipping it would exempt exactly
 // the files most worth scanning.
-func constraintsAddedLinesForDiff(diff string) []constraintsAddedLine {
+func gatesAddedLinesForDiff(diff string) []gatesAddedLine {
 	if strings.HasPrefix(diff, diffUnavailableContentHeader) {
 		content := strings.TrimPrefix(strings.TrimPrefix(diff, diffUnavailableContentHeader), "\n")
 		if strings.TrimSpace(content) == "" {
 			return nil
 		}
 		lines := strings.Split(content, "\n")
-		out := make([]constraintsAddedLine, 0, len(lines))
+		out := make([]gatesAddedLine, 0, len(lines))
 		for i, line := range lines {
-			out = append(out, constraintsAddedLine{Number: i + 1, Text: line})
+			out = append(out, gatesAddedLine{Number: i + 1, Text: line})
 		}
 		return out
 	}
-	return parseConstraintsAddedLines(diff)
+	return parseGatesAddedLines(diff)
 }
 
-// constraintsHunkContext is how many hunk lines surround the discussed line
+// gatesHunkContext is how many hunk lines surround the discussed line
 // when a finding shows its diff window.
-const constraintsHunkContext = 2
+const gatesHunkContext = 2
 
-// constraintsDiffHunkForLine returns the unified-diff window around a
+// gatesDiffHunkForLine returns the unified-diff window around a
 // post-change line, hunk header included, or "" when the line is not part of
 // this diff — a finding about untouched code has no hunk to show.
-func constraintsDiffHunkForLine(diff string, target int) string {
+func gatesDiffHunkForLine(diff string, target int) string {
 	if target <= 0 || strings.HasPrefix(diff, diffUnavailableContentHeader) {
 		return ""
 	}
@@ -233,11 +233,11 @@ func constraintsDiffHunkForLine(diff string, target int) string {
 		if targetIndex < 0 {
 			continue
 		}
-		start := targetIndex - constraintsHunkContext
+		start := targetIndex - gatesHunkContext
 		if start < 0 {
 			start = 0
 		}
-		end := targetIndex + constraintsHunkContext + 1
+		end := targetIndex + gatesHunkContext + 1
 		if end > len(hunk.lines) {
 			end = len(hunk.lines)
 		}
@@ -254,10 +254,10 @@ func constraintsDiffHunkForLine(diff string, target int) string {
 	return ""
 }
 
-// parseConstraintsAddedLines walks a unified diff and returns the added lines
+// parseGatesAddedLines walks a unified diff and returns the added lines
 // with their post-change line numbers.
-func parseConstraintsAddedLines(diff string) []constraintsAddedLine {
-	var out []constraintsAddedLine
+func parseGatesAddedLines(diff string) []gatesAddedLine {
+	var out []gatesAddedLine
 	line := 0
 	inHunk := false
 	for _, raw := range strings.Split(diff, "\n") {
@@ -272,7 +272,7 @@ func parseConstraintsAddedLines(diff string) []constraintsAddedLine {
 		case strings.HasPrefix(raw, "+++"), strings.HasPrefix(raw, "---"):
 			continue
 		case strings.HasPrefix(raw, "+"):
-			out = append(out, constraintsAddedLine{Number: line, Text: strings.TrimPrefix(raw, "+")})
+			out = append(out, gatesAddedLine{Number: line, Text: strings.TrimPrefix(raw, "+")})
 			line++
 		case strings.HasPrefix(raw, "-"):
 			// Removed lines do not advance the post-change counter.
@@ -322,14 +322,14 @@ func countDiffLines(diff string) (added, removed int) {
 // judgment ("a new dependency for a one-line change is bad work"), never a
 // verdict on their own, so rough matching is acceptable.
 var (
-	constraintsGoModDepPattern   = regexp.MustCompile(`^\s*([A-Za-z0-9._~\-/]+)\s+v\d`)
-	constraintsNodeDepPattern    = regexp.MustCompile(`"((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)"\s*:\s*"[~^]?\d`)
-	constraintsCargoDepPattern   = regexp.MustCompile(`^([A-Za-z0-9_-]+)\s*=\s*(?:"|\{)`)
-	constraintsPipDepPattern     = regexp.MustCompile(`^([A-Za-z0-9._-]+)\s*(?:[=<>!~;\[]|$)`)
-	constraintsPubspecDepPattern = regexp.MustCompile(`^\s{2}([a-z0-9_]+):`)
+	gatesGoModDepPattern   = regexp.MustCompile(`^\s*([A-Za-z0-9._~\-/]+)\s+v\d`)
+	gatesNodeDepPattern    = regexp.MustCompile(`"((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)"\s*:\s*"[~^]?\d`)
+	gatesCargoDepPattern   = regexp.MustCompile(`^([A-Za-z0-9_-]+)\s*=\s*(?:"|\{)`)
+	gatesPipDepPattern     = regexp.MustCompile(`^([A-Za-z0-9._-]+)\s*(?:[=<>!~;\[]|$)`)
+	gatesPubspecDepPattern = regexp.MustCompile(`^\s{2}([a-z0-9_]+):`)
 )
 
-func constraintsNewDependencies(manifests []string, addedByFile map[string][]constraintsAddedLine) []string {
+func gatesNewDependencies(manifests []string, addedByFile map[string][]gatesAddedLine) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	record := func(manifest, name string) {
@@ -353,28 +353,28 @@ func constraintsNewDependencies(manifests []string, addedByFile map[string][]con
 			}
 			switch {
 			case base == "go.mod":
-				if match := constraintsGoModDepPattern.FindStringSubmatch(text); match != nil && strings.Contains(match[1], "/") {
+				if match := gatesGoModDepPattern.FindStringSubmatch(text); match != nil && strings.Contains(match[1], "/") {
 					record(manifest, match[1])
 				}
 			case base == "package.json":
-				if match := constraintsNodeDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" {
+				if match := gatesNodeDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" {
 					record(manifest, match[1])
 				}
 			case base == "Cargo.toml":
-				if match := constraintsCargoDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" && match[1] != "edition" {
+				if match := gatesCargoDepPattern.FindStringSubmatch(text); match != nil && match[1] != "version" && match[1] != "name" && match[1] != "edition" {
 					record(manifest, match[1])
 				}
 			case base == "requirements.txt":
-				if match := constraintsPipDepPattern.FindStringSubmatch(text); match != nil {
+				if match := gatesPipDepPattern.FindStringSubmatch(text); match != nil {
 					record(manifest, match[1])
 				}
 			case base == "pubspec.yaml":
-				if match := constraintsPubspecDepPattern.FindStringSubmatch(added.Text); match != nil && match[1] != "sdk" && match[1] != "flutter" {
+				if match := gatesPubspecDepPattern.FindStringSubmatch(added.Text); match != nil && match[1] != "sdk" && match[1] != "flutter" {
 					record(manifest, match[1])
 				}
 			case base == "pyproject.toml":
 				if strings.Contains(text, "==") || strings.Contains(text, ">=") {
-					if match := constraintsPipDepPattern.FindStringSubmatch(strings.Trim(text, `"',`)); match != nil {
+					if match := gatesPipDepPattern.FindStringSubmatch(strings.Trim(text, `"',`)); match != nil {
 						record(manifest, match[1])
 					}
 				}
@@ -390,22 +390,22 @@ func constraintsNewDependencies(manifests []string, addedByFile map[string][]con
 // have its keyboard handler three lines down, so that one stays a finding for
 // the model to confirm rather than a verdict.
 var (
-	constraintsPositiveTabindexPattern = regexp.MustCompile(`(?i)tabindex\s*[=:]\s*["'{]?\s*([1-9]\d*)`)
-	constraintsImgTagPattern           = regexp.MustCompile(`(?i)<img\b[^>]*>`)
-	constraintsAltAttrPattern          = regexp.MustCompile(`(?i)\balt\s*=`)
-	constraintsClickableDivPattern     = regexp.MustCompile(`(?i)<(div|span)\b[^>]*onclick`)
-	constraintsKeyboardHintPattern     = regexp.MustCompile(`(?i)(onkey|role\s*=|tabindex)`)
+	gatesPositiveTabindexPattern = regexp.MustCompile(`(?i)tabindex\s*[=:]\s*["'{]?\s*([1-9]\d*)`)
+	gatesImgTagPattern           = regexp.MustCompile(`(?i)<img\b[^>]*>`)
+	gatesAltAttrPattern          = regexp.MustCompile(`(?i)\balt\s*=`)
+	gatesClickableDivPattern     = regexp.MustCompile(`(?i)<(div|span)\b[^>]*onclick`)
+	gatesKeyboardHintPattern     = regexp.MustCompile(`(?i)(onkey|role\s*=|tabindex)`)
 )
 
-func constraintsA11yLineFindings(uiFiles []string, addedByFile map[string][]constraintsAddedLine) ([]Finding, bool) {
+func gatesA11yLineFindings(uiFiles []string, addedByFile map[string][]gatesAddedLine) ([]Finding, bool) {
 	var findings []Finding
 	hardFail := false
 	for _, file := range uiFiles {
 		for _, added := range addedByFile[file] {
 			text := added.Text
-			for _, tag := range constraintsImgTagPattern.FindAllString(text, -1) {
-				if !constraintsAltAttrPattern.MatchString(tag) {
-					findings = append(findings, constraintsA11yFinding(file, added.Number,
+			for _, tag := range gatesImgTagPattern.FindAllString(text, -1) {
+				if !gatesAltAttrPattern.MatchString(tag) {
+					findings = append(findings, gatesA11yFinding(file, added.Number,
 						"Image without alt text",
 						"An added <img> tag carries no alt attribute, so screen readers announce nothing for it.",
 						"Add alt text describing the image, or alt=\"\" when it is decorative.",
@@ -413,16 +413,16 @@ func constraintsA11yLineFindings(uiFiles []string, addedByFile map[string][]cons
 					hardFail = true
 				}
 			}
-			if match := constraintsPositiveTabindexPattern.FindStringSubmatch(text); match != nil {
-				findings = append(findings, constraintsA11yFinding(file, added.Number,
+			if match := gatesPositiveTabindexPattern.FindStringSubmatch(text); match != nil {
+				findings = append(findings, gatesA11yFinding(file, added.Number,
 					"Positive tabindex overrides focus order",
 					fmt.Sprintf("An added element sets tabindex=%s, which hijacks the document's natural tab order for every keyboard user.", match[1]),
 					"Use tabindex=\"0\" to join the natural order (or restructure the DOM so the order is right without it).",
 					"Strong"))
 				hardFail = true
 			}
-			if constraintsClickableDivPattern.MatchString(text) && !constraintsKeyboardHintPattern.MatchString(text) {
-				findings = append(findings, constraintsA11yFinding(file, added.Number,
+			if gatesClickableDivPattern.MatchString(text) && !gatesKeyboardHintPattern.MatchString(text) {
+				findings = append(findings, gatesA11yFinding(file, added.Number,
 					"Click handler on a non-interactive element",
 					"An added div/span handles onClick with no role, tabindex, or keyboard handler on the same line, which usually means keyboard users cannot reach it.",
 					"Use a <button>, or add role, tabIndex={0}, and a keyboard handler.",
@@ -433,9 +433,9 @@ func constraintsA11yLineFindings(uiFiles []string, addedByFile map[string][]cons
 	return findings, hardFail
 }
 
-func constraintsA11yFinding(file string, line int, title, summary, recommendation, strength string) Finding {
+func gatesA11yFinding(file string, line int, title, summary, recommendation, strength string) Finding {
 	return Finding{
-		ID:             "constraints.accessibility",
+		ID:             "gates.accessibility",
 		Scopes:         []string{"maintainability"},
 		Title:          title,
 		Summary:        summary,
@@ -447,14 +447,14 @@ func constraintsA11yFinding(file string, line int, title, summary, recommendatio
 	}
 }
 
-// constraintsPerfApplicability decides whether the performance gate applies:
+// gatesPerfApplicability decides whether the performance gate applies:
 // a REVIEW.md risk-path with a performance-flavored message, a path that names
 // a hot-path concern, or any dependency-manifest change.
-func constraintsPerfApplicability(changed []string, manifests []string, policy ReviewPolicy) (bool, []string, []string) {
+func gatesPerfApplicability(changed []string, manifests []string, policy ReviewPolicy) (bool, []string, []string) {
 	var triggers []string
 	fileSet := map[string]struct{}{}
 	for _, risk := range policy.RiskPaths {
-		if !constraintsPerfMessagePattern.MatchString(risk.Message) {
+		if !gatesPerfMessagePattern.MatchString(risk.Message) {
 			continue
 		}
 		for _, file := range changed {
@@ -470,7 +470,7 @@ func constraintsPerfApplicability(changed []string, manifests []string, policy R
 		if isGeneratedReviewFile(file) {
 			continue
 		}
-		if constraintsPerfPathPattern.MatchString(file) {
+		if gatesPerfPathPattern.MatchString(file) {
 			keywordFiles = append(keywordFiles, file)
 			fileSet[file] = struct{}{}
 		}
@@ -506,12 +506,12 @@ func baseNames(files []string) []string {
 	return out
 }
 
-// constraintsCodeFiles filters the change to source-code files (tests
+// gatesCodeFiles filters the change to source-code files (tests
 // included), for gate file attribution.
-func constraintsCodeFiles(changed []string) []string {
+func gatesCodeFiles(changed []string) []string {
 	var out []string
 	for _, file := range changed {
-		if isConstraintsSourceFile(file) {
+		if isGatesSourceFile(file) {
 			out = append(out, file)
 		}
 	}

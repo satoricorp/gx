@@ -127,20 +127,20 @@ what you just edited, and static checks run over the repository when there is no
 The `gxr` alias runs `gx review`. The `gx_review` MCP tool is the same review from an
 agent client.
 
-## Constraints: gx constraints
+## Gates: gx gates
 
 Before shipping a PR, run the pre-ship exit gate the same way:
 
 ```bash
-GX_CLIENT=skill gx constraints                       # six gates, ship/no-ship verdict
-GX_CLIENT=skill gx constraints "fix auth timeout"    # state the intent for the back-pressure gate
-GX_CLIENT=skill gx constraints --verbose             # list the files behind each gate
+GX_CLIENT=skill gx gates                       # six gates, ship/no-ship verdict
+GX_CLIENT=skill gx gates "fix auth timeout"    # state the intent for the back-pressure gate
+GX_CLIENT=skill gx gates --verbose             # list the files behind each gate
 ```
 
 It checks correctness, security, code health, back-pressure, accessibility, and
 performance — deterministic checks first, one AI judgment call for the rest —
 and exits 0 ship / 3 no-ship / 4 nothing-to-check / 5 degraded. The `gxc` alias
-runs it; the `gx_constraints` MCP tool is the same gate from an agent client.
+runs it; the `gx_gates` MCP tool is the same gate from an agent client.
 
 ## Do not
 
