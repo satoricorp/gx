@@ -18,6 +18,7 @@ const (
 	EventCLIPushRun        = "cli.push.run"
 	EventCLIReportSent     = "cli.report.sent"
 	EventCLIReviewRun      = "cli.review.run"
+	EventCLIEnhanceRun     = "cli.enhance.run"
 	EventCLIGatesRun       = "cli.gates.run"
 	EventCLIAuthLogin      = "cli.auth.login"
 	EventCLIAuthLogout     = "cli.auth.logout"

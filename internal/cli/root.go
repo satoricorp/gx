@@ -64,6 +64,7 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newPublishUploadCommand(ctx),
 		newReportCommand(ctx),
 		newReviewCommand(ctx),
+		newEnhanceCommand(ctx),
 		newGatesCommand(ctx),
 		newIndexCommand(ctx),
 	)
