@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import gxGates, { metadata as gatesMetadata, schema as gatesSchema } from "../src/tools/gx-gates";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
 
 describe("gx_review metadata and schema", () => {
@@ -18,21 +17,11 @@ describe("gx_review metadata and schema", () => {
   });
 });
 
-describe("gx_gates metadata and schema", () => {
-  test("describes the exit gate", () => {
-    expect(gatesMetadata.name).toBe("gx_gates");
-    expect(gatesMetadata.description).toMatch(/ship\/no-ship verdict/i);
-    expect(gatesMetadata.description).toMatch(/no-ship verdict is a successful run/i);
-    expect(gatesMetadata.annotations?.readOnlyHint).toBe(true);
-    expect(gatesSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
-    expect(gatesSchema.verbose.parse(true)).toBe(true);
-  });
-});
 
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_review and gx_gates", () => {
-    const registered = [reviewMetadata.name, gatesMetadata.name].sort();
-    expect(registered).toEqual(["gx_gates", "gx_review"]);
+  test("exposes exactly gx_review", () => {
+    const registered = [reviewMetadata.name].sort();
+    expect(registered).toEqual(["gx_review"]);
     expect(registered).not.toContain("gx_commit");
     expect(registered).not.toContain("gx_status");
     expect(registered).not.toContain("gx_push");
@@ -73,14 +62,6 @@ if [ "$1" = review ]; then
     exit 1
   fi
   echo "review ok"
-  exit 0
-fi
-if [ "$1" = gates ]; then
-  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
-    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
-    exit 1
-  fi
-  echo "gates ok"
   exit 0
 fi
 if [ "$1" = doctor ]; then
@@ -207,49 +188,6 @@ exit 1
       "gx cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",
     );
     expect(parsed.stderr).toContain("run `gx auth login` in a terminal");
-    expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
-  });
-
-  test("gx_gates always runs report-only markdown and passes the hint", async () => {
-    // --report-only is load-bearing: `gx gates` exits non-zero on a
-    // no-ship verdict, and runTt reads any non-zero exit as a tool failure.
-    const output = await gxGates({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
-    const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("gates");
-    expect(parsed.display).toBe("gates ok");
-    expect(parsed.command).toEqual([
-      process.env.GX_BINARY,
-      "gates",
-      "--report-only",
-      "--md",
-      "--client",
-      "mcp",
-      "--verbose",
-      "fix auth timeout",
-    ]);
-
-    const bare = JSON.parse(await gxGates({ cwd: repoRoot }));
-    expect(bare.command).toEqual([process.env.GX_BINARY, "gates", "--report-only", "--md", "--client", "mcp"]);
-  });
-
-  test("gx_gates never initializes the repo it checks", async () => {
-    const output = await gxGates({ cwd: repoRoot });
-    expect(JSON.parse(output).ok).toBe(true);
-
-    const calls = (await readFile(callLog, "utf8")).trim().split("\n");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("|gates");
-    expect(calls.some((line) => line.includes("|init"))).toBe(false);
-    expect(existsSync(join(repoRoot, ".gx-initialized"))).toBe(false);
-  });
-
-  test("gx_gates surfaces MCP auth login guidance", async () => {
-    process.env.GX_MOCK_AUTH_ERROR = "1";
-
-    const parsed = JSON.parse(await gxGates({ cwd: repoRoot }));
-    expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("gates");
-    expect(parsed.auth_required).toBe(true);
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });
 });

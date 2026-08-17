@@ -65,7 +65,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 		newReportCommand(ctx),
 		newReviewCommand(ctx),
 		newEnhanceCommand(ctx),
-		newGatesCommand(ctx),
 		newIndexCommand(ctx),
 	)
 	assignCommandGroups(root)
@@ -274,8 +273,6 @@ func Execute(ctx context.Context) error {
 	switch filepath.Base(os.Args[0]) {
 	case "gxr":
 		args = append([]string{"review"}, args...)
-	case "gxg":
-		args = append([]string{"gates"}, args...)
 	}
 	root := NewRoot(ctx)
 	root.SetArgs(args)

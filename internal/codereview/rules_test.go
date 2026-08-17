@@ -97,26 +97,3 @@ func TestAIRecommendationsCarryRuleID(t *testing.T) {
 		t.Errorf("positional IDs disturbed: %q %q", findings[0].ID, findings[2].ID)
 	}
 }
-
-func TestGatesFindingFromAICarriesRuleID(t *testing.T) {
-	known := KnownRuleIDs(AllRuleDefs(nil)...)
-	f := gatesFindingFromAI(GateBackPressure, gatesAIFinding{
-		Title: "t", Summary: "s", Recommendation: "r", RuleID: "api-contract-misuse",
-	}, known)
-	if f.RuleID != "review/api-contract-misuse" {
-		t.Errorf("gates finding rule id = %q", f.RuleID)
-	}
-	if f.ID != "gates.back-pressure" {
-		t.Errorf("gates positional ID disturbed: %q", f.ID)
-	}
-	// A pack rule is accepted once the pack is in the known set, and a rule the
-	// caller did not register is dropped rather than minted.
-	packed := gatesFindingFromAI(GateCodeHealth, gatesAIFinding{Title: "t", RuleID: "gx:recommended/no-swallowed-errors"}, known)
-	if packed.RuleID != "gx:recommended/no-swallowed-errors" {
-		t.Errorf("pack rule id = %q, want gx:recommended/no-swallowed-errors", packed.RuleID)
-	}
-	unregistered := gatesFindingFromAI(GateCodeHealth, gatesAIFinding{Title: "t", RuleID: "REVIEW.md/not-declared"}, known)
-	if unregistered.RuleID != "" {
-		t.Errorf("undeclared repo rule id = %q, want empty", unregistered.RuleID)
-	}
-}

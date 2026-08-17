@@ -16,7 +16,7 @@ var (
 	fixtureGitHubToken = "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
 )
 
-func TestGatesSecretFindings(t *testing.T) {
+func TestSecretFindings(t *testing.T) {
 	tests := []struct {
 		name string
 		file string
@@ -75,10 +75,10 @@ func TestGatesSecretFindings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			diffs := []DiffSnippet{{File: test.file, Diff: test.diff}}
-			addedByFile := map[string][]gatesAddedLine{
-				test.file: gatesAddedLinesForDiff(test.diff),
+			addedByFile := map[string][]addedLine{
+				test.file: addedLinesForDiff(test.diff),
 			}
-			findings := gatesSecretFindings(diffs, addedByFile)
+			findings := secretFindings(diffs, addedByFile)
 			if len(findings) != test.want {
 				t.Fatalf("findings = %d, want %d: %#v", len(findings), test.want, findings)
 			}
@@ -91,7 +91,7 @@ func TestGatesSecretFindings(t *testing.T) {
 	}
 }
 
-func TestGatesAuditEnvironmentFailure(t *testing.T) {
+func TestAuditEnvironmentFailure(t *testing.T) {
 	tests := []struct {
 		name    string
 		tool    string
@@ -113,7 +113,7 @@ func TestGatesAuditEnvironmentFailure(t *testing.T) {
 	}
 }
 
-func TestCollectGatesAuditResultsReportsMissingAuditor(t *testing.T) {
+func TestCollectDependencyAuditResultsReportsMissingAuditor(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -122,7 +122,7 @@ func TestCollectGatesAuditResultsReportsMissingAuditor(t *testing.T) {
 	tools := t.TempDir()
 	t.Setenv("PATH", tools)
 
-	results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"})
+	results := collectDependencyAuditResults(context.Background(), root, []string{"go.mod"})
 	if len(results) != 1 {
 		t.Fatalf("results = %#v, want exactly the missing govulncheck", results)
 	}
@@ -131,7 +131,7 @@ func TestCollectGatesAuditResultsReportsMissingAuditor(t *testing.T) {
 	}
 }
 
-func TestCollectGatesAuditResultsRunsDetectedAuditor(t *testing.T) {
+func TestCollectDependencyAuditResultsRunsDetectedAuditor(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -139,7 +139,7 @@ func TestCollectGatesAuditResultsRunsDetectedAuditor(t *testing.T) {
 	writeExecutable(t, filepath.Join(tools, "govulncheck"), "#!/bin/sh\necho 'Vulnerability #1: GO-2024-1234'\nexit 3\n")
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"})
+	results := collectDependencyAuditResults(context.Background(), root, []string{"go.mod"})
 	if len(results) != 1 {
 		t.Fatalf("results = %#v, want one govulncheck run", results)
 	}
@@ -148,12 +148,44 @@ func TestCollectGatesAuditResultsRunsDetectedAuditor(t *testing.T) {
 	}
 }
 
-func TestCollectGatesAuditResultsHonorsKillSwitch(t *testing.T) {
+func TestCollectDependencyAuditResultsHonorsKillSwitch(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 
-	if results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"}); results != nil {
+	if results := collectDependencyAuditResults(context.Background(), root, []string{"go.mod"}); results != nil {
 		t.Fatalf("results = %#v, want nil under GX_REVIEW_STATIC_TOOLS=0", results)
+	}
+}
+
+// The capability this pins: the secret scan used to run only under the
+// pre-ship gate, so `gx review` — the thing wired into hooks and CI — never
+// looked for a credential in the diff. It is a review rule now, and it still
+// scans added lines only.
+func TestSecretsRuleFiresThroughTheReviewEngine(t *testing.T) {
+	added := ReviewContext{Brief: ReviewBrief{Static: StaticSnapshot{DiffSnippets: []DiffSnippet{{
+		File: "internal/app/app.go",
+		Diff: "@@ -0,0 +1,2 @@\n+package app\n+const key = \"" + fixtureAWSKey + "\"\n",
+	}}}}}
+	findings := secretsInAddedLinesFindings(added)
+	if len(findings) == 0 {
+		t.Fatal("no finding for a secret added by the change")
+	}
+	if findings[0].File != "internal/app/app.go" || findings[0].Line == 0 {
+		t.Errorf("finding should anchor to file:line, got %q:%d", findings[0].File, findings[0].Line)
+	}
+
+	// A removed secret is the fix, not the leak.
+	removed := ReviewContext{Brief: ReviewBrief{Static: StaticSnapshot{DiffSnippets: []DiffSnippet{{
+		File: "internal/app/app.go",
+		Diff: "@@ -1,2 +1,1 @@\n package app\n-const key = \"" + fixtureAWSKey + "\"\n",
+	}}}}}
+	if got := secretsInAddedLinesFindings(removed); len(got) != 0 {
+		t.Errorf("removing a secret must not be a finding, got %#v", got)
+	}
+
+	// No diff, nothing to scan.
+	if got := secretsInAddedLinesFindings(ReviewContext{}); len(got) != 0 {
+		t.Errorf("no diff should mean no findings, got %#v", got)
 	}
 }

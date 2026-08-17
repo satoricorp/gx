@@ -41,11 +41,20 @@ func TestStaticToolsFallbackForGoModChanges(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 
 	results := collectStaticToolResults(context.Background(), root, RepoFacts{DependencyFiles: []string{"go.mod"}}, Options{}, resolveChangeSet(context.Background(), root, "").Files)
-	if len(results) != 2 {
-		t.Fatalf("results = %#v, want go test and go vet", results)
-	}
 	if results[0].Command != "go test ./..." || results[1].Command != "go vet ./..." {
 		t.Fatalf("commands = %q / %q, want repo-wide fallback", results[0].Command, results[1].Command)
+	}
+	// A go.mod change is exactly when a new advisory can enter, so the
+	// dependency audit runs too — reported as skipped here because the
+	// fixture machine has no govulncheck.
+	var audited bool
+	for _, r := range results[2:] {
+		if r.Name == "govulncheck" {
+			audited = true
+		}
+	}
+	if !audited {
+		t.Fatalf("results = %#v, want a govulncheck entry for a go.mod change", results)
 	}
 }
 

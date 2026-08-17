@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,15 +32,15 @@ var gatesSecretPatterns = []struct {
 // shape of a secret rather than a secret: docs, examples, redacted samples.
 var gatesSecretPlaceholderPattern = regexp.MustCompile(`(?i)(example|placeholder|dummy|sample|redacted|xxxx|your[_-]?(api[_-]?)?key)`)
 
-const maxGatesSecretFindings = 10
+const maxSecretFindings = 10
 
-// gatesSecretFindings scans the ADDED lines only: a removed secret is
+// secretFindings scans the ADDED lines only: a removed secret is
 // the fix, not the leak, and pre-existing ones are the repo's history rather
 // than this change's doing.
-func gatesSecretFindings(diffs []DiffSnippet, addedByFile map[string][]gatesAddedLine) []Finding {
+func secretFindings(diffs []DiffSnippet, addedByFile map[string][]addedLine) []Finding {
 	var findings []Finding
 	for _, snippet := range diffs {
-		if gatesSecretScanExemptPath(snippet.File) {
+		if secretScanExemptPath(snippet.File) {
 			continue
 		}
 		language := qualityLanguage(snippet.File)
@@ -74,7 +73,7 @@ func gatesSecretFindings(diffs []DiffSnippet, addedByFile map[string][]gatesAdde
 				File:           snippet.File,
 				Line:           added.Number,
 			})
-			if len(findings) >= maxGatesSecretFindings {
+			if len(findings) >= maxSecretFindings {
 				return findings
 			}
 		}
@@ -82,12 +81,12 @@ func gatesSecretFindings(diffs []DiffSnippet, addedByFile map[string][]gatesAdde
 	return findings
 }
 
-// gatesSecretScanExemptPath spares the files whose "secrets" are props:
+// secretScanExemptPath spares the files whose "secrets" are props:
 // tests planting fixture keys, testdata, docs. The same stance the quality
 // hints take (collectCodeQualityHints skips test files) — a real credential
 // pasted into a test is not impossible, but fixture keys are near-certain, and
 // a gate that cries wolf on every planted AKIA gets turned off.
-func gatesSecretScanExemptPath(rel string) bool {
+func secretScanExemptPath(rel string) bool {
 	if isTestFile(rel) {
 		return true
 	}
@@ -96,10 +95,10 @@ func gatesSecretScanExemptPath(rel string) bool {
 		strings.Contains(lower, "/fixtures/") || strings.HasSuffix(lower, ".md")
 }
 
-// gatesAuditRunner is one dependency auditor. Same contract as the
+// auditRunner is one dependency auditor. Same contract as the
 // static-tool registry: detect inspects the checkout and the installed
 // binaries; a missing auditor is evidence, never a failure.
-type gatesAuditRunner struct {
+type auditRunner struct {
 	name   string
 	detect func(repoRoot string) (staticToolCommand, bool)
 	// missing explains an auditor that applies to this checkout but cannot
@@ -107,7 +106,7 @@ type gatesAuditRunner struct {
 	missing func(repoRoot string) string
 }
 
-var gatesAuditRunners = []gatesAuditRunner{
+var auditRunners = []auditRunner{
 	{
 		name: "govulncheck",
 		detect: func(repoRoot string) (staticToolCommand, bool) {
@@ -203,12 +202,12 @@ var gatesAuditRunners = []gatesAuditRunner{
 	},
 }
 
-// collectGatesAuditResults runs the applicable auditors concurrently.
+// collectDependencyAuditResults runs the applicable auditors concurrently.
 // It honors the same kill switch as the static tools: the auditors exec
 // checkout-adjacent binaries and reach the network, which is exactly what a
 // hermetic run must not do.
-func collectGatesAuditResults(ctx context.Context, repoRoot string, changed []string) []StaticToolResult {
-	if gatesStaticToolsDisabled() {
+func collectDependencyAuditResults(ctx context.Context, repoRoot string, changed []string) []StaticToolResult {
+	if staticToolsDisabled() {
 		return nil
 	}
 	type plannedAudit struct {
@@ -219,7 +218,7 @@ func collectGatesAuditResults(ctx context.Context, repoRoot string, changed []st
 		skipReason string
 	}
 	var planned []plannedAudit
-	for _, runner := range gatesAuditRunners {
+	for _, runner := range auditRunners {
 		if command, ok := runner.detect(repoRoot); ok {
 			planned = append(planned, plannedAudit{name: runner.name, command: command})
 			continue
@@ -280,82 +279,22 @@ func gatesAuditEnvironmentFailure(name, output string) string {
 // gatesSecurityGate assembles the verdict: secrets in the diff or a
 // confirmed vulnerable dependency tree fail; a missing or unreachable auditor
 // is said out loud and fails nothing.
-func gatesSecurityGate(repoRoot string, changed []string, diffs []DiffSnippet, audits []StaticToolResult) GateResult {
-	gate := GateResult{Gate: GateSecurity, Title: gateTitle(GateSecurity), Status: GatePass}
-	addedByFile := map[string][]gatesAddedLine{}
+
+// secretsInAddedLinesFindings is the review rule wrapper for the secret scan.
+//
+// It ran only under the pre-ship gate before, which meant the linter — the
+// thing wired into hooks and CI — never looked for a credential in the diff.
+// Scanning added lines only is deliberate and unchanged: a removed secret is
+// the fix rather than the leak, and a pre-existing one is the repository's
+// history rather than this change's doing.
+func secretsInAddedLinesFindings(ctx ReviewContext) []Finding {
+	diffs := ctx.Brief.Static.DiffSnippets
+	if len(diffs) == 0 {
+		return nil
+	}
+	addedByFile := make(map[string][]addedLine, len(diffs))
 	for _, snippet := range diffs {
-		addedByFile[snippet.File] = gatesAddedLinesForDiff(snippet.Diff)
+		addedByFile[snippet.File] = addedLinesForDiff(snippet.Diff)
 	}
-	secretFindings := gatesSecretFindings(diffs, addedByFile)
-	fileSet := map[string]struct{}{}
-	var summary []string
-	if len(secretFindings) > 0 {
-		gate.Status = GateFail
-		gate.Findings = append(gate.Findings, secretFindings...)
-		for _, finding := range secretFindings {
-			fileSet[finding.File] = struct{}{}
-		}
-		summary = append(summary, fmt.Sprintf("%d possible secret(s) in added lines", len(secretFindings)))
-	} else {
-		summary = append(summary, "no secrets in added lines")
-	}
-
-	gate.Checks = audits
-	if len(audits) == 0 {
-		if gatesStaticToolsDisabled() {
-			summary = append(summary, "dependency audit disabled (GX_REVIEW_STATIC_TOOLS=0)")
-		} else {
-			summary = append(summary, "dependency audit: no supported auditor detected")
-		}
-	}
-	for _, audit := range audits {
-		summary = append(summary, gatesToolLine(audit))
-		if audit.Skipped {
-			continue
-		}
-		if audit.ExitCode != 0 {
-			gate.Status = GateFail
-			finding := gatesToolFinding(audit, "security")
-			finding.Title = audit.Name + " found vulnerable dependencies"
-			finding.Summary = fmt.Sprintf("`%s` exited %d: known vulnerabilities in this dependency tree.", audit.Command, audit.ExitCode)
-			finding.Recommendation = fmt.Sprintf("Run `%s` locally, then upgrade or replace the flagged dependencies before shipping.", audit.Command)
-			gate.Findings = append(gate.Findings, finding)
-		}
-	}
-
-	// SAST-lite: the review engine's quality hints over changed source files.
-	// Candidates for the model to confirm, never an automatic failure.
-	for _, file := range changed {
-		if isTestFile(file) || !qualityFileSupported(file) || gatesSecretScanExemptPath(file) {
-			continue
-		}
-		for _, hint := range qualityHintsForFile(repoRoot, file) {
-			if qualityRank(hint.Kind) != 0 || hint.Kind == "hardcoded_secret" {
-				continue
-			}
-			gate.Evidence = append(gate.Evidence, Evidence{
-				Label: fmt.Sprintf("%s:%d", hint.File, hint.Line),
-				Value: hint.Kind + " candidate: " + hint.Reason,
-			})
-			fileSet[hint.File] = struct{}{}
-			if len(gate.Evidence) >= 12 {
-				break
-			}
-		}
-		if len(gate.Evidence) >= 12 {
-			break
-		}
-	}
-
-	for _, file := range changed {
-		if isDependencyFile(file) {
-			fileSet[file] = struct{}{}
-		}
-	}
-	for file := range fileSet {
-		gate.Files = append(gate.Files, file)
-	}
-	sort.Strings(gate.Files)
-	gate.Summary = strings.Join(summary, "; ")
-	return gate
+	return secretFindings(diffs, addedByFile)
 }
