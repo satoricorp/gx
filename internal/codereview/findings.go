@@ -172,6 +172,7 @@ func defaultRules() []Rule {
 		ruleFunc{id: "tools.static-failure", scopes: []string{"testing", "maintainability", "dependencies", "security"}, evaluate: staticToolFailureFindings},
 		ruleFunc{id: "quality.ignored-results", scopes: []string{"maintainability", "testing", "architecture"}, evaluate: ignoredResultFindings},
 		ruleFunc{id: "security.quality-hints", scopes: []string{"security", "maintainability", "testing"}, evaluate: securityQualityHintFindings},
+		ruleFunc{id: "security.secret-in-added-lines", scopes: []string{"security"}, evaluate: secretsInAddedLinesFindings},
 		ruleFunc{id: "architecture.domain-language-drift", scopes: []string{"architecture", "maintainability", "docs"}, evaluate: domainLanguageDriftFindings},
 		ruleFunc{id: "architecture.implementation-heavy-module", scopes: []string{"architecture", "maintainability", "testing"}, evaluate: implementationHeavyModuleFindings},
 		ruleFunc{id: "architecture.generic-package-name", scopes: []string{"architecture", "maintainability"}, evaluate: genericPackageNameFindings},

@@ -28,7 +28,6 @@ Default flow:
 - To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
 For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.
-Before shipping, run the ` + "`gx_gates`" + ` MCP tool (or ` + "`gx gates`" + `) to check the change against the pre-ship gate gates.
 `
 
 type initSetupOptions struct {

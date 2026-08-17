@@ -106,6 +106,7 @@ var staticToolRunners = []staticToolRunner{
 	{name: "eslint", progress: "Running eslint", detect: detectESLint, unready: nodeDependenciesUnready},
 	{name: "ruff", progress: "Running ruff", detect: detectRuff},
 	{name: "mypy", progress: "Running mypy", detect: detectMypy, wholeProject: true},
+	{name: "pytest", progress: "Running pytest", detect: detectPytest, wholeProject: true},
 	{name: "cargo check", progress: "Running cargo check", detect: detectCargoCheck, wholeProject: true},
 	{name: "dart analyze", progress: "Running dart analyze", detect: detectDartAnalyze, unready: dartDependenciesUnready},
 	{name: "flutter analyze", progress: "Running flutter analyze", detect: detectFlutterAnalyze, wholeProject: true},
@@ -133,13 +134,24 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0") {
 		return nil
 	}
+	// Dependency audits (govulncheck, npm audit, pip-audit) scan the whole
+	// project, so they are scoped by relevance rather than by file: a change
+	// that touches a manifest or lockfile is exactly when a new advisory can
+	// enter, and a whole-repo review is asking about the project anyway. On an
+	// ordinary code change they would spend seconds re-scanning dependencies
+	// the change did not move, and report "govulncheck not installed" on every
+	// docs edit.
+	var audits []StaticToolResult
+	if opts.WholeRepo || changedFilesTouchDependencies(facts, changed) {
+		audits = collectDependencyAuditResults(ctx, repoRoot, changed)
+	}
 	env := staticToolEnv{
 		repoRoot:     repoRoot,
 		facts:        facts,
 		changedFiles: staticToolScope(facts, opts, changed),
 	}
 	if len(env.changedFiles) == 0 {
-		return nil
+		return audits
 	}
 	type plannedStaticTool struct {
 		runner  staticToolRunner
@@ -180,7 +192,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		reviewProgress(opts, "Skipping "+strings.Join(skippedForSpeed, ", ")+" (fast review)")
 	}
 	if len(planned) == 0 {
-		return nil
+		return audits
 	}
 	timeout := 90 * time.Second
 	if opts.Deep {
@@ -196,7 +208,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 			reviewProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}
-		return out
+		return append(out, audits...)
 	}
 
 	var wg sync.WaitGroup
@@ -214,7 +226,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		}()
 	}
 	wg.Wait()
-	return out
+	return append(out, audits...)
 }
 
 // goStaticTool runs `go <sub>` over the packages the change touches, falling
@@ -767,6 +779,52 @@ func runStaticTool(ctx context.Context, repoRoot string, timeout time.Duration, 
 func hasDependencyFile(files []string, base string) bool {
 	for _, file := range files {
 		if filepath.Base(file) == base {
+			return true
+		}
+	}
+	return false
+}
+
+// detectPytest runs the project's Python test suite when pytest is configured
+// and installed. Configuration is required for the same reason mypy requires
+// it: pytest pointed at an unconfigured checkout collects whatever it finds
+// and reports import noise about the checkout rather than the change.
+func detectPytest(env staticToolEnv) (staticToolCommand, bool) {
+	if !pytestConfigured(env.repoRoot) {
+		return staticToolCommand{}, false
+	}
+	if !changedFilesInclude(env.changedFiles, pythonFileExtensions...) {
+		return staticToolCommand{}, false
+	}
+	bin, ok := lookStaticTool(env.repoRoot, "pytest", pythonLocalBinDirs...)
+	if !ok {
+		return staticToolCommand{}, false
+	}
+	return staticToolCommand{bin: bin, argv: []string{"pytest", "-q"}}, true
+}
+
+func pytestConfigured(repoRoot string) bool {
+	return repoFileExists(repoRoot, "pytest.ini") ||
+		repoFileContains(repoRoot, "pyproject.toml", "[tool.pytest") ||
+		repoFileContains(repoRoot, "setup.cfg", "[tool:pytest]")
+}
+
+// changedFilesTouchDependencies reports whether the change moves a declared
+// dependency or its lockfile — the only edit that can introduce an advisory
+// the last review did not already see.
+func changedFilesTouchDependencies(facts RepoFacts, changed []string) bool {
+	if len(changed) == 0 {
+		return false
+	}
+	declared := make(map[string]struct{}, len(facts.DependencyFiles))
+	for _, dep := range facts.DependencyFiles {
+		declared[dep] = struct{}{}
+	}
+	for _, file := range changed {
+		if _, ok := declared[file]; ok {
+			return true
+		}
+		if IsLockfilePath(file) {
 			return true
 		}
 	}

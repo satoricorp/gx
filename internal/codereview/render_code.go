@@ -198,7 +198,7 @@ func clipCodeLine(line string, width int) string {
 }
 
 // renderHunkWindow is renderHunkLinesFor with the discussed line marked. A
-// hunk window from gatesDiffHunkForLine carries its @@ header, which
+// hunk window from diffHunkForLine carries its @@ header, which
 // names the post-change start line; from that and the +/space lines the
 // post-change number of every line is known, so the one the finding is about
 // gets the same → an excerpt gives it. Without the marker a ten-line window

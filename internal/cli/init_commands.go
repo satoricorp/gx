@@ -35,13 +35,6 @@ func slashCommands() []slashCommand {
 			bodyPlain:    slashGxBodyPlain,
 			legacyNames:  []string{"better-review"},
 		},
-		{
-			name:         "gates",
-			description:  "gx pre-ship gates exit gate for the current change",
-			argumentHint: "[optional focus or intent hint]",
-			bodyArgs:     slashGatesBodyArgs,
-			bodyPlain:    slashGatesBodyPlain,
-		},
 	}
 }
 
