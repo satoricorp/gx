@@ -24,7 +24,7 @@ func TestRenderMarkdownShowsAIUnavailableWarning(t *testing.T) {
 	}
 }
 
-func TestEnhanceRecordsAIReviewerFailureWithEngine(t *testing.T) {
+func TestReviewRecordsAIReviewerFailureWithEngine(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_REVIEW_JUDGE", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
@@ -53,12 +53,12 @@ func TestEnhanceRecordsAIReviewerFailureWithEngine(t *testing.T) {
 	}
 }
 
-// TestEnhanceRecordsMissingAIConfiguration pins requirement 5c: with Bedrock as
+// TestReviewRecordsMissingAIConfiguration pins requirement 5c: with Bedrock as
 // the only review provider, missing AWS credentials means nothing reviewed the
 // change. The report used to say "AI reviewer not configured", which named
 // neither the provider nor the fix and left a deterministic-only report looking
 // like a completed review.
-func TestEnhanceRecordsMissingAIConfiguration(t *testing.T) {
+func TestReviewRecordsMissingAIConfiguration(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_REVIEW_JUDGE", "0")
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")

@@ -251,7 +251,7 @@ func attachStoryDiffHunks(diffsByFile map[string]string, items []StoryItem) {
 		if !ok {
 			continue
 		}
-		item.DiffHunk = reviewDiffHunkForLine(diff, item.Line)
+		item.DiffHunk = constraintsDiffHunkForLine(diff, item.Line)
 	}
 }
 

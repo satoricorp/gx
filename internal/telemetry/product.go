@@ -19,7 +19,7 @@ type stateWritesKeyType struct{}
 var stateWritesKey stateWritesKeyType
 
 // WithoutStateWrites marks ctx as read-only for the machine. Telemetry still
-// reports under it; it just never writes anything down to do so. `gx enhance`
+// reports under it; it just never writes anything down to do so. `gx review`
 // runs as a CI gate and on checkouts the reviewer does not own, and minting a
 // machine ID to label an event would leave $GX_HOME behind on a machine that
 // never ran gx — buying an analytics dimension with the promise the command
@@ -139,19 +139,16 @@ func Entrypoint() string {
 	return "cli"
 }
 
-// clientSurfaces are the surfaces an enhance or review run can be invoked
+// clientSurfaces are the surfaces a review or constraints run can be invoked
 // from. The set is closed on purpose: this value becomes a low-cardinality
 // analytics dimension, and an arbitrary environment string would let one
 // misconfigured machine mint unbounded new categories.
 var clientSurfaces = map[string]bool{
-	"cli":           true,
-	"mcp":           true,
-	"skill":         true,
-	"slash-enhance": true,
-	"slash-review":  true,
-	// Pre-rename label for /enhance (then /gx); command files installed by
-	// older gx builds still send it.
-	"slash-gx": true,
+	"cli":               true,
+	"mcp":               true,
+	"skill":             true,
+	"slash-gx":          true,
+	"slash-constraints": true,
 }
 
 // ClientSurface resolves which surface invoked this run: an explicit override

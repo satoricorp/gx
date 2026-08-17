@@ -91,7 +91,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	}
 
 	reviewTimingReset()
-	enhanceProgress(opts, "Scanning repository")
+	reviewProgress(opts, "Scanning repository")
 	facts, err := scanner.Scan(ctx, repoRoot, strings.TrimSpace(opts.Focus))
 	if err != nil {
 		return Report{}, err
@@ -165,7 +165,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			NoFindingsMessage: "No material issues in this change (documentation-only).",
 		}.applyChangeSet(changes), nil
 	}
-	enhanceProgress(opts, "Building review context")
+	reviewProgress(opts, "Building review context")
 	input := RetrieveInput{
 		RepoRoot:     repoRoot,
 		Options:      opts,
@@ -190,7 +190,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Triage:       triage,
 		Plan:         plan,
 	}
-	enhanceProgress(opts, "Checking fallback review rules")
+	reviewProgress(opts, "Checking fallback review rules")
 	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
 	var degradedReasons []string
@@ -223,7 +223,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 			// of it, rather than trimmed to fit one. Ordinary changes plan a
 			// single shard and behave exactly as before.
 			shards, planned := planReviewShards(brief, opts)
-			enhanceProgress(opts, "Asking AI reviewer")
+			reviewProgress(opts, "Asking AI reviewer")
 			result := runShardedReview(ctx, reviewer, shards, planned, opts)
 			coverage = result.Coverage
 			if result.Err != nil {
@@ -281,10 +281,10 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// not produce. The findings it would have graded are still reported; they
 	// are reported unverified, which the report says.
 	if opts.Fast {
-		enhanceProgress(opts, "Skipping verification (fast review)")
+		reviewProgress(opts, "Skipping verification (fast review)")
 	}
 	if !opts.Fast && !judgeDisabledFromEnv() && judgeAvailable(judge) && len(advisory) > 0 {
-		enhanceProgress(opts, "Verifying review findings")
+		reviewProgress(opts, "Verifying review findings")
 		candidates := advisory
 		// Verification runs in concurrent batches so that a large finding set
 		// neither overruns the judge's output budget nor pays for each batch in
@@ -359,8 +359,8 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	for _, snippet := range diffs {
 		diffsByFile[snippet.File] = snippet.Diff
 	}
-	attachReviewDiffHunks(diffsByFile, findings)
-	attachReviewCodeExcerpts(repoRoot, findings)
+	attachConstraintsDiffHunks(diffsByFile, findings)
+	attachConstraintsCodeExcerpts(repoRoot, findings)
 	// The story lane: the mandatory items no model decides (a change that
 	// edits its own REVIEW.md exceptions), then the reviewer's own — carried
 	// back through the fan-out from the same reply as the findings — with
@@ -480,7 +480,7 @@ func dedupeScopes(scopes []string) []string {
 	return out
 }
 
-func enhanceProgress(opts Options, message string) {
+func reviewProgress(opts Options, message string) {
 	if strings.TrimSpace(message) == "" {
 		return
 	}

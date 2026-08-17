@@ -564,7 +564,7 @@ func (s *Service) ResolveGitRepoAtPath(ctx context.Context, startPath string) (R
 
 // ResolveGitRepoWithoutStore resolves the repo from git alone. Opening the gx
 // store creates ~/.gx and applies its schema, so a read-only command like
-// `gx enhance` must not go through ResolveGitRepo: it would leave gx state
+// `gx review` must not go through ResolveGitRepo: it would leave gx state
 // behind on a machine that has never run `gx init`. Everything review needs
 // (root, remote, branch) comes from git; only AuthoringBase and a stored
 // backend override come from the store, and review uses neither.

@@ -124,7 +124,7 @@ func TestShouldSkipAutoInitForSetupCommands(t *testing.T) {
 		"gx init":        true,
 		"gx version":     true,
 		"gx auth status": true,
-		"gx enhance":     true,
+		"gx review":      true,
 		"gx doctor":      false,
 	}
 	for path, want := range cases {

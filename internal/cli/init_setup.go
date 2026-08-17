@@ -27,8 +27,8 @@ Default flow:
 - Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
 - To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
-To enhance the current change — AI-reported issues and tips to improve it — run the ` + "`gx_enhance`" + ` MCP tool (or the ` + "`gx enhance`" + ` CLI).
-Before shipping, run the ` + "`gx_review`" + ` MCP tool (or ` + "`gx review`" + `) to check the change against the pre-ship gates.
+For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.
+Before shipping, run the ` + "`gx_constraints`" + ` MCP tool (or ` + "`gx constraints`" + `) to check the change against the pre-ship constraint gates.
 `
 
 type initSetupOptions struct {

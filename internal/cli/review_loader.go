@@ -31,37 +31,37 @@ func useInteractiveTerminal(in io.Reader, out io.Writer) bool {
 	return term.IsTerminal(output.Fd())
 }
 
-type enhanceLoaderRunFunc func(io.Writer) (codereview.Report, error)
+type reviewLoaderRunFunc func(io.Writer) (codereview.Report, error)
 
-type enhanceLoaderModel struct {
+type reviewLoaderModel struct {
 	spinner spinner.Model
 	phase   string
 	phases  chan string
-	run     enhanceLoaderRunFunc
+	run     reviewLoaderRunFunc
 	report  codereview.Report
 	err     error
 	done    bool
 }
 
-type enhanceLoaderPhaseMsg string
+type reviewLoaderPhaseMsg string
 
-type enhanceLoaderNoopMsg struct{}
+type reviewLoaderNoopMsg struct{}
 
-type enhanceLoaderResultMsg struct {
+type reviewLoaderResultMsg struct {
 	report codereview.Report
 	err    error
 }
 
-// runEnhanceWithLoader runs the review under a spinner when both ends are a
+// runReviewWithLoader runs the review under a spinner when both ends are a
 // terminal, and plain otherwise. It returns the report; whether the caller
 // then prints the linear render or opens the accordion is decided by
 // browseReviewInteractively, which needs the same tty answer.
-func runEnhanceWithLoader(in io.Reader, out io.Writer, run enhanceLoaderRunFunc) (codereview.Report, error) {
+func runReviewWithLoader(in io.Reader, out io.Writer, run reviewLoaderRunFunc) (codereview.Report, error) {
 	if !useInteractiveTerminal(in, out) {
 		return run(nil)
 	}
 	phases := make(chan string, 6)
-	model := enhanceLoaderModel{
+	model := reviewLoaderModel{
 		spinner: spinner.New(
 			spinner.WithSpinner(spinner.Line),
 			spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#6366F1"))),
@@ -75,67 +75,67 @@ func runEnhanceWithLoader(in io.Reader, out io.Writer, run enhanceLoaderRunFunc)
 	if err != nil {
 		return codereview.Report{}, err
 	}
-	if result, ok := finalModel.(enhanceLoaderModel); ok {
+	if result, ok := finalModel.(reviewLoaderModel); ok {
 		return result.report, result.err
 	}
 	return codereview.Report{}, nil
 }
 
-func (m enhanceLoaderModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, waitEnhanceLoaderPhase(m.phases), runEnhanceLoader(m.run, m.phases))
+func (m reviewLoaderModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, waitReviewLoaderPhase(m.phases), runReviewLoader(m.run, m.phases))
 }
 
-func (m enhanceLoaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m reviewLoaderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
-	case enhanceLoaderPhaseMsg:
+	case reviewLoaderPhaseMsg:
 		m.phase = string(msg)
-		return m, waitEnhanceLoaderPhase(m.phases)
-	case enhanceLoaderResultMsg:
+		return m, waitReviewLoaderPhase(m.phases)
+	case reviewLoaderResultMsg:
 		m.done = true
 		m.phase = ""
 		m.report = msg.report
 		m.err = msg.err
 		return m, tea.Quit
-	case enhanceLoaderNoopMsg:
+	case reviewLoaderNoopMsg:
 		return m, nil
 	}
 	return m, nil
 }
 
-func (m enhanceLoaderModel) View() tea.View {
+func (m reviewLoaderModel) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
 	return tea.NewView(m.spinner.View() + " " + muted(m.phase))
 }
 
-func waitEnhanceLoaderPhase(phases <-chan string) tea.Cmd {
+func waitReviewLoaderPhase(phases <-chan string) tea.Cmd {
 	return func() tea.Msg {
 		phase, ok := <-phases
 		if !ok {
-			return enhanceLoaderNoopMsg{}
+			return reviewLoaderNoopMsg{}
 		}
-		return enhanceLoaderPhaseMsg(phase)
+		return reviewLoaderPhaseMsg(phase)
 	}
 }
 
-func runEnhanceLoader(run enhanceLoaderRunFunc, phases chan<- string) tea.Cmd {
+func runReviewLoader(run reviewLoaderRunFunc, phases chan<- string) tea.Cmd {
 	return func() tea.Msg {
-		report, err := run(enhanceLoaderProgressWriter{phases: phases})
+		report, err := run(reviewLoaderProgressWriter{phases: phases})
 		close(phases)
-		return enhanceLoaderResultMsg{report: report, err: err}
+		return reviewLoaderResultMsg{report: report, err: err}
 	}
 }
 
-type enhanceLoaderProgressWriter struct {
+type reviewLoaderProgressWriter struct {
 	phases chan<- string
 }
 
-func (w enhanceLoaderProgressWriter) Write(p []byte) (int, error) {
+func (w reviewLoaderProgressWriter) Write(p []byte) (int, error) {
 	for _, line := range strings.Split(string(p), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -154,7 +154,7 @@ func (w enhanceLoaderProgressWriter) Write(p []byte) (int, error) {
 // It returns true when it took over the screen — the caller then prints
 // nothing else to stdout, because the accordion already showed the report and
 // the seam. It returns false when the terminal is not interactive, so the
-// caller falls back to RenderEnhanceText, and the exit code is identical
+// caller falls back to RenderReviewText, and the exit code is identical
 // either way.
 //
 // GX_PLAIN_PROMPTS and CI both route here as "not interactive" through

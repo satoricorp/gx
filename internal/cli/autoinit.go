@@ -70,9 +70,9 @@ func commandMustNotWriteGxState(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		// `enhance` must work as a CI gate and on someone else's checkout
+		// `review` must work as a CI gate and on someone else's checkout
 		// without leaving gx state on the machine running it.
-		case "enhance":
+		case "review":
 			return true
 		// `version` answers one question about the binary. Dockerfiles and CI
 		// steps run it to check what they installed, and minting a machine ID
@@ -96,10 +96,10 @@ func shouldSkipAutoInit(cmd *cobra.Command) bool {
 	}
 	for current := cmd; current != nil; current = current.Parent() {
 		switch current.Name() {
-		// `enhance` is read-only: it must work as a CI gate and on someone
+		// `review` is read-only: it must work as a CI gate and on someone
 		// else's checkout without installing hooks or writing gx state into a
 		// repo the reviewer does not own.
-		case "init", "version", "login", "auth", "enhance":
+		case "init", "version", "login", "auth", "review":
 			return true
 		}
 	}

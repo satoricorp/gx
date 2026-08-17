@@ -98,24 +98,24 @@ func TestAIRecommendationsCarryRuleID(t *testing.T) {
 	}
 }
 
-func TestReviewGateFindingFromAICarriesRuleID(t *testing.T) {
+func TestConstraintsFindingFromAICarriesRuleID(t *testing.T) {
 	known := KnownRuleIDs(AllRuleDefs(nil)...)
-	f := reviewFindingFromAI(GateBackPressure, reviewAIFinding{
+	f := constraintsFindingFromAI(GateBackPressure, constraintsAIFinding{
 		Title: "t", Summary: "s", Recommendation: "r", RuleID: "api-contract-misuse",
 	}, known)
 	if f.RuleID != "review/api-contract-misuse" {
-		t.Errorf("gate finding rule id = %q", f.RuleID)
+		t.Errorf("constraints finding rule id = %q", f.RuleID)
 	}
-	if f.ID != "review.back-pressure" {
-		t.Errorf("gate positional ID disturbed: %q", f.ID)
+	if f.ID != "constraints.back-pressure" {
+		t.Errorf("constraints positional ID disturbed: %q", f.ID)
 	}
 	// A pack rule is accepted once the pack is in the known set, and a rule the
 	// caller did not register is dropped rather than minted.
-	packed := reviewFindingFromAI(GateCodeHealth, reviewAIFinding{Title: "t", RuleID: "gx:recommended/no-swallowed-errors"}, known)
+	packed := constraintsFindingFromAI(GateCodeHealth, constraintsAIFinding{Title: "t", RuleID: "gx:recommended/no-swallowed-errors"}, known)
 	if packed.RuleID != "gx:recommended/no-swallowed-errors" {
 		t.Errorf("pack rule id = %q, want gx:recommended/no-swallowed-errors", packed.RuleID)
 	}
-	unregistered := reviewFindingFromAI(GateCodeHealth, reviewAIFinding{Title: "t", RuleID: "REVIEW.md/not-declared"}, known)
+	unregistered := constraintsFindingFromAI(GateCodeHealth, constraintsAIFinding{Title: "t", RuleID: "REVIEW.md/not-declared"}, known)
 	if unregistered.RuleID != "" {
 		t.Errorf("undeclared repo rule id = %q, want empty", unregistered.RuleID)
 	}

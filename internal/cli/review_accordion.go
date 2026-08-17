@@ -50,7 +50,7 @@ import (
 //
 // Two rules keep it honest. Agents and CI never see it: the model is only
 // entered when useInteractiveTerminal says both fds are ttys, and every other
-// path prints RenderEnhanceText, so the exit code and the Verdict/Next seam are
+// path prints RenderReviewText, so the exit code and the Verdict/Next seam are
 // identical in both modes. And it renders from the same Report the linear
 // render reads — the accordion is presentation over a stable struct, never a
 // second source of truth.
@@ -555,7 +555,7 @@ func (m accordionModel) sectionHint(s accordionSection) string {
 }
 
 // sectionBody renders one section by delegating to the linear renderer's
-// section writers, so the accordion and RenderEnhanceText cannot drift.
+// section writers, so the accordion and RenderReviewText cannot drift.
 func (m accordionModel) sectionBody(s accordionSection) string {
 	switch s {
 	case sectionBlocking:

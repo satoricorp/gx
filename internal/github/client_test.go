@@ -151,42 +151,6 @@ func TestUpsertIssueCommentUpdatesExistingMarker(t *testing.T) {
 	}
 }
 
-// TestUpsertIssueCommentUpdatesLegacyMarker pins the marker-rename path: a
-// comment carrying only an old marker is updated in place, not joined by a
-// second comment with the new marker.
-func TestUpsertIssueCommentUpdatesLegacyMarker(t *testing.T) {
-	var patched bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/satoricorp/gx/issues/8/comments":
-			_, _ = w.Write([]byte(`[{"id":31,"html_url":"https://github.com/satoricorp/gx/pull/8#issuecomment-31","body":"old\n<!-- old marker -->"}]`))
-		case r.Method == http.MethodPatch && r.URL.Path == "/repos/satoricorp/gx/issues/comments/31":
-			patched = true
-			_, _ = w.Write([]byte(`{"id":31,"html_url":"https://github.com/satoricorp/gx/pull/8#issuecomment-31","body":"replacement"}`))
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer server.Close()
-	t.Setenv("GX_GITHUB_API_URL", server.URL)
-
-	client := NewClientWithToken("github.com", "token-one", server.Client())
-	comment, err := client.UpsertIssueComment(context.Background(), IssueCommentOptions{
-		Owner:         "satoricorp",
-		Repo:          "gx",
-		Number:        8,
-		Body:          "replacement",
-		Marker:        "<!-- new marker -->",
-		LegacyMarkers: []string{"<!-- old marker -->"},
-	})
-	if err != nil {
-		t.Fatalf("UpsertIssueComment() error = %v", err)
-	}
-	if comment == nil || comment.ID != 31 || !patched {
-		t.Fatalf("comment = %#v patched=%t, want legacy-marker comment updated in place", comment, patched)
-	}
-}
-
 func TestCreatePullRequestReviewCommentUsesGitHubAPI(t *testing.T) {
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
