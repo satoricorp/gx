@@ -274,7 +274,7 @@ func Execute(ctx context.Context) error {
 	switch filepath.Base(os.Args[0]) {
 	case "gxr":
 		args = append([]string{"review"}, args...)
-	case "gxc":
+	case "gxg":
 		args = append([]string{"gates"}, args...)
 	}
 	root := NewRoot(ctx)
