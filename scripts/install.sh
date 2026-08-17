@@ -110,11 +110,8 @@ test -x "$tmp_dir/gx/bin/gx-mcp" || fail "archive is missing gx-mcp"
 mkdir -p "$install_dir"
 install -m 755 "$tmp_dir/gx/bin/gx" "$install_dir/gx"
 install -m 755 "$tmp_dir/gx/bin/gx-mcp" "$install_dir/gx-mcp"
-ln -sf gx "$install_dir/gxe"
 ln -sf gx "$install_dir/gxr"
-# gxc was the pre-rename alias for gxr; a stale symlink would now open root
-# help instead of `gx review`, so upgrades remove it.
-rm -f "$install_dir/gxc"
+ln -sf gx "$install_dir/gxc"
 
 if [ -f "$tmp_dir/gx/completions/gx.bash" ]; then
   mkdir -p "$HOME/.local/share/bash-completion/completions"

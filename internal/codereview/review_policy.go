@@ -95,7 +95,7 @@ func LoadReviewPolicy(repoRoot string) ReviewPolicy {
 }
 
 // RuleDefs renders the repository's rules as the minimal form the brief and
-// the constraints request carry: the namespaced ID and a one-line summary.
+// the gates request carry: the namespaced ID and a one-line summary.
 func (p ReviewPolicy) RuleDefs() []RuleDef {
 	if len(p.Rules) == 0 {
 		return nil

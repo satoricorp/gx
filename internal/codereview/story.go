@@ -170,7 +170,7 @@ func storyPathMatches(file, path string) bool {
 // section is taking an exception.
 //
 // A snippet that carries file content instead of a diff (an untracked
-// REVIEW.md) is treated as all-added, matching how the constraints signals
+// REVIEW.md) is treated as all-added, matching how the gates signals
 // read the same header: a brand-new REVIEW.md with an Exceptions section is a
 // change that adds exceptions.
 func reviewPolicyDiffTouchesExceptions(diff string) bool {
@@ -240,7 +240,7 @@ func reviewPolicySectionHeading(line string) (string, bool) {
 
 // attachStoryDiffHunks gives each anchored story item its unified-diff window,
 // extracted from the same snippets the reviewer read. Same helper the
-// constraints report uses for findings, so both lanes show the same window.
+// gates report uses for findings, so both lanes show the same window.
 func attachStoryDiffHunks(diffsByFile map[string]string, items []StoryItem) {
 	for i := range items {
 		item := &items[i]
@@ -251,7 +251,7 @@ func attachStoryDiffHunks(diffsByFile map[string]string, items []StoryItem) {
 		if !ok {
 			continue
 		}
-		item.DiffHunk = reviewDiffHunkForLine(diff, item.Line)
+		item.DiffHunk = gatesDiffHunkForLine(diff, item.Line)
 	}
 }
 

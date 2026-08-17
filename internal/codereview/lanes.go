@@ -54,18 +54,18 @@ const laneQuorumLegs = 2
 //   - Anything below Strong is advisory, whatever the quorum.
 //
 // Recognizing the "no quorum to fail" path. Deterministic findings — the
-// rules in defaultRules() and every constraints.* finding — never carry
+// rules in defaultRules() and every gates.* finding — never carry
 // Corroboration: only the AI panel sets it (ai.go stamps the raising leg on
 // each finding, and dedupe merges the legs into one list). They also mostly
 // never carry a JudgeVerdict: tools.* Blocking findings are split out before
-// the judge runs (splitBlockingToolFindings), and constraints findings never
+// the judge runs (splitBlockingToolFindings), and gates findings never
 // see it at all. The remaining deterministic rules can reach the judge on a
 // whole-repo review, which is why the test is "no verdict OR no leg" rather
 // than the verdict alone: a deterministic finding the judge happened to
 // confirm has no legs to count, so it takes the strength-only path instead of
 // being reported as demoted from a lane it could never have qualified for.
 // This is simpler and more reliable than an ID-prefix allowlist ("tools.",
-// "constraints.", ...) that every new deterministic rule would have to join.
+// "gates.", ...) that every new deterministic rule would have to join.
 func AssignLanes(findings []Finding) []Finding {
 	for i := range findings {
 		lane, demotedFrom := laneFor(findings[i])

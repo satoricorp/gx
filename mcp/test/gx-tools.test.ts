@@ -3,36 +3,36 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import gxGates, { metadata as gatesMetadata, schema as gatesSchema } from "../src/tools/gx-gates";
 import gxReview, { metadata as reviewMetadata, schema as reviewSchema } from "../src/tools/gx-review";
-import gxEnhance, { metadata as enhanceMetadata, schema as enhanceSchema } from "../src/tools/gx-enhance";
 
-describe("gx_enhance metadata and schema", () => {
-  test("describes the enhance surface", () => {
-    expect(enhanceMetadata.name).toBe("gx_enhance");
-    expect(enhanceMetadata.description).toMatch(/local facts/i);
-    expect(enhanceMetadata.annotations?.readOnlyHint).toBe(true);
-    expect(enhanceSchema.scope.parse("architecture")).toBe("architecture");
-    expect(enhanceSchema.prompt.parse("review auth rollback risk")).toBe("review auth rollback risk");
-    expect(enhanceSchema.deep.parse(true)).toBe(true);
-    expect(enhanceSchema.repo.parse(true)).toBe(true);
+describe("gx_review metadata and schema", () => {
+  test("describes the review surface", () => {
+    expect(reviewMetadata.name).toBe("gx_review");
+    expect(reviewMetadata.description).toMatch(/local facts/i);
+    expect(reviewMetadata.annotations?.readOnlyHint).toBe(true);
+    expect(reviewSchema.scope.parse("architecture")).toBe("architecture");
+    expect(reviewSchema.prompt.parse("review auth rollback risk")).toBe("review auth rollback risk");
+    expect(reviewSchema.deep.parse(true)).toBe(true);
+    expect(reviewSchema.repo.parse(true)).toBe(true);
   });
 });
 
-describe("gx_review metadata and schema", () => {
+describe("gx_gates metadata and schema", () => {
   test("describes the exit gate", () => {
-    expect(reviewMetadata.name).toBe("gx_review");
-    expect(reviewMetadata.description).toMatch(/ship\/no-ship verdict/i);
-    expect(reviewMetadata.description).toMatch(/no-ship verdict is a successful run/i);
-    expect(reviewMetadata.annotations?.readOnlyHint).toBe(true);
-    expect(reviewSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
-    expect(reviewSchema.verbose.parse(true)).toBe(true);
+    expect(gatesMetadata.name).toBe("gx_gates");
+    expect(gatesMetadata.description).toMatch(/ship\/no-ship verdict/i);
+    expect(gatesMetadata.description).toMatch(/no-ship verdict is a successful run/i);
+    expect(gatesMetadata.annotations?.readOnlyHint).toBe(true);
+    expect(gatesSchema.prompt.parse("fix auth timeout")).toBe("fix auth timeout");
+    expect(gatesSchema.verbose.parse(true)).toBe(true);
   });
 });
 
 describe("registered MCP tool names", () => {
-  test("exposes exactly gx_enhance and gx_review", () => {
-    const registered = [enhanceMetadata.name, reviewMetadata.name].sort();
-    expect(registered).toEqual(["gx_enhance", "gx_review"]);
+  test("exposes exactly gx_review and gx_gates", () => {
+    const registered = [reviewMetadata.name, gatesMetadata.name].sort();
+    expect(registered).toEqual(["gx_gates", "gx_review"]);
     expect(registered).not.toContain("gx_commit");
     expect(registered).not.toContain("gx_status");
     expect(registered).not.toContain("gx_push");
@@ -67,20 +67,20 @@ if [ "$1" = init ]; then
   echo "initialized"
   exit 0
 fi
-if [ "$1" = enhance ]; then
-  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
-    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
-    exit 1
-  fi
-  echo "enhance ok"
-  exit 0
-fi
 if [ "$1" = review ]; then
   if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
     echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
     exit 1
   fi
   echo "review ok"
+  exit 0
+fi
+if [ "$1" = gates ]; then
+  if [ "$GX_MOCK_AUTH_ERROR" = "1" ]; then
+    echo 'github token is not configured for MCP: run \`gx auth login\` in a terminal, then retry the MCP tool' >&2
+    exit 1
+  fi
+  echo "gates ok"
   exit 0
 fi
 if [ "$1" = doctor ]; then
@@ -114,8 +114,8 @@ exit 1
     }
   });
 
-  test("gx_enhance passes scope, focus, prompt, deep, and verbose flags", async () => {
-    const output = await gxEnhance({
+  test("gx_review passes scope, focus, prompt, deep, and verbose flags", async () => {
+    const output = await gxReview({
       cwd: repoRoot,
       scope: "architecture",
       focus: "internal/authoring",
@@ -124,11 +124,11 @@ exit 1
       verbose: true,
     });
     const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("enhance");
-    expect(parsed.display).toBe("enhance ok");
+    expect(parsed.action).toBe("review");
+    expect(parsed.display).toBe("review ok");
     expect(parsed.command).toEqual([
       process.env.GX_BINARY,
-      "enhance",
+      "review",
       "--no-comment",
       "--client",
       "mcp",
@@ -144,25 +144,25 @@ exit 1
     const calls = await readFile(callLog, "utf8");
     expect(calls).toContain("gx|");
     expect(calls).toContain(
-      "|1|enhance --no-comment --client mcp --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk",
+      "|1|review --no-comment --client mcp --scope architecture --focus internal/authoring --deep --verbose review auth rollback risk",
     );
   });
 
-  test("gx_enhance can ask for a whole-repo review", async () => {
+  test("gx_review can ask for a whole-repo review", async () => {
     // Without this, a dirty working tree makes the diff the review subject, so
     // an agent asking about the codebase gets an answer scoped to the diff.
-    const output = await gxEnhance({ cwd: repoRoot, repo: true });
+    const output = await gxReview({ cwd: repoRoot, repo: true });
     const parsed = JSON.parse(output);
-    expect(parsed.command).toEqual([process.env.GX_BINARY, "enhance", "--no-comment", "--client", "mcp", "--repo"]);
+    expect(parsed.command).toEqual([process.env.GX_BINARY, "review", "--no-comment", "--client", "mcp", "--repo"]);
 
     // Omitting it keeps the patch-focused default.
-    const plain = JSON.parse(await gxEnhance({ cwd: repoRoot }));
-    expect(plain.command).toEqual([process.env.GX_BINARY, "enhance", "--no-comment", "--client", "mcp"]);
+    const plain = JSON.parse(await gxReview({ cwd: repoRoot }));
+    expect(plain.command).toEqual([process.env.GX_BINARY, "review", "--no-comment", "--client", "mcp"]);
   });
 
-  test("gx_enhance never comments on a PR, whatever it is asked for", async () => {
+  test("gx_review never comments on a PR, whatever it is asked for", async () => {
     // readOnlyHint is a promise to the calling agent. Without --no-comment,
-    // `gx enhance` posts a comment on the matching GitHub PR — a write other
+    // `gx review` posts a comment on the matching GitHub PR — a write other
     // people see, from a tool the agent was told is safe to call freely. No
     // argument combination may drop it. The run still records to gx Cloud
     // history, labeled with --client mcp, so per-surface counts see MCP runs.
@@ -173,35 +173,35 @@ exit 1
       { scope: "security" as const, focus: "internal", prompt: "check auth" },
     ];
     for (const variant of variants) {
-      const parsed = JSON.parse(await gxEnhance({ cwd: repoRoot, ...variant }));
+      const parsed = JSON.parse(await gxReview({ cwd: repoRoot, ...variant }));
       expect(parsed.command).toContain("--no-comment");
       expect(parsed.command).toContain("--client");
     }
   });
 
-  test("gx_enhance never initializes the repo it reviews", async () => {
+  test("gx_review never initializes the repo it reviews", async () => {
     // The mock repo has no `.gx-initialized` marker, so anything that probed
     // or repaired gx state would show up in the call log. readOnlyHint is only
-    // honest if `enhance` is the single command the tool runs.
-    const output = await gxEnhance({ cwd: repoRoot });
+    // honest if `review` is the single command the tool runs.
+    const output = await gxReview({ cwd: repoRoot });
     expect(JSON.parse(output).ok).toBe(true);
 
     const calls = (await readFile(callLog, "utf8")).trim().split("\n");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("|enhance");
+    expect(calls[0]).toContain("|review");
     expect(calls.some((line) => line.includes("|init"))).toBe(false);
     expect(calls.some((line) => line.includes("|doctor"))).toBe(false);
     expect(existsSync(join(repoRoot, ".gx-initialized"))).toBe(false);
   });
 
-  test("gx_enhance surfaces MCP auth login guidance", async () => {
+  test("gx_review surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const output = await gxEnhance({ cwd: repoRoot });
+    const output = await gxReview({ cwd: repoRoot });
     const parsed = JSON.parse(output);
 
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("enhance");
+    expect(parsed.action).toBe("review");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.display).toBe(
       "gx cloud authentication is required. Run `gx auth login` in a terminal, then retry the MCP tool.",
@@ -210,16 +210,16 @@ exit 1
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });
 
-  test("gx_review always runs report-only markdown and passes the hint", async () => {
-    // --report-only is load-bearing: `gx review` exits non-zero on a
+  test("gx_gates always runs report-only markdown and passes the hint", async () => {
+    // --report-only is load-bearing: `gx gates` exits non-zero on a
     // no-ship verdict, and runTt reads any non-zero exit as a tool failure.
-    const output = await gxReview({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
+    const output = await gxGates({ cwd: repoRoot, prompt: "fix auth timeout", verbose: true });
     const parsed = JSON.parse(output);
-    expect(parsed.action).toBe("review");
-    expect(parsed.display).toBe("review ok");
+    expect(parsed.action).toBe("gates");
+    expect(parsed.display).toBe("gates ok");
     expect(parsed.command).toEqual([
       process.env.GX_BINARY,
-      "review",
+      "gates",
       "--report-only",
       "--md",
       "--client",
@@ -228,27 +228,27 @@ exit 1
       "fix auth timeout",
     ]);
 
-    const bare = JSON.parse(await gxReview({ cwd: repoRoot }));
-    expect(bare.command).toEqual([process.env.GX_BINARY, "review", "--report-only", "--md", "--client", "mcp"]);
+    const bare = JSON.parse(await gxGates({ cwd: repoRoot }));
+    expect(bare.command).toEqual([process.env.GX_BINARY, "gates", "--report-only", "--md", "--client", "mcp"]);
   });
 
-  test("gx_review never initializes the repo it checks", async () => {
-    const output = await gxReview({ cwd: repoRoot });
+  test("gx_gates never initializes the repo it checks", async () => {
+    const output = await gxGates({ cwd: repoRoot });
     expect(JSON.parse(output).ok).toBe(true);
 
     const calls = (await readFile(callLog, "utf8")).trim().split("\n");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("|review");
+    expect(calls[0]).toContain("|gates");
     expect(calls.some((line) => line.includes("|init"))).toBe(false);
     expect(existsSync(join(repoRoot, ".gx-initialized"))).toBe(false);
   });
 
-  test("gx_review surfaces MCP auth login guidance", async () => {
+  test("gx_gates surfaces MCP auth login guidance", async () => {
     process.env.GX_MOCK_AUTH_ERROR = "1";
 
-    const parsed = JSON.parse(await gxReview({ cwd: repoRoot }));
+    const parsed = JSON.parse(await gxGates({ cwd: repoRoot }));
     expect(parsed.ok).toBe(false);
-    expect(parsed.action).toBe("review");
+    expect(parsed.action).toBe("gates");
     expect(parsed.auth_required).toBe(true);
     expect(parsed.next_actions[0]).toBe("Run `gx auth login` in a terminal, then retry the MCP tool.");
   });

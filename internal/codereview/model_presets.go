@@ -9,7 +9,7 @@ import (
 // Model presets.
 //
 // A review is four model slots — reviewer A, reviewer B, the judge, and the
-// constraints judge — and every one is an env var. That is the right shape
+// gates judge — and every one is an env var. That is the right shape
 // for a deployment and the wrong shape for an experiment: comparing "the
 // default panel" against "a cheaper panel" means exporting four variables,
 // remembering which four, and unsetting them afterwards.
@@ -32,7 +32,7 @@ type modelPreset struct {
 	ReviewerA string
 	ReviewerB string
 	Judge     string
-	Gate      string
+	Gates     string
 }
 
 var modelPresets = map[string]modelPreset{
@@ -43,9 +43,9 @@ var modelPresets = map[string]modelPreset{
 		ReviewerA: defaultBedrockReviewModelA,
 		ReviewerB: defaultBedrockReviewModelB,
 		Judge:     defaultBedrockJudgeModel,
-		Gate:      defaultBedrockReviewModelA,
+		Gates:     defaultBedrockReviewModelA,
 	},
-	// budget keeps Haiku as leg A (fast, cheap, and the model the constraints
+	// budget keeps Haiku as leg A (fast, cheap, and the model the gates
 	// judge already runs on) and swaps the two expensive slots for open-weight
 	// models on Bedrock: GLM 5 as the second reviewer so the panel stays two
 	// vendors with uncorrelated misses, and Nemotron 3 Super as the judge —
@@ -65,7 +65,7 @@ var modelPresets = map[string]modelPreset{
 		ReviewerA: defaultBedrockReviewModelA,
 		ReviewerB: "zai.glm-5",
 		Judge:     "nvidia.nemotron-super-3-120b",
-		Gate:      defaultBedrockReviewModelA,
+		Gates:     defaultBedrockReviewModelA,
 	},
 	// luna is GPT-5.6 Luna in every slot — one model, end to end. It is an
 	// inference-profile-only model on Bedrock, so the ID carries its us.
@@ -80,7 +80,7 @@ var modelPresets = map[string]modelPreset{
 		ReviewerA: "us.openai.gpt-5.6-luna",
 		ReviewerB: "us.openai.gpt-5.6-luna",
 		Judge:     "us.openai.gpt-5.6-luna",
-		Gate:      "us.openai.gpt-5.6-luna",
+		Gates:     "us.openai.gpt-5.6-luna",
 	},
 	// glm puts GLM 5 in every graded slot — the "how does one open model do
 	// on its own" comparison, with Haiku only where it was already the
@@ -90,7 +90,7 @@ var modelPresets = map[string]modelPreset{
 		ReviewerA: "zai.glm-5",
 		ReviewerB: "zai.glm-4.7",
 		Judge:     "zai.glm-5",
-		Gate:      "zai.glm-5",
+		Gates:     "zai.glm-5",
 	},
 }
 

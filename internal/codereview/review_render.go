@@ -22,7 +22,7 @@ import (
 // in the story is wrong; every item there ends in ownership, not action.
 //
 // Color rides on report.Color and termstyle.Enabled(), so --json, --md, and
-// piped output stay plain — the same discipline the constraints render keeps.
+// piped output stay plain — the same discipline the gates render keeps.
 
 const (
 	reviewRenderIndent     = "  "
@@ -35,10 +35,10 @@ const (
 	reviewRenderWidth = 100
 )
 
-// RenderEnhanceText is the terminal render. Sections appear in a fixed order
+// RenderReviewText is the terminal render. Sections appear in a fixed order
 // and a section with nothing in it is omitted rather than printed empty, with
 // one exception: the verdict seam always prints, because agents key on it.
-func RenderEnhanceText(report Report) string {
+func RenderReviewText(report Report) string {
 	var b strings.Builder
 	color := report.Color && termstyle.Enabled()
 
@@ -85,7 +85,7 @@ func RenderEnhanceText(report Report) string {
 
 // ReviewVerdictLines is the two-line machine seam: a "Verdict: ..." line and a
 // "Next: ..." line, the last two lines of the render. It mirrors the
-// constraints seam so anything that already relays one relays the other.
+// gates seam so anything that already relays one relays the other.
 func ReviewVerdictLines(report Report) (verdict, next string) {
 	if !report.Reviewed {
 		target := strings.TrimSpace(report.ReviewTarget)
@@ -692,7 +692,7 @@ func wrapText(text string, width int) []string {
 //
 // The accordion in internal/cli renders one section at a time under its own
 // node. It calls these rather than re-implementing the sections, so the
-// interactive and linear renders cannot drift: whatever RenderEnhanceText
+// interactive and linear renders cannot drift: whatever RenderReviewText
 // prints for a lane, the accordion prints for that lane.
 
 // SplitFindingsByLane partitions findings into the blocking and advisory

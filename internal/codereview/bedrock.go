@@ -253,10 +253,10 @@ func (r *bedrockAnthropicReviewer) Review(ctx context.Context, brief ReviewBrief
 
 func (r *bedrockAnthropicReviewer) ReviewForSummary(ctx context.Context, brief ReviewBrief) (PRSummaryReview, error) {
 	brief = compactReviewBriefForAI(brief)
-	system := enhanceDeveloperPrompt(brief)
+	system := reviewDeveloperPrompt(brief)
 	input := mustJSON(brief)
 	// One retry, for malformed replies only — the same contract the
-	// constraints judge runs under. A leg sometimes answers in prose with no
+	// gates judge runs under. A leg sometimes answers in prose with no
 	// JSON at all ("I reviewed the change…"), which extractJSONObject cannot
 	// recover; observed live on a binary-only diff, and it turned a healthy
 	// panel into a DEGRADED run. The retry restates the JSON-only requirement

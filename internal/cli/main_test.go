@@ -9,7 +9,7 @@ import (
 
 // TestMain cuts this package off from the network.
 //
-// `gx enhance` is the command under test here, and its retrieval paths arm
+// `gx review` is the command under test here, and its retrieval paths arm
 // themselves from ambient credentials. setReviewGateEnv sandboxes the tests
 // that call it, but it is opt-in, and the two tests in root_test.go that build
 // their own environment were reaching the real embeddings API and the real

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestParseReviewAddedLinesNumbersFromHunks(t *testing.T) {
+func TestParseGatesAddedLinesNumbersFromHunks(t *testing.T) {
 	diff := strings.Join([]string{
 		"@@ -10,3 +12,4 @@ func Run() {",
 		" kept",
@@ -15,7 +15,7 @@ func TestParseReviewAddedLinesNumbersFromHunks(t *testing.T) {
 		" kept",
 		"+added two",
 	}, "\n")
-	added := parseReviewAddedLines(diff)
+	added := parseGatesAddedLines(diff)
 	if len(added) != 2 {
 		t.Fatalf("added = %#v, want two lines", added)
 	}
@@ -27,9 +27,9 @@ func TestParseReviewAddedLinesNumbersFromHunks(t *testing.T) {
 	}
 }
 
-func TestReviewAddedLinesForContentFallback(t *testing.T) {
+func TestGatesAddedLinesForContentFallback(t *testing.T) {
 	diff := diffUnavailableContentHeader + "\nline one\nline two\n"
-	added := reviewAddedLinesForDiff(diff)
+	added := gatesAddedLinesForDiff(diff)
 	if len(added) != 3 { // trailing newline yields an empty final line
 		t.Fatalf("added = %#v, want every content line treated as added", added)
 	}
@@ -38,7 +38,7 @@ func TestReviewAddedLinesForContentFallback(t *testing.T) {
 	}
 }
 
-func TestReviewDiffHunkForLine(t *testing.T) {
+func TestGatesDiffHunkForLine(t *testing.T) {
 	diff := strings.Join([]string{
 		"diff --git a/app.go b/app.go",
 		"@@ -10,3 +12,4 @@ func Run() {",
@@ -48,7 +48,7 @@ func TestReviewDiffHunkForLine(t *testing.T) {
 		" kept",
 		"+added two",
 	}, "\n")
-	hunk := reviewDiffHunkForLine(diff, 13)
+	hunk := gatesDiffHunkForLine(diff, 13)
 	if hunk == "" {
 		t.Fatalf("no hunk for line 13")
 	}
@@ -57,20 +57,20 @@ func TestReviewDiffHunkForLine(t *testing.T) {
 			t.Fatalf("hunk missing %q:\n%s", want, hunk)
 		}
 	}
-	if got := reviewDiffHunkForLine(diff, 500); got != "" {
+	if got := gatesDiffHunkForLine(diff, 500); got != "" {
 		t.Fatalf("line outside the diff produced a hunk:\n%s", got)
 	}
-	if got := reviewDiffHunkForLine(diffUnavailableContentHeader+"\ncontent\n", 1); got != "" {
+	if got := gatesDiffHunkForLine(diffUnavailableContentHeader+"\ncontent\n", 1); got != "" {
 		t.Fatalf("content fallback produced a hunk:\n%s", got)
 	}
 }
 
-func TestReviewDiffHunkForLineTrimsLongHunks(t *testing.T) {
+func TestGatesDiffHunkForLineTrimsLongHunks(t *testing.T) {
 	lines := []string{"@@ -1,40 +1,40 @@"}
 	for i := 1; i <= 40; i++ {
 		lines = append(lines, fmt.Sprintf(" line %d", i))
 	}
-	hunk := reviewDiffHunkForLine(strings.Join(lines, "\n"), 20)
+	hunk := gatesDiffHunkForLine(strings.Join(lines, "\n"), 20)
 	if !strings.Contains(hunk, "line 20") {
 		t.Fatalf("trimmed hunk lost the target line:\n%s", hunk)
 	}
@@ -82,8 +82,8 @@ func TestReviewDiffHunkForLineTrimsLongHunks(t *testing.T) {
 	}
 }
 
-func TestReviewNewDependencies(t *testing.T) {
-	addedByFile := map[string][]reviewAddedLine{
+func TestGatesNewDependencies(t *testing.T) {
+	addedByFile := map[string][]gatesAddedLine{
 		"go.mod": {
 			{Number: 5, Text: "\tgithub.com/some/dep v1.2.3"},
 			{Number: 6, Text: "\tgolang.org/x/text v0.14.0 // indirect"},
@@ -94,7 +94,7 @@ func TestReviewNewDependencies(t *testing.T) {
 			{Number: 13, Text: "    \"version\": \"2.0.0\","},
 		},
 	}
-	deps := reviewNewDependencies([]string{"go.mod", "web/package.json"}, addedByFile)
+	deps := gatesNewDependencies([]string{"go.mod", "web/package.json"}, addedByFile)
 	joined := strings.Join(deps, "\n")
 	if !strings.Contains(joined, "go.mod: github.com/some/dep") {
 		t.Fatalf("deps = %#v, want the go.mod addition", deps)
@@ -107,9 +107,9 @@ func TestReviewNewDependencies(t *testing.T) {
 	}
 }
 
-func TestReviewPerfApplicability(t *testing.T) {
+func TestGatesPerfApplicability(t *testing.T) {
 	policy := ReviewPolicy{RiskPaths: []RiskPath{{Glob: "internal/api/**", Message: "latency-sensitive request path"}}}
-	applies, triggers, files := reviewPerfApplicability(
+	applies, triggers, files := gatesPerfApplicability(
 		[]string{"internal/api/routes.go", "docs/README.md"}, nil, policy)
 	if !applies {
 		t.Fatalf("perf gate should apply to a risk-path match")
@@ -121,24 +121,24 @@ func TestReviewPerfApplicability(t *testing.T) {
 		t.Fatalf("files = %#v, want the matched file", files)
 	}
 
-	applies, triggers, _ = reviewPerfApplicability([]string{"internal/cache/store.go"}, nil, ReviewPolicy{})
+	applies, triggers, _ = gatesPerfApplicability([]string{"internal/cache/store.go"}, nil, ReviewPolicy{})
 	if !applies || len(triggers) == 0 {
 		t.Fatalf("perf gate should apply to a cache path, triggers = %#v", triggers)
 	}
 
-	applies, _, _ = reviewPerfApplicability([]string{"docs/README.md"}, nil, ReviewPolicy{})
+	applies, _, _ = gatesPerfApplicability([]string{"docs/README.md"}, nil, ReviewPolicy{})
 	if applies {
 		t.Fatalf("perf gate should not apply to a docs-only change")
 	}
 
-	applies, triggers, _ = reviewPerfApplicability([]string{"go.mod"}, []string{"go.mod"}, ReviewPolicy{})
+	applies, triggers, _ = gatesPerfApplicability([]string{"go.mod"}, []string{"go.mod"}, ReviewPolicy{})
 	if !applies || !strings.Contains(strings.Join(triggers, " "), "dependency manifest") {
 		t.Fatalf("perf gate should apply on a manifest change, triggers = %#v", triggers)
 	}
 }
 
-func TestReviewA11yLineFindings(t *testing.T) {
-	addedByFile := map[string][]reviewAddedLine{
+func TestGatesA11yLineFindings(t *testing.T) {
+	addedByFile := map[string][]gatesAddedLine{
 		"web/App.tsx": {
 			{Number: 4, Text: `    <img src="/logo.png">`},
 			{Number: 9, Text: `    <div tabindex="3">ok</div>`},
@@ -147,7 +147,7 @@ func TestReviewA11yLineFindings(t *testing.T) {
 			{Number: 25, Text: `    <div onClick={go} onKeyDown={go} role="button">Go</div>`},
 		},
 	}
-	findings, hardFail := reviewA11yLineFindings([]string{"web/App.tsx"}, addedByFile)
+	findings, hardFail := gatesA11yLineFindings([]string{"web/App.tsx"}, addedByFile)
 	if !hardFail {
 		t.Fatalf("missing alt and positive tabindex must be hard failures")
 	}
@@ -163,12 +163,12 @@ func TestReviewA11yLineFindings(t *testing.T) {
 	}
 }
 
-func TestCollectReviewSignalsCountsContentFallback(t *testing.T) {
+func TestCollectGateSignalsCountsContentFallback(t *testing.T) {
 	diffs := []DiffSnippet{{
 		File: "internal/app/new.go",
 		Diff: diffUnavailableContentHeader + "\npackage app\n\nfunc New() {}\n",
 	}}
-	signals := collectReviewSignals([]string{"internal/app/new.go"}, diffs, ReviewPolicy{}, nil)
+	signals := collectGateSignals([]string{"internal/app/new.go"}, diffs, ReviewPolicy{}, nil)
 	if signals.DiffStats.AddedLines < 3 {
 		t.Fatalf("AddedLines = %d, want the untracked file's lines counted", signals.DiffStats.AddedLines)
 	}

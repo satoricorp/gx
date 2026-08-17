@@ -13,7 +13,7 @@ import (
 )
 
 // Shared code-window renderers for any report. The review renderer and the
-// constraints renderer both use them to show the code a finding is about: the
+// gates renderer both use them to show the code a finding is about: the
 // diff hunk when the finding is about the change, otherwise a syntax-highlighted
 // source excerpt with a line-number gutter. Colors ride on a plain bool and
 // termstyle.Enabled(), so --json/--md/piped output stays plain.
@@ -198,7 +198,7 @@ func clipCodeLine(line string, width int) string {
 }
 
 // renderHunkWindow is renderHunkLinesFor with the discussed line marked. A
-// hunk window from constraintsDiffHunkForLine carries its @@ header, which
+// hunk window from gatesDiffHunkForLine carries its @@ header, which
 // names the post-change start line; from that and the +/space lines the
 // post-change number of every line is known, so the one the finding is about
 // gets the same → an excerpt gives it. Without the marker a ten-line window

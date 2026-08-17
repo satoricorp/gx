@@ -59,7 +59,7 @@ type staticToolCommand struct {
 // silently — a missing tool is never a review finding.
 //
 // Runners must be fast and scoped to the change. They are NOT side-effect
-// free, and it is worth being exact about that because the rest of `gx enhance`
+// free, and it is worth being exact about that because the rest of `gx review`
 // is: outside Go the runners are type checkers and linters, but the Go runner
 // is `go test`, which compiles and executes the reviewed checkout's own test
 // binaries, and `cargo check` executes the crate's build.rs and proc macros.
@@ -114,7 +114,7 @@ var staticToolRunners = []staticToolRunner{
 
 // staticToolScope is the file set every runner detects against. It is the
 // change set, except for a whole-repo review that has no diff: there the
-// repository stands in for it. Without that, `gx enhance --repo` on a clean
+// repository stands in for it. Without that, `gx review --repo` on a clean
 // tree runs no compiler, no test, and no linter — collectStaticToolResults
 // returns before detection on an empty set — and then reports the repository
 // clean, which is the silent pass --fail-on exists to prevent.
@@ -163,7 +163,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		plan := plannedStaticTool{runner: runner, command: command}
 		if runner.unready != nil {
 			if reason := runner.unready(env); reason != "" {
-				enhanceProgress(opts, "Skipping "+runner.name+" ("+reason+")")
+				reviewProgress(opts, "Skipping "+runner.name+" ("+reason+")")
 				plan.skip = &StaticToolResult{
 					Name:    runner.name,
 					Command: strings.Join(command.argv, " "),
@@ -177,7 +177,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	// Say what was not run. A review missing its test results must not read
 	// like a review whose tests passed.
 	if len(skippedForSpeed) > 0 {
-		enhanceProgress(opts, "Skipping "+strings.Join(skippedForSpeed, ", ")+" (fast review)")
+		reviewProgress(opts, "Skipping "+strings.Join(skippedForSpeed, ", ")+" (fast review)")
 	}
 	if len(planned) == 0 {
 		return nil
@@ -193,7 +193,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 				out[i] = *tool.skip
 				continue
 			}
-			enhanceProgress(opts, tool.runner.progress)
+			reviewProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}
 		return out
@@ -209,7 +209,7 @@ func collectStaticToolResults(ctx context.Context, repoRoot string, facts RepoFa
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			enhanceProgress(opts, tool.runner.progress)
+			reviewProgress(opts, tool.runner.progress)
 			out[i] = runStaticTool(ctx, repoRoot, timeout, tool.runner.name, tool.command)
 		}()
 	}
@@ -421,7 +421,7 @@ func detectFlutterAnalyze(env staticToolEnv) (staticToolCommand, bool) {
 }
 
 // pubspecDeclaresFlutter matches the `flutter:` key anywhere in the manifest —
-// the dependency, the top-level assets section, or an environment constraint.
+// the dependency, the top-level assets section, or an environment gate.
 // Any of them means the package expects the Flutter SDK's analyzer.
 func pubspecDeclaresFlutter(repoRoot string) bool {
 	return repoFileContains(repoRoot, "pubspec.yaml", "flutter:")

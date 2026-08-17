@@ -104,8 +104,7 @@ type Finding struct {
 	// the diff. CodeExcerpt is the fallback for findings about lines the
 	// change did not touch: the current source, ±2 lines of context, with
 	// CodeExcerptStart as the 1-based file line of its first line. Populated
-	// by the gate engine behind `gx review`; enhance findings leave all three
-	// empty.
+	// by the gates engine; review findings leave all three empty.
 	DiffHunk         string `json:"diff_hunk,omitempty"`
 	CodeExcerpt      string `json:"code_excerpt,omitempty"`
 	CodeExcerptStart int    `json:"code_excerpt_start,omitempty"`
@@ -489,7 +488,7 @@ func staticToolFailureFindings(ctx ReviewContext) []Finding {
 		Summary:        fmt.Sprintf("`%s` failed, so the review found concrete correctness or best-practice diagnostics before speculative structure work.", first.Command),
 		Benefit:        "Restores a clean correctness baseline so later architecture recommendations are judged against working code instead of compile, vet, or test failures.",
 		Evidence:       evidence,
-		Recommendation: "Start by fixing the failing tool output, then rerun `gx enhance` so the reviewer can judge structure on a clean baseline.",
+		Recommendation: "Start by fixing the failing tool output, then rerun `gx review` so the reviewer can judge structure on a clean baseline.",
 		Strength:       "Blocking",
 		SourceIDs:      []string{"google-eng-practices"},
 	}}
@@ -731,7 +730,7 @@ func missingAgentsFinding(facts RepoFacts) Finding {
 		Evidence: []Evidence{
 			{Label: "File", Value: "`AGENTS.md` is missing"},
 		},
-		Recommendation: "Add `AGENTS.md` with the expected build/test commands, version-control workflow, and repo-specific constraints.",
+		Recommendation: "Add `AGENTS.md` with the expected build/test commands, version-control workflow, and repo-specific gates.",
 		Strength:       "Worth exploring",
 		SourceIDs:      []string{"google-eng-practices"},
 	}

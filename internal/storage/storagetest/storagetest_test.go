@@ -88,7 +88,7 @@ func TestDriftedRepoIdentityFromRealWorktreePaths(t *testing.T) {
 // guarded, through the INSERT's `ON CONFLICT(root_path) DO UPDATE`, which
 // rewrites git_common_dir just the same. Guarding the SELECT alone changes
 // nothing; closing it means either never minting empty-root rows or dropping
-// the UNIQUE constraint, both of which are schema decisions rather than a
+// the UNIQUE gate, both of which are schema decisions rather than a
 // resolver fix.
 //
 // So this test asserts the case that does hold and that every real repository

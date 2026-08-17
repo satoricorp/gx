@@ -3,7 +3,7 @@
 // agent transcripts.
 //
 // It imports nothing from gx beyond the standard library, and that is a
-// constraint rather than an accident. internal/storage/storagetest layers the
+// gate rather than an accident. internal/storage/storagetest layers the
 // database state builder on top of this package, and internal/vcs already
 // imports internal/storage — so a gx import here would either cycle or drag
 // internal/vcs and its git-probing package init into the fast test binaries of

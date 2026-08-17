@@ -5,35 +5,35 @@ import (
 	"testing"
 )
 
-func TestParseReviewJudgeResponse(t *testing.T) {
+func TestParseGatesJudgeResponse(t *testing.T) {
 	valid := `{"gates":[{"gate":"back-pressure","status":"pass","justification":"scoped","findings":[]}]}`
-	response, err := parseReviewJudgeResponse(valid)
+	response, err := parseGatesJudgeResponse(valid)
 	if err != nil {
-		t.Fatalf("parseReviewJudgeResponse() error = %v", err)
+		t.Fatalf("parseGatesJudgeResponse() error = %v", err)
 	}
 	if len(response.Gates) != 1 || response.Gates[0].Gate != "back-pressure" {
 		t.Fatalf("response = %#v", response)
 	}
 
 	wrapped := "Here is my assessment:\n```json\n" + valid + "\n```\nDone."
-	if _, err := parseReviewJudgeResponse(wrapped); err != nil {
+	if _, err := parseGatesJudgeResponse(wrapped); err != nil {
 		t.Fatalf("prose-wrapped reply did not parse: %v", err)
 	}
 
-	if _, err := parseReviewJudgeResponse("no json here"); err == nil {
+	if _, err := parseGatesJudgeResponse("no json here"); err == nil {
 		t.Fatalf("reply without JSON must not parse")
 	}
-	if _, err := parseReviewJudgeResponse(`{"gates":[]}`); err == nil {
+	if _, err := parseGatesJudgeResponse(`{"gates":[]}`); err == nil {
 		t.Fatalf("a reply that judged no gates must not parse as success")
 	}
 }
 
-func TestReviewFindingFromAIDefaults(t *testing.T) {
-	finding := reviewFindingFromAI(GateBackPressure, reviewAIFinding{Title: "Out of scope"}, KnownRuleIDs())
+func TestGatesFindingFromAIDefaults(t *testing.T) {
+	finding := gatesFindingFromAI(GateBackPressure, gatesAIFinding{Title: "Out of scope"}, KnownRuleIDs())
 	if finding.Strength != "Worth exploring" {
 		t.Fatalf("default strength = %q, want Worth exploring", finding.Strength)
 	}
-	perf := reviewFindingFromAI(GatePerformance, reviewAIFinding{Title: "N+1 query"}, KnownRuleIDs())
+	perf := gatesFindingFromAI(GatePerformance, gatesAIFinding{Title: "N+1 query"}, KnownRuleIDs())
 	if perf.Strength != "Strong" {
 		t.Fatalf("performance default strength = %q, want Strong (the weighted gate)", perf.Strength)
 	}
@@ -42,8 +42,8 @@ func TestReviewFindingFromAIDefaults(t *testing.T) {
 	}
 }
 
-func TestReviewGateScopes(t *testing.T) {
-	scopes := reviewGateScopes([]GateID{GateCodeHealth, GateBackPressure, GatePerformance, GateAccessibility})
+func TestGateScopes(t *testing.T) {
+	scopes := gateScopes([]GateID{GateCodeHealth, GateBackPressure, GatePerformance, GateAccessibility})
 	joined := strings.Join(scopes, ",")
 	for _, want := range []string{"maintainability", "testing", "architecture", "performance"} {
 		if !strings.Contains(joined, want) {
@@ -52,8 +52,8 @@ func TestReviewGateScopes(t *testing.T) {
 	}
 }
 
-func TestReviewDeveloperPromptNamesEveryAIGate(t *testing.T) {
-	prompt := reviewDeveloperPrompt()
+func TestGatesDeveloperPromptNamesEveryAIGate(t *testing.T) {
+	prompt := gatesDeveloperPrompt()
 	for _, gate := range []string{"code-health", "back-pressure", "accessibility", "performance"} {
 		if !strings.Contains(prompt, gate) {
 			t.Fatalf("developer prompt does not define the %s gate", gate)

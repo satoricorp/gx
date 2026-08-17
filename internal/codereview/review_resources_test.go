@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestEnhanceResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
+func TestReviewResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) {
 	store := &recordingReviewResourceStore{
 		rows: []reviewResourceRow{{
 			"source_id":        "owasp-sql-injection",
@@ -91,7 +91,7 @@ func TestEnhanceResourceRetrieverQueriesBroadAndFilteredResources(t *testing.T) 
 	}
 }
 
-func TestEnhanceResourceQueryTextUsesPatchAndDeepReviewIntents(t *testing.T) {
+func TestReviewResourceQueryTextUsesPatchAndDeepReviewIntents(t *testing.T) {
 	patchOpts := normalizeOptions(Options{})
 	patchSignals := reviewResourceSignalSet{
 		Files:      []string{"internal/auth/session.go"},
@@ -138,7 +138,7 @@ func TestEnhanceResourceQueryTextUsesPatchAndDeepReviewIntents(t *testing.T) {
 	}
 }
 
-func TestEnhanceResourceQueryTextIncludesPromptedReviewIntent(t *testing.T) {
+func TestReviewResourceQueryTextIncludesPromptedReviewIntent(t *testing.T) {
 	opts := normalizeOptions(Options{Prompt: "review auth rollback risk"})
 	signals := reviewResourceSignalSet{
 		Files:      []string{"internal/auth/session.go"},
@@ -344,7 +344,7 @@ func TestCompactContextSnippetsKeepsReviewResourcesNearTop(t *testing.T) {
 // review that skipped the corpus, one whose query failed, and one that read
 // 15,999 chunks and found nothing used to be indistinguishable in the report:
 // all three simply had no review-knowledge line.
-func TestEnhanceResourceRetrieverRecordsEvidenceForEveryOutcome(t *testing.T) {
+func TestReviewResourceRetrieverRecordsEvidenceForEveryOutcome(t *testing.T) {
 	rows := []reviewResourceRow{{
 		"source_id": "owasp-sql-injection",
 		"chunk_id":  "owasp-sql-injection::queries::0002",
@@ -448,7 +448,7 @@ func TestEnhanceResourceRetrieverRecordsEvidenceForEveryOutcome(t *testing.T) {
 // The narrowed query is a second read of the same source. When it fails after
 // the broad one answered, the review is entitled to both facts: what it got,
 // and that it did not get all of it.
-func TestEnhanceResourceRetrieverReportsAPartialReadWhenTheNarrowedQueryFails(t *testing.T) {
+func TestReviewResourceRetrieverReportsAPartialReadWhenTheNarrowedQueryFails(t *testing.T) {
 	log := &EvidenceLog{}
 	retriever := ReviewResourceRetriever{
 		Embedder: fakeReviewResourceEmbedder{vector: []float32{0.1}},

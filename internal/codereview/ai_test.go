@@ -166,7 +166,7 @@ func TestParsePRSummaryReviewMissingNotableChangesIsEmpty(t *testing.T) {
 	}
 }
 
-func TestEnhanceReturnsFindingsWithoutSummaryFields(t *testing.T) {
+func TestReviewReturnsFindingsWithoutSummaryFields(t *testing.T) {
 	reviewer := cannedAIReviewer{payload: `{
 		"overview":"Hidden overview.",
 		"notable_changes":[{"file":"main.go","line":3,"note":"Notable change."}],

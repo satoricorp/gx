@@ -16,7 +16,7 @@ var (
 	fixtureGitHubToken = "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
 )
 
-func TestReviewSecretFindings(t *testing.T) {
+func TestGatesSecretFindings(t *testing.T) {
 	tests := []struct {
 		name string
 		file string
@@ -75,10 +75,10 @@ func TestReviewSecretFindings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			diffs := []DiffSnippet{{File: test.file, Diff: test.diff}}
-			addedByFile := map[string][]reviewAddedLine{
-				test.file: reviewAddedLinesForDiff(test.diff),
+			addedByFile := map[string][]gatesAddedLine{
+				test.file: gatesAddedLinesForDiff(test.diff),
 			}
-			findings := reviewSecretFindings(diffs, addedByFile)
+			findings := gatesSecretFindings(diffs, addedByFile)
 			if len(findings) != test.want {
 				t.Fatalf("findings = %d, want %d: %#v", len(findings), test.want, findings)
 			}
@@ -91,7 +91,7 @@ func TestReviewSecretFindings(t *testing.T) {
 	}
 }
 
-func TestReviewAuditEnvironmentFailure(t *testing.T) {
+func TestGatesAuditEnvironmentFailure(t *testing.T) {
 	tests := []struct {
 		name    string
 		tool    string
@@ -105,15 +105,15 @@ func TestReviewAuditEnvironmentFailure(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reason := reviewAuditEnvironmentFailure(test.tool, test.output)
+			reason := gatesAuditEnvironmentFailure(test.tool, test.output)
 			if (reason != "") != test.skipped {
-				t.Fatalf("reviewAuditEnvironmentFailure(%q) = %q, want skipped=%v", test.output, reason, test.skipped)
+				t.Fatalf("gatesAuditEnvironmentFailure(%q) = %q, want skipped=%v", test.output, reason, test.skipped)
 			}
 		})
 	}
 }
 
-func TestCollectReviewAuditResultsReportsMissingAuditor(t *testing.T) {
+func TestCollectGatesAuditResultsReportsMissingAuditor(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -122,7 +122,7 @@ func TestCollectReviewAuditResultsReportsMissingAuditor(t *testing.T) {
 	tools := t.TempDir()
 	t.Setenv("PATH", tools)
 
-	results := collectReviewAuditResults(context.Background(), root, []string{"go.mod"})
+	results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"})
 	if len(results) != 1 {
 		t.Fatalf("results = %#v, want exactly the missing govulncheck", results)
 	}
@@ -131,7 +131,7 @@ func TestCollectReviewAuditResultsReportsMissingAuditor(t *testing.T) {
 	}
 }
 
-func TestCollectReviewAuditResultsRunsDetectedAuditor(t *testing.T) {
+func TestCollectGatesAuditResultsRunsDetectedAuditor(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "1")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
@@ -139,7 +139,7 @@ func TestCollectReviewAuditResultsRunsDetectedAuditor(t *testing.T) {
 	writeExecutable(t, filepath.Join(tools, "govulncheck"), "#!/bin/sh\necho 'Vulnerability #1: GO-2024-1234'\nexit 3\n")
 	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	results := collectReviewAuditResults(context.Background(), root, []string{"go.mod"})
+	results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"})
 	if len(results) != 1 {
 		t.Fatalf("results = %#v, want one govulncheck run", results)
 	}
@@ -148,12 +148,12 @@ func TestCollectReviewAuditResultsRunsDetectedAuditor(t *testing.T) {
 	}
 }
 
-func TestCollectReviewAuditResultsHonorsKillSwitch(t *testing.T) {
+func TestCollectGatesAuditResultsHonorsKillSwitch(t *testing.T) {
 	t.Setenv("GX_REVIEW_STATIC_TOOLS", "0")
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.com/repo\n")
 
-	if results := collectReviewAuditResults(context.Background(), root, []string{"go.mod"}); results != nil {
+	if results := collectGatesAuditResults(context.Background(), root, []string{"go.mod"}); results != nil {
 		t.Fatalf("results = %#v, want nil under GX_REVIEW_STATIC_TOOLS=0", results)
 	}
 }

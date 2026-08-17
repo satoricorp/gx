@@ -13,7 +13,7 @@ import (
 
 // TestHarnessLayering keeps the test harness out of internal/vcs.
 //
-// The constraint is real in both directions. internal/vcs imports
+// The gate is real in both directions. internal/vcs imports
 // internal/storage, so a harness under internal/storage that imported vcs would
 // cycle the moment an in-package storage test used it. And vcs pulls in the
 // capture pipeline and the git subprocess layer, so importing it would add

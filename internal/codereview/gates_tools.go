@@ -10,9 +10,9 @@ import (
 
 // The gate partitions one shared static-tool run: compile-and-test runners
 // answer the correctness gate, linters answer code health. The names here must
-// match staticToolRunners entries (plus the review-only extras below).
+// match staticToolRunners entries (plus the gates-only extras below).
 var (
-	reviewCorrectnessTools = map[string]bool{
+	gatesCorrectnessTools = map[string]bool{
 		"go test":         true,
 		"tsc":             true,
 		"cargo check":     true,
@@ -20,7 +20,7 @@ var (
 		"flutter analyze": true,
 		"pytest":          true,
 	}
-	reviewLintTools = map[string]bool{
+	gatesLintTools = map[string]bool{
 		"go vet":       true,
 		"eslint":       true,
 		"ruff":         true,
@@ -29,10 +29,10 @@ var (
 	}
 )
 
-// reviewExtraToolRunners are runners the review gate adds on top of
+// gatesExtraToolRunners are runners the gates gate adds on top of
 // the review registry. They live here rather than in staticToolRunners so that
-// adding the exit gate does not silently change what `gx enhance` executes.
-var reviewExtraToolRunners = []staticToolRunner{
+// adding the exit gate does not silently change what `gx review` executes.
+var gatesExtraToolRunners = []staticToolRunner{
 	{name: "pytest", progress: "Running pytest", detect: detectPytest, wholeProject: true},
 }
 
@@ -60,12 +60,12 @@ func pytestConfigured(repoRoot string) bool {
 		repoFileContains(repoRoot, "setup.cfg", "[tool:pytest]")
 }
 
-// collectReviewToolResults is the shared run: the review registry plus
-// the review-only extras, never in fast mode — the whole point of the
+// collectGatesToolResults is the shared run: the review registry plus
+// the gates-only extras, never in fast mode — the whole point of the
 // gate is running the checks a fast review skips.
-func collectReviewToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changed []string) []StaticToolResult {
+func collectGatesToolResults(ctx context.Context, repoRoot string, facts RepoFacts, opts Options, changed []string) []StaticToolResult {
 	results := collectStaticToolResults(ctx, repoRoot, facts, opts, changed)
-	if reviewStaticToolsDisabled() {
+	if gatesStaticToolsDisabled() {
 		return results
 	}
 	env := staticToolEnv{
@@ -76,18 +76,18 @@ func collectReviewToolResults(ctx context.Context, repoRoot string, facts RepoFa
 	if len(env.changedFiles) == 0 {
 		return results
 	}
-	for _, runner := range reviewExtraToolRunners {
+	for _, runner := range gatesExtraToolRunners {
 		command, ok := runner.detect(env)
 		if !ok {
 			continue
 		}
-		enhanceProgress(opts, runner.progress)
+		reviewProgress(opts, runner.progress)
 		results = append(results, runStaticTool(ctx, repoRoot, 90*time.Second, runner.name, command))
 	}
 	return results
 }
 
-func partitionReviewTools(results []StaticToolResult, names map[string]bool) []StaticToolResult {
+func partitionGatesTools(results []StaticToolResult, names map[string]bool) []StaticToolResult {
 	var out []StaticToolResult
 	for _, result := range results {
 		if names[result.Name] {
@@ -97,8 +97,8 @@ func partitionReviewTools(results []StaticToolResult, names map[string]bool) []S
 	return out
 }
 
-// reviewToolLine summarizes one command for the gate's evidence line.
-func reviewToolLine(result StaticToolResult) string {
+// gatesToolLine summarizes one command for the gate's evidence line.
+func gatesToolLine(result StaticToolResult) string {
 	switch {
 	case result.Skipped:
 		reason := strings.TrimSpace(result.Reason)
@@ -113,20 +113,20 @@ func reviewToolLine(result StaticToolResult) string {
 	}
 }
 
-func reviewToolSummary(results []StaticToolResult) string {
+func gatesToolSummary(results []StaticToolResult) string {
 	lines := make([]string, 0, len(results))
 	for _, result := range results {
-		lines = append(lines, reviewToolLine(result))
+		lines = append(lines, gatesToolLine(result))
 	}
 	return strings.Join(lines, "; ")
 }
 
-// reviewToolFinding turns a failed command into a finding. The output
+// gatesToolFinding turns a failed command into a finding. The output
 // excerpt is the evidence a reader needs to act without rerunning anything.
-func reviewToolFinding(result StaticToolResult, scope string) Finding {
-	excerpt := reviewOutputExcerpt(result.Output, 5)
+func gatesToolFinding(result StaticToolResult, scope string) Finding {
+	excerpt := gatesOutputExcerpt(result.Output, 5)
 	finding := Finding{
-		ID:             "review." + strings.ReplaceAll(result.Name, " ", "-"),
+		ID:             "gates." + strings.ReplaceAll(result.Name, " ", "-"),
 		Scopes:         []string{scope},
 		Title:          result.Name + " failed",
 		Summary:        fmt.Sprintf("`%s` exited %d on this change.", result.Command, result.ExitCode),
@@ -140,7 +140,7 @@ func reviewToolFinding(result StaticToolResult, scope string) Finding {
 	return finding
 }
 
-func reviewOutputExcerpt(output string, maxLines int) string {
+func gatesOutputExcerpt(output string, maxLines int) string {
 	var lines []string
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -155,18 +155,18 @@ func reviewOutputExcerpt(output string, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
-// reviewCorrectnessGate: the project's own tests and builds, taken as
+// gatesCorrectnessGate: the project's own tests and builds, taken as
 // they answered. FAIL on any real failure; SKIPPED when nothing could run,
 // with the reason — a gate must never read "passed" for a suite that never
 // started.
-func reviewCorrectnessGate(results []StaticToolResult, changed []string) GateResult {
-	gate := GateResult{Gate: GateCorrectness, Title: gateTitle(GateCorrectness), Files: reviewCodeFiles(changed)}
-	if reviewStaticToolsDisabled() {
+func gatesCorrectnessGate(results []StaticToolResult, changed []string) GateResult {
+	gate := GateResult{Gate: GateCorrectness, Title: gateTitle(GateCorrectness), Files: gatesCodeFiles(changed)}
+	if gatesStaticToolsDisabled() {
 		gate.Status = GateSkipped
 		gate.SkipReason = "project checks disabled (GX_REVIEW_STATIC_TOOLS=0)"
 		return gate
 	}
-	checks := partitionReviewTools(results, reviewCorrectnessTools)
+	checks := partitionGatesTools(results, gatesCorrectnessTools)
 	gate.Checks = checks
 	if len(checks) == 0 {
 		gate.Status = GateSkipped
@@ -182,30 +182,30 @@ func reviewCorrectnessGate(results []StaticToolResult, changed []string) GateRes
 		ran++
 		if check.ExitCode != 0 {
 			gate.Status = GateFail
-			gate.Findings = append(gate.Findings, reviewToolFinding(check, "testing"))
+			gate.Findings = append(gate.Findings, gatesToolFinding(check, "testing"))
 		}
 	}
 	if ran == 0 {
 		// Every detected runner was skipped (unready checkout, timeout): that
 		// is an unanswered question, not a pass.
 		gate.Status = GateSkipped
-		gate.SkipReason = "all detected runners were skipped: " + reviewToolSummary(checks)
+		gate.SkipReason = "all detected runners were skipped: " + gatesToolSummary(checks)
 		return gate
 	}
-	gate.Summary = reviewToolSummary(checks)
+	gate.Summary = gatesToolSummary(checks)
 	return gate
 }
 
-// reviewCodeHealthGate is the deterministic core of code health: linter
+// gatesCodeHealthGate is the deterministic core of code health: linter
 // verdicts and the reviewability thresholds. The AI overlay may add judgment
 // findings on top; it never overturns what is decided here.
-func reviewCodeHealthGate(results []StaticToolResult, signals reviewSignals, changed []string) GateResult {
+func gatesCodeHealthGate(results []StaticToolResult, signals gateSignals, changed []string) GateResult {
 	gate := GateResult{Gate: GateCodeHealth, Title: gateTitle(GateCodeHealth), Status: GatePass}
 	gate.Files = signals.SourceFilesChanged
 	var summary []string
 
-	if !reviewStaticToolsDisabled() {
-		checks := partitionReviewTools(results, reviewLintTools)
+	if !gatesStaticToolsDisabled() {
+		checks := partitionGatesTools(results, gatesLintTools)
 		gate.Checks = checks
 		for _, check := range checks {
 			if check.Skipped {
@@ -213,11 +213,11 @@ func reviewCodeHealthGate(results []StaticToolResult, signals reviewSignals, cha
 			}
 			if check.ExitCode != 0 {
 				gate.Status = GateFail
-				gate.Findings = append(gate.Findings, reviewToolFinding(check, "maintainability"))
+				gate.Findings = append(gate.Findings, gatesToolFinding(check, "maintainability"))
 			}
 		}
 		if len(checks) > 0 {
-			summary = append(summary, reviewToolSummary(checks))
+			summary = append(summary, gatesToolSummary(checks))
 		}
 	} else {
 		gate.Evidence = append(gate.Evidence, Evidence{Label: "linters", Value: "disabled (GX_REVIEW_STATIC_TOOLS=0)"})
@@ -226,9 +226,9 @@ func reviewCodeHealthGate(results []StaticToolResult, signals reviewSignals, cha
 	// Reviewability thresholds warn, they do not block: a large change still
 	// gets checked and shipped on its merits — Joe's call — but the reader is
 	// told the review read less carefully than a small change would get.
-	if signals.NonGenLines > reviewMaxReviewableLines || signals.NonGenerated > reviewMaxReviewableFiles {
+	if signals.NonGenLines > gatesMaxReviewableLines || signals.NonGenerated > gatesMaxReviewableFiles {
 		gate.Findings = append(gate.Findings, Finding{
-			ID:             "review.change-size",
+			ID:             "gates.change-size",
 			Scopes:         []string{"maintainability"},
 			Title:          "Large change — review carefully",
 			Summary:        fmt.Sprintf("%d changed lines across %d non-generated files is more than a human reviews carefully in one sitting; the other gates still ran, but weigh their PASSes accordingly.", signals.NonGenLines, signals.NonGenerated),
@@ -247,10 +247,10 @@ func reviewCodeHealthGate(results []StaticToolResult, signals reviewSignals, cha
 	return gate
 }
 
-// reviewAccessibilityGate applies only when UI files changed; otherwise
+// gatesAccessibilityGate applies only when UI files changed; otherwise
 // it skips and says why. Its deterministic half is the added-line checks; the
 // AI overlay confirms the softer candidates.
-func reviewAccessibilityGate(signals reviewSignals) GateResult {
+func gatesAccessibilityGate(signals gateSignals) GateResult {
 	gate := GateResult{Gate: GateAccessibility, Title: gateTitle(GateAccessibility)}
 	if len(signals.UIFiles) == 0 {
 		gate.Status = GateSkipped
@@ -272,10 +272,10 @@ func reviewAccessibilityGate(signals reviewSignals) GateResult {
 	return gate
 }
 
-// reviewPerformanceGate decides applicability deterministically; the
+// gatesPerformanceGate decides applicability deterministically; the
 // verdict itself is the model's, which is why an applicable gate stays PASS
 // only until the AI pass either justifies it or is found unavailable.
-func reviewPerformanceGate(signals reviewSignals) GateResult {
+func gatesPerformanceGate(signals gateSignals) GateResult {
 	gate := GateResult{Gate: GatePerformance, Title: gateTitle(GatePerformance)}
 	if !signals.PerfApplies {
 		gate.Status = GateSkipped

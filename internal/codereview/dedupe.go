@@ -111,7 +111,7 @@ const (
 	dedupeMinTextOnlyTokens = 4
 
 	// dedupeAdjudicationBatch is how many pairs one adjudication call carries.
-	// Like the judge, the binding constraint is output length, and the answer
+	// Like the judge, the binding gate is output length, and the answer
 	// per pair is small; batches run concurrently.
 	dedupeAdjudicationBatch = 25
 

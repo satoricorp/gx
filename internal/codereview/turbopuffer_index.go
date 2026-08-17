@@ -443,7 +443,7 @@ func embedErrorText(err error, count int) string {
 // defaultEmbedderFactory builds an OpenAI embedder whose vectors live in the
 // same space as the rows already in a namespace of that width.
 //
-// Matching the model is a correctness constraint, not a preference: embeddings
+// Matching the model is a correctness gate, not a preference: embeddings
 // from two different models are not comparable even at equal width, so querying
 // a 1536-dimension index built with text-embedding-3-small using a truncated
 // text-embedding-3-large vector returns confident nonsense rather than an

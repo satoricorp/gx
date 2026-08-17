@@ -1,6 +1,6 @@
 # gx Context
 
-This file defines the domain language gx enhance runs and agent workflows should use.
+This file defines the domain language gx reviews and agent workflows should use.
 It is a glossary, not an implementation spec.
 
 ## Core Terms

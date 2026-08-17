@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// gx review is the pre-ship exit gate: six fixed gate checks over
+// gx gates is the pre-ship exit gate: six fixed gate checks over
 // the current change, each answering with PASS, FAIL, or SKIPPED, rolled into
 // one ship / no-ship verdict. It is deliberately not a review. A review looks
 // for whatever matters; the gate asks the same six questions every time, runs
@@ -23,7 +23,7 @@ import (
 // resolution, diff collection, the static-tool registry, the read-only git
 // guarantee, and the Bedrock plumbing are all reused rather than rebuilt.
 
-// GateID names one gate. The set is fixed: the gate asks the same
+// GateID names one gate gate. The set is fixed: the gate asks the same
 // questions of every change, which is what makes its verdict comparable from
 // run to run.
 type GateID string
@@ -86,7 +86,7 @@ func ParseGateIDs(value string) ([]GateID, error) {
 			continue
 		}
 		if _, ok := known[id]; !ok {
-			return nil, fmt.Errorf("unknown gate %q (want one of: %s)", part, joinGateIDs(AllGateIDs()))
+			return nil, fmt.Errorf("unknown gates gate %q (want one of: %s)", part, joinGateIDs(AllGateIDs()))
 		}
 		out = append(out, id)
 	}
@@ -128,7 +128,7 @@ type GateResult struct {
 	Files      []string           `json:"files,omitempty"`
 }
 
-// Reviews verdicts. "degraded" is its own outcome rather than a flavor of
+// Gates verdicts. "degraded" is its own outcome rather than a flavor of
 // ship: every resolved gate passed, but gates that needed the model never got
 // one, so the run is not entitled to say ship — the same honesty rule the
 // review gate applies.
@@ -139,21 +139,21 @@ const (
 	VerdictNothingToCheck = "nothing-to-check"
 )
 
-type ReviewDiffStats struct {
+type GatesDiffStats struct {
 	Files          int `json:"files"`
 	AddedLines     int `json:"added_lines"`
 	RemovedLines   int `json:"removed_lines"`
 	GeneratedFiles int `json:"generated_files,omitempty"`
 }
 
-type ReviewReport struct {
-	RepoRoot     string          `json:"repo_root"`
-	Intent       string          `json:"intent,omitempty"`
-	IntentSource string          `json:"intent_source,omitempty"`
-	ChangedFiles []string        `json:"changed_files,omitempty"`
-	DiffStats    ReviewDiffStats `json:"diff_stats"`
-	Gates        []GateResult    `json:"gates"`
-	Verdict      string          `json:"verdict"`
+type GatesReport struct {
+	RepoRoot     string         `json:"repo_root"`
+	Intent       string         `json:"intent,omitempty"`
+	IntentSource string         `json:"intent_source,omitempty"`
+	ChangedFiles []string       `json:"changed_files,omitempty"`
+	DiffStats    GatesDiffStats `json:"diff_stats"`
+	Gates        []GateResult   `json:"gates"`
+	Verdict      string         `json:"verdict"`
 	// DegradedReasons say why the verdict is worth less than it looks: an AI
 	// gate that could not run, a truncated diff. They never appear on a
 	// deliberate opt-out (GX_REVIEW_AI=0), only on a configured capability that
@@ -175,7 +175,7 @@ type ReviewReport struct {
 }
 
 // FailedGates lists the gates that failed, in evaluation order.
-func (r ReviewReport) FailedGates() []GateID {
+func (r GatesReport) FailedGates() []GateID {
 	var out []GateID
 	for _, gate := range r.Gates {
 		if gate.Status == GateFail {
@@ -185,7 +185,7 @@ func (r ReviewReport) FailedGates() []GateID {
 	return out
 }
 
-type ReviewOptions struct {
+type GatesOptions struct {
 	// Intent is the stated purpose of the change, usually the positional CLI
 	// argument. Empty means it is derived from the branch and commit subjects.
 	Intent string
@@ -193,7 +193,7 @@ type ReviewOptions struct {
 	// exactly like review's --base.
 	Base      string
 	SkipGates []GateID
-	// Timeout bounds the whole run. Zero means defaultReviewTimeout.
+	// Timeout bounds the whole run. Zero means defaultGatesTimeout.
 	Timeout        time.Duration
 	Verbose        bool
 	ProgressWriter io.Writer
@@ -201,27 +201,27 @@ type ReviewOptions struct {
 }
 
 const (
-	defaultReviewTimeout = 5 * time.Minute
-	// reviewRetrievalTimeout bounds the context-retrieval leg on its own:
+	defaultGatesTimeout = 5 * time.Minute
+	// gatesRetrievalTimeout bounds the context-retrieval leg on its own:
 	// grounding is a bonus, and a hung index must not stall a gate whose
 	// deterministic half already finished.
-	reviewRetrievalTimeout = 20 * time.Second
+	gatesRetrievalTimeout = 20 * time.Second
 	// Code-health thresholds. A change past either of these is one a human
-	// cannot meaningfully review in a sitting, which is a code-health violation
+	// cannot meaningfully review in a sitting, which is a gate violation
 	// on its own — no model needed to argue it.
-	reviewMaxReviewableLines = 1500
-	reviewMaxReviewableFiles = 60
+	gatesMaxReviewableLines = 1500
+	gatesMaxReviewableFiles = 60
 )
 
-// CheckReview runs the exit gate against repoRoot's current change.
-func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (ReviewReport, error) {
+// CheckGates runs the exit gate against repoRoot's current change.
+func CheckGates(ctx context.Context, repoRoot string, opts GatesOptions) (GatesReport, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	if repoRoot == "" {
-		return ReviewReport{}, fmt.Errorf("repo root is required")
+		return GatesReport{}, fmt.Errorf("repo root is required")
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
-		timeout = defaultReviewTimeout
+		timeout = defaultGatesTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -229,14 +229,14 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 	ctx, releaseIndex := withScratchGitIndex(ctx, repoRoot)
 	defer releaseIndex()
 
-	reviewProgress(opts, "Resolving the current change")
+	gatesProgress(opts, "Resolving the current change")
 	facts, err := scanRepo(ctx, repoRoot, "")
 	if err != nil {
-		return ReviewReport{}, err
+		return GatesReport{}, err
 	}
 	policy := LoadReviewPolicy(repoRoot)
 	changes := resolveChangeSet(ctx, repoRoot, opts.Base)
-	report := ReviewReport{
+	report := GatesReport{
 		RepoRoot:     repoRoot,
 		Reviewed:     changes.Reviewed(),
 		ReviewMode:   changes.Mode,
@@ -256,9 +256,9 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 
 	reviewOpts := Options{ReviewPolicy: &policy, Color: opts.Color}
 	diffs := collectDiffSnippets(ctx, repoRoot, changes.Files, reviewOpts, changes.Range)
-	signals := collectReviewSignals(changes.Files, diffs, policy, reviewNumstat(ctx, repoRoot, changes.Range))
+	signals := collectGateSignals(changes.Files, diffs, policy, gatesNumstat(ctx, repoRoot, changes.Range))
 	report.DiffStats = signals.DiffStats
-	report.Intent, report.IntentSource = resolveReviewIntent(ctx, repoRoot, opts.Intent, changes)
+	report.Intent, report.IntentSource = resolveGatesIntent(ctx, repoRoot, opts.Intent, changes)
 
 	skipped := map[GateID]struct{}{}
 	for _, id := range opts.SkipGates {
@@ -275,7 +275,7 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 		retrieved    []ContextSnippet
 	)
 	needTools := !bothGatesSkipped(skipped, GateCorrectness, GateCodeHealth)
-	judge, judgeModel, judgeTransport, judgeUnavailable := reviewJudgeFactory()
+	judge, judgeModel, judgeTransport, judgeUnavailable := gatesJudgeFactory()
 	report.AIModel = judgeModel
 	report.AITransport = judgeTransport
 	var wg sync.WaitGroup
@@ -283,23 +283,23 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reviewProgress(opts, "Running project checks")
-			toolResults = collectReviewToolResults(ctx, repoRoot, facts, reviewOpts, changes.Files)
+			gatesProgress(opts, "Running project checks")
+			toolResults = collectGatesToolResults(ctx, repoRoot, facts, reviewOpts, changes.Files)
 		}()
 	}
 	if _, skip := skipped[GateSecurity]; !skip {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reviewProgress(opts, "Auditing dependencies")
-			auditResults = collectReviewAuditResults(ctx, repoRoot, changes.Files)
+			gatesProgress(opts, "Auditing dependencies")
+			auditResults = collectGatesAuditResults(ctx, repoRoot, changes.Files)
 		}()
 	}
 	if judge != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			retrieved = collectReviewContext(ctx, repoRoot, facts, reviewOpts, changes, diffs)
+			retrieved = collectGatesContext(ctx, repoRoot, facts, reviewOpts, changes, diffs)
 		}()
 	}
 	wg.Wait()
@@ -308,29 +308,29 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 	}
 
 	gates := map[GateID]GateResult{
-		GateCorrectness: reviewCorrectnessGate(toolResults, changes.Files),
-		GateSecurity:    reviewSecurityGate(repoRoot, changes.Files, diffs, auditResults),
+		GateCorrectness: gatesCorrectnessGate(toolResults, changes.Files),
+		GateSecurity:    gatesSecurityGate(repoRoot, changes.Files, diffs, auditResults),
 	}
-	gates[GateCodeHealth] = reviewCodeHealthGate(toolResults, signals, changes.Files)
+	gates[GateCodeHealth] = gatesCodeHealthGate(toolResults, signals, changes.Files)
 	gates[GateBackPressure] = GateResult{Gate: GateBackPressure, Title: gateTitle(GateBackPressure), Status: GatePass}
-	gates[GateAccessibility] = reviewAccessibilityGate(signals)
-	gates[GatePerformance] = reviewPerformanceGate(signals)
+	gates[GateAccessibility] = gatesAccessibilityGate(signals)
+	gates[GatePerformance] = gatesPerformanceGate(signals)
 
 	// The judgment gates: one model call over the diff, grounded in the
 	// deterministic results above and whatever retrieval found.
-	aiGates := reviewAIGates(gates, skipped)
+	aiGates := gatesAIGates(gates, skipped)
 	if len(aiGates) > 0 {
 		switch {
 		case judge == nil && judgeUnavailable == "":
 			// Deliberate opt-out (GX_REVIEW_AI=0): the AI gates are skipped and
 			// the run is not degraded — the operator asked for exactly this.
-			markReviewAIGatesSkipped(gates, aiGates, "AI judgment disabled (GX_REVIEW_AI=0)")
+			markGatesAIGatesSkipped(gates, aiGates, "AI judgment disabled (GX_REVIEW_AI=0)")
 		case judge == nil:
-			markReviewAIGatesSkipped(gates, aiGates, "AI judgment unavailable: "+judgeUnavailable)
+			markGatesAIGatesSkipped(gates, aiGates, "AI judgment unavailable: "+judgeUnavailable)
 			report.DegradedReasons = append(report.DegradedReasons, judgeUnavailable)
 		default:
-			reviewProgress(opts, "Asking the AI judge")
-			degraded := runReviewAIPass(ctx, judge, reviewAIPassInput{
+			gatesProgress(opts, "Asking the AI judge")
+			degraded := runGatesAIPass(ctx, judge, gatesAIPassInput{
 				report:    &report,
 				gates:     gates,
 				aiGates:   aiGates,
@@ -372,26 +372,26 @@ func CheckReview(ctx context.Context, repoRoot string, opts ReviewOptions) (Revi
 		}
 		// A finding about the change shows its diff hunk; only findings about
 		// lines the change did not touch fall back to the current source.
-		attachReviewDiffHunks(diffsByFile, result.Findings)
-		attachReviewCodeExcerpts(repoRoot, result.Findings)
+		attachGatesDiffHunks(diffsByFile, result.Findings)
+		attachGatesCodeExcerpts(repoRoot, result.Findings)
 		report.Gates = append(report.Gates, result)
 	}
-	report.Verdict = reviewVerdict(report)
+	report.Verdict = gatesVerdict(report)
 	return report, nil
 }
 
 const (
-	// reviewExcerptContext is how many lines surround a finding's line in
-	// its code excerpt; reviewExcerptMaxLineBytes keeps a minified or
+	// gatesExcerptContext is how many lines surround a finding's line in
+	// its code excerpt; gatesExcerptMaxLineBytes keeps a minified or
 	// generated line from turning the excerpt into a wall.
-	reviewExcerptContext      = 2
-	reviewExcerptMaxLineBytes = 200
+	gatesExcerptContext      = 2
+	gatesExcerptMaxLineBytes = 200
 )
 
-// attachReviewDiffHunks gives each finding whose line is part of the
+// attachGatesDiffHunks gives each finding whose line is part of the
 // change its unified-diff window, extracted from the same snippets the gates
 // read.
-func attachReviewDiffHunks(diffsByFile map[string]string, findings []Finding) {
+func attachGatesDiffHunks(diffsByFile map[string]string, findings []Finding) {
 	for i := range findings {
 		finding := &findings[i]
 		if finding.DiffHunk != "" || finding.File == "" || finding.Line <= 0 {
@@ -401,16 +401,16 @@ func attachReviewDiffHunks(diffsByFile map[string]string, findings []Finding) {
 		if !ok {
 			continue
 		}
-		finding.DiffHunk = reviewDiffHunkForLine(diff, finding.Line)
+		finding.DiffHunk = gatesDiffHunkForLine(diff, finding.Line)
 	}
 }
 
-// attachReviewCodeExcerpts reads the source lines each finding points at,
+// attachGatesCodeExcerpts reads the source lines each finding points at,
 // so the report shows the code being discussed rather than only naming it.
 // Findings that already carry a diff hunk are left alone — the hunk is the
 // better evidence. Best-effort by design: an unreadable file or a stale line
 // number just leaves the excerpt empty.
-func attachReviewCodeExcerpts(repoRoot string, findings []Finding) {
+func attachGatesCodeExcerpts(repoRoot string, findings []Finding) {
 	for i := range findings {
 		finding := &findings[i]
 		if finding.DiffHunk != "" || finding.CodeExcerpt != "" || finding.File == "" || finding.Line <= 0 {
@@ -428,18 +428,18 @@ func attachReviewCodeExcerpts(repoRoot string, findings []Finding) {
 		if finding.Line > len(lines) {
 			continue
 		}
-		start := finding.Line - reviewExcerptContext
+		start := finding.Line - gatesExcerptContext
 		if start < 1 {
 			start = 1
 		}
-		end := finding.Line + reviewExcerptContext
+		end := finding.Line + gatesExcerptContext
 		if end > len(lines) {
 			end = len(lines)
 		}
 		excerpt := make([]string, 0, end-start+1)
 		for _, line := range lines[start-1 : end] {
-			if len(line) > reviewExcerptMaxLineBytes {
-				line = line[:reviewExcerptMaxLineBytes] + "…"
+			if len(line) > gatesExcerptMaxLineBytes {
+				line = line[:gatesExcerptMaxLineBytes] + "…"
 			}
 			excerpt = append(excerpt, line)
 		}
@@ -448,9 +448,9 @@ func attachReviewCodeExcerpts(repoRoot string, findings []Finding) {
 	}
 }
 
-// reviewVerdict rolls the gates up. Real failures outrank everything;
+// gatesVerdict rolls the gates up. Real failures outrank everything;
 // a degraded run with no failures must not claim ship.
-func reviewVerdict(report ReviewReport) string {
+func gatesVerdict(report GatesReport) string {
 	if len(report.FailedGates()) > 0 {
 		return VerdictNoShip
 	}
@@ -460,12 +460,12 @@ func reviewVerdict(report ReviewReport) string {
 	return VerdictShip
 }
 
-// reviewAIGates lists the gates the model call must judge this run: the
+// gatesAIGates lists the gates the model call must judge this run: the
 // judgment gates that apply to this change and were not skipped by flag or
 // already decided deterministically as FAIL. A gate the deterministic half
 // already failed keeps its failure; the model can add findings to a passing
 // gate but never overturn a command's exit code.
-func reviewAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}) []GateID {
+func gatesAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}) []GateID {
 	var out []GateID
 	for _, id := range []GateID{GateCodeHealth, GateBackPressure, GateAccessibility, GatePerformance} {
 		if _, skip := skipped[id]; skip {
@@ -479,7 +479,7 @@ func reviewAIGates(gates map[GateID]GateResult, skipped map[GateID]struct{}) []G
 	return out
 }
 
-func markReviewAIGatesSkipped(gates map[GateID]GateResult, ids []GateID, reason string) {
+func markGatesAIGatesSkipped(gates map[GateID]GateResult, ids []GateID, reason string) {
 	for _, id := range ids {
 		result := gates[id]
 		if result.Status == GateFail {
@@ -509,21 +509,21 @@ func bothGatesSkipped(skipped map[GateID]struct{}, ids ...GateID) bool {
 	return true
 }
 
-// resolveReviewIntent picks what the change is supposed to be, most
+// resolveGatesIntent picks what the change is supposed to be, most
 // explicit source first: the caller's argument, then the branch name plus the
 // range's commit subjects. Session context reaches the model through the
 // retrieval pass instead of through this field, so a missing session can never
 // block the gate.
-func resolveReviewIntent(ctx context.Context, repoRoot, stated string, changes ChangeSet) (string, string) {
+func resolveGatesIntent(ctx context.Context, repoRoot, stated string, changes ChangeSet) (string, string) {
 	stated = strings.TrimSpace(stated)
 	if stated != "" {
 		return stated, "stated"
 	}
 	var parts []string
-	if branch := currentReviewBranch(ctx, repoRoot); branch != "" && branch != "HEAD" {
+	if branch := currentGatesBranch(ctx, repoRoot); branch != "" && branch != "HEAD" {
 		parts = append(parts, "branch "+branch)
 	}
-	if subjects := reviewCommitSubjects(ctx, repoRoot, changes.Range); len(subjects) > 0 {
+	if subjects := gatesCommitSubjects(ctx, repoRoot, changes.Range); len(subjects) > 0 {
 		parts = append(parts, "commits: "+strings.Join(subjects, "; "))
 	}
 	if changes.Mode == ReviewModeWorkingTree {
@@ -535,7 +535,7 @@ func resolveReviewIntent(ctx context.Context, repoRoot, stated string, changes C
 	return strings.Join(parts, " — "), "derived"
 }
 
-func currentReviewBranch(ctx context.Context, repoRoot string) string {
+func currentGatesBranch(ctx context.Context, repoRoot string) string {
 	cmd := gitCommand(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
@@ -544,7 +544,7 @@ func currentReviewBranch(ctx context.Context, repoRoot string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func reviewCommitSubjects(ctx context.Context, repoRoot, refRange string) []string {
+func gatesCommitSubjects(ctx context.Context, repoRoot, refRange string) []string {
 	refRange = strings.TrimSpace(refRange)
 	if refRange == "" {
 		return nil
@@ -564,13 +564,13 @@ func reviewCommitSubjects(ctx context.Context, repoRoot, refRange string) []stri
 	return subjects
 }
 
-func reviewProgress(opts ReviewOptions, message string) {
+func gatesProgress(opts GatesOptions, message string) {
 	if opts.ProgressWriter == nil || strings.TrimSpace(message) == "" {
 		return
 	}
 	_, _ = io.WriteString(opts.ProgressWriter, strings.TrimSpace(message)+"\n")
 }
 
-func reviewStaticToolsDisabled() bool {
+func gatesStaticToolsDisabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_STATIC_TOOLS")), "0")
 }
