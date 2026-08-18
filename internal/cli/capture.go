@@ -159,6 +159,18 @@ func newCapturePushCommand(ctx context.Context) *cobra.Command {
 			if outcome.PublicationError != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this push queued no gx review artifact: %s\n", outcome.PublicationError)
 			}
+			// Caught in the pre-flight before the upload worker is spawned:
+			// once detached, the worker's output and exit code are discarded,
+			// so a blocker reported anywhere but here stays invisible.
+			if outcome.CloudUploadBlocked != "" {
+				if outcome.QueuedUploads > 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %d queued gx artifact(s) will not upload: %s\n",
+						outcome.QueuedUploads, outcome.CloudUploadBlocked)
+				} else {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: gx artifacts will not upload: %s\n",
+						outcome.CloudUploadBlocked)
+				}
+			}
 			// Uploads happen in a detached process whose output goes nowhere,
 			// so this is the only place a failing upload can reach a human.
 			if failures := outcome.UploadFailures; failures.Total() > 0 {

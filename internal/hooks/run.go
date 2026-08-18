@@ -88,6 +88,15 @@ type PushOutcome struct {
 	AttachedSessions int
 	UploadFailures   storage.CaptureUploadFailures
 	Publication      publication.Result
+	// CloudUploadBlocked explains why queued artifacts cannot reach the cloud,
+	// determined before the detached upload worker is spawned. That worker runs
+	// with stdin, stdout, stderr, and its exit code all pointed at /dev/null,
+	// so a fault it discovers is unobservable. Whatever is knowable before the
+	// handoff has to be caught here or it is never reported at all.
+	CloudUploadBlocked string
+	// QueuedUploads counts artifacts stranded in the publish outbox, reported
+	// only when something is blocking them.
+	QueuedUploads int
 }
 
 // RunPush executes capture staging, shareable marking, and background upload kickoff.
@@ -246,7 +255,15 @@ func RunPush(ctx context.Context, opts PushOptions) (PushOutcome, error) {
 	if backgroundWorkersEnabled() {
 		_ = background.StartDetachedGx("capture", "sync", "--quiet")
 		if shouldStartOutboxWorker(pub.Queued) {
-			_ = background.StartDetachedGx("__gx-upload-outbox", "--quiet")
+			// Pre-flight before the async handoff. Past this point the detached
+			// worker owns the upload and nothing it learns can reach a human,
+			// so a fault that is already knowable gets reported now or never.
+			if blocked := cloudUploadBlocker(); blocked != "" {
+				outcome.CloudUploadBlocked = blocked
+				outcome.QueuedUploads = queuedUploadBacklog()
+			} else {
+				_ = background.StartDetachedGx("__gx-upload-outbox", "--quiet")
+			}
 		}
 	}
 	return outcome, nil
@@ -328,6 +345,34 @@ func shouldStartOutboxWorker(queuedThisPush bool) bool {
 		return false
 	}
 	return status.Pending > 0 || status.Failed > 0
+}
+
+// cloudUploadBlocker reports why a queued artifact cannot reach the cloud, or
+// "" when the upload is worth attempting. The check is deliberately local: it
+// makes no network call, so it adds nothing to push latency and still holds
+// offline, where probing a remote endpoint would only produce false alarms.
+//
+// The case it exists for is a binary built without the endpoint bake — a bare
+// `go build` rather than `just install` — which leaves the cloud URL empty.
+// The upload worker reads that as "cloud disabled" and exits without touching
+// the queue, so the outbox grows without bound while every push reports
+// success.
+func cloudUploadBlocker() string {
+	if cloud.CloudURL() == "" {
+		return "gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints (`just install`)"
+	}
+	return ""
+}
+
+// queuedUploadBacklog counts the artifacts stranded in the outbox. It is
+// reported only alongside a blocker, where the count is what conveys scale:
+// one waiting artifact is a hiccup, two dozen is a broken install.
+func queuedUploadBacklog() int {
+	status, err := publication.QueuedUploadStatus()
+	if err != nil {
+		return 0
+	}
+	return status.Pending + status.Failed
 }
 
 func gitCaptureAttestation(ctx context.Context, repoRoot string) (storage.CaptureAttestation, error) {

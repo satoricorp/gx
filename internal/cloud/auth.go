@@ -99,6 +99,11 @@ type CloudAPISessionValidation struct {
 	Login      string
 	StatusCode int
 	Error      string
+	// NotConfigured marks the failure as a missing cloud endpoint rather than
+	// a rejected session. The two want opposite remedies — rebuild with the
+	// endpoint baked in versus re-authenticate — and reporting the auth one
+	// for a build problem sends people to re-login, which never fixes it.
+	NotConfigured bool
 }
 
 // CompleteAuthResponse is returned by POST /cx/auth/complete.
@@ -451,7 +456,7 @@ func validateCloudAPISessionAtURL(ctx context.Context, client *http.Client, clou
 	}
 	meURL := cloudURLWithPath(cloudURL, "/v1/auth/me")
 	if meURL == "" {
-		return CloudAPISessionValidation{Valid: false, Error: "gx cloud URL is not configured"}, nil
+		return CloudAPISessionValidation{Valid: false, NotConfigured: true, Error: "gx cloud URL is not configured"}, nil
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}

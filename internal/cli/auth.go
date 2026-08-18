@@ -215,7 +215,15 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 					if status.APIError == "" {
 						status.APIError = "gx API rejected stored session"
 					}
-					status.APIError += "; run `gx auth logout` then `gx auth login`"
+					// A missing endpoint is a build problem, not a session
+					// problem. Re-authenticating a binary that has nowhere to
+					// authenticate to fixes nothing, and this line used to
+					// send exactly that advice.
+					if validation.NotConfigured {
+						status.APIError += "; set GX_CLOUD_URL or rebuild with cloud endpoints (`just install`)"
+					} else {
+						status.APIError += "; run `gx auth logout` then `gx auth login`"
+					}
 				}
 			}
 		}
