@@ -78,7 +78,13 @@ chmod 755 "$stage_dir/bin/gx-mcp"
 # invisible from the outside -- the MCP starts fine and every review it runs is
 # quietly degraded.
 if [[ -n "${GX_CLOUD_URL:-}" ]]; then
-  if ! strings "$stage_dir/bin/gx-mcp" | grep -F -- "$GX_CLOUD_URL" >/dev/null; then
+  # grep -a on the file, not strings(1). gx-mcp is cross-compiled for the
+  # target platform, and macOS strings refuses a Mach-O it did not expect --
+  # "LC_CODE_SIGNATURE command extends past the end of the file" -- which reads
+  # here as an absent bake and fails a build whose bake was fine. Measured: the
+  # native arm64 leg passed and the x64 leg failed on the same value. grep -a
+  # treats the binary as bytes and does not care what object format it is.
+  if ! grep -aF -- "$GX_CLOUD_URL" "$stage_dir/bin/gx-mcp" >/dev/null; then
     echo "missing baked GX_CLOUD_URL in $stage_dir/bin/gx-mcp" >&2
     exit 1
   fi

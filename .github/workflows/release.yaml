@@ -119,7 +119,9 @@ jobs:
             # do not describe it. A gx-mcp that cannot name its server hands the
             # CLI whatever the host GUI's environment held, which is how a
             # developer's localhost URL reached production reviews.
-            if ! strings /tmp/gx-verify/gx/bin/gx-mcp | grep -F -- "$GX_CLOUD_URL" >/dev/null; then
+            # grep -a, not strings: these archives carry binaries for every
+            # target, and strings(1) rejects a Mach-O built for another one.
+            if ! grep -aF -- "$GX_CLOUD_URL" /tmp/gx-verify/gx/bin/gx-mcp >/dev/null; then
               echo "missing baked GX_CLOUD_URL in gx-mcp from $(basename "$archive")" >&2
               exit 1
             fi
