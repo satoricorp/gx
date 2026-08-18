@@ -114,6 +114,16 @@ jobs:
             tar -xzf "$archive" -C /tmp/gx-verify
             echo "checking $(basename "$archive")"
             just verify-bake /tmp/gx-verify/gx/bin/gx
+            # gx-mcp carries the endpoint separately: it is a Bun binary, so
+            # GX_LDFLAGS never reaches it and verify-bake's Go-oriented checks
+            # do not describe it. A gx-mcp that cannot name its server hands the
+            # CLI whatever the host GUI's environment held, which is how a
+            # developer's localhost URL reached production reviews.
+            if ! strings /tmp/gx-verify/gx/bin/gx-mcp | grep -F -- "$GX_CLOUD_URL" >/dev/null; then
+              echo "missing baked GX_CLOUD_URL in gx-mcp from $(basename "$archive")" >&2
+              exit 1
+            fi
+            echo "bake ok: /tmp/gx-verify/gx/bin/gx-mcp"
           done
 
       - name: Upload workflow artifacts

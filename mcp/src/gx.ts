@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolveCloudURL } from "./buildconfig";
 
 export type GxRunOptions = {
   cwd?: string;
@@ -59,6 +60,18 @@ export function commandEnvironment() {
   env.GX_REVIEW_AI = "1";
   env.GX_MCP = "1";
   env.GX_CLIENT = "mcp";
+  // Decide the gx server rather than forwarding whatever was inherited. See
+  // resolveCloudURL for why an MCP server's environment is not an operator
+  // choice. Deleting the key rather than setting it empty matters: gx reads it
+  // with os.LookupEnv, so a present-but-empty GX_CLOUD_URL reads as "cloud
+  // explicitly disabled" and would kill the reviewers just as dead as a wrong
+  // URL. Absent is what lets the CLI fall through to its own baked endpoint.
+  const cloudURL = resolveCloudURL();
+  if (cloudURL) {
+    env.GX_CLOUD_URL = cloudURL;
+  } else {
+    delete env.GX_CLOUD_URL;
+  }
   const pathEntries = [
     join(homedir(), ".local", "bin"),
     env.PATH || "",

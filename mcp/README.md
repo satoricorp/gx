@@ -153,9 +153,21 @@ compiled `dist/gx-mcp` binary is distributed by the CLI installer instead.
 | Variable | Description |
 |----------|-------------|
 | `GX_BINARY` | Optional path to `gx` executable |
-| `GX_CLOUD_URL` | gx cloud API base URL for review AI fallback |
+| `GX_MCP_CLOUD_URL` | Point the MCP at a non-production gx server (local server work). Overrides the compiled-in endpoint |
 
 Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Cloud calls use credentials from `gx auth login` when available.
+
+`GX_CLOUD_URL` is deliberately **not** read from the inherited environment. An MCP
+server is spawned by whatever GUI process hosts it and inherits that process's
+environment, which nobody chose and nobody can see — a dev server URL exported in
+some shell weeks ago reaches every review the MCP runs, and the symptom is a
+review that returns "degraded, no model ran" with the reason buried in the run
+notes. Released builds compile the production endpoint in (`bun build --define
+GX_BAKED_CLOUD_URL=...`, wired in `scripts/package-cli.sh` and verified on the
+packaged binary before publish). To point the MCP somewhere else, set
+`GX_MCP_CLOUD_URL` in the MCP server config's own `env` block, where it is
+visible to whoever reads the config. A build made without the define hands the
+CLI nothing and lets `gx` fall back to its own baked endpoint.
 
 The released `gx-mcp` checks `https://download.gx.run/cli/manifest.json` and adds an
 update notice plus `curl -fsSL https://download.gx.run/install.sh | sh` to tool responses

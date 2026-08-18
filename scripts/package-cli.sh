@@ -53,16 +53,41 @@ chmod 755 "$stage_dir/bin/gx"
 ln -sf gx "$stage_dir/bin/gxr"
 
 echo "Building gx-mcp for ${goos}/${goarch}"
+# gx-mcp is a Bun binary, so GX_LDFLAGS does not reach it. It gets the same
+# production endpoint through --define, which is Bun's compile-time constant
+# substitution. Only passed when the value is non-empty: `--define X=` is not
+# valid JS, and an empty bake is the same as no bake anyway -- gx-mcp then hands
+# the child nothing and the CLI falls back to its own baked endpoint.
+mcp_define=()
+if [[ -n "${GX_CLOUD_URL:-}" ]]; then
+  mcp_define=(--define "GX_BAKED_CLOUD_URL=\"${GX_CLOUD_URL}\"")
+fi
 (
   cd "$repo_root/mcp"
   bun install --frozen-lockfile
   if [[ -n "$bun_target" ]]; then
-    bun build src/stdio.ts --compile --target "$bun_target" --outfile "$stage_dir/bin/gx-mcp"
+    bun build src/stdio.ts --compile --target "$bun_target" "${mcp_define[@]}" --outfile "$stage_dir/bin/gx-mcp"
   else
-    bun build src/stdio.ts --compile --outfile "$stage_dir/bin/gx-mcp"
+    bun build src/stdio.ts --compile "${mcp_define[@]}" --outfile "$stage_dir/bin/gx-mcp"
   fi
 )
 chmod 755 "$stage_dir/bin/gx-mcp"
+
+# The same fail-closed rule the Go bake guard follows: a shipped gx-mcp that
+# cannot name its server is the build this check exists to stop, and it is
+# invisible from the outside -- the MCP starts fine and every review it runs is
+# quietly degraded.
+if [[ -n "${GX_CLOUD_URL:-}" ]]; then
+  if ! strings "$stage_dir/bin/gx-mcp" | grep -F -- "$GX_CLOUD_URL" >/dev/null; then
+    echo "missing baked GX_CLOUD_URL in $stage_dir/bin/gx-mcp" >&2
+    exit 1
+  fi
+  echo "bake ok: $stage_dir/bin/gx-mcp"
+elif [[ "${GX_ALLOW_UNBAKED:-}" != "1" ]]; then
+  echo "cannot verify GX_CLOUD_URL for gx-mcp: unset in the environment and .env" >&2
+  echo "set GX_CLOUD_URL, or GX_ALLOW_UNBAKED=1 to build a cloud-dead gx-mcp on purpose" >&2
+  exit 1
+fi
 
 env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/gx-gen-completions "$stage_dir/completions/gx.bash" "$stage_dir/completions/_gx"
 
