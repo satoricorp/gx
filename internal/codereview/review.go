@@ -110,6 +110,17 @@ type Report struct {
 	Triage            ChangeTriage `json:"triage,omitempty"`
 	NoFindingsMessage string       `json:"no_findings_message,omitempty"`
 	DegradedReasons   []string     `json:"degraded_reasons,omitempty"`
+	// RuleLabeling is why some findings carry no rule name. It is deliberately
+	// NOT DegradedReasons: that field gates — gateDegradedReason refuses to pass
+	// a review that cannot answer the gate's question — and a finding without a
+	// rule name answers it exactly as well as one with. The findings, their
+	// severities, and their lanes are identical either way; only the label is
+	// missing. Folding this into DegradedReasons turned a failed labeling call
+	// into a failed gate, which is the one thing this pass must never do.
+	//
+	// It is still reported, because "no rule fit this finding" and "the labeler
+	// never ran" render identically as a blank and mean opposite things.
+	RuleLabeling []string `json:"rule_labeling,omitempty"`
 	// Evidence is what each retrieval source contributed, including the ones
 	// that contributed nothing because they were missing or unreachable. It is
 	// separate from DegradedReasons, which is specifically about the AI

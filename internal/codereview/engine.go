@@ -17,6 +17,7 @@ type Engine struct {
 	retriever    ContextRetriever
 	reviewer     AIReviewer
 	judge        FindingJudge
+	ruleSorter   RuleSorter
 	autoReviewer bool
 }
 
@@ -194,6 +195,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	findings := evaluateFindings(reviewContext, rules)
 	reviewerLabel := "heuristic fallback"
 	var degradedReasons []string
+	var ruleLabeling []string
 	reviewer := e.reviewer
 	autoLoadedReviewer := false
 	if reviewer == nil && e.autoReviewer {
@@ -349,6 +351,28 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// inside applyJudgeResults would miss the unjudged fallback and the Blocking
 	// tool findings split out above. See lanes.go for the rule.
 	findings = AssignLanes(append(blocking, advisory...))
+	// Rule sorting runs here: after lanes, and so after every stage that decides
+	// whether a finding reaches the reader at all. It names which pack rule each
+	// surviving finding is an instance of and touches nothing else. See
+	// rulesort.go for why it is neither in detection nor folded into the judge.
+	//
+	// A failure here is not a degraded review in the way a failed verification
+	// is — the findings are the same findings, just unnamed — but it is still
+	// reported, because "no rule fit" and "the labeler never ran" look identical
+	// in the output and mean opposite things.
+	sorter := e.ruleSorter
+	if sorter == nil {
+		sorter = ruleSorterFromEnv()
+	}
+	if sorterAvailable := sorter != nil && sorter.Available(); sorterAvailable && len(findings) > 0 {
+		reviewProgress(opts, "Sorting findings into rules")
+		sortOutcome := runRuleSort(ctx, sorter, reviewContext, findings)
+		if sortOutcome.Failed > 0 {
+			ruleLabeling = append(ruleLabeling, fmt.Sprintf(
+				"%d of %d rule-labeling batch(es) failed, so some findings are reported without a rule: %v",
+				sortOutcome.Failed, sortOutcome.Batches, sortOutcome.Err))
+		}
+	}
 	// Show the code under discussion. Gates has done this since it
 	// shipped; the review path never did, so a report of twenty findings
 	// with file:line anchors showed zero lines of code — every finding was a
@@ -393,6 +417,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Color:             opts.Color,
 		Triage:            triage,
 		DegradedReasons:   degradedReasons,
+		RuleLabeling:      ruleLabeling,
 		Evidence:          brief.Evidence,
 		Coverage:          coverage,
 		Tools:             brief.Static.ToolResults,

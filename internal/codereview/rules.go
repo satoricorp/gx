@@ -79,6 +79,15 @@ func KnownRuleIDs(extra ...RuleDef) map[string]string {
 			known[strings.ToLower(id)] = id
 		}
 	}
+	// Retired pack slugs resolve to the rule that absorbed them, so a
+	// suppression or a history row written against the old name keeps working
+	// after a merge. Registered only when the successor is actually in force —
+	// an alias to a rule this review is not running is not a rule either.
+	for retired, current := range RecommendedPackAliases() {
+		if canonical, ok := known[strings.ToLower(current)]; ok {
+			known[strings.ToLower(retired)] = canonical
+		}
+	}
 	return known
 }
 

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/codereview"
 	"time"
 
 	"github.com/satoricorp/gx/internal/cloud"
@@ -412,4 +414,21 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// A review whose rule labeling failed still answers the gate's question: the
+// findings and their severities are unchanged, only their names are missing.
+// This pins the two channels apart, because folding labeling into
+// DegradedReasons turned a failed label call into a failed gate.
+func TestRuleLabelingFailureDoesNotDegradeTheGate(t *testing.T) {
+	report := codereview.Report{
+		RuleLabeling: []string{"1 of 1 rule-labeling batch(es) failed: model unreachable"},
+	}
+	if reason := gateDegradedReason(report); reason != "" {
+		t.Errorf("gateDegradedReason() = %q, want \"\" — a missing rule name is not a degraded review", reason)
+	}
+	report.DegradedReasons = []string{"one reviewer did not run"}
+	if reason := gateDegradedReason(report); reason == "" {
+		t.Error("gateDegradedReason() = \"\", want the reviewer failure — real degradation must still gate")
+	}
 }

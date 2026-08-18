@@ -11,8 +11,7 @@ import (
 // or is renamed fails here before it can orphan a reference.
 var recommendedPackSlugs = map[string]bool{
 	// Tier 1. The value is whether the rule is advisory.
-	"no-secrets-in-code":     false,
-	"no-secrets-in-logs":     false,
+	"no-secrets":             false,
 	"no-injection-sinks":     false,
 	"no-swallowed-errors":    false,
 	"tests-can-fail":         false,
@@ -22,8 +21,7 @@ var recommendedPackSlugs = map[string]bool{
 	"cleanup-on-failure":     true,
 	"handles-missing-values": false,
 	// Tier 2.
-	"reuse-before-rewrite":    true,
-	"no-duplicated-blocks":    true,
+	"dont-repeat-yourself":    true,
 	"no-invented-packages":    false,
 	"no-invented-apis":        false,
 	"apis-used-as-documented": true,
@@ -40,6 +38,16 @@ var recommendedPackSlugs = map[string]bool{
 	"no-weakened-checks":       false,
 	"no-silent-regressions":    false,
 	"no-unguarded-destruction": false,
+	// Tier 4, added in v3: the specific mechanisms that the two v2 catch-alls
+	// (review/wrong-logic, review/data-correctness) were absorbing.
+	"variable-misuse":          false,
+	"boolean-polarity":         false,
+	"normalized-comparisons":   false,
+	"boundary-arithmetic":      false,
+	"falsy-but-present-values": false,
+	"operation-completeness":   false,
+	"test-synchronization":     false,
+	"accurate-identifiers":     true,
 }
 
 var recommendedPackSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -55,8 +63,8 @@ func TestRecommendedPackParsesCleanly(t *testing.T) {
 	if _, _, _, diagnostics := parseReviewRules(recommendedPackSource); len(diagnostics) != 0 {
 		t.Fatalf("pack parse diagnostics = %#v, want none", diagnostics)
 	}
-	if RecommendedPackVersion != "2" {
-		t.Fatalf("RecommendedPackVersion = %q, want 2", RecommendedPackVersion)
+	if RecommendedPackVersion != "3" {
+		t.Fatalf("RecommendedPackVersion = %q, want 3", RecommendedPackVersion)
 	}
 }
 
@@ -131,5 +139,34 @@ func TestRecommendedPackRulesAreKnownRuleIDs(t *testing.T) {
 	last := all[len(all)-1]
 	if last.ID != "REVIEW.md/no-reinvented-utils" || last.Summary != "Reuse the shared helper." {
 		t.Fatalf("repo rule def = %#v", last)
+	}
+}
+
+// v2 slugs that v3 merged away. Every one of these was released, so a
+// suppression or a history row may still name it; resolving to the successor is
+// the contract that makes a merge safe. Retired names must never come back as
+// live rules, which the permanent-set test above enforces from the other side.
+var retiredPackSlugs = map[string]string{
+	"gx:recommended/no-secrets-in-code":   "gx:recommended/no-secrets",
+	"gx:recommended/no-secrets-in-logs":   "gx:recommended/no-secrets",
+	"gx:recommended/reuse-before-rewrite": "gx:recommended/dont-repeat-yourself",
+	"gx:recommended/no-duplicated-blocks": "gx:recommended/dont-repeat-yourself",
+}
+
+func TestRetiredPackSlugsResolveToTheirSuccessor(t *testing.T) {
+	known := KnownRuleIDs(AllRuleDefs(nil)...)
+	for retired, want := range retiredPackSlugs {
+		if got := NormalizeRuleID(retired, known); got != want {
+			t.Errorf("NormalizeRuleID(%q) = %q, want %q", retired, got, want)
+		}
+	}
+	rules, err := RecommendedPack()
+	if err != nil {
+		t.Fatalf("RecommendedPack() error = %v", err)
+	}
+	for _, rule := range rules {
+		if _, retired := retiredPackSlugs["gx:recommended/"+rule.Slug]; retired {
+			t.Errorf("slug %q was retired and must not be reused as a live rule", rule.Slug)
+		}
 	}
 }

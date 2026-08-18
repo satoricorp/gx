@@ -1,4 +1,4 @@
-# gx:recommended v2
+# gx:recommended v3
 
 The built-in rule pack. Written in the REVIEW.md grammar so the same parser
 reads it: every `##` heading below is one rule, its slug is the rule's
@@ -6,13 +6,9 @@ permanent name, and an `Advisory:` prefix marks a rule that informs rather
 than blocks. A repository's own REVIEW.md may add rules or list exceptions;
 it cannot change these.
 
-## No secrets in code
+## No secrets
 
-Credentials, API keys, tokens, private keys, and connection strings with embedded passwords must not appear as literals in source, config committed to the repo, or test fixtures that reach production paths. This catches a hard-coded key used to "make it work for now", a `.env` value copied into a Go or TS constant, and a real token pasted into a test. A clearly fake placeholder (`sk-test-000`, `changeme`, `example.com`) that no live system accepts does not count, and neither does a public identifier such as a client ID. Move the value behind the environment, a secrets manager, or the existing config loader, and if a real secret was committed say so plainly: it needs rotating, not just deleting.
-
-## No secrets in logs
-
-Log lines, error messages, panics, and telemetry must not carry credentials, tokens, session cookies, or full request bodies that contain them. This catches `log.Printf("auth failed: %v", req)` where the request holds a bearer token, an error that wraps the raw Authorization header, and a debug dump of a config struct with a password field. Logging that a secret was present, its length, or a fixed-width prefix for correlation does not count. Redact the field before logging, log the identifier instead of the value, or use the redacting formatter the codebase already has.
+Credentials, API keys, tokens, private keys, and connection strings with embedded passwords must not appear as literals in source, config committed to the repo, test fixtures that reach production paths, log lines, error messages, panics, or telemetry. This catches a hard-coded key used to "make it work for now", a `.env` value copied into a Go or TS constant, a real token pasted into a test, `log.Printf("auth failed: %v", req)` where the request holds a bearer token, and an error that wraps the raw Authorization header. A clearly fake placeholder (`sk-test-000`, `changeme`, `example.com`) that no live system accepts, a public identifier such as a client ID, or logging that a secret was present (its length, a fixed-width prefix for correlation) without the value itself does not count. Move the value behind the environment, a secrets manager, or the existing config loader; redact it before logging; and if a real secret was committed say so plainly: it needs rotating, not just deleting.
 
 ## No injection sinks
 
@@ -46,13 +42,9 @@ Resources acquired on a code path must be released on every exit from it, includ
 
 Code that reads a value which can be absent — a nil pointer, an empty slice, a missing map key, an optional field, an empty string from the environment — must handle the absent case on the path it actually takes. This catches dereferencing a lookup result without checking `ok`, indexing `parts[1]` after a split that may return one element, calling a method on a nullable return, and treating an unset environment variable as configured. A value guaranteed present by construction, a check earlier on the same path, or a type that cannot be absent does not count. Check for the absent case where the value is read, and give it a defined behavior: a default, an error, or a skip.
 
-## Advisory: Reuse before rewrite
+## Advisory: Dont repeat yourself
 
-A change must use the helper, type, or pattern the codebase already has for the job before adding a new one. This catches a second HTTP client wrapper, a re-implemented slugify or path-join, a bespoke retry loop next to the shared one, and a new config reader when the loader is three packages over. A local function that differs in a way the change explains, or a copy made to break an unwanted dependency, does not count. Call the existing helper, or extend it if it lacks what the change needs.
-
-## Advisory: No duplicated blocks
-
-A change must not introduce a block of logic that already appears elsewhere in the same change or the codebase with only names swapped. This catches the same validation copied into three handlers, a switch that mirrors one two files away, and a test setup pasted across cases. Two short blocks that look alike but encode different rules, or duplication that is cheaper than the coupling a helper would create, do not count. Extract the shared block once, name it for what it decides, and call it from each site.
+A change must use the helper, type, or pattern the codebase already has for a job instead of writing a new one, and must not introduce a block of logic that already appears elsewhere in the same change or the codebase with only names swapped. This catches a second HTTP client wrapper, a re-implemented slugify or path-join, a bespoke retry loop next to the shared one, a new config reader when the loader is three packages over, the same validation copied into three handlers, and a switch that mirrors one two files away. A local function that differs in a way the change explains, a copy made to break an unwanted dependency, or duplication that is cheaper than the coupling a helper would create, does not count. Call or extend the existing helper, or extract the shared block once and call it from each site.
 
 ## No invented packages
 
@@ -113,3 +105,35 @@ A change must not remove or alter behavior a caller depends on without saying so
 ## No unguarded destruction
 
 An operation that deletes, drops, truncates, overwrites, force-pushes, or otherwise destroys data or history must be guarded: scoped to what was intended, confirmed or gated, and recoverable where the codebase's norms require it. This catches a `DROP TABLE` or `rm -rf` on a path built from input, a migration that deletes rows without a filter, an overwrite of a user file with no backup, and a cleanup job with an unbounded match. Deleting a temp file the code created, or a destructive step behind an explicit flag the change documents, does not count. Add the guard — a filter, a dry-run, a confirmation, a soft delete — and make the blast radius visible in the code.
+
+## Variable misuse
+
+Code that reads, returns, or passes a value must use the specific variable the surrounding logic actually computed or was given, not a different, same-typed value that happens to be in scope and compiles. This catches modifying a local copy but returning the original, comparing a value against the wrong parameter, passing an outer-scope value where the inner one was intended, and using a start-time variable where the end-time variable was meant. A deliberate use of an outer, default, or fallback value, explained by the surrounding code or its comments, does not count. Trace each identifier back to where it was last assigned or received, and confirm it is the one the current line's logic actually needs, not merely a plausible name in scope.
+
+## Boolean polarity
+
+A change must not invert the sense of a guard, gate, or permission check: using AND where the logic needs OR, negating a condition that should not be negated, or swapping which branch a flag or flag default takes. This catches a permission check that requires two roles when either should qualify, a feature flag guarded by the wrong sign, and a boolean whose default silently flipped. A condition correctly negated to match a genuinely different requirement, explained by the change, does not count. Write out in plain language which inputs the condition is meant to admit and which it is meant to reject, then verify the operator and every negation against that sentence.
+
+## Normalized comparisons
+
+Values compared for equality that can legitimately vary in case, whitespace, or encoding — hostnames, tokens, codes, anything a person might type — must be normalized the same way on both sides before comparing, unless the comparison is deliberately case-sensitive by contract. This catches one side of a comparison being lower-cased while the other is a raw user-supplied value, and validation done with indexOf or substring matching that silently fails on a differently-cased but equivalent input. A comparison against a value already guaranteed to be in canonical form upstream does not count. Normalize both operands the same way immediately before the comparison, and say in the code where that normalization happens.
+
+## Boundary arithmetic
+
+Code that computes an index, offset, or window boundary from external input or mutable state must be checked against the edge cases: the first element, the last element, an empty collection, and an offset that lands exactly on a limit. This catches a negative-offset branch that slices a collection with a negative start index, a paginator that produces an empty page when offset equals total, and a time window whose lower and upper bounds are computed from two different reference points. A boundary already validated earlier on the same path does not count. Name the boundary case explicitly in a comment or test, and verify the arithmetic against it, not only against the common case.
+
+## Falsy-but-present values
+
+A value that evaluates as falsy in the language but is semantically present and valid — zero, an empty string, an empty collection, `false` itself — must not be treated the same as absent, unset, or not-provided. This catches a rate, count, or flag of zero being skipped by a truthiness check meant to test "was this given", and an empty string being treated as no answer when it is a valid one. A value where the language's falsy state truly does mean nothing was provided, stated by the code's own contract, does not count. Check for absence explicitly — a null, undefined, or key-exists check — instead of relying on truthiness.
+
+## Operation completeness
+
+An operation described or named as a single action but implemented as several related writes, deletes, or external calls must complete every one of them on every path, or explicitly roll back the ones that already succeeded. This catches canceling an external side effect, such as a scheduled email or a charge, without deleting the local record that was tracking it, and a multi-table write that updates one table but not a table that depends on it. A step intentionally deferred to a background job or a later change, stated in the code, does not count. Enumerate every step the operation implies and verify each one runs on every return path, including early returns and error branches.
+
+## Test synchronization
+
+A test that waits for asynchronous, scheduled, or background work must synchronize on an observable condition — a callback, a flag, a polled state — not a fixed-duration sleep or delay that can pass or fail independent of whether the work actually happened. This catches a fixed sleep standing in for a wait-until-condition, and a sleep whose target function was mocked or monkeypatched elsewhere in the test so it no longer waits at all. A sleep that bounds genuinely time-based behavior under test, not a proxy for another event, does not count. Replace the fixed wait with a wait on the actual signal the test cares about.
+
+## Advisory: Accurate identifiers
+
+Names — of functions, methods, tests, variables, and properties — must be spelled correctly and must describe what they actually name or test. This catches a misspelled method name that ships as part of a public API, and a test name that describes a different input, behavior, or expectation than what the test body actually exercises. A name that is imprecise but not misleading, or a pre-existing name outside the change's scope, does not count. Fix the spelling, or rename so the identifier matches what the code or test actually does.
