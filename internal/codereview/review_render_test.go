@@ -95,7 +95,9 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 		"one grader flagged · judge confirmed · demoted from blocking",
 		"to silence a rule where it doesn't apply",
 		"FIX PLAN",
-		"1. no-secrets-in-logs  internal/checkout/session.go:88",
+		// The action leads; the rule and location are the muted line under it.
+		"1. log req.ID and req.Amount instead of req.",
+		"no-secrets-in-logs · internal/checkout/session.go:88",
 		"WORTH KNOWING",
 		"1  Checkout retries on 5xx where it used to fail fast   materiality: high",
 		"What changes for you: a failed charge",
@@ -124,10 +126,49 @@ func TestRenderReviewTextPlainHasEverySectionInOrder(t *testing.T) {
 func TestRenderReviewTextFixPlanBlockingFirst(t *testing.T) {
 	out := RenderReviewText(renderFixtureReport())
 	plan := out[strings.Index(out, "FIX PLAN"):strings.Index(out, "WORTH KNOWING")]
-	first := strings.Index(plan, "1. no-secrets-in-logs")
+	// Step one is an action, so the rule it came from is the reference line
+	// beneath it — before step two either way.
+	first := strings.Index(plan, "no-secrets-in-logs")
 	second := strings.Index(plan, "2. ")
 	if first < 0 || second < 0 || first > second {
 		t.Fatalf("fix plan must list the blocking finding first:\n%s", plan)
+	}
+}
+
+// Every step carries its action, not just the rule that raised it: the plan is
+// the section meant to be worked top to bottom.
+func TestRenderReviewTextFixPlanCarriesTheAction(t *testing.T) {
+	out := RenderReviewText(renderFixtureReport())
+	plan := out[strings.Index(out, "FIX PLAN"):strings.Index(out, "WORTH KNOWING")]
+	for _, want := range []string{
+		"1. log req.ID and req.Amount instead of req.",
+		"2. backoff.Exponential(attempt, backoff.WithCap(30*time.Second))",
+		"3. update the comment, or delete it.",
+	} {
+		if !strings.Contains(plan, want) {
+			t.Fatalf("fix plan must carry the action %q:\n%s", want, plan)
+		}
+	}
+}
+
+// The tools row is the only place a passing checker is reported — a failure
+// becomes the tools.static-failure finding, but a pass has nowhere else to go.
+// A skipped run is neither: it must not read as a pass.
+func TestRenderReviewTextLedgerReportsToolOutcomes(t *testing.T) {
+	r := renderFixtureReport()
+	r.Tools = []StaticToolResult{
+		{Name: "go test", ExitCode: 0},
+		{Name: "eslint", ExitCode: 1},
+		{Name: "govulncheck", Skipped: true, Reason: "not installed"},
+	}
+	out := RenderReviewText(r)
+	if !strings.Contains(out, "tools      go test ✓  eslint ✕  govulncheck —") {
+		t.Fatalf("ledger must report each tool's outcome:\n%s", out)
+	}
+	// No tools detected is no row, not an empty one.
+	r.Tools = nil
+	if strings.Contains(RenderReviewText(r), "tools ") {
+		t.Fatal("a repo with no detected checkers must get no tools row")
 	}
 }
 

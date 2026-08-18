@@ -395,6 +395,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		DegradedReasons:   degradedReasons,
 		Evidence:          brief.Evidence,
 		Coverage:          coverage,
+		Tools:             brief.Static.ToolResults,
 	}.applyChangeSet(changes), nil
 }
 

@@ -121,6 +121,12 @@ type Report struct {
 	// decides whether "no material issues found in the repository" is a
 	// sentence this review is entitled to.
 	Coverage Coverage `json:"coverage,omitempty"`
+	// Tools is what the repository's own checkers said — the compiler, the
+	// test runner, the vulnerability scanners. They already run on every
+	// review and already feed the brief; a failure becomes a finding, but a
+	// pass has never been reported anywhere. A reader deciding how much to
+	// trust a clean review needs to know a test suite ran and was green.
+	Tools []StaticToolResult `json:"tools,omitempty"`
 
 	// Reviewed and the fields below answer "what did this review actually
 	// read?". Reviewed is false only when nothing was inspected, which is a

@@ -201,6 +201,16 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 	}
 	row("scope", scope)
 
+	// The repository's own checkers, named with their outcome. This row is the
+	// one place a passing tool is reported: a failure already becomes the
+	// tools.static-failure finding, but "go test ran and was green" is a fact
+	// about how much this review is worth and it has never been printed.
+	// Skipped runs are shown muted rather than dropped — a tool that could not
+	// start is not a tool that passed.
+	if tools := reviewToolsSummary(color, report.Tools); tools != "" {
+		row("tools", tools)
+	}
+
 	models := colorize(color, termstyle.Muted, "no model ran")
 	if report.aiReviewRan() {
 		models = strings.Join(friendlyModelNames(report.ReviewModels), " · ")
@@ -285,6 +295,28 @@ func writeReviewLedgerRows(b *strings.Builder, report Report, color bool) {
 		row("note", colorize(color, termstyle.Warning, fmt.Sprintf("degraded — %s", summarizeDegradedReasons(report.DegradedReasons)))+
 			colorize(color, termstyle.Muted, "  (see run details)"))
 	}
+}
+
+// reviewToolsSummary renders one ledger row's worth of tool outcomes:
+// "go test ✓  go vet ✓  govulncheck —". Empty when no tool ran, so a repo with
+// no detected checkers gets no row rather than an empty one.
+func reviewToolsSummary(color bool, tools []StaticToolResult) string {
+	var parts []string
+	for _, t := range tools {
+		name := strings.TrimSpace(t.Name)
+		if name == "" {
+			continue
+		}
+		switch {
+		case t.Skipped:
+			parts = append(parts, colorize(color, termstyle.Muted, name+" —"))
+		case t.ExitCode == 0:
+			parts = append(parts, name+colorize(color, termstyle.Success, " ✓"))
+		default:
+			parts = append(parts, name+colorize(color, termstyle.Danger, " ✕"))
+		}
+	}
+	return strings.Join(parts, "  ")
 }
 
 // summarizeDegradedReasons folds the degradation into one short phrase for the
@@ -522,9 +554,11 @@ func writeReviewFixPlan(b *strings.Builder, report Report, color bool, plan []Fi
 }
 
 func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan []FixStep) {
-	// One line per step: the rule and where. The action itself is the Fix
-	// line of the finding above; repeating it here doubled the report's
-	// length and said nothing new. The JSON fix_plan carries the full text.
+	// Two lines per step: the action first, then the rule and where, muted,
+	// underneath it. The action leads because the plan is the one section
+	// written to be worked top to bottom — a list of rule names is an index
+	// back into the lanes, not a list of things to do, and an agent holding
+	// only the plan has to scroll back up to learn what each step means.
 	for _, s := range plan {
 		paint := termstyle.Warning
 		if s.Lane == LaneBlocking {
@@ -541,14 +575,30 @@ func writeReviewFixPlanBody(b *strings.Builder, report Report, color bool, plan 
 		if s.Line > 0 {
 			loc += fmt.Sprintf(":%d", s.Line)
 		}
-		b.WriteString(reviewRenderIndent)
-		b.WriteString(colorize(color, paint, fmt.Sprintf("%d.", s.Order)))
-		b.WriteString(" ")
-		b.WriteString(colorize(color, boldPainter(termstyle.Section), name))
-		if loc != "" {
-			b.WriteString(colorize(color, termstyle.Muted, "  "+loc))
+		// The action, clamped to its first sentence and wrapped under a hanging
+		// indent so a long recommendation stays one visual step.
+		num := fmt.Sprintf("%d.", s.Order)
+		pad := reviewRenderIndent + strings.Repeat(" ", len(num)+1)
+		for i, line := range wrapText(firstSentences(s.Action, 1), 72) {
+			if i == 0 {
+				b.WriteString(reviewRenderIndent)
+				b.WriteString(colorize(color, paint, num))
+				b.WriteString(" ")
+			} else {
+				b.WriteString(pad)
+			}
+			b.WriteString(line)
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
+		ref := name
+		if loc != "" {
+			ref += " · " + loc
+		}
+		if ref != "" {
+			b.WriteString(pad)
+			b.WriteString(colorize(color, termstyle.Muted, ref))
+			b.WriteString("\n")
+		}
 	}
 }
 
