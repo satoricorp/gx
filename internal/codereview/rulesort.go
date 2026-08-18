@@ -68,8 +68,22 @@ type unavailableRuleSorter struct {
 // block, and a labeled advisory finding can render differently at no extra
 // cost.
 type ruleSortRule struct {
-	ID       string `json:"rule_id"`
-	Summary  string `json:"summary"`
+	ID string `json:"rule_id"`
+	// Text is the rule's full guidance, not policyRuleSummary's one-liner.
+	//
+	// That helper exists to put a rule beside its ID in a brief, and it caps at
+	// 160 bytes mid-word: boolean-polarity reached the sorter as "...negating a
+	// condition that should not be negated, o" and variable-misuse as "...not a
+	// different, same-typed val", both losing exactly the examples that decide
+	// whether a finding is an instance. Measured on 27 findings, no rule that
+	// names a specific mechanism was ever chosen while the catalog was built
+	// this way — the sorter was picking between truncated fragments, and the
+	// general rules survive truncation better because their first clause is
+	// already the whole rule.
+	//
+	// The parser caps rule text at maxReviewRuleBytes, so the catalog is bounded
+	// by the pack, and this is the cheapest call in the pipeline.
+	Text     string `json:"guidance"`
 	Advisory bool   `json:"advisory,omitempty"`
 }
 
@@ -98,12 +112,22 @@ type ruleSortResponse struct {
 
 type ruleSortResult struct {
 	CandidateID string `json:"candidate_id"`
-	// Reasoning is read into a field nothing renders, for the same reason the
-	// judge keeps Analysis: a JSON object is emitted key by key, so a short
-	// justification written before rule_id is reasoning the choice is
-	// conditioned on rather than a rationalization of it.
-	Reasoning string `json:"reasoning"`
-	RuleID    string `json:"rule_id"`
+	// Mechanism and Considered are read into fields nothing renders, for the
+	// same reason the judge keeps Analysis: a JSON object is emitted key by key,
+	// so what is written before rule_id is what the choice is conditioned on.
+	//
+	// They are two separate fields because they fix two separate failures
+	// measured on 27 real findings. Naming the mechanism in the model's own
+	// words, before any rule is in view, stops the choice being driven by which
+	// rule name shares vocabulary with the finding's title — that is how an
+	// inverted boolean came back as dont-repeat-yourself. Listing the plausible
+	// rules before picking one stops the first adequate match from winning:
+	// without it, none of the eight rules that name a specific defect mechanism
+	// was ever selected across 27 findings, because a general rule always came
+	// up first and nothing forced a comparison.
+	Mechanism  string   `json:"mechanism"`
+	Considered []string `json:"considered"`
+	RuleID     string   `json:"rule_id"`
 }
 
 func ruleSorterFromEnv() RuleSorter {
@@ -204,7 +228,7 @@ func ruleSortCatalog(ctx ReviewContext) ([]ruleSortRule, error) {
 	for _, rule := range pack {
 		catalog = append(catalog, ruleSortRule{
 			ID:       rule.ID,
-			Summary:  policyRuleSummary(rule.Text),
+			Text:     rule.Text,
 			Advisory: rule.Advisory,
 		})
 		seen[strings.ToLower(rule.ID)] = struct{}{}
@@ -218,7 +242,7 @@ func ruleSortCatalog(ctx ReviewContext) ([]ruleSortRule, error) {
 			continue
 		}
 		seen[strings.ToLower(id)] = struct{}{}
-		catalog = append(catalog, ruleSortRule{ID: id, Summary: def.Summary})
+		catalog = append(catalog, ruleSortRule{ID: id, Text: def.Summary})
 	}
 	return catalog, nil
 }
@@ -244,12 +268,14 @@ func ruleSortDeveloperPrompt() string {
 	return strings.Join([]string{
 		"You are labeling code-review findings that have already been found and already been verified. Your only job is to name which rule each finding is an instance of.",
 		"You are not reviewing the code. You are not judging whether the finding is correct — that decision is made and is not yours to revisit. Do not rewrite, re-title, re-scope, or re-rank anything.",
-		"For each candidate, choose at most one rule_id from the rules list, copying its rule_id string exactly.",
-		"Prefer the narrowest rule that genuinely fits. A specific rule that names the actual mechanism is worth more than a general one that merely covers the area.",
-		"There is no catch-all rule and you must not treat any rule as one. If no rule genuinely fits the finding, return an empty string for rule_id. An unlabeled finding is a correct and expected outcome — roughly one review comment in ten fits no rule — and a wrong label is worse than none, because a named rule is supposed to mean something.",
-		"Never choose a rule because it is the closest of a bad set. Ask whether an engineer reading the rule name next to this finding would agree the rule names what went wrong. If not, return an empty string.",
-		"reasoning is one short sentence naming the specific behavior that makes the rule fit, or why none does. Write it before rule_id.",
-		"Return JSON only, with shape {\"results\":[{\"candidate_id\":string,\"reasoning\":string,\"rule_id\":string}]}. Include every candidate_id you were given, exactly once.",
+		"Answer three fields per candidate, in this order, and do not decide the third before writing the first two.",
+		"mechanism: one short clause naming what the code actually does wrong, in your own words, using none of the rule names. Describe the defect, not the finding's phrasing. A finding's title is written to be read by a human, not to match a rule, and matching on its vocabulary is the single most common way to get this wrong.",
+		"considered: every rule_id that could plausibly cover that mechanism, narrowest first. Read the entire rules list before answering this — a rule near the end of the list is exactly as eligible as one near the start. Use [] when nothing plausibly applies.",
+		"rule_id: the narrowest entry in considered that genuinely names the mechanism, copied exactly. Use \"\" when considered is empty, or when nothing in it survives the test below.",
+		"Some rules name a general area (duplication, dead code, comments, scope, silent regressions). Others name one specific defect mechanism: a variable used where another was meant, an inverted boolean, a comparison made without normalizing first, an off-by-one or boundary error, a value that is present but falsy, an operation applied to some cases and not the rest, a test that races what it asserts, an identifier that names the wrong thing. When the mechanism you wrote is one of those, the specific rule wins — always, and even when a general rule also fits. A general rule is correct only when no specific one names the mechanism.",
+		"The test, applied to your chosen rule: would an engineer who knows this rule, reading its name printed beside this finding, agree the rule names what went wrong? Not 'is it related' — does it name it. If the honest answer is no, return \"\".",
+		"There is no catch-all rule and you must not press any rule into that role. Returning \"\" is a correct, expected, and frequent outcome: roughly one real review comment in ten fits no rule at all, and a review where every finding got a label is a review where some labels are wrong. A wrong rule name is worse than no rule name, because the entire value of a named rule is that it means something specific.",
+		"Return JSON only, with shape {\"results\":[{\"candidate_id\":string,\"mechanism\":string,\"considered\":[string],\"rule_id\":string}]}. Include every candidate_id you were given, exactly once.",
 	}, "\n")
 }
 

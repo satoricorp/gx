@@ -48,8 +48,8 @@ func TestRuleSortCatalogIsThePackAndNotTheDefectClasses(t *testing.T) {
 		if !strings.HasPrefix(rule.ID, recommendedPackNamespace) {
 			t.Errorf("catalog rule %q is not a pack rule", rule.ID)
 		}
-		if strings.TrimSpace(rule.Summary) == "" {
-			t.Errorf("catalog rule %q has no summary for the model to match against", rule.ID)
+		if strings.TrimSpace(rule.Text) == "" {
+			t.Errorf("catalog rule %q has no guidance for the model to match against", rule.ID)
 		}
 	}
 	pack, err := RecommendedPack()
@@ -65,8 +65,8 @@ func TestRuleSortLabelsFindingsAndLeavesEverythingElseAlone(t *testing.T) {
 	findings := findingsForSort()
 	before := findingsForSort()
 	sorter := &stubRuleSorter{results: []ruleSortResult{
-		{CandidateID: "ai.review.1", Reasoning: "the write's error is dropped on the early return", RuleID: "gx:recommended/no-swallowed-errors"},
-		{CandidateID: "ai.review.2", Reasoning: "no rule names this", RuleID: ""},
+		{CandidateID: "ai.review.1", Mechanism: "the write's error is dropped on the early return", RuleID: "gx:recommended/no-swallowed-errors"},
+		{CandidateID: "ai.review.2", Mechanism: "no rule names this", RuleID: ""},
 	}}
 	outcome := runRuleSort(context.Background(), sorter, ReviewContext{}, findings)
 	if outcome.Labeled != 1 || outcome.Unlabeled != 1 {
