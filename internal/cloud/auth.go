@@ -241,20 +241,41 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 			}
 		}
 	}
-	if err := authstore.StoreGitHubToken(creds.GitHubKeychainAccount, authstore.GitHubToken{
+	// The keychain is where the GitHub token belongs, but it is not a
+	// precondition for being logged in. This was a hard gate placed before the
+	// credentials file was ever written, so on a machine with no Secret
+	// Service — every headless Linux box, which is most dev servers — login
+	// discarded a CLI session that had already been minted and verified above
+	// and failed outright. There was no way to log in at all, and the error
+	// arrived only after the user had finished the GitHub device flow.
+	//
+	// The plaintext copy is still cleared whenever the keychain accepts the
+	// token, so nothing changes on a machine that has one. The 0600 file is
+	// the store of record only where there is no alternative, which is how gx
+	// worked before the keychain existed.
+	keychainErr := authstore.StoreGitHubToken(creds.GitHubKeychainAccount, authstore.GitHubToken{
 		AccessToken:           githubToken.AccessToken,
 		AccessTokenExpiresAt:  creds.GitHubAccessTokenExpiresAt,
 		RefreshToken:          githubToken.RefreshToken,
 		RefreshTokenExpiresAt: creds.GitHubRefreshTokenExpiresAt,
-	}); err != nil {
-		return CloudCredentials{}, fmt.Errorf("store GitHub token in keychain: %w", err)
+	})
+	if keychainErr == nil {
+		creds.GitHubAccessToken = ""
+		creds.GitHubAccessTokenExpiresAt = time.Time{}
+		creds.GitHubRefreshToken = ""
+		creds.GitHubRefreshTokenExpiresAt = time.Time{}
 	}
-	creds.GitHubAccessToken = ""
-	creds.GitHubAccessTokenExpiresAt = time.Time{}
-	creds.GitHubRefreshToken = ""
-	creds.GitHubRefreshTokenExpiresAt = time.Time{}
 	if err := SaveCloudCredentials(creds); err != nil {
 		return CloudCredentials{}, err
+	}
+	if keychainErr != nil && opts.Out != nil {
+		// Say where the secret went. A login that quietly downgrades its own
+		// storage is worse than one that spends a line saying so.
+		location := "the gx credentials file"
+		if path, err := credentialsPath(); err == nil {
+			location = path
+		}
+		fmt.Fprintf(opts.Out, "Note: no OS keychain available (%v); storing the GitHub token in %s (mode 0600).\n", keychainErr, location)
 	}
 	if opts.Out != nil && strings.TrimSpace(complete.GitHubAppInstallURL) != "" {
 		fmt.Fprintf(opts.Out, "Install the gx GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))

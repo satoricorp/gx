@@ -86,6 +86,7 @@ func GitHubAccessTokenWithSource() (string, string, error) {
 		return "", "", tokenError()
 	}
 
+	var keychainErr error
 	if account := githubKeychainAccountForCloud(file.Cloud); account != "" {
 		token, err := loadKeychainToken(account)
 		if err == nil {
@@ -94,42 +95,91 @@ func GitHubAccessTokenWithSource() (string, string, error) {
 				return "", "", err
 			}
 			if updated {
+				// GitHub rotates the refresh token, so a refreshed pair that
+				// lands nowhere costs the next caller a relogin. Prefer the
+				// keychain it came from, and fall back to the file rather than
+				// dropping it.
 				if err := StoreGitHubToken(account, *token); err != nil {
-					return "", "", fmt.Errorf("update GitHub token in keychain: %w", err)
+					storeTokenInFile(file.Cloud, *token)
+					if err := writeCredentials(path, file); err != nil {
+						return "", "", err
+					}
 				}
 			}
 			return accessToken, "keychain", nil
 		}
 		if !errors.Is(err, keyring.ErrNotFound) {
-			return "", "", fmt.Errorf("read GitHub token from keychain: %w", err)
+			// Not "no entry" — the keychain itself could not be reached. Hold
+			// the reason but do not fail on it yet: the 0600 file below may
+			// still hold a token, which is exactly the state of a machine that
+			// never had a keychain to migrate into. Returning here is what
+			// made a headless Linux box unrecoverable.
+			keychainErr = fmt.Errorf("read GitHub token from keychain: %w", err)
 		}
 	}
 
 	legacy := legacyTokenFromCloud(file.Cloud)
 	if strings.TrimSpace(legacy.AccessToken) == "" {
+		// With nothing in the file either, an unreachable keychain is the
+		// better diagnosis of the two: "not configured" would send someone to
+		// `gx auth login`, which is not what is broken.
+		if keychainErr != nil {
+			return "", "", keychainErr
+		}
 		return "", "", tokenError()
 	}
 	token, updated, err := validStoredToken(&legacy, time.Now().UTC(), nil)
 	if err != nil {
 		return "", "", err
 	}
-	_ = updated
 	account := githubKeychainAccountForCloud(file.Cloud)
 	if account == "" {
 		account = GitHubKeychainAccount(file.Cloud.UserID, file.Cloud.Login)
 	}
-	if err := StoreGitHubToken(account, legacy); err != nil {
-		return "", "", fmt.Errorf("migrate GitHub token to keychain: %w", err)
+	migrated := StoreGitHubToken(account, legacy) == nil
+	switch {
+	case migrated:
+		// The keychain took it, so the file gives up its copy — including on a
+		// machine that acquires a keychain later, which migrates itself here.
+		file.Cloud.GitHubKeychainAccount = account
+		clearTokenFromFile(file.Cloud)
+	case updated:
+		// No keychain to migrate into: the file stays the store of record and
+		// has to carry the refreshed pair. This used to be discarded (`_ =
+		// updated`) because migration was assumed to succeed, so every call
+		// after a refresh re-refreshed with a token GitHub had already rotated
+		// out.
+		storeTokenInFile(file.Cloud, legacy)
 	}
-	file.Cloud.GitHubKeychainAccount = account
-	file.Cloud.GitHubAccessToken = ""
-	file.Cloud.GitHubAccessTokenExpiresAt = time.Time{}
-	file.Cloud.GitHubRefreshToken = ""
-	file.Cloud.GitHubRefreshTokenExpiresAt = time.Time{}
-	if err := writeCredentials(path, file); err != nil {
-		return "", "", err
+	if migrated || updated {
+		if err := writeCredentials(path, file); err != nil {
+			return "", "", err
+		}
 	}
 	return token, "legacy", nil
+}
+
+// storeTokenInFile puts the GitHub OAuth pair back into credentials.json, which
+// is the store of record only when there is no keychain to hold it.
+func storeTokenInFile(creds *cloudCredentials, token GitHubToken) {
+	if creds == nil {
+		return
+	}
+	creds.GitHubAccessToken = strings.TrimSpace(token.AccessToken)
+	creds.GitHubAccessTokenExpiresAt = token.AccessTokenExpiresAt
+	creds.GitHubRefreshToken = strings.TrimSpace(token.RefreshToken)
+	creds.GitHubRefreshTokenExpiresAt = token.RefreshTokenExpiresAt
+}
+
+// clearTokenFromFile drops the plaintext pair once the keychain holds it.
+func clearTokenFromFile(creds *cloudCredentials) {
+	if creds == nil {
+		return
+	}
+	creds.GitHubAccessToken = ""
+	creds.GitHubAccessTokenExpiresAt = time.Time{}
+	creds.GitHubRefreshToken = ""
+	creds.GitHubRefreshTokenExpiresAt = time.Time{}
 }
 
 func validStoredToken(creds *GitHubToken, now time.Time, client *http.Client) (string, bool, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -499,5 +500,97 @@ func TestPollGitHubAccessTokenSurvivesTransientFailure(t *testing.T) {
 	}
 	if token.AccessToken != "gho_after_blip" {
 		t.Fatalf("token = %+v", token)
+	}
+}
+
+// TestLoginSucceedsWithoutAKeychain covers the headless Linux box: no Secret
+// Service, so the keychain write fails. The CLI session has already been minted
+// and verified by then, and login must keep it rather than throwing it away.
+func TestLoginSucceedsWithoutAKeychain(t *testing.T) {
+	keyring.MockInitWithError(errors.New("The name org.freedesktop.secrets was not provided by any .service files"))
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GITHUB_CLIENT_ID", "test-client")
+	t.Setenv("CONVEX_SITE_URL", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	convex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(CompleteAuthResponse{
+			UserID:              "user_1",
+			Login:               "joe",
+			CLISessionToken:     "gxcs_login",
+			CLISessionExpiresAt: time.Now().Add(90 * 24 * time.Hour).UnixMilli(),
+		})
+	}))
+	defer convex.Close()
+
+	console := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"user_id": "user_1", "github_user_login": "joe"})
+	}))
+	defer console.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login/device/code":
+			_ = json.NewEncoder(w).Encode(deviceCodeResponse{
+				DeviceCode:      "device-code-1",
+				UserCode:        "ABCD-1234",
+				VerificationURI: "https://github.example/login/device",
+				ExpiresIn:       60,
+			})
+		case "/login/oauth/access_token":
+			_ = json.NewEncoder(w).Encode(accessTokenResponse{
+				AccessToken:           "ghu_test",
+				ExpiresIn:             8 * 60 * 60,
+				RefreshToken:          "ghr_test",
+				RefreshTokenExpiresIn: 6 * 30 * 24 * 60 * 60,
+			})
+		default:
+			t.Fatalf("unexpected github path: %s", r.URL.Path)
+		}
+	}))
+	defer github.Close()
+
+	var out bytes.Buffer
+	creds, err := Login(context.Background(), LoginOptions{
+		Endpoints: AuthEndpoints{
+			GitHubDeviceCodeURL:  github.URL + "/login/device/code",
+			GitHubAccessTokenURL: github.URL + "/login/oauth/access_token",
+			ConvexSiteURL:        convex.URL,
+			CloudURL:             console.URL,
+		},
+		HTTPClient: github.Client(),
+		Out:        &out,
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v, want success without a keychain", err)
+	}
+	if creds.CLISessionToken != "gxcs_login" || creds.GitHubAccessToken != "ghu_test" {
+		t.Fatalf("creds = %+v, want the session kept and the token retained in the file", creds)
+	}
+
+	// The session is what `gx review` authenticates with; it must be on disk.
+	loaded, err := LoadCloudCredentials()
+	if err != nil {
+		t.Fatalf("LoadCloudCredentials() error = %v", err)
+	}
+	if loaded == nil || loaded.CLISessionToken != "gxcs_login" {
+		t.Fatalf("saved credentials = %+v, want the CLI session persisted", loaded)
+	}
+	if loaded.GitHubAccessToken != "ghu_test" || loaded.GitHubRefreshToken != "ghr_test" {
+		t.Fatalf("saved credentials = %+v, want the GitHub token retained in the file", loaded)
+	}
+	if !strings.Contains(out.String(), "no OS keychain available") {
+		t.Fatalf("output = %q, want the downgrade said out loud", out.String())
+	}
+
+	// And the token still resolves, from the file this time.
+	token, source, err := GitHubAccessTokenWithSource()
+	if err != nil {
+		t.Fatalf("GitHubAccessTokenWithSource() error = %v", err)
+	}
+	if token != "ghu_test" || source != "legacy" {
+		t.Fatalf("GitHubAccessTokenWithSource() = (%q, %q), want the file copy", token, source)
 	}
 }

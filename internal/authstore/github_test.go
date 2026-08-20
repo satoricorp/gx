@@ -2,6 +2,7 @@ package authstore
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -188,4 +189,106 @@ func readCredentials(t *testing.T, home string) cloudCredentials {
 		t.Fatal("missing cloud credentials")
 	}
 	return *file.Cloud
+}
+
+// errNoSecretService is what go-keyring returns on a Linux box with no Secret
+// Service running, verbatim from a headless EC2 host.
+var errNoSecretService = errors.New("The name org.freedesktop.secrets was not provided by any .service files")
+
+func TestGitHubAccessTokenFallsBackToFileWhenKeychainUnreachable(t *testing.T) {
+	keyring.MockInitWithError(errNoSecretService)
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	account := GitHubKeychainAccount("user_1", "joe")
+	writeTestCredentials(t, home, cloudCredentials{
+		UserID:                     "user_1",
+		Login:                      "joe",
+		GitHubKeychainAccount:      account,
+		GitHubAccessToken:          "ghu_file",
+		GitHubAccessTokenExpiresAt: time.Now().Add(time.Hour),
+		GitHubRefreshToken:         "ghr_file",
+	})
+
+	token, source, err := GitHubAccessTokenWithSource()
+	if err != nil {
+		t.Fatalf("GitHubAccessTokenWithSource() error = %v", err)
+	}
+	if token != "ghu_file" || source != "legacy" {
+		t.Fatalf("GitHubAccessTokenWithSource() = (%q, %q), want the file copy", token, source)
+	}
+	// The migration must not have blanked the only copy there is.
+	stored := readCredentials(t, home)
+	if stored.GitHubAccessToken != "ghu_file" || stored.GitHubRefreshToken != "ghr_file" {
+		t.Fatalf("credentials.json = %+v, want the token retained", stored)
+	}
+}
+
+func TestGitHubAccessTokenReportsUnreachableKeychainWhenFileHasNoToken(t *testing.T) {
+	keyring.MockInitWithError(errNoSecretService)
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	writeTestCredentials(t, home, cloudCredentials{
+		UserID:                "user_1",
+		Login:                 "joe",
+		GitHubKeychainAccount: GitHubKeychainAccount("user_1", "joe"),
+	})
+
+	_, _, err := GitHubAccessTokenWithSource()
+	if err == nil {
+		t.Fatal("GitHubAccessTokenWithSource() error = nil, want the keychain failure")
+	}
+	// "not configured" would send the reader to `gx auth login`, which is not
+	// what is broken here.
+	if !strings.Contains(err.Error(), "read GitHub token from keychain") {
+		t.Fatalf("error = %v, want the keychain reason", err)
+	}
+}
+
+func TestGitHubAccessTokenPersistsRefreshToFileWithoutKeychain(t *testing.T) {
+	keyring.MockInitWithError(errNoSecretService)
+	home := t.TempDir()
+	t.Setenv("GX_HOME", home)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GITHUB_CLIENT_ID", "client-id")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(accessTokenResponse{
+			AccessToken:           "ghu_new",
+			ExpiresIn:             8 * 60 * 60,
+			RefreshToken:          "ghr_new",
+			RefreshTokenExpiresIn: 6 * 30 * 24 * 60 * 60,
+		})
+	}))
+	defer server.Close()
+	t.Setenv("GX_GITHUB_ACCESS_TOKEN_URL", server.URL)
+
+	writeTestCredentials(t, home, cloudCredentials{
+		UserID:                      "user_1",
+		Login:                       "joe",
+		GitHubKeychainAccount:       GitHubKeychainAccount("user_1", "joe"),
+		GitHubAccessToken:           "ghu_old",
+		GitHubAccessTokenExpiresAt:  time.Now().Add(-time.Minute),
+		GitHubRefreshToken:          "ghr_old",
+		GitHubRefreshTokenExpiresAt: time.Now().Add(time.Hour),
+	})
+
+	token, err := GitHubAccessToken()
+	if err != nil {
+		t.Fatalf("GitHubAccessToken() error = %v", err)
+	}
+	if token != "ghu_new" {
+		t.Fatalf("token = %q, want the refreshed token", token)
+	}
+	// GitHub rotates the refresh token: dropping the new pair costs a relogin.
+	stored := readCredentials(t, home)
+	if stored.GitHubAccessToken != "ghu_new" || stored.GitHubRefreshToken != "ghr_new" {
+		t.Fatalf("credentials.json = %+v, want the refreshed pair persisted", stored)
+	}
 }
