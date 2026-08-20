@@ -128,8 +128,17 @@ jobs:
             echo "bake ok: /tmp/gx-verify/gx/bin/gx-mcp"
           done
 
+      # Never fatal: nothing downstream reads this artifact. The archives are
+      # published to S3 below and attached to the GitHub release from the
+      # workspace, so this is a convenience copy of things that are already in
+      # two durable places. The org's Actions storage quota is shared across
+      # repositories and is recalculated every 6-12 hours, so a quota hit that
+      # has nothing to do with this repository used to abort the job here —
+      # before the S3 publish and the release — and that is exactly how v0.2.2
+      # failed to ship while its binaries built cleanly.
       - name: Upload workflow artifacts
         if: ${{ github.ref_type == 'tag' }}
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: gx-cli
