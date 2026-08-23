@@ -91,15 +91,17 @@ const (
 // GX_REVIEW_BEDROCK_MODEL_B).
 //
 // The judge would ideally be a third model — it decides which candidate
-// findings survive, and a model grading its own output is not a filter. That
-// is not currently possible here: repo-mode VERIFICATION batches carry
-// per-finding evidence and exceed 200K tokens (measured 2026-08-04: a Sonnet
-// 4.5 judge failed all 8 verification batches with "Input is too long"), so
-// the judge also needs a 1M-context model, and the 4.6 pair above is all this
-// account has. Sharing Sonnet 4.6 with leg B is the lesser evil — leg A's
-// findings are still independently judged, and a judge that cannot run
-// verifies nothing. When newer-model access is granted, give the judge its
-// own model again (GX_REVIEW_JUDGE_MODEL overrides it today).
+// findings survive, and a model grading its own output is not a filter.
+// 2026-08-23: the judge moved from Sonnet 4.6 to Haiku to cut per-review
+// spend — verification is the per-finding call, which is where cost
+// concentrates. Haiku's 200K context is enough here because judge batches are
+// byte-bounded (maxJudgeBatchBytes + maxJudgeDiffBatchBytes, windowed around
+// each finding); the 2026-08-04 "Input is too long" failures that once forced
+// a 1M-context judge predate that windowing, and Haiku's 64K output ceiling
+// clears defaultJudgeMaxOutputTokens. Sharing Haiku with leg A is the same
+// compromise the Sonnet judge made with leg B — leg B's findings are still
+// judged by a model that did not write them, and GX_REVIEW_JUDGE_MODEL gives
+// the judge its own model when wanted.
 //
 // Every ID here MUST be the `us.`-prefixed inference profile form. Bare
 // `anthropic.*` model IDs are rejected by bedrock-runtime for on-demand
@@ -110,7 +112,7 @@ const (
 const (
 	defaultBedrockReviewModelA = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 	defaultBedrockReviewModelB = "us.anthropic.claude-sonnet-4-6" // 1M context: the repo-mode safety net
-	defaultBedrockJudgeModel   = "us.anthropic.claude-sonnet-4-6"
+	defaultBedrockJudgeModel   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 	// defaultBedrockRegion was us-east-1, which is not where these inference
 	// profiles are enabled for this deployment; a model that exists in one
 	// region reports as "The provided model identifier is invalid" in another,

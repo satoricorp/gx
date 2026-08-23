@@ -74,6 +74,17 @@ func TestFriendlyNamesForOpenWeightModels(t *testing.T) {
 	}
 }
 
+// The shipped judge (2026-08-23): Haiku 4.5 — verification is the
+// per-finding call, and judge batches are byte-bounded well inside Haiku's
+// 200K context.
+func TestShippedJudgeDefaultIsHaiku(t *testing.T) {
+	t.Setenv("GX_REVIEW_MODELS", "")
+	t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
+	if j := resolveBedrockJudgeModel(); j != "us.anthropic.claude-haiku-4-5-20251001-v1:0" {
+		t.Fatalf("default judge = %q, want Haiku 4.5", j)
+	}
+}
+
 func TestLunaPresetAndName(t *testing.T) {
 	t.Setenv("GX_REVIEW_MODELS", "luna")
 	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_GATE_MODEL"} {
