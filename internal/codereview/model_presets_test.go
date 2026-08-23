@@ -13,7 +13,7 @@ func TestModelPresetFillsEverySlot(t *testing.T) {
 	t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
 	t.Setenv("GX_GATE_MODEL", "")
 	a, b := resolveBedrockReviewModels()
-	if a != defaultBedrockReviewModelA {
+	if a != bedrockHaikuModel {
 		t.Fatalf("budget leg A = %q, want Haiku kept", a)
 	}
 	if b != "zai.glm-5" {
@@ -74,14 +74,45 @@ func TestFriendlyNamesForOpenWeightModels(t *testing.T) {
 	}
 }
 
-// The shipped judge (2026-08-23): Haiku 4.5 — verification is the
-// per-finding call, and judge batches are byte-bounded well inside Haiku's
-// 200K context.
-func TestShippedJudgeDefaultIsHaiku(t *testing.T) {
+// The shipped panel (2026-08-23): GPT-5.6 Luna on both reviewer legs, Haiku
+// judging. The judge is a different model from the reviewers so it never
+// grades its own output; both IDs are in their Bedrock-invocable form and take
+// the transport path their vendor needs.
+func TestShippedDefaultsAreLunaReviewersAndHaikuJudge(t *testing.T) {
 	t.Setenv("GX_REVIEW_MODELS", "")
-	t.Setenv("GX_REVIEW_JUDGE_MODEL", "")
-	if j := resolveBedrockJudgeModel(); j != "us.anthropic.claude-haiku-4-5-20251001-v1:0" {
-		t.Fatalf("default judge = %q, want Haiku 4.5", j)
+	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_GATE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	a, b := resolveBedrockReviewModels()
+	judge := resolveBedrockJudgeModel()
+	if a != "us.openai.gpt-5.6-luna" || b != "us.openai.gpt-5.6-luna" {
+		t.Fatalf("default reviewers = %q, %q; want GPT-5.6 Luna on both legs", a, b)
+	}
+	if judge != bedrockHaikuModel {
+		t.Fatalf("default judge = %q; want Haiku 4.5", judge)
+	}
+	if judge == a {
+		t.Fatalf("the judge must not be a reviewer model")
+	}
+	if bedrockActionForModel(a) != "converse" || bedrockActionForModel(judge) != "invoke" {
+		t.Fatalf("Luna rides Converse and Haiku InvokeModel; got %s / %s", bedrockActionForModel(a), bedrockActionForModel(judge))
+	}
+	// "default" as an explicit preset name is the same panel.
+	t.Setenv("GX_REVIEW_MODELS", "default")
+	if pa, pb := resolveBedrockReviewModels(); pa != a || pb != b || resolveBedrockJudgeModel() != judge {
+		t.Fatalf("GX_REVIEW_MODELS=default must equal the unset defaults")
+	}
+}
+
+// The pre-2026-08-23 all-Claude panel stays reachable by name.
+func TestClaudePresetIsThePreviousPanel(t *testing.T) {
+	t.Setenv("GX_REVIEW_MODELS", "claude")
+	for _, k := range []string{"GX_REVIEW_BEDROCK_MODEL_A", "GX_REVIEW_BEDROCK_MODEL_B", "GX_REVIEW_ANTHROPIC_MODEL", "GX_REVIEW_JUDGE_MODEL", "GX_GATE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	a, b := resolveBedrockReviewModels()
+	if a != bedrockHaikuModel || b != bedrockSonnetModel || resolveBedrockJudgeModel() != bedrockSonnetModel {
+		t.Fatalf("claude preset: a=%q b=%q judge=%q", a, b, resolveBedrockJudgeModel())
 	}
 }
 

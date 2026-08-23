@@ -35,15 +35,33 @@ type modelPreset struct {
 	Gates     string
 }
 
+// The Anthropic models the presets name, so a preset that means "Haiku" keeps
+// meaning Haiku when the shipped defaults move.
+const (
+	bedrockHaikuModel  = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+	bedrockSonnetModel = "us.anthropic.claude-sonnet-4-6"
+)
+
 var modelPresets = map[string]modelPreset{
 	// The shipped defaults, spelled out so "default" is a valid preset name and
 	// so the table documents them next to the alternatives.
 	"default": {
-		Why:       "two Claude reviewers across tiers, Claude judge — the panel gx ships with",
+		Why:       "GPT-5.6 Luna reviewing on both legs, Haiku 4.5 judging — the panel gx ships with",
 		ReviewerA: defaultBedrockReviewModelA,
 		ReviewerB: defaultBedrockReviewModelB,
 		Judge:     defaultBedrockJudgeModel,
-		Gates:     defaultBedrockReviewModelA,
+		Gates:     defaultBedrockJudgeModel,
+	},
+	// claude is the panel gx shipped before 2026-08-23: Haiku and Sonnet 4.6
+	// reviewing across tiers, Sonnet 4.6 judging. Kept as a named preset so
+	// the cost cut that replaced it stays one env var away from an A/B, and so
+	// an account without Bedrock access to GPT-5.6 Luna has a working panel.
+	"claude": {
+		Why:       "Haiku + Sonnet 4.6 review, Sonnet 4.6 judges — the all-Claude panel gx shipped before Luna",
+		ReviewerA: bedrockHaikuModel,
+		ReviewerB: bedrockSonnetModel,
+		Judge:     bedrockSonnetModel,
+		Gates:     bedrockHaikuModel,
 	},
 	// budget keeps Haiku as leg A (fast, cheap, and the model the gates
 	// judge already runs on) and swaps the two expensive slots for open-weight
@@ -58,14 +76,14 @@ var modelPresets = map[string]modelPreset{
 	// zero findings (Sonnet's panel converged on several), and GLM's
 	// findings skewed toward documentation. Nemotron judged well — it
 	// refuted a hallucinated finding by reading the diff — once the parser
-	// accepted its bare-array reply. Requires GX_REVIEW_BEDROCK_DIRECT=1:
-	// gx Cloud does not yet speak Converse.
+	// accepted its bare-array reply. Both models ride gx Cloud as well as the
+	// direct wire — the server's allowlist, not the transport, gates them.
 	"budget": {
 		Why:       "Haiku + GLM 5 review, Nemotron 3 Super judges — open-weight models in the expensive slots",
-		ReviewerA: defaultBedrockReviewModelA,
+		ReviewerA: bedrockHaikuModel,
 		ReviewerB: "zai.glm-5",
 		Judge:     "nvidia.nemotron-super-3-120b",
-		Gates:     defaultBedrockReviewModelA,
+		Gates:     bedrockHaikuModel,
 	},
 	// luna is GPT-5.6 Luna in every slot — one model, end to end. It is an
 	// inference-profile-only model on Bedrock, so the ID carries its us.

@@ -77,41 +77,42 @@ const (
 // The review composition: two competing Bedrock reviewers plus an independent
 // Bedrock judge.
 //
-// Two flagship reviewers cost max(A,B) in wall clock, not A+B, because
-// multiAIReviewer already runs its legs concurrently — so the second opinion is
-// close to free in latency and only costs tokens. Both reviewer legs MUST be
-// 1M-context models: repo-mode review briefs regularly exceed 200K tokens, and
-// a 200K leg (the previous default, Opus 4.5) fails every batch with "prompt is
-// too long" rather than degrading. The pair is Opus + Sonnet across tiers
-// rather than two same-tier siblings, so the second reviewer's misses are less
-// correlated with the first's. It would ideally also span generations, but as
-// of 2026-08 the 4.6 family is the only 1M-context generation this deployment's
-// AWS account has Bedrock access to — when Opus 4.7+/Sonnet 5 access is granted
-// in the Bedrock console, prefer moving leg B there (or override with
-// GX_REVIEW_BEDROCK_MODEL_B).
+// Two reviewers cost max(A,B) in wall clock, not A+B, because multiAIReviewer
+// already runs its legs concurrently — so the second opinion is close to free
+// in latency and only costs tokens. Both reviewer legs MUST be 1M-context
+// models: repo-mode review briefs regularly exceed 200K tokens, and a 200K leg
+// (an earlier default, Opus 4.5) fails every batch with "prompt is too long"
+// rather than degrading.
 //
-// The judge would ideally be a third model — it decides which candidate
-// findings survive, and a model grading its own output is not a filter.
-// 2026-08-23: the judge moved from Sonnet 4.6 to Haiku to cut per-review
-// spend — verification is the per-finding call, which is where cost
-// concentrates. Haiku's 200K context is enough here because judge batches are
-// byte-bounded (maxJudgeBatchBytes + maxJudgeDiffBatchBytes, windowed around
-// each finding); the 2026-08-04 "Input is too long" failures that once forced
-// a 1M-context judge predate that windowing, and Haiku's 64K output ceiling
-// clears defaultJudgeMaxOutputTokens. Sharing Haiku with leg A is the same
-// compromise the Sonnet judge made with leg B — leg B's findings are still
-// judged by a model that did not write them, and GX_REVIEW_JUDGE_MODEL gives
-// the judge its own model when wanted.
+// 2026-08-23: both reviewer legs moved to GPT-5.6 Luna and the judge to Haiku
+// 4.5 to cut the per-review spend — the previous Haiku + Sonnet 4.6 panel with
+// a Sonnet 4.6 judge put the two flagship-priced calls in the two largest
+// slots. Luna is a Converse-path, inference-profile-only model (the us. prefix
+// is part of the ID; normalizeBedrockModelID only adds one to Anthropic IDs)
+// that needs model access granted in the Bedrock console — an account without
+// it sees AccessDeniedException "not available for this account", which the
+// review reports as the reviewer being unavailable rather than silently
+// falling back. The two legs being the same model means their misses are more
+// correlated than the old cross-tier pair's; the second leg still buys
+// sampling diversity and the judge's convergence signal, and the old panel is
+// one override away (GX_REVIEW_BEDROCK_MODEL_A/_B).
 //
-// Every ID here MUST be the `us.`-prefixed inference profile form. Bare
+// The judge is a third model so it is never grading its own output. Haiku's
+// 200K context is enough here because judge batches are byte-bounded
+// (maxJudgeBatchBytes + maxJudgeDiffBatchBytes, windowed around each finding)
+// — the 2026-08-04 "Input is too long" failures that once forced a 1M-context
+// judge predate that windowing. Its 64K output ceiling also clears
+// defaultJudgeMaxOutputTokens. GX_REVIEW_JUDGE_MODEL overrides it.
+//
+// Anthropic IDs here MUST be the `us.`-prefixed inference profile form. Bare
 // `anthropic.*` model IDs are rejected by bedrock-runtime for on-demand
 // invocation ("Invocation of model ID ... with on-demand throughput isn't
-// supported"), which the previous default silently was — the Anthropic reviewer
+// supported"), which an earlier default silently was — the Anthropic reviewer
 // could never have run. normalizeBedrockModelID enforces this for overrides too,
 // and TestDefaultBedrockModelsAreInferenceProfiles is the regression test.
 const (
-	defaultBedrockReviewModelA = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-	defaultBedrockReviewModelB = "us.anthropic.claude-sonnet-4-6" // 1M context: the repo-mode safety net
+	defaultBedrockReviewModelA = "us.openai.gpt-5.6-luna"
+	defaultBedrockReviewModelB = "us.openai.gpt-5.6-luna"
 	defaultBedrockJudgeModel   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 	// defaultBedrockRegion was us-east-1, which is not where these inference
 	// profiles are enabled for this deployment; a model that exists in one

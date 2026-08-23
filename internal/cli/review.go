@@ -72,9 +72,11 @@ terminal the report opens as a menu; piped or in CI it prints in full. --json
 and --md are the machine and PR-comment shapes.
 
 GX_REVIEW_MODELS=<preset> swaps the whole panel — reviewers, judge, and the
-gates judge — for a named set: "default" (the shipped Claude panel),
-"budget" (Haiku + GLM 5 review, Nemotron 3 Super judges), or "glm" (GLM 5
-end to end). Any single slot's env var (GX_REVIEW_BEDROCK_MODEL_A/_B,
+gates judge — for a named set: "default" (GPT-5.6 Luna reviewing, Haiku
+judging — the shipped panel), "claude" (Haiku + Sonnet 4.6 review, Sonnet
+4.6 judges), "budget" (Haiku + GLM 5 review, Nemotron 3 Super judges), "luna"
+(Luna end to end), or "glm" (GLM 5 end to end). Any single slot's env var
+(GX_REVIEW_BEDROCK_MODEL_A/_B,
 GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
