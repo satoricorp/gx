@@ -241,3 +241,48 @@ func TestScopeDirectedReviewOnCleanRepoStaysWholeRepo(t *testing.T) {
 		t.Fatalf("Findings = %#v, want repo-wide dependency finding", report.Findings)
 	}
 }
+
+// A stale local base is the shape that cost a real review its credibility: the
+// author worked on branches, never checked `main` out, and their local pointer
+// sat seven commits behind the remote. Because the range is `<base>...HEAD`,
+// the merge base walked back to where they last pulled and the review graded
+// every commit merged since — 43 files for a 14-file change — as if the author
+// had written it.
+func TestResolveChangeSetPrefersTheRemoteBaseOverAStaleLocalOne(t *testing.T) {
+	root := initRepoOnMain(t)
+
+	// A bare remote, and a local `main` deliberately left behind it.
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare", ".")
+	runGit(t, root, "remote", "add", "origin", remote)
+	runGit(t, root, "push", "-q", "origin", "main")
+
+	// Someone else's work lands on the remote's main. It is fetched (so
+	// origin/main is current) but never merged into the local branch pointer.
+	runGit(t, root, "checkout", "-q", "-b", "other")
+	writeFile(t, root, "internal/app/theirs.go", "package app\n\nfunc Theirs() {}\n")
+	gitAdd(t, root, "internal/app/theirs.go")
+	gitCommitMessage(t, root, "someone else's merged work")
+	runGit(t, root, "push", "-q", "origin", "other:main")
+	runGit(t, root, "checkout", "-q", "main")
+	runGit(t, root, "fetch", "-q", "origin")
+
+	// Our branch is cut from the *current* remote main, as a fresh PR would be.
+	runGit(t, root, "checkout", "-q", "-b", "feature", "origin/main")
+	writeFile(t, root, "internal/app/ours.go", "package app\n\nfunc Ours() {}\n")
+	gitAdd(t, root, "internal/app/ours.go")
+	gitCommitMessage(t, root, "our change")
+
+	set := resolveChangeSet(context.Background(), root, "")
+	if set.Mode != ReviewModeRange {
+		t.Fatalf("Mode = %q, want a committed range", set.Mode)
+	}
+	for _, file := range set.Files {
+		if strings.Contains(file, "theirs.go") {
+			t.Fatalf("files = %v, want only our change; theirs.go was already merged", set.Files)
+		}
+	}
+	if len(set.Files) != 1 || !strings.Contains(set.Files[0], "ours.go") {
+		t.Fatalf("files = %v, want exactly our one changed file", set.Files)
+	}
+}

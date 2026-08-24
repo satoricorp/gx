@@ -28,7 +28,24 @@ const (
 
 // baseCandidates mirrors detectDefaultBase in internal/capture/orchestrator so
 // review and capture agree on what "the base branch" means.
-var baseCandidates = []string{"main", "master", "origin/main", "origin/master"}
+//
+// Remote-tracking refs come first, and that ordering is the whole point.
+// `main` and `origin/main` are different pointers: the local one moves only
+// when its owner pulls it, so on a machine where someone works on branches and
+// rarely checks main out, it sits wherever it was days ago. The review range is
+// `<base>...HEAD`, so a stale local base walks the merge base backwards and
+// sweeps in every commit merged since — other people's already-reviewed work,
+// graded as if it were this change.
+//
+// Measured on a real report: a 14-file change reviewed as 43 files against a
+// local main seven commits behind, and most of that run's false findings were
+// about files the author never touched. Preferring the remote costs nothing
+// when the two agree and is the only correct answer when they do not, because
+// the remote branch is what the change will actually merge into.
+//
+// origin/HEAD leads because it names whatever the remote's default branch
+// actually is, which is not always main or master.
+var baseCandidates = []string{"origin/HEAD", "origin/main", "origin/master", "main", "master"}
 
 // ChangeSet is the resolved answer to "what is this review looking at?". It is
 // the single seam the rest of the pipeline reads from: Files drives triage,

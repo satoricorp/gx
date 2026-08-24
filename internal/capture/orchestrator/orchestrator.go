@@ -450,8 +450,16 @@ func buildToolParsers(tools []string, claudeParser, codexParser, cursorParser pa
 	return out
 }
 
+// detectDefaultBase mirrors baseCandidates in internal/codereview/changes.go,
+// deliberately in the same order: capture and review must agree on what "the
+// base branch" means, or a bundle claims a different change than the review of
+// it describes.
+//
+// Remote-tracking refs lead because the local pointer moves only when its owner
+// pulls, and a base left days behind walks the merge base back and sweeps in
+// everything merged since. See the comment there for the report that cost.
 func detectDefaultBase(repoRoot string) string {
-	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
+	for _, candidate := range []string{"origin/HEAD", "origin/main", "origin/master", "main", "master"} {
 		if refExists(repoRoot, candidate) {
 			return candidate
 		}
