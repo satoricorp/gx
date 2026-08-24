@@ -25,12 +25,6 @@ export const schema = {
       "Review the whole repository instead of just the current change. Use this to ask about the codebase itself, or when uncommitted work would otherwise narrow the review to the diff.",
     ),
   deep: z.boolean().optional().describe("Run full-spectrum review with more local and indexed context."),
-  fast: z
-    .boolean()
-    .optional()
-    .describe(
-      "Optimize for wall clock: one reviewer instead of two, no verification pass, no project test suite, and findings written without code examples. Use for interactive reviews someone is waiting on; omit when thoroughness matters more than latency.",
-    ),
   verbose: z.boolean().optional().describe("Include repo facts, docs, and changed files."),
 };
 
@@ -55,6 +49,22 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
   // human typed the command. The run itself still records to gx Cloud history
   // (unlike --no-publish, which suppresses that too) so MCP reviews count in
   // per-surface usage; --client mcp labels the row.
+  //
+  // There is deliberately no `fast` parameter. It used to be exposed here, and
+  // its description told the caller to use it "for interactive reviews someone
+  // is waiting on" — which is every review that arrives through MCP, so the
+  // model selected it essentially always, correctly per the description.
+  //
+  // What it selected was a review with no verification pass, and `kind` is
+  // written by the judge: measured across 41 saved reports, 162 of 166
+  // unjudged findings carry no kind at all, against 36 of 39 judged ones that
+  // do. So --fast silently removes the field findings.go documents as "the
+  // strongest single noise separator the review produces", while the report
+  // still renders strength and kind as though they meant something. A user
+  // triaging one such run by confidence found every Strong/defect finding
+  // false and all three real ones filed under "worth exploring".
+  //
+  // --fast still exists on the CLI, where a human choosing it knows the trade.
   const args = ["review", "--no-comment", "--client", "mcp"];
   if (params.scope) {
     args.push("--scope", params.scope);
@@ -64,9 +74,6 @@ export default async function gxReview(params: InferSchema<typeof schema>) {
   }
   if (params.repo) {
     args.push("--repo");
-  }
-  if (params.fast) {
-    args.push("--fast");
   }
   if (params.deep) {
     args.push("--deep");
