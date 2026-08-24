@@ -95,6 +95,9 @@ GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 			if err := codereview.ValidateModelPresetEnv(); err != nil {
 				return err
 			}
+			if err := requireReviewSession(); err != nil {
+				return err
+			}
 			reviewScope := ""
 			scopeExplicit := cmd.Flags().Changed("scope")
 			if scopeExplicit {
@@ -665,4 +668,35 @@ func reviewHistoryLanguageForFile(file string) string {
 	default:
 		return ""
 	}
+}
+
+// requireReviewSession refuses a review that has no gx Cloud session to review
+// with.
+//
+// Without one, resolveBedrockTransportPlan fails and both reviewer legs come
+// back unavailable: the run still produces a report, still prints a verdict,
+// and still writes a findings file, but nothing with a model ever looked at
+// the change. It reports DEGRADED, which reads like a review that went
+// slightly wrong rather than one that never happened. A user spent three days
+// on exactly that, re-running a command that was telling him the truth in a
+// form he could not act on.
+//
+// Refusing costs nothing that was working: a signed-out review had no reviewer
+// either way. It also makes every real review attributable, which is what runs
+// are metered on — a review that cannot be counted is a review that was never
+// paid for.
+//
+// The explicit opt-outs still run, because both are still real reviews:
+// GX_REVIEW_AI=0 asks for the deterministic rules alone, and
+// GX_REVIEW_BEDROCK_DIRECT=1 reviews on the caller's own AWS account without
+// gx Cloud in the path at all.
+func requireReviewSession() error {
+	if !codereview.CloudSessionRequired() {
+		return nil
+	}
+	if _, err := cloud.CloudAPIToken(); err != nil {
+		return fmt.Errorf(
+			"gx review needs a gx Cloud session — without one no AI reviewer runs: %w", err)
+	}
+	return nil
 }

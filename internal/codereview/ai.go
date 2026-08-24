@@ -1011,3 +1011,22 @@ func formatReviewerDegradation(err error) string {
 	}
 	return msg
 }
+
+// CloudSessionRequired reports whether a review, as this environment is
+// configured, needs a gx Cloud session to review anything at all.
+//
+// It is false in exactly the two cases where a signed-out review is still a
+// real review: the caller has explicitly turned the AI panel off and wants the
+// deterministic rules only, or they have opted into their own AWS account with
+// GX_REVIEW_BEDROCK_DIRECT and are not using gx Cloud as a wire.
+//
+// Everywhere else, no session means no reviewer: resolveBedrockTransportPlan
+// fails, both legs come back unavailable, and the run reports DEGRADED having
+// looked at nothing with a model. The caller uses this to refuse up front
+// rather than hand back a report that reads like a review.
+func CloudSessionRequired() bool {
+	if !aiReviewRequestedFromEnv() {
+		return false
+	}
+	return !bedrockDirectRequested()
+}
