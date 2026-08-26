@@ -262,6 +262,10 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	// makes the verification pass cheaper and its truncation cliff further
 	// away, as well as keeping a refutable claim out of the report.
 	findings, droppedClaims := DropContradictedFindings(repoRoot, findings)
+	// Attach the reference list for the symbol each finding names, so a claim
+	// about a caller arrives with the call sites rather than an assertion
+	// about them — for the judge below, and for whoever reads the report.
+	findings = AttachSymbolReferences(ctx, repoRoot, findings)
 	blocking, advisory := splitBlockingToolFindings(findings)
 	judge := e.judge
 	if judge == nil {

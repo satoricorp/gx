@@ -170,3 +170,24 @@ func DropContradictedFindings(repoRoot string, findings []Finding) ([]Finding, [
 	}
 	return kept, notes
 }
+
+// backtickedIdentifierPattern matches an identifier inside backticks. Three
+// characters minimum: shorter names are as often prose ("`ok`", "`id`") as
+// they are the subject of the finding.
+var backtickedIdentifierPattern = regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_]{2,})`")
+
+// backtickedIdentifiers returns the identifiers a finding quoted, in order.
+func backtickedIdentifiers(text string) []string {
+	matches := backtickedIdentifierPattern.FindAllStringSubmatch(text, -1)
+	out := make([]string, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		symbol := match[1]
+		if seen[symbol] {
+			continue
+		}
+		seen[symbol] = true
+		out = append(out, symbol)
+	}
+	return out
+}
