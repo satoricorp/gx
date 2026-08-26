@@ -184,6 +184,21 @@ func (r Report) aiReviewRan() bool {
 }
 
 func RenderMarkdown(report Report) string {
+	// Markdown is for readers that are not a terminal: the body posted as a
+	// GitHub comment, the summary stored in gx Cloud history, the --md pipe.
+	// None of them can render an escape sequence, so colour is stripped here
+	// rather than trusted to the caller.
+	//
+	// It was not. `gx review` in a terminal sets Color, the same report went
+	// to the PR comment, and a user's review arrived on GitHub reading
+	// "\x1b[38;2;61;220;151m## Recommendations\x1b[0m" — the mint truecolor
+	// escape, printed literally. The same string was recorded as the run's
+	// SummaryText, so the escapes reached the server too.
+	//
+	// Piping the output hides it completely: termstyle.Enabled() is false
+	// without a TTY, so every non-interactive test of this path renders clean
+	// and only a real terminal reproduces it.
+	report.Color = false
 	var b strings.Builder
 	// Degradation is not one condition. "No model reviewed this" and "one of two
 	// models reviewed this" are different reviews, and printing "results are
