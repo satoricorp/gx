@@ -121,6 +121,16 @@ type Report struct {
 	// It is still reported, because "no rule fit this finding" and "the labeler
 	// never ran" render identically as a blank and mean opposite things.
 	RuleLabeling []string `json:"rule_labeling,omitempty"`
+	// DroppedClaims names findings removed because the repository disproved
+	// them — a symbol reported absent that the file plainly contains. Like
+	// RuleLabeling this is NOT DegradedReasons: a review that caught its own
+	// refutable claim did its job, and gating on it would fail a gate for
+	// working correctly.
+	//
+	// It is reported because a filter that silently eats findings cannot be
+	// trusted or debugged. If this ever drops something real, this line is how
+	// anyone finds out.
+	DroppedClaims []string `json:"dropped_claims,omitempty"`
 	// Evidence is what each retrieval source contributed, including the ones
 	// that contributed nothing because they were missing or unreachable. It is
 	// separate from DegradedReasons, which is specifically about the AI

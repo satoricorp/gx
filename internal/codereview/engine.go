@@ -256,6 +256,12 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 	}
 	findings = validateFindingAnchors(reviewContext, findings)
 	findings = filterPatchFocusedFindings(reviewContext, findings)
+	// Before the judge, not after: a finding the repository disproves costs a
+	// judge slot, and the judge's output length is linear in the candidate
+	// count against a fixed cap (see judgeBatchSize). Settling these here
+	// makes the verification pass cheaper and its truncation cliff further
+	// away, as well as keeping a refutable claim out of the report.
+	findings, droppedClaims := DropContradictedFindings(repoRoot, findings)
 	blocking, advisory := splitBlockingToolFindings(findings)
 	judge := e.judge
 	if judge == nil {
@@ -418,6 +424,7 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 		Triage:            triage,
 		DegradedReasons:   degradedReasons,
 		RuleLabeling:      ruleLabeling,
+		DroppedClaims:     droppedClaims,
 		Evidence:          brief.Evidence,
 		Coverage:          coverage,
 		Tools:             brief.Static.ToolResults,
