@@ -3,6 +3,7 @@ package codereview
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,10 @@ const (
 	// maxReferenceLineChars keeps a minified or generated line from filling
 	// the report.
 	maxReferenceLineChars = 160
+	// rawHitAllowance is how many raw grep hits per real reference are worth
+	// parsing before giving up. Generated trees can hold many multiples of the
+	// source hits for a name.
+	rawHitAllowance = 10
 )
 
 // FindReferences returns where symbol appears in the repository, whole-word.
@@ -68,7 +73,11 @@ func FindReferences(ctx context.Context, repoRoot, symbol string) []Reference {
 		return nil
 	}
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	if len(lines) > referenceNoiseThreshold {
+	// A raw guard only, so a symbol with thousands of hits is not parsed line
+	// by line. The real threshold is applied to what survives filtering: a
+	// name with forty hits in vendored trees and five in source has five
+	// references, and answering "too common" there would hide them.
+	if len(lines) > referenceNoiseThreshold*rawHitAllowance {
 		return nil
 	}
 	refs := make([]Reference, 0, len(lines))
@@ -78,6 +87,9 @@ func FindReferences(ctx context.Context, repoRoot, symbol string) []Reference {
 			continue
 		}
 		refs = append(refs, ref)
+	}
+	if len(refs) > referenceNoiseThreshold {
+		return nil
 	}
 	// Stable order so a report does not reshuffle between runs.
 	sort.SliceStable(refs, func(i, j int) bool {
@@ -92,28 +104,41 @@ func FindReferences(ctx context.Context, repoRoot, symbol string) []Reference {
 	return refs
 }
 
-// parseGrepLine reads "path:line:text". The path may itself contain colons on
-// some platforms, so the split is from the right of the two numeric fields
-// rather than the left.
+// parseGrepLine reads "path:line:text".
+//
+// The separator is found by looking for the line number, not by taking the
+// first colon: a path may contain one — a Windows drive letter, a branch-ish
+// directory name — and splitting on the first colon then reads half the path
+// as the file and the rest as a number that does not parse. The first colon
+// followed by digits and another colon is the real boundary.
 func parseGrepLine(line string) (Reference, bool) {
-	first := strings.Index(line, ":")
-	if first < 0 {
+	sep, number := -1, 0
+	for i := 0; i < len(line); i++ {
+		if line[i] != ':' {
+			continue
+		}
+		rest := line[i+1:]
+		end := strings.Index(rest, ":")
+		if end <= 0 {
+			continue
+		}
+		parsed, err := strconv.Atoi(rest[:end])
+		if err != nil || parsed <= 0 {
+			continue
+		}
+		sep, number = i, parsed
+		break
+	}
+	if sep <= 0 {
 		return Reference{}, false
 	}
-	rest := line[first+1:]
+	rest := line[sep+1:]
 	second := strings.Index(rest, ":")
-	if second < 0 {
-		return Reference{}, false
-	}
-	number, err := strconv.Atoi(rest[:second])
-	if err != nil || number <= 0 {
-		return Reference{}, false
-	}
 	text := strings.TrimSpace(rest[second+1:])
 	if len(text) > maxReferenceLineChars {
 		text = text[:maxReferenceLineChars] + "…"
 	}
-	return Reference{File: line[:first], Line: number, Text: text}, true
+	return Reference{File: line[:sep], Line: number, Text: text}, true
 }
 
 // FormatReferences renders a reference list for a finding's evidence.
@@ -188,17 +213,42 @@ func hasEvidenceLabel(finding Finding, label string) bool {
 	return false
 }
 
-// primarySymbol is the first backticked identifier a finding names, which is
-// in practice the thing the finding is about. Title before summary: the title
-// names the subject, while a summary's first backtick is as likely to be a
-// supporting detail.
+// codeShapedToken matches an identifier written without backticks: camelCase
+// or snake_case, four characters or more.
+//
+// The backticks-only version of this was inert. Dogfooding the reference
+// evidence on gx's own branch produced two findings titled "parseGrepLine
+// assumes the first colon..." and "FindReferences uses referenceNoiseThreshold
+// on raw output..." — both naming their symbol in the clear, neither quoted,
+// so neither got its references attached and the feature contributed nothing
+// to the run that was meant to prove it.
+//
+// An internal capital or an underscore is what separates an identifier from
+// English prose, which is why the shape is the filter rather than a word list.
+var codeShapedToken = regexp.MustCompile(
+	`\b([a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*|[a-z][a-z0-9]*_[a-z0-9_]+)\b`)
+
+// primarySymbol is the identifier a finding is about.
+//
+// Backticked names first, since quoting is the reviewer saying "this one".
+// Failing that, the first code-shaped token. Title before summary in both
+// passes: the title names the subject, while a summary's first identifier is
+// as likely to be a supporting detail.
 func primarySymbol(finding Finding) (string, bool) {
-	for _, text := range []string{finding.Title, finding.Summary} {
+	texts := []string{finding.Title, finding.Summary}
+	for _, text := range texts {
 		for _, candidate := range backtickedIdentifiers(text) {
-			if claimKeywords[strings.ToLower(candidate)] {
-				continue
+			if !claimKeywords[strings.ToLower(candidate)] {
+				return candidate, true
 			}
-			return candidate, true
+		}
+	}
+	for _, text := range texts {
+		for _, match := range codeShapedToken.FindAllStringSubmatch(text, -1) {
+			candidate := match[1]
+			if len(candidate) >= 4 && !claimKeywords[strings.ToLower(candidate)] {
+				return candidate, true
+			}
 		}
 	}
 	return "", false

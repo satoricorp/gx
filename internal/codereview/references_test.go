@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -106,5 +107,59 @@ func TestFindReferencesStaysQuietForCommonNames(t *testing.T) {
 	root := gitRepoWith(t, files)
 	if refs := FindReferences(context.Background(), root, "handler"); len(refs) != 0 {
 		t.Fatalf("FindReferences() returned %d refs for a ubiquitous name", len(refs))
+	}
+}
+
+// gx found this one reviewing its own branch: the split took the first colon,
+// while the comment above it described taking the numeric fields. A path
+// carrying a colon read half as the file and the rest as a number.
+func TestParseGrepLineSurvivesAColonInThePath(t *testing.T) {
+	ref, ok := parseGrepLine("src/weird:name.ts:42:const onPaid = 1;")
+	if !ok {
+		t.Fatal("parseGrepLine() refused a path containing a colon")
+	}
+	if ref.File != "src/weird:name.ts" || ref.Line != 42 {
+		t.Fatalf("parsed %+v, want src/weird:name.ts:42", ref)
+	}
+	if ref.Text != "const onPaid = 1;" {
+		t.Fatalf("text = %q, want the matched line", ref.Text)
+	}
+}
+
+// Also gx's own finding: the threshold counted raw hits, so a name buried in a
+// vendored tree reported nothing even when source held a handful.
+func TestNoiseThresholdCountsRealReferencesNotVendoredNoise(t *testing.T) {
+	files := map[string]string{
+		"src/a.ts": "export const widgetHandle = 1;\n",
+		"src/b.ts": "import { widgetHandle } from './a';\n",
+	}
+	for i := 0; i < referenceNoiseThreshold+5; i++ {
+		files[filepath.Join("node_modules", "pkg", "f"+strconv.Itoa(i)+".js")] = "widgetHandle\n"
+	}
+	root := gitRepoWith(t, files)
+
+	refs := FindReferences(context.Background(), root, "widgetHandle")
+	if len(refs) != 2 {
+		t.Fatalf("FindReferences() = %d refs, want the 2 in src/ despite the vendored noise", len(refs))
+	}
+}
+
+// The reviewer writes identifiers bare far more often than in backticks, and
+// the backticks-only version of this attached nothing on a real run.
+func TestPrimarySymbolReadsAnUnquotedIdentifier(t *testing.T) {
+	symbol, ok := primarySymbol(Finding{
+		Title: "parseGrepLine assumes the first colon separates the path",
+	})
+	if !ok || symbol != "parseGrepLine" {
+		t.Fatalf("primarySymbol() = (%q, %v), want parseGrepLine", symbol, ok)
+	}
+	// Prose must not be mistaken for code.
+	if _, ok := primarySymbol(Finding{Title: "this function is hard to read"}); ok {
+		t.Fatal("primarySymbol() found a symbol in ordinary prose")
+	}
+	// A quoted name still wins over a bare one later in the sentence.
+	symbol, _ = primarySymbol(Finding{Title: "`onPaid` is dropped by useBuildWithCredits"})
+	if symbol != "onPaid" {
+		t.Fatalf("primarySymbol() = %q, want the backticked name to win", symbol)
 	}
 }
