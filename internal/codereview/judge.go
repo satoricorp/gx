@@ -222,6 +222,17 @@ type judgeResult struct {
 	// second round supplies the files and re-asks. Empty on any decided
 	// verdict.
 	NeededFiles []string `json:"needed_files"`
+	// NeededSymbols is the other half of that request, for what a path cannot
+	// express. needed_files asks for a file the judge can name; needed_symbols
+	// asks where a name is used — "does every caller pass onPaid", "is
+	// HaltReason referenced anywhere" — which is a search, not a path.
+	//
+	// Four of the thirteen wrong findings in the user report we triaged turned
+	// on exactly that question, and the judge could not ask it: it had no way to
+	// request a search, so it guessed at callers it had never been shown. Each
+	// symbol is resolved by whole-word search and the matching files are fetched
+	// with the matching lines in view.
+	NeededSymbols []string `json:"needed_symbols"`
 }
 
 // judgeFromEnvWithPolicy builds the verification model.
@@ -562,16 +573,19 @@ func judgeAvailable(judge FindingJudge) bool {
 // can do its job: inside the object, before the verdict it justifies.
 func judgeDeveloperPrompt() string {
 	return strings.Join([]string{
-		"You are gx Review Judge. Verify candidate findings against the provided real file content, and decide which ones a human must review before merge.",
+		"You are gx Review Judge. For each candidate finding, try to REFUTE it against the provided real file content: look for the line that proves it wrong. A candidate you cannot refute stands. Decide which ones a human must review before merge.",
+		"Refutation is the job because it is the cheap direction. Proving a finding real can take an afternoon; disproving one is usually a single line — the dependency it says is missing, sitting in the file; the caller it says drops an argument, passing it. Ask what would have to be true for this claim to be false, then look for that, and let the verdict follow from what you find.",
+		"Refute only with evidence you can quote. A candidate you merely doubt is not refuted: say unverified and let a human read it. Wrong is for a claim the file contradicts, and you must be able to point at the line that contradicts it.",
 		"INPUT SHAPE: file content is in the top-level `files` array, once per file, shared by every candidate in this batch. A candidate's `named_files` lists which of those files it concerns — look them up there. A file named by a candidate but absent from `files` was not provided at all.",
 		"Each file's `text` is a line-numbered excerpt, not the whole file. Every line is prefixed with its real 1-based line number and `| `, so a claim about a line number can be checked against that exact line. The excerpt is built around the lines the findings point at.",
 		"A line reading `[... N line(s) omitted ...]` means that stretch of the file was not sent. Absent from the excerpt is NOT absent from the file: never treat an omitted stretch as proof that something does not exist. If deciding a candidate needs code that fell in an omitted stretch, answer unverifiable rather than guessing from what you were shown.",
 		"The top-level `diffs` array holds the changes under review, as unified diff hunks, keyed by file. `files` shows what the code IS NOW; `diffs` shows what CHANGED to make it that way. A candidate whose claim is about a change — a value that moved, a line that was removed, a guard that used to be there — is decided by the diff, so read it there rather than answering unverifiable because the current content alone cannot show a before state.",
 		"A file with no entry in `diffs` had no hunks provided. That is not evidence the file is unchanged; treat it the same as an omitted stretch.",
 		"When your verdict is unverifiable because a SPECIFIC file, class, or template you can name was not provided — an implementation the candidate's claim depends on, a caller that would rescue the exception, the template that binds the variable — set `needed_files` to the repo-relative paths (bare file names are acceptable when you do not know the directory). They will be fetched and the candidate re-asked with them present. Use it only for that: an unverifiable verdict with an empty needed_files means no specific file would settle the claim.",
+		"When what you lack is not a file but a fact about where a name is used — whether every caller passes an argument, whether a symbol is referenced at all, where a function is defined — set `needed_symbols` to those identifiers. Each is searched for whole-word across the repository and the files that match are fetched with the matching lines in view. needed_files asks for a path you can name; needed_symbols asks the question you cannot turn into one. Both may be set on the same candidate.",
 		"OUTPUT CONTRACT: reply with one JSON object and nothing else. The first character of your reply must be { and the last must be }.",
 		"Do not write anything before or after that object — no preamble, no commentary, no summary — and do not wrap it in a markdown code fence.",
-		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string,\"rank\":int}]}",
+		"Return JSON only with shape {\"results\":[{\"candidate_id\":string,\"analysis\":string,\"verdict\":\"confirmed|unverified|wrong\",\"impact\":\"breaking|functional|cosmetic|none\",\"severity\":1-5,\"confidence\":0-1,\"verification_note\":string,\"rank\":int,\"needed_files\":[string],\"needed_symbols\":[string]}]}",
 		"THINK IN THE analysis FIELD. Write it first, before the verdict of the same object, and use it to do the actual work: quote the lines of the provided file content that decide the claim, state what that code really does, and name any part of the claimed mechanism the file contradicts. Then let the verdict follow from it.",
 		"Take as many sentences in analysis as the candidate needs. An analysis that only restates the claim is a verdict guessed rather than checked, and a wrong confirmation costs a reviewer more than a long analysis costs you.",
 		"analysis is the only place reasoning may appear. Never write it outside the JSON object. Every result object must carry a non-empty analysis; a result without one has skipped the check the field exists to force.",
@@ -999,8 +1013,10 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 				outcome.Abstained++
 				outcome.AbstentionNotes = append(outcome.AbstentionNotes,
 					abstentionNote(finding, out[i].results))
-				if needs := byID[id].NeededFiles; len(needs) > 0 {
-					retriable = append(retriable, retriableAbstention{finding: finding, needs: needs})
+				needs, symbols := byID[id].NeededFiles, byID[id].NeededSymbols
+				if len(needs) > 0 || len(symbols) > 0 {
+					retriable = append(retriable, retriableAbstention{
+						finding: finding, needs: needs, symbols: symbols})
 					continue
 				}
 			} else {
@@ -1020,12 +1036,18 @@ func runJudge(ctx context.Context, judge FindingJudge, reviewContext ReviewConte
 type retriableAbstention struct {
 	finding Finding
 	needs   []string
+	symbols []string
 }
 
 // maxJudgeRequestedFiles bounds how many judge-requested files one second
 // round fetches. The traced abstentions each named one or two files; a reply
 // requesting many more is fishing, not verifying.
 const maxJudgeRequestedFiles = 8
+
+// maxJudgeRequestedSymbols bounds how many searches one second round runs. A
+// candidate turns on one or two names; a reply asking about a dozen is
+// fishing, and each search costs a git grep over the repository.
+const maxJudgeRequestedSymbols = 4
 
 // rejudgeWithRequestedFiles runs one supplemental round for abstentions that
 // named their missing files.
@@ -1046,6 +1068,11 @@ func rejudgeWithRequestedFiles(ctx context.Context, judge FindingJudge,
 	repoRoot := reviewContext.Brief.RepoRoot
 	var findings []Finding
 	requested := map[string]struct{}{}
+	// hints carry the lines a search matched, so the excerpt for a fetched
+	// file is built around the references the judge asked about rather than
+	// around the head of the file.
+	hints := map[string][]int{}
+	searched := 0
 	for _, r := range retriable {
 		findings = append(findings, r.finding)
 		for _, need := range r.needs {
@@ -1054,6 +1081,19 @@ func rejudgeWithRequestedFiles(ctx context.Context, judge FindingJudge,
 			}
 			if resolved := resolveRequestedFile(ctx, repoRoot, need); resolved != "" {
 				requested[resolved] = struct{}{}
+			}
+		}
+		for _, symbol := range r.symbols {
+			if searched >= maxJudgeRequestedSymbols || len(requested) >= maxJudgeRequestedFiles {
+				break
+			}
+			searched++
+			for _, ref := range FindReferences(ctx, repoRoot, symbol) {
+				if len(requested) >= maxJudgeRequestedFiles {
+					break
+				}
+				requested[ref.File] = struct{}{}
+				hints[ref.File] = append(hints[ref.File], ref.Line)
 			}
 		}
 	}
@@ -1069,7 +1109,6 @@ func rejudgeWithRequestedFiles(ctx context.Context, judge FindingJudge,
 	for _, snippet := range request.Files {
 		present[snippet.File] = struct{}{}
 	}
-	hints := map[string][]int{}
 	var extra []string
 	for file := range requested {
 		if _, ok := present[file]; !ok {
