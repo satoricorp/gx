@@ -611,3 +611,42 @@ func (t *cloudBedrockTransport) complete(ctx context.Context, model, system, inp
 	}
 	return bedrockCompletion{Text: text, StopReason: resp.StopReason}, nil
 }
+
+// reserveCloudRun counts this review against the account's gx Cloud runs
+// before any model work starts.
+//
+// gx Cloud meters runs, not calls: the server reserves under the run key on
+// ctx whenever a model call arrives, so the several calls inside one review
+// cost one run. Doing it up front as well means an account with no runs left
+// hears "subscribe at …" immediately, instead of after retrieval and brief
+// building, from the first leg, as one degraded reviewer among others.
+//
+// Only a spent allowance stops the review. Cloud not configured, not signed
+// in, or a transport failure all return nil: the legs report the first two
+// themselves, and the server's per-call gate still stands behind the third.
+func reserveCloudRun(ctx context.Context, opts Options) error {
+	if bedrockDirectRequested() {
+		return nil
+	}
+	client := cloud.NewBedrockClient()
+	if client == nil {
+		return nil
+	}
+	if _, err := cloud.CloudAPIToken(); err != nil {
+		return nil
+	}
+	if cloud.RunKeyFrom(ctx) == "" {
+		return nil
+	}
+	reservation, err := client.ReserveRun(ctx)
+	if err != nil {
+		if cloud.IsPaymentRequired(err) {
+			return err
+		}
+		return nil
+	}
+	if note := reservation.FreeRunsNote(); note != "" {
+		reviewProgress(opts, note)
+	}
+	return nil
+}

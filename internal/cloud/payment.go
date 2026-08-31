@@ -7,33 +7,38 @@ import (
 )
 
 // PaymentRequiredError is returned when gx Cloud rejects an AI request with
-// HTTP 402 (expired trial / no active plan).
+// HTTP 402: the account's free runs are spent and there is no subscription.
 type PaymentRequiredError struct {
 	Message string
 }
 
 func (e *PaymentRequiredError) Error() string {
 	if e == nil || strings.TrimSpace(e.Message) == "" {
-		return "gx Cloud AI needs an active plan; the free trial for this org has ended."
+		return "gx Cloud AI needs a subscription; your free runs are used up."
 	}
 	return e.Message
 }
 
 // PaymentRequiredMessage formats the JSON body of a gx Cloud 402 response
-// into a user-facing message that names both remedies: upgrading the org, or
-// bringing your own model key via ANTHROPIC_API_KEY / OPENAI_API_KEY.
+// into a user-facing message that names the remedy: subscribing at the
+// checkout URL the server sends.
 func PaymentRequiredMessage(body []byte) string {
 	var payload struct {
-		Message    string `json:"message"`
-		UpgradeURL string `json:"upgrade_url"`
+		Message     string `json:"message"`
+		CheckoutURL string `json:"checkout_url"`
+		UpgradeURL  string `json:"upgrade_url"`
 	}
 	_ = json.Unmarshal(body, &payload)
 	message := strings.TrimSpace(payload.Message)
 	if message == "" {
-		message = "gx Cloud AI needs an active plan; the free trial for this org has ended. Upgrade to keep using gx Cloud AI, or set your own model key via ANTHROPIC_API_KEY or OPENAI_API_KEY."
+		message = "gx Cloud AI needs a subscription; your free runs are used up."
 	}
-	if url := strings.TrimSpace(payload.UpgradeURL); url != "" && !strings.Contains(message, url) {
-		message += " Upgrade: " + url
+	url := strings.TrimSpace(payload.CheckoutURL)
+	if url == "" {
+		url = strings.TrimSpace(payload.UpgradeURL)
+	}
+	if url != "" && !strings.Contains(message, url) {
+		message += " Subscribe: " + url
 	}
 	return message
 }

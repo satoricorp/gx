@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/satoricorp/gx/internal/cloud"
 )
 
 type Engine struct {
@@ -57,7 +59,7 @@ func NewEngineWithReviewer(scanner Scanner, catalog Catalog, rules []Rule, retri
 	return &Engine{scanner: scanner, catalog: catalog, rules: rules, retriever: retriever, reviewer: reviewer}
 }
 
-func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Report, error) {
+func (e *Engine) review(ctx context.Context, repoRoot string, opts Options) (Report, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
 	if repoRoot == "" {
 		return Report{}, fmt.Errorf("repo root is required")
@@ -221,6 +223,11 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 				degradedReasons = append(degradedReasons, ReviewerUnavailableReason(reviewer))
 			}
 		} else {
+			// Every cloud call in this review counts as one metered run; stop
+			// here, with the checkout URL, when the account has none left.
+			if err := reserveCloudRun(ctx, opts); err != nil {
+				return Report{}, err
+			}
 			// The subject is split into as many calls as it takes to read all
 			// of it, rather than trimmed to fit one. Ordinary changes plan a
 			// single shard and behave exactly as before.
@@ -437,6 +444,15 @@ func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Rep
 
 func Review(ctx context.Context, repoRoot string, opts Options) (Report, error) {
 	return NewEngine().Review(ctx, repoRoot, opts)
+}
+
+// Review runs one review. Every gx Cloud call it makes carries one run key, so
+// the server meters the whole review as a single run.
+func (e *Engine) Review(ctx context.Context, repoRoot string, opts Options) (Report, error) {
+	if cloud.RunKeyFrom(ctx) == "" {
+		ctx = cloud.WithRunKey(ctx, cloud.NewRunKey())
+	}
+	return e.review(ctx, repoRoot, opts)
 }
 
 // reviewChangeSet resolves what this review looks at.

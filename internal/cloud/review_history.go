@@ -148,6 +148,9 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, out any
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if runKey := RunKeyFrom(ctx); runKey != "" {
+		req.Header.Set(RunHeader, runKey)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -155,6 +158,11 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, out any
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusPaymentRequired {
+		// Typed, so a review can stop with the checkout URL rather than
+		// report "status 402" as one more failed leg.
+		return NewPaymentRequiredError(raw)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		// A structured refusal the CLI can render in one line beats quoting
 		// the JSON body into the report.
