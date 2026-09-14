@@ -1,209 +1,160 @@
 # gx
 
-Git for Agents.
-
-Git was not built for LLMs. Git works great for humans, where you can attach a
-message to code changes to review later, but with AI we now have additional
-artifacts, like session context, that can save work in an organized way and
-supplement your pull requests.
-
-Many changes that happen during a coding session are otherwise lost. Those
-details can help teammates and other agents understand the intent and decisions
-behind the work. Alongside Git history and other resources, gx gives your team a
-stronger review system for moving faster while maintaining high-quality
-software.
-
-## Setup
+Code review with session context, on top of plain Git.
 
 ```bash
 curl -fsSL https://download.gx.run/install.sh | sh
 ```
 
-Re-run the same command to upgrade or repair an existing installation. The
-installer replaces only the gx-managed `gx` and `gx-mcp` binaries and refreshes
-the `gxr` alias. It does not remove `~/.gx`, repository metadata, or
-hooks.
+## Get started
 
 ```bash
-gx version
-gx doctor
-```
-
-From your repo:
-
-```bash
+cd your-repo
 gx init
-```
-
-This configures your gx identity, installs Git lifecycle hooks to identify and
-record revisions plus a pre-push hook to publish session data, registers the gx
-MCP server, installs the `/gx` command for Claude Code, Codex,
-and Cursor, and offers to add gx workflow instructions to `AGENTS.md`.
-
-Most gx commands initialize the repository on first use, so `gx init` is the way
-to set your identity and answer the `AGENTS.md` prompt rather than a hard
-prerequisite.
-
-To install the hooks once for every repository on the machine instead of
-per-repo, use `core.hooksPath`:
-
-```bash
-gx init --global
-```
-
-To uninstall the CLI:
-
-```bash
-rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxe ~/.local/bin/gxg ~/.local/bin/gxc ~/.local/bin/gx-mcp
-rm -f ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
-```
-
-This removes the installed binaries and shell completions only. Local gx data
-remains in `~/.gx` (or `$GX_HOME`).
-
-## Auth
-
-```bash
 gx auth login
-gx auth status
-gx auth logout
 ```
 
-Logging into gx allows you to push metadata and captured context to gx Cloud.
-This is required to use gx code review: the reviewer runs on Bedrock, and gx
-Cloud is what brokers those calls. There is no other provider, and no
-`ANTHROPIC_API_KEY`-style local key path — a missing login reads as "no reviewer
-ran", never as a clean review.
+Then use Git as usual. gx hooks record each commit and publish on push:
 
-To review on your own AWS account instead of through gx Cloud:
+```bash
+git add -p
+git commit -m "fix the auth timeout"
+git push
+gx review "fix the auth timeout"
+```
+
+Sign up at [gx.run](https://gx.run). Re-run the install command to upgrade.
+
+## Commands
+
+| Command | Alias | Purpose |
+| --- | --- | --- |
+| `gx init` | | Set up this repo (identity, hooks, MCP, agent `/gx` command) |
+| `gx auth login` | | Log into gx Cloud |
+| `gx auth status` | | Show login status |
+| `gx auth logout` | | Log out |
+| `gx review [intent]` | `gxr` | Review the current change |
+| `gx enhance [intent]` | `gxe` | Top fix from that review, as a prompt for your coding model |
+| `gx doctor` | | Diagnose (and optionally repair) local gx state |
+| `gx update` | | Install the latest published build |
+| `gx version` | | Print version |
+| `gx help` | | Help |
+
+Most commands auto-init the repo on first use. Run `gx init` once so identity and `AGENTS.md` are set the way you want.
+
+### `gx init`
+
+```bash
+gx init                 # this repo
+gx init --global        # machine-wide hooks via core.hooksPath
+gx init --yes           # defaults, quiet on success
+gx init --name "…" --email "…"
+```
+
+### `gx review [intent]`
+
+Reviews the working tree by default. Optional `intent` is one sentence of what the change was supposed to do.
+
+```bash
+gx review
+gx review "make checkout survive gateway blips"
+gx review --base origin/main
+gx review --repo
+gx review --fast
+gx review --deep
+gx review --focus internal/auth
+gx review --json
+gx review --md
+gx review --fail-on blocking   # default; exit 3 if blocking findings remain
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--base <ref>` | Review `<ref>...HEAD` instead of the working tree |
+| `--repo` | Review the whole repository (wins over `--base`) |
+| `--fast` | One reviewer, no verification pass |
+| `--deep` | More local + indexed context |
+| `--focus <path>` | Limit to files under a path prefix |
+| `--json` / `--md` | Machine / PR-comment output |
+| `--no-comment` | Skip PR comment; still record history |
+| `--no-publish` | Skip PR comment and history |
+| `--fail-on <level>` | Gate: `none`, `any`, `speculative`, `worth-exploring`, `strong`, `blocking` |
+| `--scope <lane>` | `architecture` (default), `security`, `performance`, `onboarding`, `docs`, `dependencies`, `testing`, `maintainability` |
+| `--verbose` | Include repo facts, docs, and changed files |
+| `--max-findings <n>` | Cap reported recommendations |
+| `--client <name>` | Invoking surface (`cli`, `mcp`, `skill`, …) |
+
+Findings: **blocking** (exit 3) vs **advisory**. A finding blocks only when both reviewers raised it and verification confirmed it.
+
+Model presets: `GX_REVIEW_MODELS=default|budget|glm`. Per-slot overrides: `GX_REVIEW_BEDROCK_MODEL_A`, `GX_REVIEW_BEDROCK_MODEL_B`, `GX_REVIEW_JUDGE_MODEL`, `GX_GATE_MODEL`.
+
+Own-AWS review (skip gx Cloud Bedrock brokerage):
 
 ```bash
 export GX_REVIEW_BEDROCK_DIRECT=1
-export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...   # plus AWS_SESSION_TOKEN if temporary
+export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…   # + AWS_SESSION_TOKEN if needed
 ```
 
-Override the two review models with `GX_REVIEW_BEDROCK_MODEL_A` and
-`GX_REVIEW_BEDROCK_MODEL_B`; set either to `off` to review with a single model.
+### `gx enhance [intent]`
 
-`OPENAI_API_KEY` is unrelated to the reviewer — it is read only when embedding
-this repository for the code index.
-
-## Add Instructions To Your AGENTS.md
-
-`gx init` offers to add this for you. To write it by hand, or to check what init
-added, this is the text:
-
-```md
-Version control: plain Git. Once `gx init` installs the hooks, gx records and publishes automatically — there is no gx save verb.
-
-Default flow:
-- Run `git add` to stage the files for this revision.
-- Run `git commit -m "..."` to save. A gx hook records the commit as a reviewable revision.
-- Run plain `git push` to publish. The gx pre-push hook captures the session and publishes code changes, sessions, and gx metadata to gx Cloud automatically — do not run `gx push` or `gx capture push` yourself; they bypass the hook.
-- Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
-- To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
-
-For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
-Before shipping, run the `gx_review` MCP tool (or `gx review`) — a blocking finding is a no-ship.
-```
-
-gx PR summaries are posted for PRs whose branch was pushed through gx with `git
-push` while the pre-push hook is installed. A PR opened before that push will not
-get a summary until the branch is pushed through gx.
-
-If your agent client supports tool policies, require approval for destructive
-reset and branch deletion.
-
-The installer gives you the `gx` CLI and `gx-mcp`.
-When a repo is initialized with `gx init`, gx
-installs `prepare-commit-msg`, `post-commit`, `post-rewrite`, and `pre-push`
-hooks. They preserve durable gx revision IDs across normal Git commits and
-rewrites, capture Claude/Codex/Cursor session context into `~/.gx/gx.db`, mark
-pushed gx revisions shareable, and drain uploads in the background when
-credentials are configured.
-
-## Basic Workflow
-
-```bash
-git add <files>
-git commit -m "describe this change"   # a gx hook records the revision
-git status                             # inspect with plain Git
-git push                               # push code; gx hook publishes sessions and PR summaries
-```
-
-Useful review commands:
-
-```bash
-gxr                                              # gx review, patch-focused
-gx review --repo "how does capture work?"        # ask about the codebase
-gx review --base origin/main --fail-on strong --no-publish   # CI gate
-```
-
-`gx review` leaves no gx state on the machine that runs it: it never runs `gx
-init`, writes `~/.gx`, or touches `.git/index`, so it is safe in CI and on a
-checkout you do not own. It does publish outward by default — posting the PR
-review comment and recording review history to gx Cloud. `--no-comment` skips
-the comment, and `--no-publish` skips both.
-
-Under `--fail-on` it exits `3` when findings at or above the threshold survive,
-`4` when nothing was reviewed at all, and `5` when code was read but the review
-that read it ran degraded. Run `gx review --help` for the full flag surface, and
-`gx --help` for the rest of the commands.
-
-## MCP
-
-gx ships with a stdio MCP server.
-
-Install includes `gx-mcp`:
-
-```bash
-command -v gx-mcp
-```
-
-`gx init` registers it automatically with Cursor, Claude Code, and Codex when it
-finds them. To register it by hand:
-
-Cursor:
-
-```bash
-cursor mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
-```
-
-Claude Code:
-
-```bash
-claude mcp add gx -- env GX_BINARY=$HOME/.local/bin/gx $HOME/.local/bin/gx-mcp
-```
-
-MCP exposes `gx_review`. There is still no save or publish
-tool and no gx-specific verb to ask for: the server tells your agent to use
-plain Git, and the hooks do the rest.
-
-Expected flow:
-
-```text
-git add -> git commit -> git push -> gh pr create
-```
-
-`gx init` also installs a `/gx` slash command for Claude Code, Codex, and
-Cursor, which runs a fast review of the current change.
-
-Publish with plain `git push` only. Do not run `gx push` or `gx capture push`.
-
-## Enhance
-
-`gx enhance` (shortcut `gxe`) prints the single highest-value fix in the
-current change, written to hand straight to a coding model: the problem, where
-it lives, the code around it, why it matters, the change to make, and a
-concrete finish line. It runs the same review `gx review` runs and reports the
-top of that review's fix plan — blocking findings first, then the judge's own
-ranking — so the two commands never disagree about what matters most.
+Same review, narrowed to the single highest-value fix, written as a prompt for a coding model. Always exits 0.
 
 ```bash
 gx enhance | pbcopy
-gx enhance | claude -p "apply this"
+gx enhance "fix the auth timeout" | claude -p "apply this"
+gx enhance --base origin/main --fast
 ```
 
-Output is plain text on stdout with no ANSI, and the spinner goes to stderr, so
-piping copies something usable. Exit status is always 0: gating is `gx review`'s
-job, and a review with nothing to fix says so rather than failing.
+Flags: `--base`, `--repo`, `--fast`, `--deep`, `--focus`, `--client`.
+
+### `gx doctor` / `gx update` / `gx version`
+
+```bash
+gx doctor
+gx doctor --fix
+gx doctor --json
+gx doctor --report          # send diagnosis + recent logs to support
+
+gx update
+gx update --check
+
+gx version
+gx version --json
+```
+
+### `gx auth`
+
+```bash
+gx auth login
+gx auth login --name "studio-mac"
+gx auth status
+gx auth status --json
+gx auth logout
+```
+
+Cloud login is required for review unless you set `GX_REVIEW_BEDROCK_DIRECT=1`.
+
+## Daily flow
+
+1. `git add` / `git commit` — hooks record the revision.
+2. `git push` — pre-push publishes session + metadata to gx Cloud. Do not run `gx push` / `gx capture push`; they bypass the hook.
+3. Open the PR with `gh pr create` (or the UI). Leave human notes only; gx appends the summary after a hooked push.
+4. `gx review` before you ship. Blocking finding ⇒ no-ship.
+
+```bash
+gx init --global   # optional: hooks in every repo on this machine
+```
+
+## Uninstall
+
+```bash
+rm -f ~/.local/bin/gx ~/.local/bin/gxr ~/.local/bin/gxe ~/.local/bin/gx-mcp
+rm -f ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
+```
+
+Local data stays in `~/.gx` (or `$GX_HOME`).
+
+## Links
+
+- Product: [gx.run](https://gx.run)
+- Installer: [download.gx.run/install.sh](https://download.gx.run/install.sh)
