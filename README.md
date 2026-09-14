@@ -3,6 +3,8 @@
 </p>
 
 SOTA code review that uses your session context.
+
+
 With traditional code review, developers held the context for code changes, but now AI sessions hold that context.
 This can improve code review drastically, keeping both session history and informing future sessions of best practices.
 
