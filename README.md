@@ -1,15 +1,19 @@
 # gx
 
-Code review with session context, on top of plain Git.
+SOTA code review that uses your session context.
+With traditional code review, developers held the context for code changes, but now AI sessions hold that context.
+This can improve code review drastically, keeping both session history and informing future sessions of best practices.
 
+
+## Get started
+
+Install GX locally:
 ```bash
 curl -fsSL https://download.gx.run/install.sh | sh
 ```
 
-## Get started
-
+Inside your repo:
 ```bash
-cd your-repo
 gx init
 gx auth login
 ```
@@ -17,10 +21,11 @@ gx auth login
 Then use Git as usual. gx hooks record each commit and publish on push:
 
 ```bash
+gx review
+
 git add -p
-git commit -m "fix the auth timeout"
+git commit -m "some commit message"
 git push
-gx review "fix the auth timeout"
 ```
 
 Sign up at [gx.run](https://gx.run). Re-run the install command to upgrade.
@@ -53,19 +58,12 @@ gx init --name "…" --email "…"
 
 ### `gx review [intent]`
 
-Reviews the working tree by default. Optional `intent` is one sentence of what the change was supposed to do.
+Reviews the working tree by default. Additional flags based on desired direction of review.
 
 ```bash
 gx review
-gx review "make checkout survive gateway blips"
-gx review --base origin/main
-gx review --repo
-gx review --fast
-gx review --deep
-gx review --focus internal/auth
-gx review --json
-gx review --md
-gx review --fail-on blocking   # default; exit 3 if blocking findings remain
+gx review --base origin/main #Review a specific branch
+gx review --json #For agents
 ```
 
 | Flag | Effect |
@@ -86,17 +84,7 @@ gx review --fail-on blocking   # default; exit 3 if blocking findings remain
 
 Findings: **blocking** (exit 3) vs **advisory**. A finding blocks only when both reviewers raised it and verification confirmed it.
 
-Model presets: `GX_REVIEW_MODELS=default|budget|glm`. Per-slot overrides: `GX_REVIEW_BEDROCK_MODEL_A`, `GX_REVIEW_BEDROCK_MODEL_B`, `GX_REVIEW_JUDGE_MODEL`, `GX_GATE_MODEL`.
-
-Own-AWS review (skip gx Cloud Bedrock brokerage):
-
-```bash
-export GX_REVIEW_BEDROCK_DIRECT=1
-export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…   # + AWS_SESSION_TOKEN if needed
-```
-
-### `gx enhance [intent]`
-
+### `gx enhance`
 Same review, narrowed to the single highest-value fix, written as a prompt for a coding model. Always exits 0.
 
 ```bash
@@ -104,8 +92,6 @@ gx enhance | pbcopy
 gx enhance "fix the auth timeout" | claude -p "apply this"
 gx enhance --base origin/main --fast
 ```
-
-Flags: `--base`, `--repo`, `--fast`, `--deep`, `--focus`, `--client`.
 
 ### `gx doctor` / `gx update` / `gx version`
 
@@ -130,19 +116,6 @@ gx auth login --name "studio-mac"
 gx auth status
 gx auth status --json
 gx auth logout
-```
-
-Cloud login is required for review unless you set `GX_REVIEW_BEDROCK_DIRECT=1`.
-
-## Daily flow
-
-1. `git add` / `git commit` — hooks record the revision.
-2. `git push` — pre-push publishes session + metadata to gx Cloud. Do not run `gx push` / `gx capture push`; they bypass the hook.
-3. Open the PR with `gh pr create` (or the UI). Leave human notes only; gx appends the summary after a hooked push.
-4. `gx review` before you ship. Blocking finding ⇒ no-ship.
-
-```bash
-gx init --global   # optional: hooks in every repo on this machine
 ```
 
 ## Uninstall
