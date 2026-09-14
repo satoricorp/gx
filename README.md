@@ -1,7 +1,5 @@
-# gx
-
 <p align="center">
-  <img src="docs/gx-chrome-logo-light.svg" alt="gx" width="420" />
+  <img src="docs/gx-chrome-logo-dark.png" alt="gx" width="420" />
 </p>
 
 SOTA code review that uses your session context.
