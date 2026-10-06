@@ -14,7 +14,6 @@ import (
 
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/codereview"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/spf13/cobra"
 )
@@ -78,14 +77,10 @@ end to end). Any single slot's env var (GX_REVIEW_BEDROCK_MODEL_A/_B,
 GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Everything below runs under a context that forbids writing gx
-			// state, so review's own telemetry reports without minting a
-			// machine ID into a $GX_HOME that may not exist.
-			ctx := telemetry.WithoutStateWrites(ctx)
 			startedAt := time.Now()
-			// Resolved once so telemetry and the cloud history row cannot
-			// disagree about which surface invoked this run.
-			client := telemetry.ClientSurface(clientOverride)
+			// The surface that invoked this run, recorded on the gx Cloud
+			// history row.
+			client := resolveClientSurface(clientOverride)
 			failOnLevel, err := codereview.ParseFailOnLevel(failOn)
 			if err != nil {
 				return err
@@ -111,7 +106,6 @@ GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 			// repo (or on a machine) that has never run `gx init`.
 			repo, err := vcs.NewService().ResolveGitRepoWithoutStore(ctx)
 			if err != nil {
-				emitReviewRunTelemetry(ctx, codereview.Report{}, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 				return err
 			}
 			runReview := func(progress io.Writer) (codereview.Report, error) {
@@ -137,7 +131,6 @@ GX_REVIEW_JUDGE_MODEL, GX_GATE_MODEL) still wins over the preset.`,
 			} else {
 				report, err = runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
 			}
-			emitReviewRunTelemetry(ctx, report, err, client, reviewScope, scopeExplicit, focus, prompt, deep, wholeRepo, verbose, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -367,62 +360,7 @@ func gateDegradedReason(report codereview.Report) string {
 	return ""
 }
 
-func emitReviewRunTelemetry(ctx context.Context, report codereview.Report, runErr error, client string, reviewScope string, scopeExplicit bool, focus string, prompt string, deep bool, wholeRepo bool, verbose bool, duration time.Duration) {
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	}
-	mode := reviewRunMode(prompt, scopeExplicit, deep, wholeRepo)
-	effectiveScope := strings.TrimSpace(report.Scope)
-	if effectiveScope == "" {
-		effectiveScope = strings.TrimSpace(reviewScope)
-	}
-	if effectiveScope == "" {
-		effectiveScope = codereview.DefaultScope
-	}
-	props := map[string]any{
-		"status":                status,
-		"client":                client,
-		"mode":                  mode,
-		"scope":                 effectiveScope,
-		"scope_explicit":        scopeExplicit,
-		"has_focus":             strings.TrimSpace(focus) != "",
-		"has_prompt":            strings.TrimSpace(prompt) != "",
-		"deep":                  deep,
-		"whole_repo":            wholeRepo,
-		"verbose":               verbose,
-		"duration_ms":           duration.Milliseconds(),
-		"finding_count":         len(report.Findings),
-		"changed_file_count":    len(report.ChangedFiles),
-		"tracked_file_count":    report.TrackedFileCount,
-		"test_file_count":       report.TestFileCount,
-		"context_snippet_count": report.ContextSnippets,
-	}
-	if strings.TrimSpace(report.Reviewer) != "" {
-		props["reviewer"] = report.Reviewer
-	}
-	// Which wire the review ran over, so a fleet-wide latency or failure spike
-	// can be attributed to the gx Cloud hop or to direct AWS calls instead of
-	// being averaged across both. The models go with it: the panel is two
-	// competing legs plus a judge, and "review got slower" is a different
-	// investigation depending on which of them changed.
-	if strings.TrimSpace(report.ReviewTransport) != "" {
-		props["review_transport"] = report.ReviewTransport
-	}
-	if len(report.ReviewModels) > 0 {
-		props["review_models"] = strings.Join(report.ReviewModels, ",")
-	}
-	if strings.TrimSpace(report.ReviewMode) != "" {
-		// What the review actually read, so a fleet-wide "nothing to review"
-		// rate is visible rather than hiding inside the success count.
-		props["review_mode"] = report.ReviewMode
-		props["reviewed"] = report.Reviewed
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReviewRun, props)
-}
-
-// reviewRunMode labels a review run for gx Cloud history and telemetry. Both
-// call it so the two records of the same run cannot disagree.
+// reviewRunMode labels a review run for gx Cloud history.
 //
 // WholeRepo comes first because it names the subject: a run recorded as
 // "patch" whose summary text reads "Reviewed the repository" is a row that

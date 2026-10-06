@@ -16,7 +16,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 const shareableProbeSession = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -133,7 +132,7 @@ func TestRunPushMarksRowsItStagedWithoutRevisionIDs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"}, telemetry.NopClient{})
+	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"})
 	if err != nil {
 		t.Fatal(err)
 	}

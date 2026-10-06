@@ -7,10 +7,10 @@
 // in are not merely absent, they are unrepresentable.
 //
 //   - The `repos` table on the author's machine holds TWO rows for one
-//     repository: an old one with root_path=/Users/joe/git/gx and
-//     git_common_dir=/Users/joe/git/gx (the pre-git_common_dir backfill shape,
+//     repository: an old one with root_path=/Users/dev/git/gx and
+//     git_common_dir=/Users/dev/git/gx (the pre-git_common_dir backfill shape,
 //     48% of live rows), and a newer one with root_path="" and
-//     git_common_dir=/Users/joe/git/gx/.git carrying every recent change. The
+//     git_common_dir=/Users/dev/git/gx/.git carrying every recent change. The
 //     write path resolved the second, the read path resolved the first, and
 //     171 of 174 published bundles shipped `sessions: []`. Every bundle test
 //     seeded its repo without a GitCommonDir, so UpsertRepo backfilled
@@ -219,8 +219,8 @@ func (h *Harness) SeedObservedSession(t *testing.T, changeID int64, sessionID, t
 // DriftedRepoIdentity reproduces the two-row `repos` state one repository
 // actually occupies on the author's machine.
 //
-//	id 1  root_path=/Users/joe/git/gx  git_common_dir=/Users/joe/git/gx
-//	id 16 root_path=""                 git_common_dir=/Users/joe/git/gx/.git
+//	id 1  root_path=/Users/dev/git/gx  git_common_dir=/Users/dev/git/gx
+//	id 16 root_path=""                 git_common_dir=/Users/dev/git/gx/.git
 //
 // Row one is what the git_common_dir backfill leaves when `git rev-parse` fails
 // (it falls back to the root path); 54 of 113 live rows are in that shape, and

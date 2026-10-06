@@ -10,7 +10,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/orchestrator"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 // Result summarizes one reparse run.
@@ -21,7 +20,7 @@ type Result struct {
 }
 
 // Run re-normalizes stored raw session blobs in capture_sessions.
-func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, telemetryClient telemetry.Client) (Result, error) {
+func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string) (Result, error) {
 	if stager == nil {
 		return Result{}, fmt.Errorf("capture stager required")
 	}
@@ -65,7 +64,6 @@ func Run(ctx context.Context, stager storage.CaptureStager, repoRoot string, tel
 		}
 		result.Updated++
 	}
-	emitSchemaDrift(ctx, telemetryClient, inventory)
 	return result, nil
 }
 
@@ -78,23 +76,4 @@ func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {
 		out[i] = ev
 	}
 	return out
-}
-
-func emitSchemaDrift(ctx context.Context, client telemetry.Client, inventory *capture.InventoryCollector) {
-	if inventory == nil {
-		return
-	}
-	if client == nil {
-		client = telemetry.NewFromEnv()
-	}
-	for tool, paths := range inventory.UnknownPaths() {
-		if len(paths) == 0 {
-			continue
-		}
-		client.EmitSchemaDrift(ctx, telemetry.SchemaDriftProps{
-			Tool:  tool,
-			Paths: paths,
-			Count: len(paths),
-		})
-	}
 }

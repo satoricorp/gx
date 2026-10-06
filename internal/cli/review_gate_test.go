@@ -347,11 +347,9 @@ func TestReviewOnAnEmptyRepoNeverPassesAGate(t *testing.T) {
 	}
 }
 
-// The gx Cloud history row and the PostHog event both label the run, and they
-// derive that label from the same place so they cannot disagree with each
-// other — or, more importantly, with the summary text stored beside them. A
-// run whose summary says "Reviewed the repository" must not be filed as a
-// patch review.
+// The gx Cloud history row labels the run, and that label must not disagree
+// with the summary text stored beside it. A run whose summary says "Reviewed
+// the repository" must not be filed as a patch review.
 func TestReviewRunModeNamesTheSubjectItReviewed(t *testing.T) {
 	cases := []struct {
 		name          string

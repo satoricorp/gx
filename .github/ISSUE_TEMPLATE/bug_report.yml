@@ -1,0 +1,35 @@
+name: Bug report
+description: Something in gx does not work the way it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. gx init
+        2. git commit -m "..."
+        3. gx review
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version and platform
+      description: Paste the output of `gx version --json`, plus your OS.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: gx doctor output
+      description: Paste `gx doctor --json` if it is relevant. Check it for anything private first.
+      render: json

@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "gx MCP server (stdio): gx_review context from the local gx CLI.",
   "license": "AGPL-3.0-only",
+  "author": "Joe LaChance",
   "homepage": "https://gx.run",
   "repository": {
     "type": "git",

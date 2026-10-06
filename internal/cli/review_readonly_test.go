@@ -21,13 +21,13 @@ import (
 	"github.com/satoricorp/gx/internal/gxtest"
 )
 
-// recordingEndpoint stands in for gx Cloud and PostHog so the credential-gated
-// paths actually execute instead of returning early. A `go test` binary is
-// built without -ldflags, so the embedded buildconfig.PostHogKey and CloudURL
-// are empty and every telemetry- and cloud-gated branch is dead code under
-// test — which is exactly how a release binary came to create $GX_HOME during
-// a read-only review without any test noticing. Pointing both at a live
-// recorder makes those branches run and makes what they send observable.
+// recordingEndpoint stands in for gx Cloud so the credential-gated paths
+// actually execute instead of returning early. A `go test` binary is built
+// without -ldflags, so the embedded buildconfig.CloudURL is empty and every
+// cloud-gated branch is dead code under test — which is exactly how a release
+// binary came to create $GX_HOME during a read-only review without any test
+// noticing. Pointing the cloud URL at a live recorder makes those branches run
+// and makes what they send observable.
 type recordingEndpoint struct {
 	URL string
 
@@ -65,13 +65,11 @@ func (r *recordingEndpoint) requested(path string) bool {
 	return false
 }
 
-// setReviewCloudEnv wires cloud and telemetry to a recorder. Call it after
+// setReviewCloudEnv wires gx Cloud to a recorder. Call it after
 // setReviewGateEnv, which owns GX_HOME.
 func setReviewCloudEnv(t *testing.T, rec *recordingEndpoint) {
 	t.Helper()
 	t.Setenv("GX_CLOUD_URL", rec.URL)
-	t.Setenv("GX_POSTHOG_KEY", "phc-test-key")
-	t.Setenv("GX_POSTHOG_HOST", rec.URL)
 }
 
 // staleGitStatCache backdates the working tree's mtimes so the index's stat

@@ -89,7 +89,7 @@ func TestNormalizeOriginKeepsDifferentReposApart(t *testing.T) {
 // Empty means "not identifiable" and must never behave as a wildcard: a local
 // repo with no remote has to stay unbound rather than match something.
 func TestNormalizeOriginRejectsUnusableInput(t *testing.T) {
-	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/joe/git/gx"} {
+	for _, raw := range []string{"", "   ", "not a url", "https://", "github.com", "/Users/dev/git/gx"} {
 		if got := NormalizeOrigin(raw); got != "" {
 			t.Errorf("NormalizeOrigin(%q) = %q, want empty", raw, got)
 		}

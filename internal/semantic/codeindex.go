@@ -746,14 +746,12 @@ func listRepositoryFiles(root string) ([]repoFile, error) {
 //
 // These are GitHub Linguist's standard markers, so a repository declares
 // "this is not our source" once and every tool agrees. It matters because a
-// vendored corpus is not neutral filler: gx's own checkout carries 165
-// third-party documents under scripts/review-knowledge/corpus (30% of its
-// files), fetched from external standards bodies and, by that directory's own
-// README, "repo-independent review knowledge". Indexed as if they were source,
-// prose essays about code review outrank the Go files that implement it for
-// every conceptual question — measured here, they cost 2 of 6 conceptual
-// queries their top-5 answer. They are also already indexed in their own
-// dedicated namespace, so their presence here is duplication as well as noise.
+// vendored corpus is not neutral filler: gx's own checkout once carried 165
+// third-party review documents (30% of its files), fetched from external
+// standards bodies. Indexed as if they were source, prose essays about code
+// review outranked the Go files that implement it for every conceptual
+// question — measured then, they cost 2 of 6 conceptual queries their top-5
+// answer.
 //
 // linguist-documentation is deliberately NOT honoured. A repository's own docs
 // describe its behaviour and are legitimate review context; only material that

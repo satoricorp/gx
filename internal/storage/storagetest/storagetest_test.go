@@ -13,15 +13,15 @@ import (
 // builds the state it claims to, so tests that depend on it are not quietly
 // running against a single-row database again.
 //
-// The reference is the author's real ~/.gx/gx.db, where /Users/joe/git/gx has
-// TWO repos rows: id 1 (root_path=/Users/joe/git/gx, git_common_dir the same,
+// The reference is the author's real ~/.gx/gx.db, where /Users/dev/git/gx has
+// TWO repos rows: id 1 (root_path=/Users/dev/git/gx, git_common_dir the same,
 // 17 stale changes) and id 16 (root_path="", git_common_dir=.../gx/.git, 21
 // changes, all of them newer). Both rows are built here through
 // storage.Store.UpsertRepo, so the state is one a real sequence of pushes
 // produces rather than one a raw INSERT invented.
 func TestDriftedRepoIdentityReproducesTheLiveTwoRowState(t *testing.T) {
-	const root = "/Users/joe/git/gx"
-	const commonDir = "/Users/joe/git/gx/.git"
+	const root = "/Users/dev/git/gx"
+	const commonDir = "/Users/dev/git/gx/.git"
 
 	h := storagetest.New(t, storagetest.DriftedRepoIdentity(root, commonDir), storagetest.WeatheredNeighbourRepos())
 

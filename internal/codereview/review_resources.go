@@ -524,8 +524,8 @@ func reviewResourceBaseFilter() any {
 
 // reviewResourceSignalFilter narrows the second corpus query to the tiers and
 // languages of the changed code. It may only name attributes the v2 corpus
-// schema declares filterable (review_corpus_schema in
-// scripts/review-knowledge/index_review_resources.py): TurboPuffer rejects the
+// schema declares filterable (the review_corpus_schema the corpus indexer
+// declares): TurboPuffer rejects the
 // whole query — HTTP 400, zero rows — when a filter names an undeclared
 // attribute. It used to filter on framework_tags, risk_tag_values, and
 // review_tag_values, which no corpus row has ever carried, so every narrowed

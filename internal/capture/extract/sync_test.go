@@ -18,7 +18,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/extract"
 	"github.com/satoricorp/gx/internal/capture/matcher"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 )
 
 func TestSyncPending(t *testing.T) {
@@ -92,7 +91,7 @@ func TestSyncPending(t *testing.T) {
 	result, err := extract.SyncPending(ctx, stager, auth.Credentials{
 		APIURL: srv.URL,
 		Token:  "sync-token",
-	}, telemetry.NopClient{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +177,7 @@ func TestSyncPendingReadsSourceFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "sync-token"}, telemetry.NopClient{})
+	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "sync-token"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +319,7 @@ func TestSyncPendingUploadsPromotableRedactedContentForEventlessRow(t *testing.T
 		t.Fatal(err)
 	}
 
-	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"}, telemetry.NopClient{})
+	result, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +420,7 @@ func TestSyncPendingCapsSessionContent(t *testing.T) {
 	if _, err := stager.MarkSessionShareable(ctx, []string{"rev-1"}, storage.CaptureAttestation{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"}, telemetry.NopClient{}); err != nil {
+	if _, err := extract.SyncPending(ctx, stager, auth.Credentials{APIURL: srv.URL, Token: "t"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(uploaded) == 0 {
