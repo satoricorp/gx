@@ -16,6 +16,10 @@ func TestCleanupStaleStacksMarksMissingBookmarkStacksClosed(t *testing.T) {
 		repoRoot = resolved
 	}
 	runGit(t, repoRoot, "init", "-b", "main")
+	// The repo carries its own identity so the commit does not depend on the
+	// machine's: a CI runner has no global user.name, and git refuses to commit.
+	runGit(t, repoRoot, "config", "user.name", "gx Test")
+	runGit(t, repoRoot, "config", "user.email", "gx@example.com")
 	runGit(t, repoRoot, "commit", "--allow-empty", "-m", "init")
 	runGit(t, repoRoot, "branch", "feature/healthy")
 	runGit(t, repoRoot, "checkout", "main")
