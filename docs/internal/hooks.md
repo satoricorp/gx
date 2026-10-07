@@ -65,10 +65,6 @@ Refusals and opt-outs:
 gx capture push --ref-range main..HEAD --repo .
 ```
 
-## Telemetry
-
-When `GX_POSTHOG_KEY` is set, each capture run emits `capture.coverage` and `match.rate` events. Upload telemetry (`session.uploaded`) arrives in WP-1b.
-
 ## Agent lifecycle hooks
 
 Claude Code and Codex machine hooks are planned for V1.1. The `hooks.AgentHookConfig` struct reserves the interface; no install yet.

@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/codereview"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
@@ -34,7 +32,6 @@ func newEnhanceCommand(ctx context.Context) *cobra.Command {
 	var wholeRepo bool
 	var deep bool
 	var fast bool
-	var clientOverride string
 	cmd := &cobra.Command{
 		Use:     "enhance [intent]",
 		Aliases: []string{"gxe"},
@@ -62,11 +59,6 @@ Exit status is always 0 — the gate is ` + "`gx review`" + `'s job, not this on
 the review finds nothing to fix, enhance says so.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Same contract as review: suggesting a fix must not mint gx state
-			// into a $GX_HOME that may not exist.
-			ctx := telemetry.WithoutStateWrites(ctx)
-			startedAt := time.Now()
-			client := telemetry.ClientSurface(clientOverride)
 			if err := codereview.ValidateModelPresetEnv(); err != nil {
 				return err
 			}
@@ -97,7 +89,6 @@ the review finds nothing to fix, enhance says so.`,
 			// The spinner goes to stderr so stdout carries the prompt alone and
 			// `gx enhance | pbcopy` copies something usable.
 			report, err := runReviewWithLoader(cmd.InOrStdin(), cmd.ErrOrStderr(), runReview)
-			emitEnhanceRunTelemetry(ctx, report, err, client, focus, prompt, deep, wholeRepo, time.Since(startedAt))
 			if err != nil {
 				return err
 			}
@@ -126,38 +117,5 @@ the review finds nothing to fix, enhance says so.`,
 	cmd.Flags().BoolVar(&wholeRepo, "repo", false, "review the whole repository rather than just the current change")
 	cmd.Flags().BoolVar(&deep, "deep", false, "run full-spectrum review with more local and indexed context")
 	cmd.Flags().BoolVar(&fast, "fast", false, "optimize for wall clock: one reviewer instead of two, no verification pass")
-	cmd.Flags().StringVar(&clientOverride, "client", "", "surface invoking this run, overriding $GX_CLIENT")
 	return cmd
-}
-
-// emitEnhanceRunTelemetry records an enhance run under its own event rather
-// than folding it into cli.review.run: the two commands run the same engine
-// but answer different questions, and counting them together would make the
-// review numbers say something they do not mean. The properties are the
-// review set minus the ones enhance has no flag for, plus whether a fix was
-// actually found — the interesting failure here is "ran fine, had nothing to
-// suggest", which no error status would show.
-func emitEnhanceRunTelemetry(ctx context.Context, report codereview.Report, runErr error, client string, focus string, prompt string, deep bool, wholeRepo bool, duration time.Duration) {
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	}
-	_, hasFix := codereview.TopFix(report)
-	props := map[string]any{
-		"status":             status,
-		"client":             client,
-		"deep":               deep,
-		"whole_repo":         wholeRepo,
-		"has_focus":          strings.TrimSpace(focus) != "",
-		"has_prompt":         strings.TrimSpace(prompt) != "",
-		"duration_ms":        duration.Milliseconds(),
-		"reviewed":           report.Reviewed,
-		"has_fix":            hasFix,
-		"finding_count":      len(report.Findings),
-		"changed_file_count": len(report.ChangedFiles),
-	}
-	if strings.TrimSpace(report.Reviewer) != "" {
-		props["reviewer"] = report.Reviewer
-	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIEnhanceRun, props)
 }

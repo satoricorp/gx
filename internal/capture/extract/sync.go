@@ -13,7 +13,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/parsers"
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/version"
 )
 
@@ -44,7 +43,6 @@ func SyncPending(
 	ctx context.Context,
 	stager storage.CaptureStager,
 	creds auth.Credentials,
-	telemetryClient telemetry.Client,
 ) (SyncResult, error) {
 	client := NewClient(creds.APIURL, creds.Token)
 	var result SyncResult
@@ -74,7 +72,7 @@ func SyncPending(
 		// is error-marked and the remaining sessions still upload. Downstream
 		// already degrades a session-less push to "session context
 		// unavailable".
-		if err := uploadStagedSession(ctx, client, stager, row, telemetryClient); err != nil {
+		if err := uploadStagedSession(ctx, client, stager, row); err != nil {
 			_ = stager.SetSessionUploadError(ctx, row.ID, err.Error())
 			result.SessionErrors++
 			continue
@@ -113,7 +111,6 @@ func uploadStagedSession(
 	client *Client,
 	stager storage.CaptureStager,
 	row storage.StagedSession,
-	telemetryClient telemetry.Client,
 ) error {
 	var staged stagedSessionPayload
 	if err := json.Unmarshal(row.PayloadJSON, &staged); err != nil {
@@ -141,17 +138,7 @@ func uploadStagedSession(
 		Content:      content,
 		CapturedAtMs: row.CreatedAt,
 	}
-	if err := client.postJSON(ctx, "/v1/sessions", body); err != nil {
-		return err
-	}
-	if telemetryClient != nil {
-		telemetryClient.EmitSessionUploaded(ctx, telemetry.SessionUploadedProps{
-			SessionID: payload.SessionID,
-			Tool:      payload.Tool,
-			Bytes:     len(content),
-		})
-	}
-	return nil
+	return client.postJSON(ctx, "/v1/sessions", body)
 }
 
 // maxSessionContentBytes bounds one session upload.

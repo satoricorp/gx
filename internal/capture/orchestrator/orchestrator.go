@@ -22,7 +22,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/redact"
 	"github.com/satoricorp/gx/internal/capture/repobind"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 )
 
@@ -41,7 +40,6 @@ type RunOptions struct {
 	CodexDir    string
 	CursorVSCDB string
 	DB          storage.CaptureStager
-	Telemetry   telemetry.Client
 }
 
 // Result summarizes one orchestrator run.
@@ -217,7 +215,6 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 	if len(eligibleHunks) > 0 {
 		coverage = float64(matchResult.AuthorshipHunkCount()) / float64(len(eligibleHunks))
 	}
-	matchedAgents := len(matchResult.MatchedEvents)
 
 	result := Result{
 		RefRange:           refRange,
@@ -261,28 +258,6 @@ func Run(ctx context.Context, opts RunOptions) (Result, error) {
 			matchedSources[ev.SourceIndex] = append(matchedSources[ev.SourceIndex], ev)
 		}
 	}
-
-	client := opts.Telemetry
-	if client == nil {
-		client = telemetry.NewFromEnv()
-	}
-	client.EmitCaptureCoverage(ctx, telemetry.CaptureCoverageProps{
-		Repo:         repoRoot,
-		RefRange:     refRange,
-		HunkCoverage: coverage,
-		Tier1:        t1,
-		Tier2:        t2,
-		Tools:        tools,
-	})
-	client.EmitMatchRate(ctx, telemetry.MatchRateProps{
-		Repo:           repoRoot,
-		RefRange:       refRange,
-		AgentPrecision: agentPrecision(len(eligibleEvents), matchedAgents),
-		EligibleHunks:  len(eligibleHunks),
-		EligibleEvents: len(eligibleEvents),
-		Tools:          tools,
-	})
-	emitSchemaDrift(ctx, client, inventory)
 
 	extractIDs, err := stageExtract(ctx, stager, repoRoot, refRange, stagedExtract, revisionIDs)
 	result.StagedExtractIDs = extractIDs
@@ -358,22 +333,6 @@ func stageExtract(ctx context.Context, stager storage.CaptureStager, repoRoot, r
 	return staged, nil
 }
 
-func emitSchemaDrift(ctx context.Context, client telemetry.Client, inventory *capture.InventoryCollector) {
-	if inventory == nil {
-		return
-	}
-	for tool, paths := range inventory.UnknownPaths() {
-		if len(paths) == 0 {
-			continue
-		}
-		client.EmitSchemaDrift(ctx, telemetry.SchemaDriftProps{
-			Tool:  tool,
-			Paths: paths,
-			Count: len(paths),
-		})
-	}
-}
-
 func redactEvents(events []capture.SessionEvent) []capture.SessionEvent {
 	out := make([]capture.SessionEvent, len(events))
 	for i, ev := range events {
@@ -406,13 +365,6 @@ func groupSessions(events []capture.SessionEvent) []StagedSession {
 		out = append(out, *byKey[key])
 	}
 	return out
-}
-
-func agentPrecision(eligibleEvents, matched int) float64 {
-	if eligibleEvents == 0 {
-		return 0
-	}
-	return float64(matched) / float64(eligibleEvents)
 }
 
 func normalizeToolsList(tools []string) []string {

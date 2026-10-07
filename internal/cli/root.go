@@ -17,7 +17,6 @@ import (
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/postlist"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
@@ -36,7 +35,6 @@ func NewRoot(ctx context.Context) *cobra.Command {
 				return nil
 			}
 			inference.ApplyToEnvironment()
-			telemetry.EmitInstallOnce(commandTelemetryContext(ctx, cmd))
 			return ensureAutoInitializedRepo(ctx, engine, cmd)
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
@@ -153,13 +151,7 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 					fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init --global", true))
 					fmt.Fprintln(cmd.OutOrStdout())
 				}
-				err := runGlobalInit(ctx, cmd, yes)
-				telemetry.EmitProductEvent(ctx, telemetry.EventCLIInitRun, map[string]any{
-					"status":      initRunStatus(err),
-					"interactive": !yes,
-					"global":      true,
-				})
-				return err
+				return runGlobalInit(ctx, cmd, yes)
 			}
 			if !yes {
 				fmt.Fprintln(cmd.OutOrStdout(), commandLine("gx init", true))
@@ -171,10 +163,6 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				Interactive: !yes,
 				In:          initInput(cmd, yes),
 				Out:         initOutput(cmd, yes),
-			})
-			telemetry.EmitProductEvent(ctx, telemetry.EventCLIInitRun, map[string]any{
-				"status":      initRunStatus(err),
-				"interactive": !yes,
 			})
 			if err != nil {
 				return err
@@ -225,13 +213,6 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "accept defaults and suppress successful init output")
 	cmd.Flags().BoolVar(&global, "global", false, "install machine-wide git hooks (~/.gx/hooks) so gx works in every repo; skips per-repo setup")
 	return cmd
-}
-
-func initRunStatus(err error) string {
-	if err != nil {
-		return "error"
-	}
-	return "success"
 }
 
 func initInput(cmd *cobra.Command, quiet bool) io.Reader {

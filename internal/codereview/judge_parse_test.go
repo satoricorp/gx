@@ -77,7 +77,7 @@ func prosePreambleRequest() judgeRequest {
 // TestParseJudgeResponseReadsRealProsePreambleReply is the regression for the
 // live degraded review. The fixture is not synthetic: it is the verbatim reply
 // captured from us.anthropic.claude-sonnet-4-6 when a real 24-candidate batch
-// from /Users/joe/git/yeet was replayed against it.
+// from /Users/dev/git/yeet was replayed against it.
 //
 // The model answered with 5,439 characters of reasoning and then a ```json
 // fence. Its JSON was complete and correct. What broke was the parser: the

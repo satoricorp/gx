@@ -162,7 +162,7 @@ func TestReviewResourceQueryTextIncludesPromptedReviewIntent(t *testing.T) {
 	}
 }
 
-// The tag strings here are the contract with scripts/review-knowledge/sources.yaml:
+// The tag strings here are the contract with docs/review-knowledge-sources.yaml:
 // reviewResourceSignalFilter matches them against language_tags, so a tag that
 // does not appear verbatim under a `languages:` key can never match a corpus
 // source, and that source stays reachable only through the unfiltered leg.
@@ -224,11 +224,11 @@ func TestLanguageTagsForFiles(t *testing.T) {
 }
 
 // Guards the mapping above against the manifest itself: every tag the extension
-// map can emit must exist verbatim as a `languages:` value in sources.yaml.
+// map can emit must exist verbatim as a `languages:` value in the sources manifest.
 func TestLanguageTagsForFilesMatchManifestTags(t *testing.T) {
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "review-knowledge", "sources.yaml"))
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "docs", "review-knowledge-sources.yaml"))
 	if err != nil {
-		t.Fatalf("read sources.yaml: %v", err)
+		t.Fatalf("read review-knowledge-sources.yaml: %v", err)
 	}
 	declared := map[string]bool{}
 	for _, match := range regexp.MustCompile(`languages:\s*\[([^\]]*)\]`).FindAllStringSubmatch(string(manifest), -1) {
@@ -239,7 +239,7 @@ func TestLanguageTagsForFilesMatchManifestTags(t *testing.T) {
 		}
 	}
 	if len(declared) == 0 {
-		t.Fatalf("no languages: tags parsed from sources.yaml")
+		t.Fatalf("no languages: tags parsed from review-knowledge-sources.yaml")
 	}
 
 	emitted := languageTagsForFiles([]string{
@@ -251,7 +251,7 @@ func TestLanguageTagsForFilesMatchManifestTags(t *testing.T) {
 	})
 	for _, tag := range emitted {
 		if !declared[tag] {
-			t.Errorf("languageTagsForFiles emits %q, which no sources.yaml source declares under languages:", tag)
+			t.Errorf("languageTagsForFiles emits %q, which no review-knowledge source declares under languages:", tag)
 		}
 	}
 }

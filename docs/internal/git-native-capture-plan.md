@@ -40,13 +40,13 @@ to 251 MB.
   is how the above hid for so long. It now warns.
 
 **Gotchas that will cost you an hour each if rediscovered:**
-- `go` is not on `PATH`. Use
-  `/Users/joe/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.8.darwin-arm64/bin/go`
-  (and `gofmt` beside it). `just build` fails for this reason; replicate its
-  ldflags manually or the binary loses its cloud/PostHog config.
+- If `go` is not on `PATH`, use the toolchain binary under
+  `$(go env GOMODCACHE)/golang.org/toolchain@v0.0.1-go1.25.8.<os>-<arch>/bin/go`
+  (and `gofmt` beside it). `just build` fails in that case; replicate its
+  ldflags manually or the binary loses its cloud config.
 - **Git hooks pin an absolute gx path.** Running a gx binary from a temp dir
   triggers autoinit and rewrites that repo's hooks to point at the temp path.
-  `~/git/gx/.git/hooks/pre-push` ended up pointing at `/tmp/gx-smoke/gx`. Fix with
+  This repository's `.git/hooks/pre-push` ended up pointing at `/tmp/gx-smoke/gx`. Fix with
   `gx init -y` using the real installed binary; check
   `grep -o '"[^"]*/gx"' .git/hooks/pre-push` when capture behaves strangely.
 - **`extract=` empty in the capture line means the run errored**, not that nothing

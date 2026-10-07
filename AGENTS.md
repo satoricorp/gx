@@ -17,7 +17,7 @@ Install with `just install`. Never write to `~/.local/bin/gx` (or anywhere on PA
 with `go build -o` or `go install`.
 
 `just install` bakes the API endpoints into the binary through ldflags from `.env`
-— `CloudURL`, `GitHubClientID`, `ConvexSiteURL`, the PostHog pair — and then runs
+— `CloudURL`, `GitHubClientID`, `ConvexSiteURL` — and then runs
 `just verify-bake` against both the built and the installed binary so a missing one
 fails loudly. A bare build skips all of it and leaves `buildconfig.CloudURL` empty.
 

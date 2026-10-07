@@ -131,7 +131,67 @@ rm -f ~/.local/share/bash-completion/completions/gx ~/.zfunc/_gx
 
 Local data stays in `~/.gx` (or `$GX_HOME`).
 
+## Privacy
+
+gx keeps its data on your machine, in `~/.gx` or `$GX_HOME`. It sends no
+analytics or telemetry.
+
+gx talks to gx Cloud only after you run `gx auth login`, or when you run
+`gx doctor --report` yourself. Once you are signed in:
+
+- **On `git push`**, the pre-push hook publishes the pushed commits' patches,
+  gx revision metadata, and the AI coding sessions that produced them. gx
+  redacts known secret formats from session events before staging them.
+- **`gx review` and `gx enhance`** send the change and its review context to gx
+  Cloud, which runs the review models. A review history entry is recorded
+  unless you pass `--no-publish`.
+- **`gx doctor --report`** sends the diagnosis and recent gx logs to support.
+
+A few things happen without gx Cloud:
+
+- **PR comments.** With a GitHub token available, `gx review` posts its comment
+  straight to GitHub. `--no-comment` skips it.
+- **Your own AWS account.** `GX_REVIEW_BEDROCK_DIRECT=1` sends review requests to
+  Amazon Bedrock in your account instead of gx Cloud.
+- **Update checks.** `gx update` and the MCP server read the release manifest
+  from `download.gx.run`. The MCP server checks at most once an hour.
+
+## Review knowledge
+
+`gx review --deep` also draws on a hosted index of public engineering
+guidance: standards bodies such as OWASP and NIST, language and framework
+documentation, and published code-review research. Those documents belong to
+their publishers and are not redistributed here.
+[docs/review-knowledge-sources.yaml](docs/review-knowledge-sources.yaml) lists
+every source and where it lives.
+
+## Build from source
+
+```bash
+git clone https://github.com/satoricorp/gx.git
+cd gx
+go build -o gx ./cmd/gx
+```
+
+A source build has no gx Cloud endpoints compiled in, so sign-in, publishing,
+and hosted review stay off. [CONTRIBUTING.md](CONTRIBUTING.md) covers local
+installs and running reviews on your own AWS account.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). Questions go in
+[Discussions](https://github.com/satoricorp/gx/discussions). Report security
+issues privately as described in [SECURITY.md](SECURITY.md).
+
 ## Links
 
 - Product: [gx.run](https://gx.run)
 - Installer: [download.gx.run/install.sh](https://download.gx.run/install.sh)
+
+## License
+
+Copyright (C) 2026 Joe LaChance.
+
+gx is free software, licensed under the
+[GNU Affero General Public License v3.0 only](LICENSE). See [NOTICE](NOTICE).

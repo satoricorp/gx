@@ -17,7 +17,6 @@ import (
 	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/vcs"
 	"github.com/satoricorp/gx/internal/version"
 )
@@ -65,13 +64,6 @@ func sendSupportReport(ctx context.Context, attachments []cloud.ReportLogFile) (
 	if err != nil {
 		return cloud.ReportLogResult{}, err
 	}
-	telemetry.EmitProductEvent(ctx, telemetry.EventCLIReportSent, map[string]any{
-		"log_count":        len(report.Logs),
-		"has_report_id":    strings.TrimSpace(result.ID) != "",
-		"has_user_id":      strings.TrimSpace(report.UserID) != "",
-		"has_machine_id":   strings.TrimSpace(report.MachineID) != "",
-		"attachment_count": len(attachments),
-	})
 	return result, nil
 }
 

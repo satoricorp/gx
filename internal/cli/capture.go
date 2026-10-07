@@ -18,7 +18,6 @@ import (
 	"github.com/satoricorp/gx/internal/capture/reparse"
 	"github.com/satoricorp/gx/internal/hooks"
 	"github.com/satoricorp/gx/internal/storage"
-	"github.com/satoricorp/gx/internal/telemetry"
 	"github.com/satoricorp/gx/internal/uploadauth"
 )
 
@@ -60,7 +59,7 @@ func runCaptureSync(ctx context.Context, out interface{ Write([]byte) (int, erro
 	if err != nil {
 		return err
 	}
-	result, err := extract.SyncPending(ctx, stager, creds, telemetry.NewFromEnv())
+	result, err := extract.SyncPending(ctx, stager, creds)
 	if err != nil {
 		return err
 	}
@@ -267,7 +266,7 @@ func newCaptureReparseCommand(ctx context.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := reparse.Run(ctx, stager, repoRoot, telemetry.NewFromEnv())
+			result, err := reparse.Run(ctx, stager, repoRoot)
 			if err != nil {
 				return err
 			}
