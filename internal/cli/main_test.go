@@ -11,6 +11,11 @@ import (
 // TestMain cuts this package off from the network, and from the developer's
 // own checkout.
 //
+// DetachFromEnclosingGit comes first, because useScratchRepo runs git. This is
+// the suite that wrote `core.bare = true` and `user.name = Test User` into
+// gx's own .git/config by running inside a git hook; see
+// gxtest.DetachFromEnclosingGit.
+//
 // `gx review` is the command under test here, and its retrieval paths arm
 // themselves from ambient credentials. setReviewGateEnv sandboxes the tests
 // that call it, but it is opt-in, and the two tests in root_test.go that build
@@ -22,6 +27,7 @@ import (
 // useScratchRepo is the same argument applied to the filesystem. See its
 // comment for what a test was writing into the repository it ran from.
 func TestMain(m *testing.M) {
+	gxtest.DetachFromEnclosingGit()
 	egress := gxtest.DenyNetwork()
 	leaveScratchRepo := useScratchRepo()
 	code := m.Run()

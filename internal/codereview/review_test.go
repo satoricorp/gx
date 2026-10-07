@@ -12,7 +12,9 @@ import (
 	"github.com/satoricorp/gx/internal/gxtest"
 )
 
-// TestMain disables the model paths and cuts the package off from the network.
+// TestMain disables the model paths and cuts the package off from the network,
+// after detaching it from any git that is running it (see
+// gxtest.DetachFromEnclosingGit).
 //
 // The three kill switches below only ever covered the paths that call a model.
 // Retrieval is reached from BuildReviewBrief regardless of GX_REVIEW_AI, so on
@@ -22,6 +24,7 @@ import (
 // production TurboPuffer account. gxtest.DenyNetwork closes that by clearing
 // the credentials, and reports anything that dials out anyway.
 func TestMain(m *testing.M) {
+	gxtest.DetachFromEnclosingGit()
 	egress := gxtest.DenyNetwork()
 	_ = os.Setenv("GX_REVIEW_AI", "0")
 	_ = os.Setenv("GX_REVIEW_JUDGE", "0")

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/satoricorp/gx/internal/gxtest"
 )
 
 // reviewerCredentialEnv is the set this whole file exists to keep out of the
@@ -58,6 +60,29 @@ func TestStaticToolChildEnvDropsTheReviewersCredentials(t *testing.T) {
 	// both Google variables while looking like it only allowed the toolchain.
 	if strings.Contains(joined, "GOOGLE") {
 		t.Fatalf("a GO-prefixed rule leaked a Google credential:\n%s", joined)
+	}
+}
+
+// `gx review` can itself run inside a git hook, and in a linked worktree git
+// hands every hook an absolute GIT_DIR. Passing that on to `go test` would
+// point the reviewed checkout's own test fixtures at the reviewer's repository:
+// a temp-dir `git config user.name` would write the reviewer's .git/config.
+// The allowlist keeps GIT_* out today; this pins it, so that admitting one
+// (GIT_SSH_COMMAND for private module fetches is the likely candidate) has to
+// be done by name.
+func TestStaticToolChildEnvDropsTheEnclosingGitRepository(t *testing.T) {
+	parent := []string{"PATH=/usr/bin", "HOME=/home/reviewer"}
+	for _, name := range gxtest.EnclosingGitEnv {
+		parent = append(parent, name+"=/home/reviewer/src/app/.git/worktrees/feature")
+	}
+
+	for _, entry := range staticToolChildEnv(parent) {
+		name, _, _ := strings.Cut(entry, "=")
+		for _, enclosing := range gxtest.EnclosingGitEnv {
+			if strings.EqualFold(name, enclosing) {
+				t.Fatalf("static tool child environment carries %s; the reviewed checkout's tests would run their git against the reviewer's repository", entry)
+			}
+		}
 	}
 }
 

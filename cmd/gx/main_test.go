@@ -9,7 +9,18 @@ import (
 
 	"github.com/satoricorp/gx/internal/cli"
 	"github.com/satoricorp/gx/internal/gxconfig"
+	"github.com/satoricorp/gx/internal/gxtest"
 )
+
+// TestMain keeps this package's git commands in the repositories its tests
+// build, even when the suite runs inside a git hook. These tests never run git
+// themselves, but cli.NewRoot auto-initializes the repository it finds, and
+// inside a hook that was the hook's own: it got gx's lifecycle hooks
+// installed. See gxtest.DetachFromEnclosingGit.
+func TestMain(m *testing.M) {
+	gxtest.DetachFromEnclosingGit()
+	os.Exit(m.Run())
+}
 
 func TestRootExposesAuthCommand(t *testing.T) {
 	root := cli.NewRoot(context.Background())
