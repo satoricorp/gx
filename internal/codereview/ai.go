@@ -279,15 +279,16 @@ func ReviewerTransport(reviewer AIReviewer) string {
 	return ""
 }
 
-// reviewerFromEnv builds the review panel: two competing Bedrock
-// reviewers that run concurrently. There is no other provider.
+// reviewerFromEnv builds the review panel: two competing reviewers that run
+// concurrently, each on the wire resolveBedrockTransportPlan picked (your own
+// AWS account, gx Cloud, or the Anthropic API) unless its model is an openai:
+// one.
 //
-// The OpenAI reviewer and its cloud proxy used to live here as a fallback and
-// were deleted rather than left dormant. Bedrock is the only review provider,
-// so a second one would only ever be reached when the first was misconfigured —
-// and a fallback that answers when the configured reviewer cannot is precisely
-// what makes a broken configuration invisible. Missing AWS credentials must read
-// as "no reviewer ran", not as a clean review from a model nobody asked for.
+// There is no fallback between wires. The OpenAI reviewer and its cloud proxy
+// used to live here as one and were deleted rather than left dormant: a
+// fallback that answers when the configured reviewer cannot is precisely what
+// makes a broken configuration invisible. Missing credentials must read as "no
+// reviewer ran", not as a clean review from a model nobody asked for.
 //
 // Embeddings are unaffected: internal/semantic reads OPENAI_API_KEY directly
 // (see defaultEmbedderFactory in turbopuffer_index.go) and never goes through an
@@ -307,18 +308,10 @@ func reviewerFromEnvFast(fast bool) AIReviewer {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GX_REVIEW_AI")), "0") {
 		return nil
 	}
-	plan, err := resolveBedrockTransportPlan()
-	if err != nil {
-		// Both legs carry the same actionable reason, so whichever one a caller
-		// inspects says what to fix.
-		return multiAIReviewer{
-			reviewers: []namedAIReviewer{
-				{name: "bedrock-a", label: "Bedrock A", reviewer: unavailableAIReviewer{reason: err.Error()}},
-				{name: "bedrock-b", label: "Bedrock B", reviewer: unavailableAIReviewer{reason: err.Error()}},
-			},
-			legFailures: newLegFailureLog(),
-		}
-	}
+	// A plan error is held, not returned: an openai: leg does not ride the plan,
+	// and every other leg carries the same actionable reason, so whichever one
+	// a caller inspects says what to fix.
+	plan, planErr := resolveBedrockTransportPlan()
 	modelA, modelB := resolveBedrockReviewModels()
 	if fast {
 		// One leg, and it is leg A: the panel exists so two models' misses are
@@ -341,6 +334,9 @@ func reviewerFromEnvFast(fast bool) AIReviewer {
 				return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: unavailableAIReviewer{reason: err.Error()}}
 			}
 			return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, "openai"), reviewer: newBedrockReviewer(transport, model)}
+		}
+		if planErr != nil {
+			return namedAIReviewer{name: name, label: slot, reviewer: unavailableAIReviewer{reason: planErr.Error()}}
 		}
 		return namedAIReviewer{name: name, label: bedrockLegLabel(slot, model, plan.Kind), reviewer: newBedrockReviewer(plan.newTransport(), model)}
 	}
@@ -1012,21 +1008,21 @@ func formatReviewerDegradation(err error) string {
 	return msg
 }
 
-// CloudSessionRequired reports whether a review, as this environment is
-// configured, needs a gx Cloud session to review anything at all.
+// NoReviewerReason says why a review, as this environment is configured, has
+// no model to review with, or returns "" when at least one reviewer leg can
+// run. Turning the AI panel off with GX_REVIEW_AI=0 is not a missing reviewer:
+// the deterministic rules alone are still a real review.
 //
-// It is false in exactly the two cases where a signed-out review is still a
-// real review: the caller has explicitly turned the AI panel off and wants the
-// deterministic rules only, or they have opted into their own AWS account with
-// GX_REVIEW_BEDROCK_DIRECT and are not using gx Cloud as a wire.
-//
-// Everywhere else, no session means no reviewer: resolveBedrockTransportPlan
-// fails, both legs come back unavailable, and the run reports DEGRADED having
-// looked at nothing with a model. The caller uses this to refuse up front
-// rather than hand back a report that reads like a review.
-func CloudSessionRequired() bool {
+// Without a reviewer, every leg comes back unavailable and the run reports
+// DEGRADED having looked at nothing with a model. The caller uses this to
+// refuse up front rather than hand back a report that reads like a review.
+func NoReviewerReason() string {
 	if !aiReviewRequestedFromEnv() {
-		return false
+		return ""
 	}
-	return !bedrockDirectRequested()
+	reviewer := reviewerFromEnv()
+	if reviewerAvailable(reviewer) {
+		return ""
+	}
+	return ReviewerUnavailableReason(reviewer)
 }

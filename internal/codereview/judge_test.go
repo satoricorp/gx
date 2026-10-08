@@ -285,8 +285,8 @@ func TestNoCredentialEnvironmentDoesNotAttemptJudgeViaUnavailablePlaceholders(t 
 		t.Fatalf("judgeAvailable(%T) = true, want false with no reviewer configured", judge)
 	}
 	reason, ok := judge.(unavailableReviewJudge)
-	if !ok || !strings.Contains(reason.reason, "Cloud") {
-		t.Fatalf("judge = %#v, want an unavailable judge naming the Cloud fix", judge)
+	if !ok || !strings.Contains(reason.reason, "ANTHROPIC_API_KEY") {
+		t.Fatalf("judge = %#v, want an unavailable judge naming the Anthropic key as the fix", judge)
 	}
 }
 

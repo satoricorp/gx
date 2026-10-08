@@ -506,7 +506,7 @@ func TestEnginePassesReviewPromptToAIReviewer(t *testing.T) {
 // TestOpenAIReviewerFromEnvPrefersUserOpenAIKey. OPENAI_API_KEY is still set on
 // every machine that indexes code (internal/semantic embeds with it), so the
 // regression to guard is the opposite of the old one: an OpenAI key must not
-// conjure a reviewer now that Bedrock is the only provider.
+// conjure a reviewer unless a leg names an openai: model.
 func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
 	t.Setenv("GX_REVIEW_AI", "1")
 	t.Setenv("GX_CLOUD_URL", "off")
@@ -519,11 +519,10 @@ func TestOpenAICredentialsAloneProduceNoReviewer(t *testing.T) {
 		t.Fatalf("reviewerAvailable(%T) = true, want false with only an OpenAI key", reviewer)
 	}
 	reason := ReviewerUnavailableReason(reviewer)
-	// An OpenAI key is not a reviewer, and the fix to offer is the Cloud one:
-	// telling an ordinary user to supply AWS credentials was the old
-	// precedence, where ambient AWS_* silently chose the wire.
-	if !strings.Contains(reason, "Cloud") {
-		t.Fatalf("ReviewerUnavailableReason() = %q, want the Cloud fix named", reason)
+	// An OpenAI key is not a reviewer, and with no cloud configured the fix to
+	// offer is an Anthropic key.
+	if !strings.Contains(reason, "ANTHROPIC_API_KEY") {
+		t.Fatalf("ReviewerUnavailableReason() = %q, want the Anthropic key named as the fix", reason)
 	}
 }
 

@@ -53,8 +53,9 @@ func (c bedrockCompletion) truncated() bool {
 }
 
 const (
-	bedrockTransportKindDirect = "direct"
-	bedrockTransportKindCloud  = "cloud"
+	bedrockTransportKindDirect    = "direct"
+	bedrockTransportKindCloud     = "cloud"
+	bedrockTransportKindAnthropic = "anthropic"
 
 	// bedrockAnthropicVersion is the Anthropic API version bedrock-runtime
 	// expects in an InvokeModel body. gx Cloud accepts and ignores it.
@@ -74,15 +75,19 @@ type bedrockTransportPlan struct {
 	// client is set for the cloud kind. It is resolved during planning so a
 	// missing login is an error at panel-construction time, where it can be
 	// reported, rather than a 401 per leg mid-review.
-	client   *cloud.Client
-	cloudURL string
+	client    *cloud.Client
+	cloudURL  string
+	anthropic anthropicCredential
 }
 
 // newTransport builds one transport for one leg. Each leg gets its own so the
 // two reviewers and the judge do not share an http.Client's connection budget.
 func (p bedrockTransportPlan) newTransport() bedrockTransport {
-	if p.Kind == bedrockTransportKindCloud {
+	switch p.Kind {
+	case bedrockTransportKindCloud:
 		return &cloudBedrockTransport{client: p.client, url: p.cloudURL}
+	case bedrockTransportKindAnthropic:
+		return newAnthropicTransport(p.anthropic)
 	}
 	return newDirectBedrockTransport(p.creds)
 }
@@ -91,22 +96,22 @@ func (p bedrockTransportPlan) newTransport() bedrockTransport {
 // account. It must be set deliberately; ambient AWS credentials never select it.
 const bedrockDirectEnvVar = "GX_REVIEW_BEDROCK_DIRECT"
 
-// resolveBedrockTransportPlan picks the wire: gx Cloud, unless the caller has
-// explicitly asked for their own AWS account.
+// resolveBedrockTransportPlan picks the wire. In order:
 //
-// Cloud is THE path, not a fallback. The previous order — local AWS credentials
-// win if present — meant the wire was chosen by whatever happened to be exported
-// in the caller's shell. Anyone with `AWS_ACCESS_KEY_ID` set for unrelated work
-// (most developers, most CI) silently reviewed on their own account and quota
-// while believing they were using the product, and the only way to reach Cloud
-// was to unset credentials they needed for something else. Worse, the two wires
-// fail differently, so "it works on my machine" tracked the developer's ambient
-// environment rather than anything about gx.
+//  1. Your own AWS account, when GX_REVIEW_BEDROCK_DIRECT=1 asks for it.
+//  2. gx Cloud, when this build or GX_CLOUD_URL configures one.
+//  3. The Anthropic API, when ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) is set.
 //
-// Direct AWS is still reachable, but only by asking:
-// GX_REVIEW_BEDROCK_DIRECT=1 plus the usual AWS_* variables. That is for
-// working on the reviewer itself — benchmarking models, testing a region — not
-// for ordinary review.
+// A configured cloud outranks ambient credentials, and that order is
+// deliberate. When local AWS credentials used to win whenever they were
+// present, the wire was chosen by whatever happened to be exported in the
+// caller's shell: anyone with AWS_ACCESS_KEY_ID set for unrelated work
+// silently reviewed on their own account and quota while believing they were
+// using the product. So direct AWS is still reachable only by asking for it.
+//
+// The Anthropic key needs no such opt-in because it is only consulted when no
+// cloud is configured, which is the default build: there is no product path for
+// it to shadow, and a key is the one thing a local review cannot do without.
 //
 // Errors here are returned, never swallowed: a review with no reviewer must
 // read as "nothing reviewed this", never as a clean review.
@@ -114,20 +119,22 @@ func resolveBedrockTransportPlan() (bedrockTransportPlan, error) {
 	if bedrockDirectRequested() {
 		creds, credsErr := bedrockCredentialsFromEnv()
 		if credsErr != nil {
-			// They asked for direct explicitly, so do not quietly reroute to
-			// Cloud — that would hide the misconfiguration they need to see.
+			// They asked for direct explicitly, so do not quietly reroute —
+			// that would hide the misconfiguration they need to see.
 			return bedrockTransportPlan{}, fmt.Errorf("%s is set, so gx is using your own AWS account, but %v", bedrockDirectEnvVar, credsErr)
 		}
 		return bedrockTransportPlan{Kind: bedrockTransportKindDirect, creds: creds}, nil
 	}
-	client := cloud.NewBedrockClient()
-	if client == nil {
-		return bedrockTransportPlan{}, fmt.Errorf("gx Cloud is not configured for this build (no cloud URL), so there is no reviewer; set %s=1 with AWS_* credentials to review on your own AWS account instead", bedrockDirectEnvVar)
+	if client := cloud.NewBedrockClient(); client != nil {
+		if _, err := cloud.CloudAPIToken(); err != nil {
+			return bedrockTransportPlan{}, fmt.Errorf("not signed in to gx Cloud: run `gx auth login` (%v)", err)
+		}
+		return bedrockTransportPlan{Kind: bedrockTransportKindCloud, client: client, cloudURL: cloud.CloudURL()}, nil
 	}
-	if _, err := cloud.CloudAPIToken(); err != nil {
-		return bedrockTransportPlan{}, fmt.Errorf("not signed in to gx Cloud: run `gx auth login` (%v)", err)
+	if cred, ok := anthropicCredentialFromEnv(); ok {
+		return bedrockTransportPlan{Kind: bedrockTransportKindAnthropic, anthropic: cred}, nil
 	}
-	return bedrockTransportPlan{Kind: bedrockTransportKindCloud, client: client, cloudURL: cloud.CloudURL()}, nil
+	return bedrockTransportPlan{}, fmt.Errorf("no model is configured to review with: set ANTHROPIC_API_KEY to review on the Anthropic API, or %s=1 with AWS_* credentials to review on your own AWS account", bedrockDirectEnvVar)
 }
 
 func bedrockDirectRequested() bool {
@@ -146,6 +153,8 @@ func bedrockTransportShortName(kind string) string {
 		return "AWS"
 	case bedrockTransportKindCloud:
 		return "gx Cloud"
+	case bedrockTransportKindAnthropic:
+		return "Anthropic"
 	case "openai":
 		return "OpenAI"
 	default:
