@@ -1,33 +1,35 @@
 # Agents
 
-Version control: plain Git. Once `gx init` installs the hooks, gx records and publishes automatically — there is no gx save verb.
+Version control: plain Git. Once `gx init` installs the hooks, gx records your work automatically — there is no gx save verb.
 
 Default flow:
 - Run `git add` to stage the files for this revision.
 - Run `git commit -m "..."` to save. A gx hook records the commit as a reviewable revision.
-- Run plain `git push` to publish. The gx pre-push hook captures the session and publishes code changes, sessions, and gx metadata to gx Cloud automatically — do not run `gx push` or `gx capture push` yourself; they bypass the hook.
-- Open PRs with `gh pr create` (or the GitHub UI). Do not seed a `## Summary` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
+- Run plain `git push` to publish. The gx pre-push hook captures the coding session behind the change — do not run `gx capture push` yourself; it bypasses the hook.
+- Open PRs with `gh pr create` (or the GitHub UI).
 - To amend, use `git commit --amend` and preserve the gx revision trailer in the message.
 
 For AI review, run the `gx_review` MCP tool (or the `gx review` CLI) on the current change.
 
-## Installing: `just install`, never a bare `go build`
+## Installing: `just install`, never a bare `go build` onto PATH
 
 Install with `just install`. Never write to `~/.local/bin/gx` (or anywhere on PATH)
-with `go build -o` or `go install`.
+with `go build -o` or `go install`: `just install` stamps the version, installs
+completions, codesigns on macOS, and runs `just verify-bake` against both the built
+and the installed binary.
 
-`just install` bakes the API endpoints into the binary through ldflags from `.env`
-— `CloudURL`, `GitHubClientID`, `ConvexSiteURL` — and then runs
-`just verify-bake` against both the built and the installed binary so a missing one
-fails loudly. A bare build skips all of it and leaves `buildconfig.CloudURL` empty.
+There is no gx Cloud, so the default is a local build: with no endpoints in `.env`,
+gx runs entirely on the machine and its cloud code stays dormant. `verify-bake`
+matters only once endpoints are set. `GX_CLOUD_URL`, `GITHUB_CLIENT_ID` and
+`CONVEX_SITE_URL` are all or nothing, and it refuses a binary that carries only some
+of them, because that failure is silent. A build meant for a cloud but missing its
+URL behaves exactly like a local one: pushes look normal, nothing is published, and
+nothing says so. While gx Cloud existed, a bare build cost a week of PR summaries
+in August 2026 that way. `gx version` printing `dev` instead of a commit sha is the
+tell for an unstamped build.
 
-That failure is silent and total. `cloud.NewClient()` returns nil, the publish
-outbox worker exits before its first request, and because the pre-push hook spawns
-it detached with stderr to `/dev/null` and discards the error, nothing is printed,
-logged, or recorded anywhere. Pushes look completely normal; PR summaries simply
-stop appearing, and the queue fills up until items pass their retry ceiling and are
-dropped for good. This cost a week of summaries in August 2026 before anyone
-noticed. `gx version` printing `dev` instead of a commit sha is the tell.
+`just` reads `.env` from parent directories too, so every worktree under
+`.claude/worktrees` builds with the main checkout's `.env`.
 
 ## Tests: seed through the writer production uses, or do not seed
 

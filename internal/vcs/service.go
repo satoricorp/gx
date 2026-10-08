@@ -315,6 +315,10 @@ type InitOptions struct {
 	Interactive bool
 	In          io.Reader
 	Out         io.Writer
+	// SharesIdentity says the identity leaves this machine, which is true only
+	// when a gx Cloud is configured. The caller decides: internal/cloud imports
+	// this package, so it cannot be asked from here.
+	SharesIdentity bool
 }
 
 func (s *Service) InitWithOptions(ctx context.Context, opts InitOptions) (InitResult, error) {
@@ -847,7 +851,11 @@ func (s *Service) ensureIdentity(ctx context.Context, repoRoot string, opts Init
 		promptEmail := strings.TrimSpace(opts.Email) == ""
 		if promptName || promptEmail {
 			fmt.Fprintf(out, "Your config is stored in %s\n", gxconfig.DisplayPath())
-			fmt.Fprintln(out, "and by initializing with gx you share your email with gx.")
+			if opts.SharesIdentity {
+				fmt.Fprintln(out, "and by initializing with gx you share your email with gx.")
+			} else {
+				fmt.Fprintln(out, "and stays on this machine.")
+			}
 			fmt.Fprintln(out)
 		}
 		if promptName {

@@ -38,6 +38,8 @@ const coldStartContent = "package alpha\n\nfunc AlphaOne() int {\n\treturn 41\n}
 // identity has drifted, carrying legacy capture rows and a fossil session — is
 // in drifted_state_test.go, built with internal/storage/storagetest.
 func TestRunPushAttachesSessionsFromColdStart(t *testing.T) {
+	// These assert on the published artifact, which needs a gx Cloud.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	ctx := context.Background()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())
@@ -312,6 +314,8 @@ func TestRunPushAttachesLinksToTheirOwnCommits(t *testing.T) {
 // on a brand new database, for every push from a worktree. gx's own
 // demux-worktree flow and the yeet harness both push from linked worktrees.
 func TestRunPushFromLinkedWorktreePublishesSessions(t *testing.T) {
+	// These assert on the published artifact, which needs a gx Cloud.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	ctx := context.Background()
 	home := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())

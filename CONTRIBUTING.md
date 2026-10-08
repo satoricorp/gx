@@ -26,26 +26,28 @@ live tests skip themselves unless their credentials are set.
 
 ## Running your build
 
-A plain source build has no gx Cloud endpoints compiled in. It runs, but
-sign-in, publishing, and hosted review are off. To install a local-only build
-on purpose:
+A source build is a local build: gx runs entirely on your machine, with no
+gx Cloud. Install it with:
 
 ```bash
-GX_ALLOW_UNBAKED=1 just install
+just install
 ```
 
 That installs to `~/.local/bin/gx`, which is where gx's git hooks look for the
 binary. If you also use the released gx day to day, reinstall it afterwards
 with the command in the README.
 
-To run a review from a source build, use your own AWS account. Set
-`GX_REVIEW_BEDROCK_DIRECT=1` along with `AWS_ACCESS_KEY_ID`,
-`AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` and `AWS_REGION`.
-The account needs access to the Anthropic models on Amazon Bedrock.
+To review with a model, set `ANTHROPIC_API_KEY`. To use your own AWS account
+instead, set `GX_REVIEW_BEDROCK_DIRECT=1` along with `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` and `AWS_REGION`;
+the account needs access to the Anthropic models on Amazon Bedrock.
+`GX_REVIEW_AI=0` runs only the deterministic checks.
 
-Maintainers who build against gx Cloud copy `.env.example` to `.env`, fill it
-in, and run `just install`. `just verify-bake` refuses a binary whose cloud
-endpoints are missing. AGENTS.md explains why that check exists.
+The gx Cloud code is dormant, not deleted. `just` reads `.env` from this
+directory or any parent, so leave the endpoints in it unset for a local build.
+To build against a gx Cloud server of your own, set all of `GITHUB_CLIENT_ID`,
+`CONVEX_SITE_URL` and `GX_CLOUD_URL` (see `.env.example`). `just verify-bake`
+refuses a binary with only some of them baked in, and AGENTS.md explains why.
 
 ## Tests
 

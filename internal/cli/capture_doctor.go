@@ -34,18 +34,21 @@ type captureDoctorJSON struct {
 	UploadAuthed         bool                 `json:"uploadAuthed"`
 	UploadAPI            string               `json:"uploadAPI,omitempty"`
 	UploadAuthError      string               `json:"uploadAuthError,omitempty"`
-	PendingExtracts      int                  `json:"pendingExtracts"`
-	PendingSessions      int                  `json:"pendingSessions"`
-	FailedUploads        int                  `json:"failedUploads"`
-	ExhaustedUploads     int                  `json:"exhaustedUploads"`
-	UploadError          string               `json:"uploadError,omitempty"`
-	StaleStagedRows      int                  `json:"staleStagedRows"`
-	CursorReachable      bool                 `json:"cursorReachable"`
-	CursorPath           string               `json:"cursorPath,omitempty"`
-	DiskFreeGB           int                  `json:"diskFreeGB"`
-	DiskWarn             bool                 `json:"diskWarn"`
-	Issues               []captureIssueJSON   `json:"issues,omitempty"`
-	OK                   bool                 `json:"ok"`
+	// UploadLocal marks a build with no gx Cloud and no upload credentials:
+	// there is nothing to upload to, which is not an upload problem.
+	UploadLocal      bool               `json:"uploadLocal,omitempty"`
+	PendingExtracts  int                `json:"pendingExtracts"`
+	PendingSessions  int                `json:"pendingSessions"`
+	FailedUploads    int                `json:"failedUploads"`
+	ExhaustedUploads int                `json:"exhaustedUploads"`
+	UploadError      string             `json:"uploadError,omitempty"`
+	StaleStagedRows  int                `json:"staleStagedRows"`
+	CursorReachable  bool               `json:"cursorReachable"`
+	CursorPath       string             `json:"cursorPath,omitempty"`
+	DiskFreeGB       int                `json:"diskFreeGB"`
+	DiskWarn         bool               `json:"diskWarn"`
+	Issues           []captureIssueJSON `json:"issues,omitempty"`
+	OK               bool               `json:"ok"`
 }
 
 type captureIssueJSON struct {
@@ -98,6 +101,7 @@ func captureDoctorStatus(ctx context.Context, repoRoot string) captureDoctorJSON
 			status.UploadAuthed, status.UploadAuthError = validateCaptureUploadToken(ctx, creds.Token)
 		}
 	}
+	status.UploadLocal = !status.UploadAuthed && status.UploadAuthError == "" && !cloud.CloudConfigured()
 	if counts, err := storage.PendingCaptureCounts(ctx); err == nil {
 		status.PendingExtracts = counts.Extracts
 		status.PendingSessions = counts.Sessions
@@ -156,7 +160,7 @@ func captureDoctorOK(status captureDoctorJSON) bool {
 	return (!status.HookApplicable || status.HookInstalled) &&
 		!status.GlobalHooks.NeedsRepair &&
 		status.RepoHooksOK &&
-		status.UploadAuthed &&
+		(status.UploadAuthed || status.UploadLocal) &&
 		status.CursorReachable &&
 		status.FailedUploads == 0 &&
 		!status.DiskWarn
@@ -169,6 +173,8 @@ func printCaptureDoctor(out fmtWriter, status captureDoctorJSON) {
 	}
 	if status.UploadAuthed {
 		fmt.Fprintln(out, labelValue("Upload", success("ok")+": "+status.UploadAPI))
+	} else if status.UploadLocal {
+		fmt.Fprintln(out, labelValue("Upload", success("ok")+": local build, nothing uploads"))
 	} else {
 		hint := "run `gx auth login`"
 		if strings.TrimSpace(status.UploadAuthError) != "" {
@@ -409,7 +415,7 @@ func captureDoctorIssues(status captureDoctorJSON) []captureIssueJSON {
 			Action:   "run `gx init` in each registered repo",
 		})
 	}
-	if !status.UploadAuthed {
+	if !status.UploadAuthed && !status.UploadLocal {
 		code := "upload_auth_missing"
 		message := "upload auth missing"
 		action := "run `gx auth login`"

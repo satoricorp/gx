@@ -18,13 +18,17 @@ func TestAgentsMDContainsSnippet(t *testing.T) {
 	if !strings.Contains(agentsMDSnippet, "git push") {
 		t.Fatal("expected agentsMDSnippet to require plain git push")
 	}
-	if !strings.Contains(agentsMDSnippet, "do not run `gx push`") {
-		t.Fatal("expected agentsMDSnippet to forbid gx push")
-	}
 	if !strings.Contains(agentsMDSnippet, "gx capture push") {
 		t.Fatal("expected agentsMDSnippet to forbid gx capture push")
 	}
-	for _, stale := range []string{"gx_edit", "gx base", "gx edit", "gx commit", "gx status"} {
+	// gx Cloud no longer exists: the snippet goes into users' repositories, so
+	// it must not promise uploads or PR summaries that nothing will produce.
+	for _, cloudClaim := range []string{"gx Cloud", "## Summary"} {
+		if strings.Contains(agentsMDSnippet, cloudClaim) {
+			t.Fatalf("agentsMDSnippet still makes a gx Cloud claim: %q", cloudClaim)
+		}
+	}
+	for _, stale := range []string{"gx_edit", "gx base", "gx edit", "gx commit", "gx status", "`gx push`"} {
 		if strings.Contains(agentsMDSnippet, stale) {
 			t.Fatalf("agentsMDSnippet contains removed command %q", stale)
 		}

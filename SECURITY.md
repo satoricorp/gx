@@ -31,5 +31,5 @@ bearer tokens, API-key and password assignments, private keys, and long
 high-entropy strings. A secret that survives redaction and reaches an upload is
 a vulnerability. Please report it here.
 
-The hosted gx Cloud service is operated separately. Report issues with it
-through the same form.
+There is no hosted gx service: gx runs on your machine and talks only to the
+model, retrieval, and GitHub endpoints you give it credentials for.

@@ -130,13 +130,13 @@ if ! command -v gx >/dev/null 2>&1; then
   echo "Add $install_dir to PATH before running gx."
 fi
 # Cyan ANSI 6 + bold matches gx version / logo (internal/cli/logo.go).
-gx_auth_login="gx auth login"
 gx_init="gx init"
+gx_review_key="ANTHROPIC_API_KEY"
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  gx_auth_login="$(printf '\033[1;36mgx auth login\033[0m')"
   gx_init="$(printf '\033[1;36mgx init\033[0m')"
+  gx_review_key="$(printf '\033[1;36mANTHROPIC_API_KEY\033[0m')"
 fi
 echo ""
-printf '\tRun %s to login.\n' "$gx_auth_login"
 printf '\tRun %s in each repo to initialize gx.\n' "$gx_init"
+printf '\tSet %s so gx review can run a model.\n' "$gx_review_key"
 "$install_dir/gx" version

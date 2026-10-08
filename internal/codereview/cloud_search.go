@@ -90,10 +90,34 @@ func cloudUnavailableDetail(err error) string {
 	return "gx cloud retrieval failed: " + err.Error()
 }
 
-// signInRemedy is what a user does when neither cloud credentials nor raw
-// keys are present. The direct-key alternative is deliberately not offered:
-// raw provider keys are a development setup, not a remedy.
+// signInRemedy is what a user does when a gx Cloud is configured but neither
+// its credentials nor raw keys are present. The direct-key alternative is
+// deliberately not offered there: with a cloud to use, raw provider keys are a
+// development setup, not a remedy.
 const signInRemedy = "Run `gx auth login` so review retrieval can use gx Cloud"
+
+// directKeysRemedy is the remedy on a local build. There is no gx Cloud to sign
+// in to, so the provider keys are the only way to retrieve at all.
+const directKeysRemedy = "Set TURBOPUFFER_API_KEY and OPENAI_API_KEY to retrieve with your own accounts"
+
+// noRetrievalBackend is the status of a source that has neither a gx Cloud
+// session nor a TURBOPUFFER_API_KEY to retrieve with.
+func noRetrievalBackend(source string) EvidenceStatus {
+	if cloud.CloudConfigured() {
+		return EvidenceStatus{
+			Source: source,
+			State:  EvidenceDisabled,
+			Detail: "not signed in to gx Cloud, and no TURBOPUFFER_API_KEY for direct access",
+			Remedy: signInRemedy,
+		}
+	}
+	return EvidenceStatus{
+		Source: source,
+		State:  EvidenceDisabled,
+		Detail: "no TURBOPUFFER_API_KEY for direct access",
+		Remedy: directKeysRemedy,
+	}
+}
 
 // retrieveCodeIndexViaCloud is CodeIndexRetriever.Retrieve for the cloud path.
 func retrieveCodeIndexViaCloud(

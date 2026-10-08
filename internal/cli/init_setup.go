@@ -18,13 +18,13 @@ const agentsMDSnippetMarker = "Version control: plain Git"
 
 const agentsMDSnippet = `# Agents
 
-Version control: plain Git. Once ` + "`gx init`" + ` installs the hooks, gx records and publishes automatically — there is no gx save verb.
+Version control: plain Git. Once ` + "`gx init`" + ` installs the hooks, gx records your work automatically — there is no gx save verb.
 
 Default flow:
 - Run ` + "`git add`" + ` to stage the files for this revision.
 - Run ` + "`git commit -m \"...\"`" + ` to save. A gx hook records the commit as a reviewable revision.
-- Run plain ` + "`git push`" + ` to publish. The gx pre-push hook captures the session and publishes code changes, sessions, and gx metadata to gx Cloud automatically — do not run ` + "`gx push`" + ` or ` + "`gx capture push`" + ` yourself; they bypass the hook.
-- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI). Do not seed a ` + "`## Summary`" + ` in the PR body — leave human notes only; gx Cloud appends the rich summary below once the PR exists.
+- Run plain ` + "`git push`" + ` to publish. The gx pre-push hook captures the coding session behind the change — do not run ` + "`gx capture push`" + ` yourself; it bypasses the hook.
+- Open PRs with ` + "`gh pr create`" + ` (or the GitHub UI).
 - To amend, use ` + "`git commit --amend`" + ` and preserve the gx revision trailer in the message.
 
 For AI review, run the ` + "`gx_review`" + ` MCP tool (or the ` + "`gx review`" + ` CLI) on the current change.

@@ -94,15 +94,23 @@ func helpBodyTemplate() string {
 func printRootIntro(out io.Writer) {
 	fmt.Fprintln(out, renderStaticLogo())
 	fmt.Fprintln(out, muted(gxTagline))
-	fmt.Fprintln(out, rootAuthStatusLine())
+	if line := rootAuthStatusLine(); line != "" {
+		fmt.Fprintln(out, line)
+	}
 	fmt.Fprintln(out, rootInferenceStatusLine())
 	fmt.Fprintln(out)
 }
 
+// rootAuthStatusLine is the sign-in line, or "" on a local build: with no gx
+// Cloud configured there is nothing to sign in to, and the line used to send
+// every new user to `gx auth login` anyway.
 func rootAuthStatusLine() string {
 	creds, err := cloud.LoadCloudCredentials()
 	if err == nil && authKindForCredentials(creds) != "none" && strings.TrimSpace(creds.Login) != "" {
 		return success("●") + " " + value("Signed in as "+strings.TrimSpace(creds.Login))
+	}
+	if !cloud.CloudConfigured() {
+		return ""
 	}
 	return danger("●") + " " + muted("Not signed in") + "  " + logoText("gx auth login")
 }
@@ -110,7 +118,7 @@ func rootAuthStatusLine() string {
 func rootInferenceStatusLine() string {
 	creds, ok := inference.Resolve()
 	if !ok {
-		return danger("●") + " " + muted("API Key required. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
+		return danger("●") + " " + muted("API Key required. Set ANTHROPIC_API_KEY to review with a model.")
 	}
 	return success("●") + " " + value("Using "+creds.Provider+": "+maskedAPIKey(creds.APIKey))
 }

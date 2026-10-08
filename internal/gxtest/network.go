@@ -100,6 +100,9 @@ func DenyNetwork() func() []string {
 		// GitHub is reached through two independent overrides, and setting only
 		// the API one leaves token validation pointed at api.github.com.
 		"GX_GITHUB_API_URL", "GX_GITHUB_USER_URL",
+		// The Anthropic SDK honours this, so a review that reaches the
+		// Anthropic wire here fails against the tripwire too.
+		"ANTHROPIC_BASE_URL",
 	} {
 		_ = os.Setenv(key, tripwire.URL)
 	}
@@ -130,6 +133,8 @@ var NetworkCredentialEnv = []string{
 	"GX_OPENAI_API_KEY",
 	"TURBOPUFFER_API_KEY",
 	"ANTHROPIC_API_KEY",
+	// The reviewer's Anthropic wire also accepts an OAuth access token.
+	"ANTHROPIC_AUTH_TOKEN",
 	"GX_TPUF_NAMESPACE",
 	"GX_API_KEY",
 	"GX_UPLOAD_TOKEN",

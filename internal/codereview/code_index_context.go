@@ -262,12 +262,7 @@ func (r CodeIndexRetriever) resolveStore(log *EvidenceLog) (indexStore, bool) {
 	}
 	apiKey := strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY"))
 	if apiKey == "" {
-		log.Record(EvidenceStatus{
-			Source: codeIndexEvidenceSource,
-			State:  EvidenceDisabled,
-			Detail: "not signed in to gx Cloud, and no TURBOPUFFER_API_KEY for direct access",
-			Remedy: signInRemedy,
-		})
+		log.Record(noRetrievalBackend(codeIndexEvidenceSource))
 		return nil, false
 	}
 	return newTurboPufferIndexStore(apiKey, firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL)), true

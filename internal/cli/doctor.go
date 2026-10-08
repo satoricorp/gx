@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/auth"
+	"github.com/satoricorp/gx/internal/cloud"
 	cursoringest "github.com/satoricorp/gx/internal/ingest/cursor"
 	"github.com/satoricorp/gx/internal/publication"
 	"github.com/satoricorp/gx/internal/semantic"
@@ -163,6 +164,13 @@ func reportAndDrainPublishOutbox(ctx context.Context, w io.Writer) {
 	}
 	if status.Pending == 0 && status.Failed == 0 {
 		fmt.Fprintln(w, labelValue("Publish outbox", success("ok")+": empty"))
+		return
+	}
+	if !cloud.CloudConfigured() {
+		// Left by a build that had a gx Cloud. Retrying here could only fail.
+		fmt.Fprintln(w, labelWarningValue("Publish outbox", fmt.Sprintf(
+			"%d item(s) queued by an earlier build; with no gx Cloud configured nothing will upload them, and ~/.gx/publish-outbox is safe to delete",
+			status.Pending+status.Failed)))
 		return
 	}
 	detail := fmt.Sprintf("%d pending, %d failed", status.Pending, status.Failed)

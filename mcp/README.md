@@ -1,11 +1,11 @@
 # gx MCP Server
 
-TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` CLI. Local repository and Git work stay on the user's machine; cloud review context is reached by outbound HTTPS from `gx` when cloud auth or API-key env is configured.
+TypeScript MCP server (xmcp) that runs over stdio and shells to the local `gx` CLI. Local repository and Git work stay on the user's machine; model calls and retrieval go out from `gx` with the credentials the user configured (see the main README's "Running locally").
 
 ## Primary workflow
 
 1. `git add`, then `git commit` to record work. gx's `prepare-commit-msg` hook stamps each commit with its gx revision trailer and `post-commit` records it — no gx-specific commit verb is required.
-2. Publish with plain `git push` when the stack is ready — the gx pre-push hook captures the agent session, links edits to the changed hunks, and publishes the metadata that becomes the PR summary. Open the PR with `gh pr create`.
+2. Publish with plain `git push` when the stack is ready — the gx pre-push hook captures the agent session and links its edits to the changed hunks. Open the PR with `gh pr create`.
 3. `gx_review` when codegen needs review context from local facts, previous sessions, PRs, current code changes, and optional prompt guidance.
 4. `gx_gates` before shipping: the pre-ship exit gate that checks the change against six gates and returns a ship/no-ship verdict.
 
@@ -13,10 +13,6 @@ When a user says "save work", "save using gx", or "save with gx", treat that as
 a request to stage with `git add`, commit with `git commit`, and publish ready
 stacks with plain `git push` unless the user explicitly asks to keep the work
 local.
-
-gx PR summaries are posted for PRs whose branch was pushed through gx with `git push`
-while the pre-push hook is installed. A PR opened before that push will not get a summary
-until the branch is pushed through gx.
 
 ## Agent instructions
 
@@ -31,17 +27,12 @@ Version control: use plain Git. gx works through Git hooks, so no gx-specific sa
 - To amend, use `git commit --amend` and preserve the gx revision trailer.
 - `git status` to inspect the working tree.
 
-Publish with plain `git push` (the gx pre-push hook captures the agent session, links
-edits to the changed hunks, and publishes the metadata that becomes the PR summary),
-then open the PR with `gh pr create`. Do not run `gx push` or `gx capture push` — they
-bypass or suppress the hook.
+Publish with plain `git push` (the gx pre-push hook captures the agent session and links
+its edits to the changed hunks), then open the PR with `gh pr create`. Do not run
+`gx capture push` — it bypasses the hook.
 
 Use `gx_review` (MCP) or `gx review` (CLI) for review context on the current change.
 Before shipping, run `gx_gates` (MCP) or `gx gates` (CLI) to check the change against the pre-ship gate gates.
-
-gx PR summaries are posted for PRs whose branch was pushed through gx with `git push`
-while the pre-push hook is installed. A PR opened before that push will not get a summary
-until the branch is pushed through gx.
 ```
 
 ## Tools
@@ -54,10 +45,9 @@ until the branch is pushed through gx.
 `gx_review` always passes `--no-comment` and `--client mcp`. `gx review` on its
 own posts a review comment on the matching GitHub pull request, which an agent
 calling the tool for context mid-codegen should never do — so commenting stays
-with the CLI, where a human typed the command. The run itself still records to
-gx Cloud review history, labeled as an MCP invocation, so per-surface review
-counts include MCP runs; `--no-publish` remains the flag that suppresses the
-history record too.
+with the CLI, where a human typed the command. With a gx Cloud configured, the
+run is also recorded to its review history, labeled as an MCP invocation;
+`--no-publish` suppresses that record too.
 
 `gx_gates` always passes `--report-only` and `--md`. The CLI's coded
 exits (no-ship exits 3) are for humans and CI; over MCP a no-ship verdict is
@@ -101,11 +91,9 @@ bun install
 bun run build
 ```
 
-For cloud auth, log in once with GitHub:
-
-```bash
-gx auth login
-```
+`gx_review` needs a model to run. Set `ANTHROPIC_API_KEY` (or another option from
+the main README's "Running locally") in the MCP server config's own `env` block:
+an MCP server inherits its host GUI's environment, not your shell's.
 
 The installer provides the `gx` CLI and `gx-mcp` binary. Repo Git
 hooks are installed when a repo is initialized with `gx init`; the `gx_review`
@@ -155,16 +143,17 @@ compiled `dist/gx-mcp` binary is distributed by the CLI installer instead.
 | `GX_BINARY` | Optional path to `gx` executable |
 | `GX_MCP_CLOUD_URL` | Point the MCP at a non-production gx server (local server work). Overrides the compiled-in endpoint |
 
-Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`. Cloud calls use credentials from `gx auth login` when available.
+Without a `GX_BINARY` override, MCP uses `~/.local/bin/gx` when present, then falls back to `gx` on `PATH`.
 
 `GX_CLOUD_URL` is deliberately **not** read from the inherited environment. An MCP
 server is spawned by whatever GUI process hosts it and inherits that process's
 environment, which nobody chose and nobody can see — a dev server URL exported in
 some shell weeks ago reaches every review the MCP runs, and the symptom is a
 review that returns "degraded, no model ran" with the reason buried in the run
-notes. Released builds compile the production endpoint in (`bun build --define
-GX_BAKED_CLOUD_URL=...`, wired in `scripts/package-cli.sh` and verified on the
-packaged binary before publish). To point the MCP somewhere else, set
+notes. Released builds are local builds and compile no endpoint in; a build made
+with a gx Cloud bakes its endpoint (`bun build --define GX_BAKED_CLOUD_URL=...`,
+wired in `scripts/package-cli.sh` and verified on the packaged binary). To point
+the MCP at a gx server, set
 `GX_MCP_CLOUD_URL` in the MCP server config's own `env` block, where it is
 visible to whoever reads the config. A build made without the define hands the
 CLI nothing and lets `gx` fall back to its own baked endpoint.

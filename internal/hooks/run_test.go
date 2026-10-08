@@ -251,6 +251,8 @@ func TestRunPushKeepsResultFromPartialCaptureFailure(t *testing.T) {
 func TestRunPushKeepsPublishingWhenMarkingFails(t *testing.T) {
 	repoRoot := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())
+	// Publishing only happens with a gx Cloud configured.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
 	initGitRepo(t, repoRoot)
 
@@ -286,6 +288,8 @@ func TestRunPushKeepsPublishingWhenMarkingFails(t *testing.T) {
 func TestRunPushKeepsPublishingWhenTrailerScanFails(t *testing.T) {
 	repoRoot := t.TempDir()
 	t.Setenv("GX_HOME", t.TempDir())
+	// Publishing only happens with a gx Cloud configured.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	t.Setenv("GX_DISABLE_BACKGROUND_WORKERS", "1")
 	initGitRepo(t, repoRoot)
 	if err := os.WriteFile(filepath.Join(repoRoot, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
