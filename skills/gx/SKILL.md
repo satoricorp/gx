@@ -95,10 +95,9 @@ git push             # publish the current stack's branch
 gh pr create         # then open the PR (when the user wants one)
 ```
 
-Publish with plain `git push`. The gx pre-push hook captures the session and registers
-publish/CI status as the branch goes up. Open the pull request with `gh pr create`; do
-**not** seed a `## Summary` section in the PR body (leave human notes only). gx Cloud
-appends the rich summary below the existing body once the PR exists.
+Publish with plain `git push`. The gx pre-push hook captures the coding session behind
+the change as the branch goes up. Open the pull request with `gh pr create`, with a body
+that says what changed and why.
 
 Do not run `gx push` — the command has been removed. Publish with plain `git push`; the
 pre-push hook is the only publish path.
@@ -163,10 +162,9 @@ runs it; the `gx_gates` MCP tool is the same gate from an agent client.
 | Symptom | Fix |
 | --- | --- |
 | `git commit` says "nothing to commit" | Nothing staged — run `git add <files>` first |
-| Error mentions `gx auth login` or "not logged in" | Ask the user to run `gx auth login`, then retry |
-| Error mentions session expired / `gx auth logout` | Ask the user to run `gx auth logout` then `gx auth login`, then retry |
+| `gx review cannot run` / "no model is configured" | Ask the user to set `ANTHROPIC_API_KEY` (or `GX_REVIEW_BEDROCK_DIRECT=1` with AWS credentials), then retry |
+| Error mentions `gx auth login` | The installed gx is an older build that expects a gx Cloud; ask the user to run `gx update` |
 | `git push` fails: no `origin` / not a GitHub remote | `git remote -v`; point `origin` at GitHub, or skip publishing |
 | `git push` rejected (remote moved) | `git pull --rebase`, then retry `git push` |
-| No PR summary on the PR | Confirm the branch was pushed with `git push` while hooks are installed; run `gx doctor` |
 | Repo not initialized errors | `gx init -y`, then retry |
-| Something is broken and the user wants support to see it | `gx doctor --report` sends the diagnosis plus recent gx logs |
+| Something is broken | Run `gx doctor` and share its output |

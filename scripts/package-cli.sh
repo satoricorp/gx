@@ -69,10 +69,9 @@ fi
 )
 chmod 755 "$stage_dir/bin/gx-mcp"
 
-# The same fail-closed rule the Go bake guard follows: a shipped gx-mcp that
-# cannot name its server is the build this check exists to stop, and it is
-# invisible from the outside -- the MCP starts fine and every review it runs is
-# quietly degraded.
+# A gx-mcp baked with a cloud has to actually carry it, or it hands the CLI
+# whatever the host GUI's environment held. A local build bakes none and has
+# nothing to check.
 if [[ -n "${GX_CLOUD_URL:-}" ]]; then
   # grep -a on the file, not strings(1). gx-mcp is cross-compiled for the
   # target platform, and macOS strings refuses a Mach-O it did not expect --
@@ -85,10 +84,6 @@ if [[ -n "${GX_CLOUD_URL:-}" ]]; then
     exit 1
   fi
   echo "bake ok: $stage_dir/bin/gx-mcp"
-elif [[ "${GX_ALLOW_UNBAKED:-}" != "1" ]]; then
-  echo "cannot verify GX_CLOUD_URL for gx-mcp: unset in the environment and .env" >&2
-  echo "set GX_CLOUD_URL, or GX_ALLOW_UNBAKED=1 to build a cloud-dead gx-mcp on purpose" >&2
-  exit 1
 fi
 
 env -u GOOS -u GOARCH -u CGO_ENABLED go run ./cmd/gx-gen-completions "$stage_dir/completions/gx.bash" "$stage_dir/completions/_gx"

@@ -65,12 +65,15 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # Releases are local builds: no gx Cloud endpoints are baked in, because
+      # there is no gx Cloud. A binary baked with one would make every user's
+      # review wait on a server that does not answer, since a configured cloud
+      # outranks their own ANTHROPIC_API_KEY. Whoever runs a gx Cloud again
+      # passes GITHUB_CLIENT_ID, CONVEX_SITE_URL and GX_CLOUD_URL here and in
+      # the verify step below.
       - name: Build CLI packages
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_CLIENT_ID: ${{ vars.GX_GITHUB_CLIENT_ID }}
-          CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
-          GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
           GX_DOWNLOAD_BASE_URL: https://download.gx.run
         run: |
           GOOS=darwin GOARCH=arm64 BUN_TARGET=bun-darwin-arm64 scripts/package-cli.sh
@@ -91,17 +94,11 @@ jobs:
       # Tag builds only: on main the archives already go to S3 under
       # cli/releases/$SHA, so a per-push copy here is redundant and at ~180 MB
       # a push it exhausts the org's Actions storage on its own.
-      # The published binary is what users install, and nothing verified it.
-      # ldflags.sh silently omits any endpoint whose variable is empty, so an
-      # unset or renamed repository variable would publish a cloud-dead CLI to
-      # download.gx.run with a green check: it runs, and every publish queues
-      # into ~/.gx/publish-outbox without ever attempting an upload. The bake
-      # is verified on the actual packaged binaries, before they are published.
+      # The published binary is what users install, so its bake is verified on
+      # the packaged binaries before they are published. With no endpoints set
+      # that confirms a local build; with some set, verify-bake refuses a
+      # binary that carries only part of them.
       - name: Verify baked endpoints
-        env:
-          GITHUB_CLIENT_ID: ${{ vars.GX_GITHUB_CLIENT_ID }}
-          CONVEX_SITE_URL: ${{ vars.CONVEX_SITE_URL }}
-          GX_CLOUD_URL: ${{ vars.GX_CLOUD_URL }}
         run: |
           set -euo pipefail
           for archive in dist/cli/gx_${{ steps.version.outputs.version }}_*.tar.gz; do
@@ -117,11 +114,13 @@ jobs:
             # developer's localhost URL reached production reviews.
             # grep -a, not strings: these archives carry binaries for every
             # target, and strings(1) rejects a Mach-O built for another one.
-            if ! grep -aF -- "$GX_CLOUD_URL" /tmp/gx-verify/gx/bin/gx-mcp >/dev/null; then
-              echo "missing baked GX_CLOUD_URL in gx-mcp from $(basename "$archive")" >&2
-              exit 1
+            if [[ -n "${GX_CLOUD_URL:-}" ]]; then
+              if ! grep -aF -- "$GX_CLOUD_URL" /tmp/gx-verify/gx/bin/gx-mcp >/dev/null; then
+                echo "missing baked GX_CLOUD_URL in gx-mcp from $(basename "$archive")" >&2
+                exit 1
+              fi
+              echo "bake ok: /tmp/gx-verify/gx/bin/gx-mcp"
             fi
-            echo "bake ok: /tmp/gx-verify/gx/bin/gx-mcp"
           done
 
       # Never fatal: nothing downstream reads this artifact. The archives are
