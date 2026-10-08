@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/satoricorp/gx/internal/authoring"
+	"github.com/satoricorp/gx/internal/cloud"
 	"github.com/satoricorp/gx/internal/gxconfig"
 	"github.com/satoricorp/gx/internal/inference"
 	"github.com/satoricorp/gx/internal/postlist"
@@ -163,6 +164,8 @@ func newInitCommand(ctx context.Context, engine *authoring.Engine) *cobra.Comman
 				Interactive: !yes,
 				In:          initInput(cmd, yes),
 				Out:         initOutput(cmd, yes),
+
+				SharesIdentity: cloud.CloudConfigured(),
 			})
 			if err != nil {
 				return err

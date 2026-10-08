@@ -266,12 +266,14 @@ func TestKnowledgeSourceReportsDisabledWhenNothingConfigured(t *testing.T) {
 	if status.State != EvidenceDisabled {
 		t.Fatalf("evidence state = %q, want disabled", status.State)
 	}
-	if !strings.Contains(status.Remedy, "gx auth login") {
-		t.Fatalf("remedy = %q, want the sign-in remedy", status.Remedy)
+	// The corpus is hosted and its source is not in the repository, so with no
+	// gx Cloud there is nothing to tell the user to do, least of all sign in.
+	if status.Remedy != "" || !strings.Contains(status.Detail, "hosted") {
+		t.Fatalf("evidence = %#v, want the hosted corpus named and no remedy", status)
 	}
 }
 
-func TestCodeIndexSourceReportsSignInRemedyWhenNothingConfigured(t *testing.T) {
+func TestCodeIndexSourceNamesTheDirectKeysWhenNothingConfigured(t *testing.T) {
 	t.Setenv("GX_CLOUD_URL", "off")
 	t.Setenv("TURBOPUFFER_API_KEY", "")
 
@@ -282,7 +284,23 @@ func TestCodeIndexSourceReportsSignInRemedyWhenNothingConfigured(t *testing.T) {
 		t.Fatalf("Retrieve() = %d snippets, %v; want none", len(snippets), err)
 	}
 	status := evidenceFor(t, in.Evidence, codeIndexEvidenceSource)
-	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "gx auth login") {
-		t.Fatalf("evidence = %#v, want disabled with the sign-in remedy", status)
+	if status.State != EvidenceDisabled || !strings.Contains(status.Remedy, "TURBOPUFFER_API_KEY") {
+		t.Fatalf("evidence = %#v, want disabled with the direct keys as the remedy", status)
+	}
+}
+
+// On a local build there is no gx Cloud to sign in to, so a source with no
+// retrieval backend has to name the keys, not `gx auth login`. With a cloud
+// configured, signing in stays the fix.
+func TestNoRetrievalBackendOffersAFixThatExists(t *testing.T) {
+	t.Setenv("GX_CLOUD_URL", "")
+	local := noRetrievalBackend(codeIndexEvidenceSource)
+	if local.State != EvidenceDisabled || !strings.Contains(local.Remedy, "TURBOPUFFER_API_KEY") || strings.Contains(local.Detail+local.Remedy, "gx Cloud") {
+		t.Fatalf("local build status = %+v, want the direct keys named and no gx Cloud", local)
+	}
+
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
+	if withCloud := noRetrievalBackend(codeIndexEvidenceSource); withCloud.Remedy != signInRemedy {
+		t.Fatalf("status with a cloud configured = %+v, want the sign-in remedy", withCloud)
 	}
 }

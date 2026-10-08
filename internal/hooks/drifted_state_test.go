@@ -42,6 +42,8 @@ const driftContent = "package gamma\n\nfunc GammaThree() int {\n\treturn 3\n}\n"
 // on the empty-root_path row, which is what forces the bundle read to cross the
 // write/read identity boundary rather than trivially agreeing with it.
 func TestRunPushPublishesSessionsOnAWeatheredDatabase(t *testing.T) {
+	// These assert on the published artifact, which needs a gx Cloud.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	ctx := context.Background()
 	world := gxtest.NewWorld(t)
 	repo := world.NewRepo(t)
@@ -147,6 +149,8 @@ func TestRunPushPublishesSessionsOnAWeatheredDatabase(t *testing.T) {
 // combination that made the bug survive: the worktree root is not in `repos` at
 // all, and the row that is has the wrong root_path.
 func TestRunPushFromLinkedWorktreeOnAWeatheredDatabase(t *testing.T) {
+	// These assert on the published artifact, which needs a gx Cloud.
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
 	ctx := context.Background()
 	world := gxtest.NewWorld(t)
 	main := world.NewRepo(t)

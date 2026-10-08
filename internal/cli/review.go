@@ -622,7 +622,7 @@ func reviewHistoryLanguageForFile(file string) string {
 // are a real review.
 func requireReviewer() error {
 	if reason := codereview.NoReviewerReason(); reason != "" {
-		return fmt.Errorf("gx review has no model to review with: %s (or set GX_REVIEW_AI=0 to run only the deterministic checks)", reason)
+		return fmt.Errorf("gx review cannot run: %s (or set GX_REVIEW_AI=0 to run only the deterministic checks)", reason)
 	}
 	return nil
 }

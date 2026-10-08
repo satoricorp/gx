@@ -30,7 +30,7 @@ func newPublishUploadCommand(ctx context.Context) *cobra.Command {
 func drainPublishUploadOutbox(ctx context.Context, out io.Writer, quiet bool, limit int) error {
 	client := cloud.NewClient()
 	if client == nil {
-		return fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
+		return fmt.Errorf("no gx Cloud is configured for this build")
 	}
 	result, err := publication.DrainQueuedUploads(ctx, client, limit)
 	if err != nil {

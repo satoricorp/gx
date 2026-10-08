@@ -81,6 +81,7 @@ func TestRootRemovesHiddenPRCompatibilityCommand(t *testing.T) {
 func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	t.Setenv("GX_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GX_CLOUD_URL", "")
 	root := cli.NewRoot(context.Background())
 	var out bytes.Buffer
 	root.SetOut(&out)
@@ -95,7 +96,6 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	ordered := []string{
 		"Setup:",
 		"  init",
-		"  auth",
 		"Work:",
 		"  review (gxr)",
 		"Help:",
@@ -132,10 +132,37 @@ func TestRootHelpShowsHumanCommandsAndHidesAgentCommands(t *testing.T) {
 	if strings.Contains(text, "Advanced:") {
 		t.Fatalf("root help should not render an Advanced group after ops' removal:\n%s", text)
 	}
-	for _, hidden := range []string{"  add ", "  edit ", "  ops ", "  demo ", "  report ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux ", "  generate ", "  sync "} {
+	// A local build has no gx Cloud to sign in to, so neither the command nor
+	// the banner offers one.
+	for _, hidden := range []string{"  auth ", "  add ", "  edit ", "  ops ", "  demo ", "  report ", "  login ", "  base ", "  pr ", "  switch ", "  stack ", "  demux ", "  generate ", "  sync ", "gx auth login"} {
 		if strings.Contains(text, hidden) {
 			t.Fatalf("root help should hide %q in:\n%s", hidden, text)
 		}
+	}
+}
+
+func TestRootHelpOffersAuthWhenACloudIsConfigured(t *testing.T) {
+	t.Setenv("GX_HOME", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("GX_CLOUD_URL", "https://cloud.example.invalid")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	root := cli.NewRoot(context.Background())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute() unexpected error = %v", err)
+	}
+	text := out.String()
+	setup, work := strings.Index(text, "Setup:"), strings.Index(text, "Work:")
+	auth := strings.Index(text, "  auth")
+	if auth < 0 || auth < setup || auth > work {
+		t.Fatalf("root help with a cloud configured should list auth under Setup:\n%s", text)
+	}
+	if !strings.Contains(text, "gx auth login") {
+		t.Fatalf("root help with a cloud configured should offer sign-in:\n%s", text)
 	}
 }
 

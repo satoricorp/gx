@@ -56,7 +56,7 @@ func newReportCommand(ctx context.Context) *cobra.Command {
 func sendSupportReport(ctx context.Context, attachments []cloud.ReportLogFile) (cloud.ReportLogResult, error) {
 	client := cloud.NewClient()
 	if client == nil {
-		return cloud.ReportLogResult{}, fmt.Errorf("gx cloud is not configured; set GX_CLOUD_URL or rebuild with cloud endpoints")
+		return cloud.ReportLogResult{}, fmt.Errorf("no gx Cloud is configured for this build")
 	}
 	report := buildReportLogRequest(ctx, "")
 	report.Logs = append(report.Logs, attachments...)

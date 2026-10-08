@@ -77,12 +77,7 @@ func (r SessionContextRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 			if searcher != nil {
 				return retrieveSessionsViaCloud(ctx, in, searcher, limit)
 			}
-			in.Evidence.Record(EvidenceStatus{
-				Source: sessionEvidenceSource,
-				State:  EvidenceDisabled,
-				Detail: "not signed in to gx Cloud, and no TURBOPUFFER_API_KEY for direct access",
-				Remedy: signInRemedy,
-			})
+			in.Evidence.Record(noRetrievalBackend(sessionEvidenceSource))
 			return nil, nil
 		}
 		store = newTurboPufferIndexStore(strings.TrimSpace(os.Getenv("TURBOPUFFER_API_KEY")), firstNonEmpty(os.Getenv("GX_TPUF_BASE_URL"), defaultReviewResourceBaseURL))

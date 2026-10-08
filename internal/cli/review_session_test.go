@@ -34,7 +34,7 @@ func TestReviewRefusesWithoutAReviewer(t *testing.T) {
 	}
 	// The message has to name the fixes, or it reads like the DEGRADED line it
 	// replaces. None of them may be a service that does not exist.
-	for _, want := range []string{"no model to review with", "ANTHROPIC_API_KEY", "GX_REVIEW_AI=0"} {
+	for _, want := range []string{"gx review cannot run", "ANTHROPIC_API_KEY", "GX_REVIEW_AI=0"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %v, want it to mention %q", err, want)
 		}

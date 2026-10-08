@@ -59,6 +59,9 @@ func newAuthCommand(ctx context.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Authenticate with gx cloud",
+		// A local build has no gx Cloud to authenticate with; the command
+		// still works, it just stops being offered as setup.
+		Hidden: !cloud.CloudConfigured(),
 	}
 	cmd.AddCommand(
 		newAuthLoginCommand(ctx),
@@ -194,7 +197,7 @@ func verifyAuthStatus(ctx context.Context, status authStatusJSON, creds *cloud.C
 					// authenticate to fixes nothing, and this line used to
 					// send exactly that advice.
 					if validation.NotConfigured {
-						status.APIError += "; set GX_CLOUD_URL or rebuild with cloud endpoints (`just install`)"
+						status.APIError += "; this build has no gx Cloud configured"
 					} else {
 						status.APIError += "; run `gx auth logout` then `gx auth login`"
 					}

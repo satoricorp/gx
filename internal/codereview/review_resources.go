@@ -223,12 +223,19 @@ func (r ReviewResourceRetriever) Retrieve(ctx context.Context, in RetrieveInput)
 			searcher = reviewCloudSearcherFromEnv()
 		}
 		if searcher == nil {
-			in.Evidence.Record(EvidenceStatus{
+			status := EvidenceStatus{
 				Source: reviewKnowledgeEvidenceSource,
 				State:  EvidenceDisabled,
 				Detail: "not signed in to gx Cloud, and no direct keys for the shared review corpus",
 				Remedy: signInRemedy,
-			})
+			}
+			if !cloud.CloudConfigured() {
+				// The corpus is hosted, and its source is not in this
+				// repository, so a local build has no fix to offer.
+				status.Detail = "the shared review corpus is hosted, and this build has no gx Cloud to reach it"
+				status.Remedy = ""
+			}
+			in.Evidence.Record(status)
 			return nil, nil
 		}
 		return r.retrieveKnowledgeViaCloud(ctx, in, searcher, queryText, signals)
