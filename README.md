@@ -2,19 +2,36 @@
   <img src="docs/gx-chrome-logo-dark.png" alt="gx" width="420" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/satoricorp/gx/actions/workflows/ci.yml"><img src="https://github.com/satoricorp/gx/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/satoricorp/gx/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/satoricorp/gx/ci.yml?branch=main&label=unit%20tests" alt="unit tests"></a>
+</p>
+
 SOTA code review that uses your session context.
+55% less false positives than CodeRabbit.
+23% increased accuracy from Greptile.
 
+Code Review tools are expensive and increasingly unnecessary with the improvement in model performance. The main benefit of GX
+is to provide patterns that increase review accuracy. Typically, running a review against a single frontier model will catch about
+50% of the bugs of a code review tool.
 
-With traditional code review, developers held the context for code changes, but now AI sessions hold that context.
-This can improve code review drastically, keeping both session history and informing future sessions of best practices.
+The magic of these tools lie in the pattern used to extract bugs. In general, additional context, such as knowledge bases/documentation,
+don't improve bug identification.
+
+Patterns such as using a judge model and multiple model providers provide excellent results out of the box, alongside session context.
+This boosts bug identification by 2x while decreasing false positives.
+
+As models continue to improve, it's reasonable to assume these tools will become less important, but for now this will improve your
+code reviews and reduce bugs going into production.
 
 
 ## Get started
 
-Install GX locally:
-```bash
-curl -fsSL https://download.gx.run/install.sh | sh
-```
+Download the archive for your platform from the
+[latest GitHub release](https://github.com/satoricorp/gx/releases/latest), extract it,
+and add the extracted `gx/bin` directory to your `PATH`.
+
+To build from source instead, clone the repository and run `just install`.
 
 Inside your repo:
 ```bash
@@ -32,7 +49,37 @@ git commit -m "some commit message"
 git push
 ```
 
-Sign up at [gx.run](https://gx.run). Re-run the install command to upgrade.
+Those commands record and publish on their own. Pull request comments need a GitHub App (you must create this), and the GX API running on a server.
+
+Create the app under GitHub **Settings → Developer settings → GitHub Apps → New GitHub App**:
+
+- **Webhook URL:** `https://<your-api-host>/github/webhook`. Port 3201.
+- **Webhook secret:** you pick this
+- **Permissions:** Contents (read and write), Pull requests (read and write), Issues (read and write), Checks (read), Actions (read).
+- **Subscribe to events:** Installation, Installation repositories, Pull request, Pull request review, Pull request review comment, Issue comment, and Push.
+
+After GitHub creates the app, copy the App ID, generate a private key, and install the app on the account or org you want to run GX against. 
+
+The API is the `server` package in [satoricorp/console](https://github.com/satoricorp/console). From that repository, with Postgres available, put these in `server/.env`:
+
+```bash
+DATABASE_URL=postgres://localhost:5432/gx
+GITHUB_APP_ID=<app id>
+GITHUB_APP_PRIVATE_KEY=<private key pem>
+GITHUB_WEBHOOK_SECRET=<webhook secret>
+GITHUB_APP_INSTALL_URL=https://github.com/apps/<your-app-slug>/installations/new
+```
+
+`GITHUB_APP_PRIVATE_KEY_PATH` can point at the `.pem` file instead of inlining the key. Then:
+
+```bash
+cd server
+bun install
+bun run migrate
+bun run dev
+```
+
+Point this CLI at that API with `GX_CLOUD_URL=http://localhost:3201`.
 
 ## Commands
 
@@ -187,7 +234,8 @@ issues privately as described in [SECURITY.md](SECURITY.md).
 ## Links
 
 - Product: [gx.run](https://gx.run)
-- Installer: [download.gx.run/install.sh](https://download.gx.run/install.sh)
+- Releases: [github.com/satoricorp/gx/releases](https://github.com/satoricorp/gx/releases)
+- Source: [github.com/satoricorp/gx](https://github.com/satoricorp/gx)
 
 ## License
 

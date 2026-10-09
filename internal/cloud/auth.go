@@ -278,7 +278,7 @@ func Login(ctx context.Context, opts LoginOptions) (CloudCredentials, error) {
 		fmt.Fprintf(opts.Out, "Note: no OS keychain available (%v); storing the GitHub token in %s (mode 0600).\n", keychainErr, location)
 	}
 	if opts.Out != nil && strings.TrimSpace(complete.GitHubAppInstallURL) != "" {
-		fmt.Fprintf(opts.Out, "Install the gx GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
+		fmt.Fprintf(opts.Out, "Install your GitHub App: %s\n", strings.TrimSpace(complete.GitHubAppInstallURL))
 	}
 	return creds, nil
 }
